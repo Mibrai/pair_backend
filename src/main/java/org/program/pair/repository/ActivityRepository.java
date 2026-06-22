@@ -1,0 +1,27 @@
+package org.program.pair.repository;
+
+import org.program.pair.domain.activity.Activity;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
+
+import java.util.Optional;
+import java.util.UUID;
+
+@Repository
+public interface ActivityRepository extends JpaRepository<Activity, UUID> {
+
+    Optional<Activity> findBySlug(String slug);
+
+    @Query("SELECT a FROM Activity a WHERE " +
+           "(:categoryId IS NULL OR a.category.id = :categoryId) AND " +
+           "(:search IS NULL OR LOWER(a.name) LIKE LOWER(CONCAT('%', :search, '%')))")
+    Page<Activity> searchActivities(
+        @Param("categoryId") UUID categoryId,
+        @Param("search") String search,
+        Pageable pageable
+    );
+}
