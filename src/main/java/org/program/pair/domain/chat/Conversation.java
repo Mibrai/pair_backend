@@ -43,11 +43,6 @@ public class Conversation {
     @Column(name = "last_message_at")
     private Instant lastMessageAt;
 
-    @OneToMany(mappedBy = "conversation", cascade = CascadeType.ALL)
-    @Builder.Default
-    private List<Message> messages = new ArrayList<>();
-
-    @OneToMany(mappedBy = "conversation", cascade = CascadeType.ALL)
-    @Builder.Default
-    private List<ConversationMember> members = new ArrayList<>();
+    // Note: No bidirectional mapping for messages and members to avoid complexity
+    // Use repositories to query them directly
 }

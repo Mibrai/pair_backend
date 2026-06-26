@@ -3,6 +3,7 @@ package org.program.pair.domain.activity;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import lombok.*;
+import org.program.pair.domain.indexation.ActivityIndexationListener;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
@@ -14,7 +15,7 @@ import java.util.UUID;
     @Index(name = "idx_activities_slug", columnList = "slug"),
     @Index(name = "idx_activities_category", columnList = "category_id")
 })
-@EntityListeners(AuditingEntityListener.class)
+@EntityListeners({AuditingEntityListener.class, ActivityIndexationListener.class})
 @Getter
 @Setter
 @NoArgsConstructor
@@ -44,8 +45,9 @@ public class Activity {
     @Column(length = 500)
     private String description;
 
-    @Column(columnDefinition = "vector(1536)")
-    private float[] embedding;
+    // TODO Phase 2: Re-enable when pgvector is properly installed
+    // @Column(columnDefinition = "vector(1536)")
+    // private float[] embedding;
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)

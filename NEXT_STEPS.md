@@ -1,8 +1,51 @@
-# Next Steps — Phase 1 Implementation
+# 🎯 Prochaines Étapes - Phase 2
 
-## 📋 Session 2: Auth & Core API (pair-phase1-spec.md)
+## ✅ État Actuel
 
-### Prerequisites
+### Phase 1 - COMPLÈTE
+- Code fonctionnel validé
+- Tests automatisés disponibles
+- Documentation complète
+
+### Phase 2 Module 1 - CODE COMPLET (95%), BDD À FINALISER
+
+**Code Implémenté**: 11 fichiers Java (~700 lignes)
+- SearchRequest, SearchIntent, SearchResultDto, SearchResponse (DTOs)
+- SearchLog entity + SearchLogRepository
+- LlmIntentExtractor + FullTextSearchService + SemanticSearchService
+- SearchController (POST /api/search)
+- WebClient + ObjectMapper configuration
+
+**Status**: ✅ Compilation OK, ✅ Application démarre, ⚠️ BDD setup requis
+
+---
+
+## 🚨 ACTION IMMÉDIATE REQUISE
+
+### Exécuter Scripts SQL Phase 1
+
+```bash
+cd SQLHistory
+export PGPASSWORD=Pair2026!
+
+psql -h localhost -U pair_user -d pair_db -f SETUP_WITHOUT_EMBEDDING.sql
+psql -h localhost -U pair_user -d pair_db -f 02_seed_activities.sql
+psql -h localhost -U pair_user -d pair_db -f 03_create_programs_tables.sql
+psql -h localhost -U pair_user -d pair_db -f 08_setup_fulltext_search.sql
+```
+
+Puis tester: `bash test-search.sh`
+
+---
+
+## 📊 Phase 2 Progrès: 35%
+
+- Module 1 (Recherche): 95% ✅
+- Module 2 (Progression): 0% ⏳
+- Module 3 (Médias): 0% ⏳
+- Module 4 (Indexation): 0% ⏳
+
+**Prochaine session**: Setup BDD (15min) → Tests (15min) → Module 2 (1-2h)
 1. **Start PostgreSQL** with PostGIS and pgvector extensions:
    ```bash
    docker run -d --name pair-postgres \

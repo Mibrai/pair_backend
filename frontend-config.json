@@ -1,0 +1,95 @@
+{
+  "apiBaseUrl": "http://localhost:8090/api",
+  "wsBaseUrl": "ws://localhost:8090/ws",
+  "app": {
+    "name": "Pair",
+    "version": "1.0.0",
+    "environment": "development"
+  },
+  "endpoints": {
+    "auth": {
+      "register": "/auth/register",
+      "login": "/auth/login",
+      "refresh": "/auth/refresh",
+      "verifyEmail": "/auth/verify-email",
+      "forgotPassword": "/auth/forgot-password",
+      "resetPassword": "/auth/reset-password"
+    },
+    "users": {
+      "me": "/users/me",
+      "profile": "/users/{id}",
+      "updateLocation": "/users/me/location",
+      "uploadAvatar": "/users/me/avatar",
+      "activities": "/users/me/activities"
+    },
+    "activities": {
+      "categories": "/categories",
+      "search": "/activities",
+      "myActivities": "/users/me/activities"
+    },
+    "programs": {
+      "list": "/programs",
+      "detail": "/programs/{id}",
+      "create": "/programs",
+      "schedules": "/programs/{id}/schedules"
+    },
+    "map": {
+      "users": "/map/users"
+    },
+    "chat": {
+      "conversations": "/conversations",
+      "messages": "/conversations/{id}/messages",
+      "markRead": "/conversations/{id}/read",
+      "websocket": "/ws/chat"
+    },
+    "search": {
+      "query": "/search"
+    },
+    "progressions": {
+      "list": "/progressions",
+      "create": "/progressions"
+    },
+    "media": {
+      "upload": "/media/upload",
+      "download": "/media/{id}",
+      "delete": "/media/{id}"
+    }
+  },
+  "auth": {
+    "tokenKey": "pair_access_token",
+    "refreshTokenKey": "pair_refresh_token",
+    "tokenExpiryMs": 900000,
+    "refreshTokenExpiryMs": 2592000000
+  },
+  "map": {
+    "defaultCenter": {
+      "lat": 48.8566,
+      "lng": 2.3522
+    },
+    "defaultZoom": 12,
+    "minRadiusMeters": 500,
+    "maxRadiusMeters": 50000,
+    "defaultRadiusMeters": 5000
+  },
+  "upload": {
+    "maxFileSize": 10485760,
+    "allowedTypes": {
+      "avatar": ["image/jpeg", "image/png", "image/webp"],
+      "media": ["image/jpeg", "image/png", "image/webp", "video/mp4", "application/pdf"]
+    }
+  },
+  "chat": {
+    "maxMessageLength": 4000,
+    "typingIndicatorTimeout": 3000,
+    "reconnectInterval": 5000
+  },
+  "search": {
+    "debounceMs": 300,
+    "minQueryLength": 2,
+    "maxResults": 20
+  },
+  "pagination": {
+    "defaultPageSize": 20,
+    "maxPageSize": 50
+  }
+}

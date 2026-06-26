@@ -5,6 +5,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 import lombok.*;
 import org.program.pair.domain.activity.UserActivity;
+import org.program.pair.domain.indexation.ProgramIndexationListener;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
@@ -20,7 +21,7 @@ import java.util.UUID;
     @Index(name = "idx_programs_status", columnList = "status"),
     @Index(name = "idx_programs_archived", columnList = "archived_at")
 })
-@EntityListeners(AuditingEntityListener.class)
+@EntityListeners({AuditingEntityListener.class, ProgramIndexationListener.class})
 @Getter
 @Setter
 @NoArgsConstructor
@@ -45,8 +46,9 @@ public class Program {
     @Size(max = 3000)
     private String description;
 
-    @Column(columnDefinition = "vector(1536)")
-    private float[] embedding;
+    // TODO Phase 2: Re-enable when pgvector is properly configured
+    // @Column(columnDefinition = "vector(1536)")
+    // private float[] embedding;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)

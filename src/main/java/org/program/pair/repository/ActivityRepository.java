@@ -16,6 +16,13 @@ public interface ActivityRepository extends JpaRepository<Activity, UUID> {
 
     Optional<Activity> findBySlug(String slug);
 
+    Page<Activity> findByCategoryId(UUID categoryId, Pageable pageable);
+
+    Page<Activity> findByNameContainingIgnoreCase(String name, Pageable pageable);
+
+    Page<Activity> findByCategoryIdAndNameContainingIgnoreCase(
+        UUID categoryId, String name, Pageable pageable);
+
     @Query("SELECT a FROM Activity a WHERE " +
            "(:categoryId IS NULL OR a.category.id = :categoryId) AND " +
            "(:search IS NULL OR LOWER(a.name) LIKE LOWER(CONCAT('%', :search, '%')))")
