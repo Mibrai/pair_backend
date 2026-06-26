@@ -86,10 +86,13 @@ public class SecurityConfig {
         // Origines autorisées (frontend)
         configuration.setAllowedOriginPatterns(Arrays.asList(
             "http://localhost:*",
-            "http://127.0.0.1:*",
-            "http://192.168.*.*:*",
-            "http://10.*.*.*:*",
             "https://localhost:*",
+            "http://127.0.0.1:*",
+            "https://127.0.0.1:*",
+            "http://192.168.*.*:*",
+            "https://192.168.*.*:*",
+            "http://10.*.*.*:*",
+            "https://10.*.*.*:*",
             "https://*.pair.app"
         ));
 
