@@ -1,6 +1,6 @@
 {
-  "apiBaseUrl": "http://192.168.2.47:8090/api",
-  "wsBaseUrl": "ws://192.168.2.47:8090/ws",
+  "apiBaseUrl": "http://192.168.2.214:8090/api",
+  "wsBaseUrl": "ws://192.168.2.214:8090/ws",
   "app": {
     "name": "Pair",
     "version": "1.0.0",
