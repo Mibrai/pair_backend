@@ -13,6 +13,9 @@ import java.util.UUID;
 @Repository
 public interface ProgramRepository extends JpaRepository<Program, UUID> {
 
+    @Query("SELECT COUNT(p) FROM Program p WHERE p.userActivity.user.id = :userId")
+    long countProgramsByUser(@Param("userId") UUID userId);
+
     @Query(value = """
         SELECT p.* FROM programs p
         JOIN user_activities ua ON p.user_activity_id = ua.id
@@ -38,6 +41,8 @@ public interface ProgramRepository extends JpaRepository<Program, UUID> {
     );
 
     List<Program> findByUserActivityUserIdAndStatusNot(UUID userId, ProgramStatus status);
+
+    List<Program> findByUserActivityId(UUID userActivityId);
 
     @Query("SELECT COUNT(p) FROM Program p WHERE p.userActivity.user.id = :userId AND p.status = 'ACTIVE'")
     int countActiveByUserId(@Param("userId") UUID userId);

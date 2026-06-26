@@ -1,0 +1,153 @@
+[INFO] Scanning for projects...
+[INFO] 
+[INFO] --------------------------< org.program:Pair >--------------------------
+[INFO] Building Pair 0.0.1-SNAPSHOT
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[INFO] 
+[INFO] >>> spring-boot:4.1.0:run (default-cli) > test-compile @ Pair >>>
+[INFO] 
+[INFO] --- resources:3.5.0:resources (default-resources) @ Pair ---
+[INFO] Copying 1 resource from src\main\resources to target\classes
+[INFO] Copying 16 resources from src\main\resources to target\classes
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ Pair ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.5.0:testResources (default-testResources) @ Pair ---
+[INFO] skip non existing resourceDirectory C:\Users\paric\Downloads\core-spring-labfiles\core-spring-labfiles\Pair\src\test\resources
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ Pair ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] <<< spring-boot:4.1.0:run (default-cli) < test-compile @ Pair <<<
+[INFO] 
+[INFO] 
+[INFO] --- spring-boot:4.1.0:run (default-cli) @ Pair ---
+[INFO] Attaching agents: []
+
+  .   ____          _            __ _ _
+ /\\ / ___'_ __ _ _(_)_ __  __ _ \ \ \ \
+( ( )\___ | '_ | '_| | '_ \/ _` | \ \ \ \
+ \\/  ___)| |_)| | | | | || (_| |  ) ) ) )
+  '  |____| .__|_| |_|_| |_\__, | / / / /
+ =========|_|==============|___/=/_/_/_/
+
+ :: Spring Boot ::                (v4.1.0)
+
+2026-06-24T21:00:58.185+02:00  INFO 33744 --- [Pair] [  restartedMain] org.program.pair.PairApplication         : Starting PairApplication using Java 21.0.1 with PID 33744 (C:\Users\paric\Downloads\core-spring-labfiles\core-spring-labfiles\Pair\target\classes started by paric in C:\Users\paric\Downloads\core-spring-labfiles\core-spring-labfiles\Pair)
+2026-06-24T21:00:58.194+02:00  INFO 33744 --- [Pair] [  restartedMain] org.program.pair.PairApplication         : No active profile set, falling back to 1 default profile: "default"
+2026-06-24T21:00:58.336+02:00  INFO 33744 --- [Pair] [  restartedMain] .e.DevToolsPropertyDefaultsPostProcessor : Devtools property defaults active! Set 'spring.devtools.add-properties' to 'false' to disable
+2026-06-24T21:00:58.336+02:00  INFO 33744 --- [Pair] [  restartedMain] .e.DevToolsPropertyDefaultsPostProcessor : For additional web related logging consider setting the 'logging.level.web' property to 'DEBUG'
+2026-06-24T21:01:02.967+02:00  INFO 33744 --- [Pair] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-06-24T21:01:03.458+02:00  INFO 33744 --- [Pair] [  restartedMain] .s.d.r.c.RepositoryConfigurationDelegate : Finished Spring Data repository scanning in 465 ms. Found 20 JPA repository interfaces.
+2026-06-24T21:01:08.562+02:00  INFO 33744 --- [Pair] [  restartedMain] o.s.boot.tomcat.TomcatWebServer          : Tomcat initialized with port 8090 (http)
+2026-06-24T21:01:08.594+02:00  INFO 33744 --- [Pair] [  restartedMain] o.apache.catalina.core.StandardService   : Starting service [Tomcat]
+2026-06-24T21:01:08.595+02:00  INFO 33744 --- [Pair] [  restartedMain] o.apache.catalina.core.StandardEngine    : Starting Servlet engine: [Apache Tomcat/11.0.22]
+2026-06-24T21:01:08.778+02:00  INFO 33744 --- [Pair] [  restartedMain] b.w.c.s.WebApplicationContextInitializer : Root WebApplicationContext: initialization completed in 10440 ms
+2026-06-24T21:01:09.594+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.jpa                    : HHH008540: Processing PersistenceUnitInfo [name: default]
+2026-06-24T21:01:09.841+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.core                   : HHH000001: Hibernate ORM core version 7.4.1.Final
+2026-06-24T21:01:09.874+02:00  INFO 33744 --- [Pair] [  restartedMain] o.h.spatial.integration.SpatialService   : HHH80000001: Hibernate Spatial integration enabled: true
+2026-06-24T21:01:10.861+02:00  INFO 33744 --- [Pair] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Starting...
+2026-06-24T21:01:11.323+02:00  INFO 33744 --- [Pair] [  restartedMain] com.zaxxer.hikari.pool.HikariPool        : HikariPool-1 - Added connection org.postgresql.jdbc.PgConnection@e74ef6a
+2026-06-24T21:01:11.326+02:00  INFO 33744 --- [Pair] [  restartedMain] com.zaxxer.hikari.HikariDataSource       : HikariPool-1 - Start completed.
+2026-06-24T21:01:11.480+02:00  WARN 33744 --- [Pair] [  restartedMain] org.hibernate.orm.deprecation            : HHH90000025: PostgreSQLDialect does not need to be specified explicitly using 'hibernate.dialect' (remove the property setting and it will be selected by default)
+2026-06-24T21:01:11.597+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.connections.pooling    : HHH10001005: Database info:
+	Database JDBC URL [jdbc:postgresql://localhost:5432/pair_db]
+	Database driver: PostgreSQL JDBC Driver
+	Database dialect: PostgreSQLDialect
+	Database version: 18.4
+	Default catalog/schema: pair_db/public
+	Autocommit mode: undefined/unknown
+	Isolation level: READ_COMMITTED [default READ_COMMITTED]
+	JDBC fetch size: none
+	Pool: DataSourceConnectionProvider
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-06-24T21:01:12.554+02:00  INFO 33744 --- [Pair] [  restartedMain] o.s.o.j.p.SpringPersistenceUnitInfo      : No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-06-24T21:01:12.677+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.905+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.911+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.918+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.919+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.919+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.919+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.920+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.920+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.921+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.921+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.926+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.927+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.929+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.929+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.930+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.930+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.933+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.933+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.936+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.937+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.953+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.954+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.954+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.955+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.962+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.964+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.965+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.969+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.970+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.972+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.978+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.980+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:13.982+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:14.060+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.incubating             : HHH90006001: Setting 'hibernate.type.preferred_instant_jdbc_type' is still incubating (see Javadoc of corresponding member of 'org.hibernate.cfg.AvailableSettings')
+2026-06-24T21:01:17.023+02:00  INFO 33744 --- [Pair] [  restartedMain] org.hibernate.orm.core                   : HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-06-24T21:01:17.038+02:00  INFO 33744 --- [Pair] [  restartedMain] j.LocalContainerEntityManagerFactoryBean : Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-06-24T21:01:17.235+02:00  INFO 33744 --- [Pair] [  restartedMain] o.s.d.j.r.query.QueryEnhancerFactories   : Hibernate is in classpath; If applicable, HQL parser will be used.
+2026-06-24T21:01:23.493+02:00  INFO 33744 --- [Pair] [  restartedMain] org.program.pair.config.AsyncConfig      : Indexation async executor initialized: core=2, max=5, queue=100
+2026-06-24T21:01:23.509+02:00  WARN 33744 --- [Pair] [  restartedMain] org.program.pair.config.FirebaseConfig   : Firebase is disabled. Push notifications will not work.
+2026-06-24T21:01:23.880+02:00  WARN 33744 --- [Pair] [  restartedMain] JpaBaseConfiguration$JpaWebConfiguration : spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2026-06-24T21:01:23.973+02:00  INFO 33744 --- [Pair] [  restartedMain] r$InitializeUserDetailsManagerConfigurer : Global AuthenticationManager configured with UserDetailsService bean with name userDetailsServiceImpl
+2026-06-24T21:01:30.075+02:00  INFO 33744 --- [Pair] [  restartedMain] hedulerFactoryBean$LocalSchedulerFactory : Using default implementation for ThreadExecutor
+2026-06-24T21:01:30.135+02:00  INFO 33744 --- [Pair] [  restartedMain] org.quartz.core.SchedulerSignalerImpl    : Initialized Scheduler Signaller of type: class org.quartz.core.SchedulerSignalerImpl
+2026-06-24T21:01:30.136+02:00  INFO 33744 --- [Pair] [  restartedMain] org.quartz.core.QuartzScheduler          : Quartz Scheduler v2.5.2 created.
+2026-06-24T21:01:30.138+02:00  INFO 33744 --- [Pair] [  restartedMain] org.quartz.simpl.RAMJobStore             : RAMJobStore initialized.
+2026-06-24T21:01:30.141+02:00  INFO 33744 --- [Pair] [  restartedMain] org.quartz.core.QuartzScheduler          : Scheduler meta-data: Quartz Scheduler (v2.5.2) 'quartzScheduler' with instanceId 'NON_CLUSTERED'
+  Scheduler class: 'org.quartz.core.QuartzScheduler' - running locally.
+  NOT STARTED.
+  Currently in standby mode.
+  Number of jobs executed: 0
+  Using thread pool 'org.quartz.simpl.SimpleThreadPool' - with 10 threads.
+  Using job-store 'org.quartz.simpl.RAMJobStore' - which does not support persistence. and is not clustered.
+
+2026-06-24T21:01:30.142+02:00  INFO 33744 --- [Pair] [  restartedMain] hedulerFactoryBean$LocalSchedulerFactory : Quartz scheduler 'quartzScheduler' initialized from an externally provided properties instance.
+2026-06-24T21:01:30.142+02:00  INFO 33744 --- [Pair] [  restartedMain] hedulerFactoryBean$LocalSchedulerFactory : Quartz scheduler version: 2.5.2
+2026-06-24T21:01:30.142+02:00  INFO 33744 --- [Pair] [  restartedMain] org.quartz.core.QuartzScheduler          : JobFactory set to: org.springframework.scheduling.quartz.SpringBeanJobFactory@1508e1ef
+2026-06-24T21:01:31.167+02:00  INFO 33744 --- [Pair] [  restartedMain] o.s.b.a.e.web.EndpointLinksResolver      : Exposing 3 endpoints beneath base path '/actuator'
+2026-06-24T21:01:32.291+02:00  INFO 33744 --- [Pair] [  restartedMain] o.s.m.s.b.SimpleBrokerMessageHandler     : Starting...
+2026-06-24T21:01:32.291+02:00  INFO 33744 --- [Pair] [  restartedMain] o.s.m.s.b.SimpleBrokerMessageHandler     : BrokerAvailabilityEvent[available=true, SimpleBrokerMessageHandler [org.springframework.messaging.simp.broker.DefaultSubscriptionRegistry@4385c6a6]]
+2026-06-24T21:01:32.299+02:00  INFO 33744 --- [Pair] [  restartedMain] o.s.m.s.b.SimpleBrokerMessageHandler     : Started.
+2026-06-24T21:01:32.441+02:00  INFO 33744 --- [Pair] [  restartedMain] o.s.boot.tomcat.TomcatWebServer          : Tomcat started on port 8090 (http) with context path '/'
+2026-06-24T21:01:32.445+02:00  INFO 33744 --- [Pair] [  restartedMain] o.s.s.quartz.SchedulerFactoryBean        : Starting Quartz Scheduler now
+2026-06-24T21:01:32.445+02:00  INFO 33744 --- [Pair] [  restartedMain] org.quartz.core.QuartzScheduler          : Scheduler quartzScheduler_$_NON_CLUSTERED started.
+2026-06-24T21:01:32.527+02:00  INFO 33744 --- [Pair] [  restartedMain] org.program.pair.PairApplication         : Started PairApplication in 36.115 seconds (process running for 38.431)
+2026-06-24T21:01:32.779+02:00  INFO 33744 --- [Pair] [nio-8090-exec-3] o.a.c.c.C.[Tomcat].[localhost].[/]       : Initializing Spring DispatcherServlet 'dispatcherServlet'
+2026-06-24T21:01:32.779+02:00  INFO 33744 --- [Pair] [nio-8090-exec-3] o.s.web.servlet.DispatcherServlet        : Initializing Servlet 'dispatcherServlet'
+2026-06-24T21:01:32.786+02:00  INFO 33744 --- [Pair] [nio-8090-exec-3] o.s.web.servlet.DispatcherServlet        : Completed initialization in 7 ms
+2026-06-24T21:01:32.945+02:00  INFO 33744 --- [Pair] [  restartedMain] o.p.p.domain.media.LocalStorageService   : Storage initialized at: C:\Users\paric\Downloads\core-spring-labfiles\core-spring-labfiles\Pair\uploads
+2026-06-24T21:01:32.945+02:00  INFO 33744 --- [Pair] [  restartedMain] org.program.pair.config.StorageConfig    : Storage initialized successfully
+2026-06-24T21:01:40.181+02:00  INFO 33744 --- [Pair] [nio-8090-exec-4] o.p.p.d.auth.EmailVerificationService    : Email verification token for test@example.com: 24a8e83d-99aa-498b-8392-233f79f5cbb8
+2026-06-24T21:01:45.330+02:00  WARN 33744 --- [Pair] [nio-8090-exec-8] .m.m.a.ExceptionHandlerExceptionResolver : Resolved [org.program.pair.shared.exception.EmailAlreadyExistsException: Cet email est déjà utilisé.]
+2026-06-24T21:02:32.048+02:00  INFO 33744 --- [Pair] [MessageBroker-1] o.s.w.s.c.WebSocketMessageBrokerStats    : WebSocketSession[0 current WS(0)-HttpStream(0)-HttpPoll(0), 0 total, 0 closed abnormally (0 connect failure, 0 send limit, 0 transport error)], stompSubProtocol[processed CONNECT(0)-CONNECTED(0)-DISCONNECT(0)], stompBrokerRelay[null], inboundChannel[pool size = 0, active threads = 0, queued tasks = 0, completed tasks = 0], outboundChannel[pool size = 0, active threads = 0, queued tasks = 0, completed tasks = 0], sockJsScheduler[pool size = 1, active threads = 1, queued tasks = 0, completed tasks = 0]
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  02:18 min
+[INFO] Finished at: 2026-06-24T21:02:55+02:00
+[INFO] ------------------------------------------------------------------------
+[ERROR] Failed to execute goal org.springframework.boot:spring-boot-maven-plugin:4.1.0:run (default-cli) on project Pair: Process terminated with exit code: 1 -> [Help 1]
+[ERROR] 
+[ERROR] To see the full stack trace of the errors, re-run Maven with the -e switch.
+[ERROR] Re-run Maven using the -X switch to enable full debug logging.
+[ERROR] 
+[ERROR] For more information about the errors and possible solutions, please read the following articles:
+[ERROR] [Help 1] http://cwiki.apache.org/confluence/display/MAVEN/MojoExecutionException
