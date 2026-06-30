@@ -1,0 +1,12 @@
+[
+  { "code": "sport",        "name": "Sport",              "icon": "dumbbell",        "colorRamp": "#EF4444" },
+  { "code": "arts",         "name": "Arts & Création",    "icon": "palette",         "colorRamp": "#8B5CF6" },
+  { "code": "jeux",         "name": "Jeux",                "icon": "dice-5",          "colorRamp": "#F59E0B" },
+  { "code": "cuisine",      "name": "Cuisine",             "icon": "chef-hat",        "colorRamp": "#F97316" },
+  { "code": "apprentissage","name": "Apprentissage",       "icon": "book-open",       "colorRamp": "#3B82F6" },
+  { "code": "plein_air",    "name": "Plein air",           "icon": "mountain",        "colorRamp": "#10B981" },
+  { "code": "musique",      "name": "Musique",             "icon": "music",           "colorRamp": "#EC4899" },
+  { "code": "benevolat",    "name": "Bénévolat",           "icon": "heart-handshake", "colorRamp": "#06B6D4" },
+  { "code": "bien_etre",    "name": "Bien-être",           "icon": "sparkles",        "colorRamp": "#A855F7" },
+  { "code": "tech",         "name": "Tech & Numérique",    "icon": "cpu",             "colorRamp": "#6366F1" }
+]
