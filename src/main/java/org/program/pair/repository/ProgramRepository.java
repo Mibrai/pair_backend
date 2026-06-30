@@ -3,6 +3,7 @@ package org.program.pair.repository;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.ProgramStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -46,4 +47,8 @@ public interface ProgramRepository extends JpaRepository<Program, UUID> {
 
     @Query("SELECT COUNT(p) FROM Program p WHERE p.userActivity.user.id = :userId AND p.status = 'ACTIVE'")
     int countActiveByUserId(@Param("userId") UUID userId);
+
+    @Modifying
+    @Query(value = "UPDATE programs SET embedding = CAST(:embedding AS vector) WHERE id = :id", nativeQuery = true)
+    void updateEmbedding(@Param("id") UUID id, @Param("embedding") String embeddingVectorString);
 }

@@ -4,10 +4,12 @@ import org.program.pair.domain.activity.Activity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -31,4 +33,12 @@ public interface ActivityRepository extends JpaRepository<Activity, UUID> {
         @Param("search") String search,
         Pageable pageable
     );
+
+    boolean existsBySlug(String slug);
+
+    List<Activity> findByEmbeddingIsNull();
+
+    @Modifying
+    @Query(value = "UPDATE activities SET embedding = CAST(:embedding AS vector) WHERE id = :id", nativeQuery = true)
+    void updateEmbedding(@Param("id") UUID id, @Param("embedding") String embeddingVectorString);
 }

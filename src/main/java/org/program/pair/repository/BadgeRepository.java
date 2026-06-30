@@ -10,4 +10,6 @@ import java.util.UUID;
 @Repository
 public interface BadgeRepository extends JpaRepository<Badge, UUID> {
     Optional<Badge> findByCode(String code);
+
+    boolean existsByCode(String code);
 }
