@@ -45,9 +45,7 @@ public class Activity {
     @Column(length = 500)
     private String description;
 
-    // TODO Phase 2: Re-enable when pgvector is properly installed
-    // @Column(columnDefinition = "vector(1536)")
-    // private float[] embedding;
+    // La colonne embedding (vector 1536) existe en DB mais est gérée via JDBC dans IndexationService.
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)

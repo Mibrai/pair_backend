@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.review.dto.CreateReviewRequest;
 import org.program.pair.domain.review.dto.ReviewDto;
+import org.program.pair.domain.review.dto.ReviewSummaryDto;
 import org.program.pair.shared.security.UserPrincipal;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -39,6 +40,12 @@ public class ReviewController {
         Review review = reviewService.createReview(currentUser.getId(), request);
         return ResponseEntity.status(HttpStatus.CREATED)
             .body(ReviewDto.fromEntity(review));
+    }
+
+    @GetMapping("/programs/{programId}/summary")
+    @Operation(summary = "Résumé des avis d'un programme", description = "Note moyenne, nombre total et moyennes par critère")
+    public ResponseEntity<ReviewSummaryDto> getProgramReviewSummary(@PathVariable UUID programId) {
+        return ResponseEntity.ok(reviewService.getProgramReviewSummary(programId));
     }
 
     @GetMapping("/programs/{programId}")

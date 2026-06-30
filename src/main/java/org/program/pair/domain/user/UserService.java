@@ -6,6 +6,7 @@ import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
 import org.program.pair.domain.user.dto.*;
+import org.program.pair.repository.BadgeAwardRepository;
 import org.program.pair.repository.UserRepository;
 import org.program.pair.shared.exception.UserNotFoundException;
 import org.program.pair.shared.sanitizer.HtmlSanitizer;
@@ -22,6 +23,7 @@ import java.util.UUID;
 public class UserService {
 
     private final UserRepository userRepository;
+    private final BadgeAwardRepository badgeAwardRepository;
     private final HtmlSanitizer sanitizer;
     private final GeometryFactory geometryFactory = new GeometryFactory(
         new PrecisionModel(), 4326);
@@ -97,13 +99,17 @@ public class UserService {
             && user.getLastActiveAt() != null
             && user.getLastActiveAt().isAfter(Instant.now().minusSeconds(300)); // 5 min
 
+        List<String> badgeCodes = badgeAwardRepository.findByUserId(user.getId()).stream()
+            .map(award -> award.getBadge().getCode())
+            .toList();
+
         return new UserPublicDto(
             user.getId(),
             user.getDisplayName(),
             user.getBio(),
             user.getAvatarUrl(),
             user.getVerificationStatus().name(),
-            List.of(), // badges — Phase 3
+            badgeCodes,
             List.of(), // activities — rempli par ActivityService
             showOnline
         );

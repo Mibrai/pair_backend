@@ -1,5 +1,5 @@
 -- Create reviews table
-CREATE TABLE reviews (
+CREATE TABLE IF NOT EXISTS reviews (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     program_id              UUID NOT NULL,
     reviewer_id             UUID NOT NULL,
@@ -13,11 +13,11 @@ CREATE TABLE reviews (
     CONSTRAINT uq_review_program_reviewer UNIQUE (program_id, reviewer_id)
 );
 
-CREATE INDEX idx_reviews_program ON reviews(program_id);
-CREATE INDEX idx_reviews_reviewer ON reviews(reviewer_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_program ON reviews(program_id);
+CREATE INDEX IF NOT EXISTS idx_reviews_reviewer ON reviews(reviewer_id);
 
 -- Create review_criteria table
-CREATE TABLE review_criteria (
+CREATE TABLE IF NOT EXISTS review_criteria (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     review_id       UUID NOT NULL,
     criterion_key   VARCHAR(30) NOT NULL,
@@ -26,7 +26,7 @@ CREATE TABLE review_criteria (
 );
 
 -- Create peer_recommendations table
-CREATE TABLE peer_recommendations (
+CREATE TABLE IF NOT EXISTS peer_recommendations (
     id                      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     from_user_id            UUID NOT NULL,
     to_user_id              UUID NOT NULL,
@@ -39,11 +39,11 @@ CREATE TABLE peer_recommendations (
     CONSTRAINT uq_peer_rec_from_to UNIQUE (from_user_id, to_user_id)
 );
 
-CREATE INDEX idx_peer_rec_to ON peer_recommendations(to_user_id);
-CREATE INDEX idx_peer_rec_from ON peer_recommendations(from_user_id);
+CREATE INDEX IF NOT EXISTS idx_peer_rec_to ON peer_recommendations(to_user_id);
+CREATE INDEX IF NOT EXISTS idx_peer_rec_from ON peer_recommendations(from_user_id);
 
 -- Create badges table
-CREATE TABLE badges (
+CREATE TABLE IF NOT EXISTS badges (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     code                VARCHAR(60) NOT NULL UNIQUE,
     category            VARCHAR(20) NOT NULL,
@@ -54,7 +54,7 @@ CREATE TABLE badges (
 );
 
 -- Create badge_awards table
-CREATE TABLE badge_awards (
+CREATE TABLE IF NOT EXISTS badge_awards (
     badge_id    UUID NOT NULL,
     user_id     UUID NOT NULL,
     awarded_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),

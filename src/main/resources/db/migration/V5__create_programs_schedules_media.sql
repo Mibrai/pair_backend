@@ -1,5 +1,5 @@
 -- Create programs table
-CREATE TABLE programs (
+CREATE TABLE IF NOT EXISTS programs (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_activity_id    UUID NOT NULL,
     title               VARCHAR(150) NOT NULL,
@@ -13,13 +13,13 @@ CREATE TABLE programs (
     CONSTRAINT fk_programs_user_activity FOREIGN KEY (user_activity_id) REFERENCES user_activities(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_programs_user_activity ON programs(user_activity_id);
-CREATE INDEX idx_programs_status ON programs(status);
-CREATE INDEX idx_programs_archived ON programs(archived_at);
-CREATE INDEX idx_programs_embedding ON programs USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
+CREATE INDEX IF NOT EXISTS idx_programs_user_activity ON programs(user_activity_id);
+CREATE INDEX IF NOT EXISTS idx_programs_status ON programs(status);
+CREATE INDEX IF NOT EXISTS idx_programs_archived ON programs(archived_at);
+CREATE INDEX IF NOT EXISTS idx_programs_embedding ON programs USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
 
 -- Create schedules table
-CREATE TABLE schedules (
+CREATE TABLE IF NOT EXISTS schedules (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     program_id          UUID NOT NULL,
     place_name          VARCHAR(200) NOT NULL,
@@ -35,12 +35,12 @@ CREATE TABLE schedules (
     CONSTRAINT fk_schedules_program FOREIGN KEY (program_id) REFERENCES programs(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_schedules_program ON schedules(program_id);
-CREATE INDEX idx_schedules_starts_at ON schedules(starts_at);
-CREATE INDEX idx_schedules_location ON schedules USING GIST(location);
+CREATE INDEX IF NOT EXISTS idx_schedules_program ON schedules(program_id);
+CREATE INDEX IF NOT EXISTS idx_schedules_starts_at ON schedules(starts_at);
+CREATE INDEX IF NOT EXISTS idx_schedules_location ON schedules USING GIST(location);
 
 -- Create program_media table
-CREATE TABLE program_media (
+CREATE TABLE IF NOT EXISTS program_media (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     program_id  UUID NOT NULL,
     url         VARCHAR(500) NOT NULL,
@@ -50,4 +50,4 @@ CREATE TABLE program_media (
     CONSTRAINT fk_program_media_program FOREIGN KEY (program_id) REFERENCES programs(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_media_program ON program_media(program_id);
+CREATE INDEX IF NOT EXISTS idx_media_program ON program_media(program_id);

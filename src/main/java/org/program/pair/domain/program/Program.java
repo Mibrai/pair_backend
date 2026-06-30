@@ -46,9 +46,8 @@ public class Program {
     @Size(max = 3000)
     private String description;
 
-    // TODO Phase 2: Re-enable when pgvector is properly configured
-    // @Column(columnDefinition = "vector(1536)")
-    // private float[] embedding;
+    // La colonne embedding (vector 1536) existe en DB mais est gérée via JDBC dans IndexationService.
+    // Pas de mapping JPA pour éviter la complexité de l'enregistrement du type pgvector.
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.search.dto.*;
+import org.program.pair.repository.ProgramRepository;
 import org.program.pair.repository.SearchLogRepository;
 import org.program.pair.repository.UserRepository;
 import org.springframework.stereotype.Service;
@@ -19,7 +20,9 @@ import java.util.UUID;
 public class SemanticSearchService {
 
     private final LlmIntentExtractor intentExtractor;
+    private final EmbeddingService embeddingService;
     private final FullTextSearchService fullTextSearchService;
+    private final ProgramRepository programRepository;
     private final SearchLogRepository searchLogRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
@@ -29,10 +32,11 @@ public class SemanticSearchService {
         log.info("Search request from user {}: '{}'", userId, request.query());
 
         // 1. Logger la recherche brute
+        String method = embeddingService.isConfigured() ? "semantic" : "fulltext";
         SearchLog searchLog = SearchLog.builder()
             .user(userRepository.getReferenceById(userId))
             .rawQuery(request.query())
-            .searchMethod("fulltext")
+            .searchMethod(method)
             .build();
 
         // 2. Extraire l'intention via LLM (ou fallback)
@@ -84,36 +88,28 @@ public class SemanticSearchService {
     }
 
     private List<SearchResultDto> performSearch(SearchRequest request, SearchIntent intent, int radius) {
-        // Créer une nouvelle requête avec le rayon déterminé
         SearchRequest searchRequest = new SearchRequest(
-            request.query(),
-            request.lat(),
-            request.lng(),
-            radius
-        );
+            request.query(), request.lat(), request.lng(), radius);
 
-        // Essayer d'abord la recherche full-text avec tous les mots-clés
-        String keywords = intent.activityKeyword() != null
-            ? intent.activityKeyword()
-            : request.query();
+        List<SearchResultDto> results;
 
-        List<SearchResultDto> results = fullTextSearchService.searchPrograms(
-            keywords,
-            searchRequest,
-            20
-        );
-
-        // Si pas de résultats et qu'on a un mot-clé d'activité, essayer une recherche exacte
-        if (results.isEmpty() && intent.activityKeyword() != null) {
-            log.debug("Full-text search returned no results, trying exact activity search");
-            results = fullTextSearchService.searchByActivity(
-                intent.activityKeyword(),
-                searchRequest,
-                20
-            );
+        if (embeddingService.isConfigured()) {
+            // Recherche sémantique via pgvector
+            float[] embedding = embeddingService.generateEmbedding(request.query());
+            if (embedding != null) {
+                results = toSearchResultDtos(
+                    programRepository.semanticSearchInRadius(
+                        embeddingService.toVectorString(embedding),
+                        request.lat(), request.lng(), radius, 20),
+                    request.lat(), request.lng());
+            } else {
+                results = fulltextFallback(intent, searchRequest);
+            }
+        } else {
+            results = fulltextFallback(intent, searchRequest);
         }
 
-        // Filtrer par niveau si spécifié
+        // Filtrer par niveau si spécifié par le LLM
         if (intent.level() != null && !results.isEmpty()) {
             results = results.stream()
                 .filter(r -> r.level() != null && r.level().equalsIgnoreCase(intent.level()))
@@ -129,6 +125,54 @@ public class SemanticSearchService {
         }
 
         return results;
+    }
+
+    private List<SearchResultDto> fulltextFallback(SearchIntent intent, SearchRequest searchRequest) {
+        String keywords = intent.activityKeyword() != null ? intent.activityKeyword() : searchRequest.query();
+        List<SearchResultDto> results = fullTextSearchService.searchPrograms(keywords, searchRequest, 20);
+
+        if (results.isEmpty() && intent.activityKeyword() != null) {
+            log.debug("Full-text returned nothing, trying exact activity match");
+            results = fullTextSearchService.searchByActivity(intent.activityKeyword(), searchRequest, 20);
+        }
+        return results;
+    }
+
+    private List<SearchResultDto> toSearchResultDtos(
+            List<org.program.pair.domain.program.Program> programs,
+            double lat, double lng) {
+
+        return programs.stream().map(p -> {
+            var owner = p.getUserActivity().getUser();
+            var ownerLoc = owner.getLocation();
+            double dist = 0;
+            if (ownerLoc != null) {
+                double dLat = Math.toRadians(ownerLoc.getY() - lat);
+                double dLng = Math.toRadians(ownerLoc.getX() - lng);
+                double a = Math.sin(dLat/2) * Math.sin(dLat/2)
+                    + Math.cos(Math.toRadians(lat)) * Math.cos(Math.toRadians(ownerLoc.getY()))
+                    * Math.sin(dLng/2) * Math.sin(dLng/2);
+                dist = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            }
+            boolean isOnline = owner.getLastActiveAt() != null
+                && owner.getLastActiveAt().isAfter(java.time.Instant.now().minusSeconds(300));
+
+            return new SearchResultDto(
+                "program", p.getId(), p.getTitle(),
+                p.getDescription() != null
+                    ? p.getDescription().substring(0, Math.min(200, p.getDescription().length()))
+                    : null,
+                owner.getAvatarUrl(),
+                ownerLoc != null ? ownerLoc.getY() : null,
+                ownerLoc != null ? ownerLoc.getX() : null,
+                dist, 0f,
+                p.getUserActivity().getActivity().getName(),
+                p.getUserActivity().getLevel() != null ? p.getUserActivity().getLevel().name() : null,
+                p.getUserActivity().getFormat() != null ? p.getUserActivity().getFormat().name() : null,
+                isOnline,
+                owner.getVerificationStatus().name()
+            );
+        }).toList();
     }
 
     private List<String> buildAlternativeSuggestions(SearchRequest request, SearchIntent intent, int radius) {
