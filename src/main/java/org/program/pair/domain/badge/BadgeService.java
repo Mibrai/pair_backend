@@ -5,15 +5,19 @@ import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.trust.Badge;
 import org.program.pair.domain.trust.BadgeAward;
 import org.program.pair.domain.user.User;
+import org.program.pair.domain.user.VerificationStatus;
 import org.program.pair.repository.BadgeAwardRepository;
 import org.program.pair.repository.BadgeRepository;
 import org.program.pair.repository.ProgramRepository;
 import org.program.pair.repository.ProgressionRepository;
 import org.program.pair.repository.UserActivityRepository;
+import org.program.pair.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,6 +33,7 @@ public class BadgeService {
     private final ProgressionRepository progressionRepository;
     private final UserActivityRepository userActivityRepository;
     private final org.program.pair.repository.PeerRecommendationRepository peerRecommendationRepository;
+    private final UserRepository userRepository;
 
     /**
      * Évalue tous les badges pour un utilisateur et attribue ceux qu'il mérite
@@ -61,7 +66,7 @@ public class BadgeService {
      */
     public boolean isEligible(UUID userId, Badge badge) {
         return switch (badge.getConditionType()) {
-            case VERIFICATION -> checkVerification(userId);
+            case VERIFICATION -> checkVerification(userId, badge.getCode());
             case PROGRAM_COUNT -> checkProgramCount(userId, badge.getConditionThreshold());
             case PROGRESSION_STREAK -> checkProgressionStreak(userId, badge.getConditionThreshold());
             case ACTIVITY_DIVERSITY -> checkActivityDiversity(userId, badge.getConditionThreshold());
@@ -113,10 +118,13 @@ public class BadgeService {
 
     // ===== Condition Checks =====
 
-    private boolean checkVerification(UUID userId) {
-        // TODO: Check if user has verified email or phone
-        // For MVP, always return false (verification not implemented yet)
-        return false;
+    private boolean checkVerification(UUID userId, String badgeCode) {
+        return userRepository.findById(userId).map(u -> switch (badgeCode) {
+            case "VERIFIED_PHONE" -> u.getVerificationStatus() == VerificationStatus.PHONE_VERIFIED
+                || u.getVerificationStatus() == VerificationStatus.ID_VERIFIED;
+            // VERIFIED_EMAIL et tout autre code de vérification
+            default -> u.getVerificationStatus() != VerificationStatus.UNVERIFIED;
+        }).orElse(false);
     }
 
     private boolean checkProgramCount(UUID userId, Integer threshold) {
@@ -125,10 +133,43 @@ public class BadgeService {
     }
 
     private boolean checkProgressionStreak(UUID userId, Integer threshold) {
-        // Count total progressions as streak proxy (simplified)
-        // TODO: Implement proper streak calculation based on consecutive days
-        int count = progressionRepository.countByUserId(userId);
-        return count >= threshold;
+        int streak = computeStreak(userId);
+        return streak >= threshold;
+    }
+
+    private int computeStreak(UUID userId) {
+        List<Object[]> rows = progressionRepository.findProgressionDatesByUserId(userId);
+        if (rows.isEmpty()) return 0;
+
+        // Chaque row = [date, count] — extraire les LocalDate
+        List<LocalDate> dates = rows.stream()
+            .map(row -> toLocalDate(row[0]))
+            .distinct()
+            .sorted(java.util.Comparator.reverseOrder())
+            .toList();
+
+        if (dates.isEmpty()) return 0;
+
+        int streak = 1;
+        LocalDate cursor = dates.get(0);
+
+        for (int i = 1; i < dates.size(); i++) {
+            LocalDate prev = cursor.minusDays(1);
+            if (dates.get(i).equals(prev)) {
+                streak++;
+                cursor = dates.get(i);
+            } else {
+                break;
+            }
+        }
+        return streak;
+    }
+
+    private LocalDate toLocalDate(Object raw) {
+        if (raw instanceof LocalDate ld) return ld;
+        if (raw instanceof java.sql.Date d) return d.toLocalDate();
+        if (raw instanceof Instant inst) return inst.atZone(ZoneOffset.UTC).toLocalDate();
+        return LocalDate.parse(raw.toString());
     }
 
     private boolean checkActivityDiversity(UUID userId, Integer threshold) {

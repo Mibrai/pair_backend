@@ -1,5 +1,5 @@
 -- Create conversations table
-CREATE TABLE conversations (
+CREATE TABLE IF NOT EXISTS conversations (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     type                VARCHAR(10) NOT NULL DEFAULT 'DIRECT',
     activity_context_id UUID,
@@ -8,10 +8,10 @@ CREATE TABLE conversations (
     CONSTRAINT fk_conversations_activity FOREIGN KEY (activity_context_id) REFERENCES activities(id) ON DELETE SET NULL
 );
 
-CREATE INDEX idx_conv_last_message ON conversations(last_message_at);
+CREATE INDEX IF NOT EXISTS idx_conv_last_message ON conversations(last_message_at);
 
 -- Create conversation_members table
-CREATE TABLE conversation_members (
+CREATE TABLE IF NOT EXISTS conversation_members (
     conversation_id UUID NOT NULL,
     user_id         UUID NOT NULL,
     joined_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -22,7 +22,7 @@ CREATE TABLE conversation_members (
 );
 
 -- Create messages table
-CREATE TABLE messages (
+CREATE TABLE IF NOT EXISTS messages (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     conversation_id UUID NOT NULL,
     sender_id       UUID NOT NULL,
@@ -34,6 +34,6 @@ CREATE TABLE messages (
     CONSTRAINT fk_messages_sender FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_messages_conversation ON messages(conversation_id);
-CREATE INDEX idx_messages_sender ON messages(sender_id);
-CREATE INDEX idx_messages_sent_at ON messages(sent_at);
+CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
+CREATE INDEX IF NOT EXISTS idx_messages_sender ON messages(sender_id);
+CREATE INDEX IF NOT EXISTS idx_messages_sent_at ON messages(sent_at);

@@ -3,6 +3,7 @@ package org.program.pair.domain.program;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.program.dto.*;
+import org.program.pair.shared.exception.ValidationException;
 import org.program.pair.shared.security.UserPrincipal;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -32,6 +33,12 @@ public class ProgramController {
     public List<ProgramDto> getMyPrograms(
             @AuthenticationPrincipal UserPrincipal principal) {
         return programService.getMyPrograms(principal.getId());
+    }
+
+    @GetMapping("/new")
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public void getNewProgram() {
+        throw new ValidationException("Utilisez POST /api/programs pour créer un programme.");
     }
 
     @GetMapping("/{programId}")
@@ -64,6 +71,15 @@ public class ProgramController {
             @PathVariable UUID programId,
             @Valid @RequestBody CreateScheduleRequest request) {
         return programService.addSchedule(principal.getId(), programId, request);
+    }
+
+    @PutMapping("/{programId}/schedules/{scheduleId}")
+    public ScheduleDto updateSchedule(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID programId,
+            @PathVariable UUID scheduleId,
+            @Valid @RequestBody UpdateScheduleRequest request) {
+        return programService.updateSchedule(principal.getId(), scheduleId, request);
     }
 
     @DeleteMapping("/{programId}/schedules/{scheduleId}")

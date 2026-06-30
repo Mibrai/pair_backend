@@ -1,5 +1,5 @@
 -- Create categories table
-CREATE TABLE categories (
+CREATE TABLE IF NOT EXISTS categories (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     name        VARCHAR(80) NOT NULL UNIQUE,
     icon        VARCHAR(80),
@@ -7,7 +7,7 @@ CREATE TABLE categories (
 );
 
 -- Create activities table
-CREATE TABLE activities (
+CREATE TABLE IF NOT EXISTS activities (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     parent_id   UUID,
     category_id UUID NOT NULL,
@@ -20,8 +20,8 @@ CREATE TABLE activities (
     CONSTRAINT fk_activities_category FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE RESTRICT
 );
 
-CREATE INDEX idx_activities_slug ON activities(slug);
-CREATE INDEX idx_activities_category ON activities(category_id);
+CREATE INDEX IF NOT EXISTS idx_activities_slug ON activities(slug);
+CREATE INDEX IF NOT EXISTS idx_activities_category ON activities(category_id);
 
 -- Create HNSW index for semantic search
-CREATE INDEX idx_activities_embedding ON activities USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);
+CREATE INDEX IF NOT EXISTS idx_activities_embedding ON activities USING hnsw (embedding vector_cosine_ops) WITH (m = 16, ef_construction = 64);

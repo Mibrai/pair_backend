@@ -9,6 +9,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.Instant;
@@ -79,6 +80,21 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ErrorResponse handleValidation(ValidationException ex) {
         return new ErrorResponse("VALIDATION_ERROR", ex.getMessage(), Instant.now());
+    }
+
+    @ExceptionHandler(BusinessException.class)
+    @ResponseStatus(HttpStatus.UNPROCESSABLE_ENTITY)
+    public ErrorResponse handleBusiness(BusinessException ex) {
+        return new ErrorResponse("BUSINESS_RULE_VIOLATION", ex.getMessage(), Instant.now());
+    }
+
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ErrorResponse handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
+        String message = String.format("Paramètre '%s' invalide : valeur '%s' n'est pas du type attendu.",
+            ex.getName(), ex.getValue());
+        log.warn("Type mismatch: {}", message);
+        return new ErrorResponse("INVALID_PARAMETER", message, Instant.now());
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)

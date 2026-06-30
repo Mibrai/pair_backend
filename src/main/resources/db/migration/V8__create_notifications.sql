@@ -1,5 +1,5 @@
 -- Create notifications table
-CREATE TABLE notifications (
+CREATE TABLE IF NOT EXISTS notifications (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id         UUID NOT NULL,
     type            VARCHAR(40) NOT NULL,
@@ -11,12 +11,12 @@ CREATE TABLE notifications (
     CONSTRAINT fk_notifications_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
-CREATE INDEX idx_notif_user ON notifications(user_id);
-CREATE INDEX idx_notif_sent_at ON notifications(sent_at);
-CREATE INDEX idx_notif_is_read ON notifications(is_read);
+CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notif_sent_at ON notifications(sent_at);
+CREATE INDEX IF NOT EXISTS idx_notif_is_read ON notifications(is_read);
 
 -- Create notification_prefs table
-CREATE TABLE notification_prefs (
+CREATE TABLE IF NOT EXISTS notification_prefs (
     id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id             UUID NOT NULL,
     notification_type   VARCHAR(40) NOT NULL,

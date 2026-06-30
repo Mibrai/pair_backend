@@ -3,16 +3,21 @@ package org.program.pair.domain.review;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.review.dto.CreateReviewRequest;
+import org.program.pair.domain.review.dto.ReviewDto;
+import org.program.pair.domain.review.dto.ReviewSummaryDto;
 import org.program.pair.repository.ConversationRepository;
 import org.program.pair.repository.ProgramRepository;
 import org.program.pair.repository.ReviewRepository;
 import org.program.pair.shared.exception.BusinessException;
 import org.program.pair.shared.exception.ResourceNotFoundException;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -119,6 +124,37 @@ public class ReviewService {
         if (reviewRepository.findByReviewerIdAndProgramId(reviewerId, programId).isPresent()) return false;
 
         return conversationRepository.findDirectBetween(reviewerId, creatorId).isPresent();
+    }
+
+    @Transactional(readOnly = true)
+    public ReviewSummaryDto getProgramReviewSummary(UUID programId) {
+        long total = reviewRepository.countByProgramId(programId);
+        Double avg = reviewRepository.findAverageRatingByProgramId(programId);
+
+        Map<String, Double> criteriaAverages = new HashMap<>();
+        if (total > 0) {
+            List<Review> allReviews = reviewRepository
+                .findByProgramIdOrderByCreatedAtDesc(programId, PageRequest.of(0, Integer.MAX_VALUE))
+                .getContent();
+
+            for (String criterion : VALID_CRITERIA) {
+                double criterionAvg = allReviews.stream()
+                    .map(r -> r.getCriteriaScores().get(criterion))
+                    .filter(score -> score != null)
+                    .mapToInt(Integer::intValue)
+                    .average()
+                    .orElse(0.0);
+                criteriaAverages.put(criterion, criterionAvg);
+            }
+        }
+
+        List<ReviewDto> recent = reviewRepository
+            .findByProgramIdOrderByCreatedAtDesc(programId, PageRequest.of(0, 5))
+            .stream()
+            .map(ReviewDto::fromEntity)
+            .toList();
+
+        return new ReviewSummaryDto(programId, avg, total, criteriaAverages, recent);
     }
 
     private void validateCriteriaScores(Map<String, Integer> scores) {

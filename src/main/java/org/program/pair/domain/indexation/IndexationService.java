@@ -2,6 +2,10 @@ package org.program.pair.domain.indexation;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.program.pair.domain.program.Program;
+import org.program.pair.domain.search.EmbeddingService;
+import org.program.pair.repository.ActivityRepository;
+import org.program.pair.repository.ProgramRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -17,6 +21,9 @@ import java.util.UUID;
 public class IndexationService {
 
     private final JdbcTemplate jdbcTemplate;
+    private final EmbeddingService embeddingService;
+    private final ProgramRepository programRepository;
+    private final ActivityRepository activityRepository;
 
     /**
      * Update search vector for a single program (async)
@@ -25,19 +32,30 @@ public class IndexationService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void updateProgramSearchVector(UUID programId) {
         try {
-            String sql = """
+            jdbcTemplate.update("""
                 UPDATE programs
                 SET search_vector =
                     setweight(to_tsvector('french', coalesce(title, '')), 'A') ||
                     setweight(to_tsvector('french', coalesce(description, '')), 'B')
                 WHERE id = ?
-                """;
+                """, programId);
+            log.debug("Updated tsvector for program {}", programId);
 
-            int updated = jdbcTemplate.update(sql, programId);
-            log.debug("Updated search vector for program: {} (rows: {})", programId, updated);
+            if (embeddingService.isConfigured()) {
+                programRepository.findById(programId).ifPresent(p -> {
+                    String text = buildProgramText(p);
+                    float[] embedding = embeddingService.generateEmbedding(text);
+                    if (embedding != null) {
+                        jdbcTemplate.update(
+                            "UPDATE programs SET embedding = CAST(? AS vector) WHERE id = ?",
+                            embeddingService.toVectorString(embedding), programId);
+                        log.debug("Updated embedding for program {}", programId);
+                    }
+                });
+            }
 
         } catch (Exception e) {
-            log.error("Error updating search vector for program: {}", programId, e);
+            log.error("Error updating index for program {}: {}", programId, e.getMessage());
         }
     }
 
@@ -48,20 +66,43 @@ public class IndexationService {
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void updateActivitySearchVector(UUID activityId) {
         try {
-            String sql = """
+            jdbcTemplate.update("""
                 UPDATE activities
                 SET search_vector =
                     setweight(to_tsvector('french', coalesce(name, '')), 'A') ||
                     setweight(to_tsvector('french', coalesce(description, '')), 'B')
                 WHERE id = ?
-                """;
+                """, activityId);
+            log.debug("Updated tsvector for activity {}", activityId);
 
-            int updated = jdbcTemplate.update(sql, activityId);
-            log.debug("Updated search vector for activity: {} (rows: {})", activityId, updated);
+            if (embeddingService.isConfigured()) {
+                activityRepository.findById(activityId).ifPresent(a -> {
+                    String text = a.getName() + " " + (a.getDescription() != null ? a.getDescription() : "");
+                    float[] embedding = embeddingService.generateEmbedding(text);
+                    if (embedding != null) {
+                        jdbcTemplate.update(
+                            "UPDATE activities SET embedding = CAST(? AS vector) WHERE id = ?",
+                            embeddingService.toVectorString(embedding), activityId);
+                        log.debug("Updated embedding for activity {}", activityId);
+                    }
+                });
+            }
 
         } catch (Exception e) {
-            log.error("Error updating search vector for activity: {}", activityId, e);
+            log.error("Error updating index for activity {}: {}", activityId, e.getMessage());
         }
+    }
+
+    private String buildProgramText(Program p) {
+        StringBuilder sb = new StringBuilder(p.getTitle()).append(". ");
+        if (p.getDescription() != null) sb.append(p.getDescription()).append(". ");
+        if (p.getUserActivity() != null) {
+            sb.append(p.getUserActivity().getActivity().getName()).append(". ");
+            if (p.getUserActivity().getCustomDescription() != null) {
+                sb.append(p.getUserActivity().getCustomDescription());
+            }
+        }
+        return sb.toString();
     }
 
     /**

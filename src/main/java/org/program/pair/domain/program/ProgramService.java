@@ -29,6 +29,7 @@ public class ProgramService {
     private final ScheduleRepository scheduleRepository;
     private final UserActivityRepository userActivityRepository;
     private final ProgramMediaRepository programMediaRepository;
+    private final org.program.pair.repository.ReviewRepository reviewRepository;
     private final HtmlSanitizer sanitizer;
     private final GeometryFactory geometryFactory = new GeometryFactory(
         new PrecisionModel(), 4326);
@@ -127,6 +128,44 @@ public class ProgramService {
         return toScheduleDto(scheduleRepository.save(schedule), userId);
     }
 
+    public ScheduleDto updateSchedule(UUID userId, UUID scheduleId,
+                                       UpdateScheduleRequest request) {
+        Schedule schedule = scheduleRepository.findById(scheduleId)
+            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+
+        UUID ownerId = schedule.getProgram().getUserActivity().getUser().getId();
+        if (!ownerId.equals(userId)) {
+            throw new ForbiddenException("Vous ne pouvez pas modifier ce créneau.");
+        }
+
+        if (request.placeName() != null)
+            schedule.setPlaceName(sanitizer.sanitize(request.placeName()).strip());
+
+        if (request.placeType() != null)
+            schedule.setPlaceType(request.placeType());
+
+        if (request.lat() != null && request.lng() != null)
+            schedule.setLocation(geometryFactory.createPoint(
+                new Coordinate(request.lng(), request.lat())));
+
+        PlaceType effectivePlaceType = schedule.getPlaceType();
+        if (request.addressPublic() != null) {
+            if (effectivePlaceType == PlaceType.PUBLIC
+                    || Boolean.TRUE.equals(request.showExactAddress())) {
+                schedule.setAddressPublic(request.addressPublic());
+            }
+        }
+        if (request.showExactAddress() != null)
+            schedule.setShowExactAddress(request.showExactAddress());
+
+        if (request.startsAt() != null)   schedule.setStartsAt(request.startsAt());
+        if (request.endsAt() != null)     schedule.setEndsAt(request.endsAt());
+        if (request.recurrenceRule() != null) schedule.setRecurrenceRule(request.recurrenceRule());
+        if (request.maxParticipants() != null) schedule.setMaxParticipants(request.maxParticipants());
+
+        return toScheduleDto(scheduleRepository.save(schedule), userId);
+    }
+
     public void deleteSchedule(UUID userId, UUID scheduleId) {
         Schedule schedule = scheduleRepository.findById(scheduleId)
             .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
@@ -169,9 +208,9 @@ public class ProgramService {
             ))
             .collect(Collectors.toList());
 
-        // TODO Phase 2: Calculate averageScore and reviewCount from reviews table
-        Float averageScore = null;
-        Integer reviewCount = 0;
+        Double avgDouble = reviewRepository.findAverageRatingByProgramId(p.getId());
+        Float averageScore = avgDouble != null ? avgDouble.floatValue() : null;
+        Integer reviewCount = (int) reviewRepository.countByProgramId(p.getId());
 
         return new ProgramDto(
             p.getId(),
