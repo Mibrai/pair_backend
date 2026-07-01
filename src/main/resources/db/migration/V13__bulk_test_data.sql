@@ -8,7 +8,7 @@ DECLARE
   users UUID[];
 
   i INT; j INT; k INT;
-  current_user_id UUID;
+  v_user_id UUID;
   cur_id     UUID;
   cur_ua_id  UUID;
   cur_conv   UUID;
@@ -68,8 +68,8 @@ BEGIN
   -- =========================================================
   -- TEMP TABLES
   -- =========================================================
-  CREATE TEMP TABLE _uas   (u_idx INT, seq INT, ua_id UUID, current_user_id UUID)    ON COMMIT DROP;
-  CREATE TEMP TABLE _progs (u_idx INT, seq INT, prog_id UUID, current_user_id UUID)  ON COMMIT DROP;
+  CREATE TEMP TABLE _uas   (u_idx INT, seq INT, ua_id UUID, v_user_id UUID)    ON COMMIT DROP;
+  CREATE TEMP TABLE _progs (u_idx INT, seq INT, prog_id UUID, v_user_id UUID)  ON COMMIT DROP;
   CREATE TEMP TABLE _convs (pair_k INT, conv_j INT, conv_id UUID, ua UUID, ub UUID) ON COMMIT DROP;
 
   -- =========================================================
@@ -102,27 +102,27 @@ BEGIN
   -- 2. USER_ACTIVITIES (up to 20 per user)
   -- =========================================================
   FOR i IN 1..5 LOOP
-    current_user_id := users[i];
+    v_user_id := users[i];
     j   := 0;
     FOR rec IN
       SELECT id
       FROM   activities
-      WHERE  id NOT IN (SELECT activity_id FROM user_activities WHERE user_id = current_user_id)
+      WHERE  id NOT IN (SELECT activity_id FROM user_activities WHERE user_id = v_user_id)
       ORDER  BY created_at
-      LIMIT  GREATEST(0, 20 - (SELECT COUNT(*) FROM user_activities WHERE user_id = current_user_id)::INT)
+      LIMIT  GREATEST(0, 20 - (SELECT COUNT(*) FROM user_activities WHERE user_id = v_user_id)::INT)
     LOOP
       cur_id := gen_random_uuid();
       INSERT INTO user_activities(id, user_id, activity_id, visible_on_map, level, format, created_at)
-      VALUES(cur_id, current_user_id, rec.id, j%3 != 2,
+      VALUES(cur_id, v_user_id, rec.id, j%3 != 2,
         CASE j%4 WHEN 0 THEN 'BEGINNER' WHEN 1 THEN 'INTERMEDIATE' WHEN 2 THEN 'ADVANCED' ELSE 'ANY' END,
         CASE j%3 WHEN 0 THEN 'SOLO' WHEN 1 THEN 'DUO' ELSE 'GROUP' END,
         NOW() - ((j*3 + i*2) || ' days')::INTERVAL);
-      INSERT INTO _uas VALUES(i, j, cur_id, current_user_id);
+      INSERT INTO _uas VALUES(i, j, cur_id, v_user_id);
       j := j + 1;
     END LOOP;
     -- Store existing user_activities too (for program distribution)
-    FOR rec IN SELECT id FROM user_activities WHERE user_id = current_user_id AND id NOT IN (SELECT ua_id FROM _uas) ORDER BY created_at LOOP
-      INSERT INTO _uas VALUES(i, j + 100, rec.id, current_user_id);
+    FOR rec IN SELECT id FROM user_activities WHERE user_id = v_user_id AND id NOT IN (SELECT ua_id FROM _uas) ORDER BY created_at LOOP
+      INSERT INTO _uas VALUES(i, j + 100, rec.id, v_user_id);
       j := j + 1;
     END LOOP;
   END LOOP;
@@ -131,7 +131,7 @@ BEGIN
   -- 3. PROGRAMS (20 per user)
   -- =========================================================
   FOR i IN 1..5 LOOP
-    current_user_id := users[i];
+    v_user_id := users[i];
     SELECT COUNT(*) INTO ua_count FROM _uas WHERE u_idx = i;
     FOR j IN 0..19 LOOP
       cur_id := gen_random_uuid();
@@ -154,7 +154,7 @@ BEGIN
         j < 17,
         NOW() - ((40 - j*2) || ' days')::INTERVAL,
         NOW() - (j || ' hours')::INTERVAL);
-      INSERT INTO _progs VALUES(i, j, cur_id, current_user_id);
+      INSERT INTO _progs VALUES(i, j, cur_id, v_user_id);
     END LOOP;
   END LOOP;
 
@@ -264,19 +264,19 @@ BEGIN
   -- 8. REVIEWS (up to 20 per user on others' programs)
   -- =========================================================
   FOR i IN 1..5 LOOP
-    current_user_id := users[i];
+    v_user_id := users[i];
     j   := 0;
     FOR rec IN
-      SELECT p.prog_id, p.current_user_id AS owner_id
+      SELECT p.prog_id, p.v_user_id AS owner_id
       FROM   _progs p
       WHERE  p.u_idx != i
-        AND  NOT EXISTS (SELECT 1 FROM reviews r WHERE r.program_id = p.prog_id AND r.reviewer_id = current_user_id)
+        AND  NOT EXISTS (SELECT 1 FROM reviews r WHERE r.program_id = p.prog_id AND r.reviewer_id = v_user_id)
       ORDER  BY p.u_idx, p.seq
       LIMIT  20
     LOOP
       -- Find a conversation between reviewer and program owner
-      SELECT conv_id INTO cur_conv FROM _convs
-      WHERE (ua = current_user_id AND ub = rec.owner_id) OR (ub = current_user_id AND ua = rec.owner_id)
+      SELECT c.conv_id INTO cur_conv FROM _convs c
+      WHERE (c.ua = v_user_id AND c.ub = rec.owner_id) OR (c.ub = v_user_id AND c.ua = rec.owner_id)
       LIMIT 1;
       -- Fallback
       IF cur_conv IS NULL THEN
@@ -285,7 +285,7 @@ BEGIN
 
       cur_id := gen_random_uuid();
       INSERT INTO reviews(id, program_id, reviewer_id, interaction_proof_id, score, comment, created_at)
-      VALUES(cur_id, rec.prog_id, current_user_id, cur_conv,
+      VALUES(cur_id, rec.prog_id, v_user_id, cur_conv,
         (3.0 + (j % 5) * 0.5)::FLOAT,
         (ARRAY[
           'Excellent programme, très professionnel !',
@@ -313,7 +313,7 @@ BEGIN
   -- =========================================================
   INSERT INTO notifications(id, user_id, type, channel, payload, is_read, sent_at, read_at)
   SELECT
-    gen_random_uuid(), u.current_user_id,
+    gen_random_uuid(), u.uid_val,
     (ARRAY['NEW_MESSAGE','NEW_REVIEW','PROGRAM_REMINDER','NEW_BADGE',
            'NEW_MESSAGE','NEW_PEER_REC','MATCH_FOUND','PROGRAM_REMINDER',
            'NEW_REVIEW','NEW_MESSAGE','PROGRAM_CANCELLED','SCHEDULE_CHANGED',
@@ -324,7 +324,7 @@ BEGIN
     n <= 14,
     NOW() - ((21 - n) || ' hours')::INTERVAL,
     CASE WHEN n <= 14 THEN NOW() - ((20 - n) || ' hours')::INTERVAL ELSE NULL END
-  FROM (VALUES (u1,'Alice'),(u2,'Bob'),(u3,'Claire'),(u4,'David'),(u5,'Emma')) AS u(current_user_id, uname)
+  FROM (VALUES (u1,'Alice'),(u2,'Bob'),(u3,'Claire'),(u4,'David'),(u5,'Emma')) AS u(uid_val, uname)
   CROSS JOIN generate_series(1, 20) AS n;
 
   -- =========================================================
@@ -332,17 +332,17 @@ BEGIN
   -- =========================================================
   INSERT INTO notification_prefs(id, user_id, notification_type, email_enabled, push_enabled, frequency)
   SELECT
-    gen_random_uuid(), current_user_id, t.ntype,
+    gen_random_uuid(), uid_val, t.ntype,
     (t.n % 3 != 2), TRUE,
     CASE (t.n % 3) WHEN 0 THEN 'IMMEDIATE' WHEN 1 THEN 'DAILY' ELSE 'WEEKLY' END
-  FROM UNNEST(users) AS current_user_id
+  FROM UNNEST(users) AS uid_val
   CROSS JOIN (VALUES
     (1,'NEW_MESSAGE'),(2,'NEW_REVIEW'),(3,'PROGRAM_REMINDER'),(4,'NEW_BADGE'),
     (5,'NEW_FOLLOWER'),(6,'NEW_PEER_REC'),(7,'PROGRAM_CANCELLED'),
     (8,'SCHEDULE_CHANGED'),(9,'MATCH_FOUND'),(10,'SYSTEM')
   ) AS t(n, ntype)
   WHERE NOT EXISTS (
-    SELECT 1 FROM notification_prefs np WHERE np.user_id = current_user_id AND np.notification_type = t.ntype
+    SELECT 1 FROM notification_prefs np WHERE np.user_id = uid_val AND np.notification_type = t.ntype
   );
 
   -- =========================================================
@@ -350,7 +350,7 @@ BEGIN
   -- =========================================================
   INSERT INTO progression_entries(id, program_id, user_id, title, content, metrics, is_public, created_at)
   SELECT
-    gen_random_uuid(), prog_id, current_user_id,
+    gen_random_uuid(), prog_id, v_user_id,
     'Session ' || (seq + 1)::TEXT,
     (ARRAY[
       'Belle séance aujourd''hui, progression notable !',
@@ -372,7 +372,7 @@ BEGIN
   -- =========================================================
   INSERT INTO search_logs(id, user_id, raw_query, parsed_intent, query_embedding, results_count, created_at)
   SELECT
-    gen_random_uuid(), current_user_id,
+    gen_random_uuid(), uid_val,
     (ARRAY['running paris','yoga matin','football 5x5','vélo bois de boulogne',
            'natation endurance','crossfit paris','tennis débutant','pilates cours',
            'randonnée nature','méditation pleine conscience','boxe paris','escalade intérieure',
@@ -382,21 +382,21 @@ BEGIN
     NULL,
     (n * 3) % 15 + 1,
     NOW() - ((21 - n) || ' days')::INTERVAL
-  FROM UNNEST(users) AS current_user_id
+  FROM UNNEST(users) AS uid_val
   CROSS JOIN generate_series(1, 20) AS n;
 
   -- =========================================================
   -- 13. REPORTS (4 per user on others' programs)
   -- =========================================================
   FOR i IN 1..5 LOOP
-    current_user_id := users[i];
+    v_user_id := users[i];
     j   := 0;
     FOR rec IN
       SELECT prog_id FROM _progs WHERE u_idx != i ORDER BY u_idx, seq LIMIT 20
     LOOP
-      IF NOT EXISTS (SELECT 1 FROM reports WHERE reporter_id = current_user_id AND target_id = rec.prog_id) THEN
+      IF NOT EXISTS (SELECT 1 FROM reports WHERE reporter_id = v_user_id AND target_id = rec.prog_id) THEN
         INSERT INTO reports(id, reporter_id, target_type, target_id, reason, status, created_at, resolved_at)
-        VALUES(gen_random_uuid(), current_user_id, 'PROGRAM', rec.prog_id,
+        VALUES(gen_random_uuid(), v_user_id, 'PROGRAM', rec.prog_id,
           (ARRAY['SPAM','INAPPROPRIATE_CONTENT','MISLEADING_INFORMATION','HARASSMENT'])[j % 4 + 1],
           CASE j%3 WHEN 0 THEN 'OPEN' WHEN 1 THEN 'RESOLVED' ELSE 'DISMISSED' END,
           NOW() - ((20 - j) || ' days')::INTERVAL,
@@ -433,13 +433,13 @@ BEGIN
   -- =========================================================
   INSERT INTO device_tokens(id, user_id, token, platform, device_name, created_at, last_used_at)
   SELECT
-    gen_random_uuid(), u.current_user_id,
-    'fcm_' || u.uname || '_v2_device' || n::TEXT || '_' || LEFT(MD5(u.current_user_id::TEXT || n::TEXT), 16),
+    gen_random_uuid(), u.uid_val,
+    'fcm_' || u.uname || '_v2_device' || n::TEXT || '_' || LEFT(MD5(u.uid_val::TEXT || n::TEXT), 16),
     CASE n WHEN 1 THEN 'IOS' ELSE 'ANDROID' END,
     CASE n WHEN 1 THEN 'iPad Pro' ELSE 'Samsung Tab' END,
     NOW() - ((25 - n * 5) || ' days')::INTERVAL,
     NOW() - (n || ' hours')::INTERVAL
-  FROM (VALUES (u1,'alice'),(u2,'bob'),(u3,'claire'),(u4,'david'),(u5,'emma')) AS u(current_user_id, uname)
+  FROM (VALUES (u1,'alice'),(u2,'bob'),(u3,'claire'),(u4,'david'),(u5,'emma')) AS u(uid_val, uname)
   CROSS JOIN generate_series(1, 2) AS n;
 
 END $$;
