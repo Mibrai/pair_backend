@@ -270,7 +270,7 @@ BEGIN
       SELECT p.prog_id, p.uid AS owner_id
       FROM   _progs p
       WHERE  p.u_idx != i
-        AND  NOT EXISTS (SELECT 1 FROM reviews WHERE program_id = p.prog_id AND reviewer_id = uid)
+        AND  NOT EXISTS (SELECT 1 FROM reviews r WHERE r.program_id = p.prog_id AND r.reviewer_id = uid)
       ORDER  BY p.u_idx, p.seq
       LIMIT  20
     LOOP
