@@ -68,8 +68,8 @@ BEGIN
   -- =========================================================
   -- TEMP TABLES
   -- =========================================================
-  CREATE TEMP TABLE _uas   (u_idx INT, seq INT, ua_id UUID, v_user_id UUID)    ON COMMIT DROP;
-  CREATE TEMP TABLE _progs (u_idx INT, seq INT, prog_id UUID, v_user_id UUID)  ON COMMIT DROP;
+  CREATE TEMP TABLE _uas   (u_idx INT, seq INT, ua_id UUID)    ON COMMIT DROP;
+  CREATE TEMP TABLE _progs (u_idx INT, seq INT, prog_id UUID)  ON COMMIT DROP;
   CREATE TEMP TABLE _convs (pair_k INT, conv_j INT, conv_id UUID, ua UUID, ub UUID) ON COMMIT DROP;
 
   -- =========================================================
@@ -117,12 +117,12 @@ BEGIN
         CASE j%4 WHEN 0 THEN 'BEGINNER' WHEN 1 THEN 'INTERMEDIATE' WHEN 2 THEN 'ADVANCED' ELSE 'ANY' END,
         CASE j%3 WHEN 0 THEN 'SOLO' WHEN 1 THEN 'DUO' ELSE 'GROUP' END,
         NOW() - ((j*3 + i*2) || ' days')::INTERVAL);
-      INSERT INTO _uas VALUES(i, j, cur_id, v_user_id);
+      INSERT INTO _uas VALUES(i, j, cur_id);
       j := j + 1;
     END LOOP;
     -- Store existing user_activities too (for program distribution)
     FOR rec IN SELECT id FROM user_activities WHERE user_id = v_user_id AND id NOT IN (SELECT ua_id FROM _uas) ORDER BY created_at LOOP
-      INSERT INTO _uas VALUES(i, j + 100, rec.id, v_user_id);
+      INSERT INTO _uas VALUES(i, j + 100, rec.id);
       j := j + 1;
     END LOOP;
   END LOOP;
@@ -154,7 +154,7 @@ BEGIN
         j < 17,
         NOW() - ((40 - j*2) || ' days')::INTERVAL,
         NOW() - (j || ' hours')::INTERVAL);
-      INSERT INTO _progs VALUES(i, j, cur_id, v_user_id);
+      INSERT INTO _progs VALUES(i, j, cur_id);
     END LOOP;
   END LOOP;
 
@@ -267,7 +267,7 @@ BEGIN
     v_user_id := users[i];
     j   := 0;
     FOR rec IN
-      SELECT p.prog_id, p.v_user_id AS owner_id
+      SELECT p.prog_id, users[p.u_idx] AS owner_id
       FROM   _progs p
       WHERE  p.u_idx != i
         AND  NOT EXISTS (SELECT 1 FROM reviews r WHERE r.program_id = p.prog_id AND r.reviewer_id = v_user_id)
