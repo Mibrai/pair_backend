@@ -11,21 +11,20 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
-// TODO: Fix WebSocket config for Spring Boot 4.1.0
-// import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
-// import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
-// import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
+import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
+import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
 import java.util.UUID;
 
 @Configuration
-// @EnableWebSocketMessageBroker
+@EnableWebSocketMessageBroker
 @RequiredArgsConstructor
-public class WebSocketConfig { // implements WebSocketMessageBrokerConfigurer {
+public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final JwtTokenProvider tokenProvider;
 
-    // @Override
+    @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
         // In-memory broker (will use Redis in Phase 4)
         registry.enableSimpleBroker("/topic", "/queue");
@@ -33,19 +32,19 @@ public class WebSocketConfig { // implements WebSocketMessageBrokerConfigurer {
         registry.setUserDestinationPrefix("/user");
     }
 
-    // @Override
-    // public void registerStompEndpoints(StompEndpointRegistry registry) {
-    //     // Main WebSocket endpoint for chat
-    //     registry.addEndpoint("/ws/chat")
-    //         .setAllowedOriginPatterns("*") // TODO: Restrict in production
-    //         .withSockJS();
-    //
-    //     // Alternative endpoint without SockJS for native WebSocket clients
-    //     registry.addEndpoint("/ws/chat")
-    //         .setAllowedOriginPatterns("*");
-    // }
+    @Override
+    public void registerStompEndpoints(StompEndpointRegistry registry) {
+        // Main WebSocket endpoint for chat
+        registry.addEndpoint("/ws/chat")
+            .setAllowedOriginPatterns("*") // TODO: Restrict in production
+            .withSockJS();
 
-    // @Override
+        // Alternative endpoint without SockJS for native WebSocket clients
+        registry.addEndpoint("/ws/chat")
+            .setAllowedOriginPatterns("*");
+    }
+
+    @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
         // Validate JWT during STOMP handshake
         registration.interceptors(new ChannelInterceptor() {
