@@ -68,6 +68,6 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
      * Anonymize reviews for GDPR purge (Article 17)
      */
     @Modifying
-    @Query("UPDATE Review r SET r.reviewer = null, r.comment = '[Avis anonymisé]' WHERE r.reviewer.id = :reviewerId")
+    @Query("UPDATE ReviewPhase3 r SET r.reviewer = null, r.comment = '[Avis anonymisé]' WHERE r.reviewer.id = :reviewerId")
     void anonymizeByReviewerId(@Param("reviewerId") UUID reviewerId);
 }
