@@ -20,4 +20,10 @@ public interface SearchLogRepository extends JpaRepository<SearchLog, UUID> {
 
     @Query("SELECT COUNT(s) FROM SearchLog s WHERE s.searchedAt > :since")
     long countSearchesSince(@Param("since") Instant since);
+
+    /**
+     * Delete search logs for GDPR purge (Article 17)
+     * Search history is considered personal data
+     */
+    void deleteByUserId(UUID userId);
 }

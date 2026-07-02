@@ -25,4 +25,10 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
     boolean existsByConversationIdAndUserId(
         @Param("conversationId") UUID conversationId,
         @Param("userId") UUID userId);
+
+    /**
+     * Find all conversations for a user (for GDPR export)
+     */
+    @Query("SELECT cm.conversation FROM ConversationMember cm WHERE cm.id.userId = :userId")
+    List<org.program.pair.domain.chat.Conversation> findConversationsByUserId(@Param("userId") UUID userId);
 }

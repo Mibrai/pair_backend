@@ -34,4 +34,10 @@ public interface ProgressionRepository extends JpaRepository<Progression, UUID> 
     int countByUserIdAndIsPublicFalse(UUID userId);
 
     boolean existsByIdAndUserId(UUID id, UUID userId);
+
+    /**
+     * Find progressions for programs organized by a specific user (for GDPR export)
+     */
+    @Query("SELECT p FROM Progression p WHERE p.program.organisateur.id = :organisateurId")
+    List<Progression> findByProgramOrganisateurId(@Param("organisateurId") UUID organisateurId);
 }

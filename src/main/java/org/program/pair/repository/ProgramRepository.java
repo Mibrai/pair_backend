@@ -51,4 +51,10 @@ public interface ProgramRepository extends JpaRepository<Program, UUID> {
     @Modifying
     @Query(value = "UPDATE programs SET embedding = CAST(:embedding AS vector) WHERE id = :id", nativeQuery = true)
     void updateEmbedding(@Param("id") UUID id, @Param("embedding") String embeddingVectorString);
+
+    /**
+     * Find programs by organizer (user) ID for GDPR export
+     */
+    @Query("SELECT p FROM Program p WHERE p.userActivity.user.id = :organisateurId")
+    List<Program> findByOrganisateurId(@Param("organisateurId") UUID organisateurId);
 }

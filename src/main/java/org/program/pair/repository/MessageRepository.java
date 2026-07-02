@@ -2,6 +2,7 @@ package org.program.pair.repository;
 
 import org.program.pair.domain.chat.Message;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -22,4 +23,17 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     int countByConversationId(UUID conversationId);
 
     int countByConversationIdAndSentAtAfter(UUID conversationId, Instant sentAt);
+
+    /**
+     * Find messages sent by user (for GDPR export)
+     */
+    List<Message> findBySenderId(UUID senderId);
+
+    /**
+     * Anonymize messages for GDPR purge (Article 17)
+     * Replace sender info with anonymous placeholder
+     */
+    @Modifying
+    @Query("UPDATE Message m SET m.sender = null, m.content = '[Message supprimé]' WHERE m.sender.id = :userId")
+    void anonymizeBySenderId(@Param("userId") UUID userId);
 }
