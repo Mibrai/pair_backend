@@ -38,6 +38,6 @@ public interface ProgressionRepository extends JpaRepository<Progression, UUID> 
     /**
      * Find progressions for programs organized by a specific user (for GDPR export)
      */
-    @Query("SELECT p FROM Progression p WHERE p.program.organisateur.id = :organisateurId")
+    @Query("SELECT p FROM Progression p WHERE p.program.userActivity.user.id = :organisateurId")
     List<Progression> findByProgramOrganisateurId(@Param("organisateurId") UUID organisateurId);
 }
