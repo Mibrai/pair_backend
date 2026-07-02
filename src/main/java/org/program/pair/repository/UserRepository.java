@@ -46,8 +46,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     /**
      * Find inactive accounts for GDPR purge (Article 17)
-     * Accounts that have been deactivated for more than 30 days
+     * Accounts that have been inactive for more than 30 days
      */
-    @Query("SELECT u FROM User u WHERE u.accountStatus = 'DEACTIVATED' AND u.updatedAt < :cutoff")
+    @Query("SELECT u FROM User u WHERE u.isActive = false AND u.lastActiveAt < :cutoff")
     List<User> findInactiveAccountsBefore(@Param("cutoff") Instant cutoff);
 }
