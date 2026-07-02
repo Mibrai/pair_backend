@@ -66,6 +66,6 @@ public interface PeerRecommendationRepository extends JpaRepository<PeerRecommen
      * Anonymize recommendations for GDPR purge (Article 17)
      */
     @Modifying
-    @Query("UPDATE PeerRecommendation r SET r.recommender = null, r.comment = '[Recommandation anonymisée]' WHERE r.recommender.id = :recommenderId")
+    @Query("UPDATE PeerRecommendationPhase3 r SET r.recommender = null, r.comment = '[Recommandation anonymisée]' WHERE r.recommender.id = :recommenderId")
     void anonymizeByRecommenderId(@Param("recommenderId") UUID recommenderId);
 }
