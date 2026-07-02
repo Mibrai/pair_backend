@@ -14,26 +14,28 @@ Configure these variables in your Railway project settings.
 
 ## Mail Configuration
 
-### SendGrid (Recommended for Railway)
-Railway blocks SMTP ports, so we use SendGrid API instead:
+### Resend (Recommended for Railway)
+Railway blocks SMTP ports, so we use Resend API instead:
 
 ```
-SENDGRID_ENABLED=true
-SENDGRID_API_KEY=your_sendgrid_api_key_here
-SENDGRID_FROM_EMAIL=infos@meetdo.fun
-SENDGRID_FROM_NAME=MeetDo
+RESEND_ENABLED=true
+RESEND_API_KEY=re_your_api_key_here
+RESEND_FROM_EMAIL=infos@meetdo.fun
+RESEND_FROM_NAME=MeetDo
 FRONTEND_URL=https://your-frontend-domain.com
 ```
 
-**How to get SendGrid API Key:**
-1. Sign up at https://sendgrid.com (free tier: 100 emails/day)
-2. Go to Settings > API Keys
-3. Create a new API key with "Mail Send" permission
-4. Copy the key and add it to Railway variables
+**How to get Resend API Key:**
+1. Sign up at https://resend.com (free tier: 100 emails/day)
+2. Go to API Keys > Create API Key
+3. Give it "Sending access" permission
+4. Copy the key (starts with `re_`) and add it to Railway variables
 
-**Domain verification (optional but recommended):**
-- Verify your domain `meetdo.fun` in SendGrid for better deliverability
-- Go to Settings > Sender Authentication > Domain Authentication
+**Domain verification (required):**
+- Verify your domain `meetdo.fun` in Resend for sending
+- Go to Domains > Add Domain
+- Add DNS records provided by Resend to Hostinger
+- See RESEND_SETUP.md for detailed guide
 
 ## Redis (Optional)
 ```

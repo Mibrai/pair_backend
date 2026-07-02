@@ -8,7 +8,7 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class EmailTemplateService {
 
-    private final SendGridEmailService sendGridEmailService;
+    private final ResendEmailService resendEmailService;
 
     @Value("${app.frontend-url:http://localhost:3000}")
     private String frontendUrl;
@@ -81,7 +81,7 @@ public class EmailTemplateService {
             </html>
             """, userName, frontendUrl);
 
-        return sendGridEmailService.sendEmail(to, subject, textContent, htmlContent);
+        return resendEmailService.sendEmail(to, subject, textContent, htmlContent);
     }
 
     /**
@@ -148,7 +148,7 @@ public class EmailTemplateService {
             </html>
             """, userName, resetUrl);
 
-        return sendGridEmailService.sendEmail(to, subject, textContent, htmlContent);
+        return resendEmailService.sendEmail(to, subject, textContent, htmlContent);
     }
 
     /**
@@ -209,7 +209,7 @@ public class EmailTemplateService {
             </html>
             """, userName, verificationUrl);
 
-        return sendGridEmailService.sendEmail(to, subject, textContent, htmlContent);
+        return resendEmailService.sendEmail(to, subject, textContent, htmlContent);
     }
 
     /**
@@ -265,6 +265,6 @@ public class EmailTemplateService {
             </html>
             """, userName, senderName, messagesUrl, frontendUrl);
 
-        return sendGridEmailService.sendEmail(to, subject, textContent, htmlContent);
+        return resendEmailService.sendEmail(to, subject, textContent, htmlContent);
     }
 }
