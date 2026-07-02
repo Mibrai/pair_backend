@@ -1,24 +1,19 @@
 package org.program.pair.shared.email;
 
-import jakarta.mail.MessagingException;
-import jakarta.mail.internet.MimeMessage;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.program.pair.domain.email.ResendEmailService;
 import org.program.pair.domain.notification.NotificationType;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
 import java.util.UUID;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class EmailService {
 
-    private final JavaMailSender mailSender;
+    private final ResendEmailService resendEmailService;
 
     @Value("${email.from:noreply@pair.app}")
     private String fromAddress;
@@ -26,11 +21,12 @@ public class EmailService {
     @Value("${email.base-url:http://localhost:3000}")
     private String baseUrl;
 
-    @Value("${spring.mail.host:}")
-    private String smtpHost;
+    public EmailService(ResendEmailService resendEmailService) {
+        this.resendEmailService = resendEmailService;
+    }
 
     public void sendVerificationEmail(String email, String token) {
-        if (!isMailConfigured()) {
+        if (!resendEmailService.isEnabled()) {
             log.info("[DEV] Verification link for {}: {}/verify-email?token={}", email, baseUrl, token);
             return;
         }
@@ -43,11 +39,15 @@ public class EmailService {
             </a>
             <p>Ce lien expire dans 24 heures.</p>
             """.formatted(verifyUrl);
-        send(email, "Vérifiez votre adresse Pair", html);
+
+        boolean sent = resendEmailService.sendHtmlEmail(email, "Vérifiez votre adresse Pair", html);
+        if (!sent) {
+            log.error("Failed to send verification email to {}", email);
+        }
     }
 
     public void sendPasswordResetEmail(String email, String token) {
-        if (!isMailConfigured()) {
+        if (!resendEmailService.isEnabled()) {
             log.info("[DEV] Password reset link for {}: {}/reset-password?token={}", email, baseUrl, token);
             return;
         }
@@ -60,30 +60,15 @@ public class EmailService {
             </a>
             <p>Ce lien expire dans 30 minutes. Si vous n'avez pas fait cette demande, ignorez cet email.</p>
             """.formatted(resetUrl);
-        send(email, "Réinitialisation de mot de passe Pair", html);
+
+        boolean sent = resendEmailService.sendHtmlEmail(email, "Réinitialisation de mot de passe Pair", html);
+        if (!sent) {
+            log.error("Failed to send password reset email to {}", email);
+        }
     }
 
     public void sendNotificationEmail(UUID userId, NotificationType type, Map<String, Object> payload) {
         // Notification emails sont groupées en digest — pas d'envoi direct ici
         log.debug("Notification email queued for digest: type={} userId={}", type, userId);
-    }
-
-    private void send(String to, String subject, String htmlBody) {
-        try {
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-            helper.setFrom(fromAddress);
-            helper.setTo(to);
-            helper.setSubject(subject);
-            helper.setText(htmlBody, true);
-            mailSender.send(message);
-        } catch (MessagingException e) {
-            // Ne pas faire échouer l'opération principale si l'email échoue
-            log.error("Échec envoi email à {}: {}", to, e.getMessage());
-        }
-    }
-
-    private boolean isMailConfigured() {
-        return smtpHost != null && !smtpHost.isBlank();
     }
 }

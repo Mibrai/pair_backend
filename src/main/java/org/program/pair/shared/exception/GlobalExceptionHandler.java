@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.shared.dto.ErrorResponse;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -95,6 +96,14 @@ public class GlobalExceptionHandler {
             ex.getName(), ex.getValue());
         log.warn("Type mismatch: {}", message);
         return new ErrorResponse("INVALID_PARAMETER", message, Instant.now());
+    }
+
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public ErrorResponse handleJsonParseError(HttpMessageNotReadableException ex, HttpServletRequest request) {
+        String message = "Invalid JSON format. Ensure you're using double quotes (\") for strings, not single quotes (') or backticks (`).";
+        log.warn("JSON parse error on {}: {}", request.getRequestURI(), ex.getMessage());
+        return new ErrorResponse("INVALID_JSON", message, Instant.now());
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
