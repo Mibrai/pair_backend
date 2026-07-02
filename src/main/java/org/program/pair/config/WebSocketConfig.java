@@ -34,14 +34,22 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        // Main WebSocket endpoint for chat
+        // Main WebSocket endpoint for chat with SockJS fallback
         registry.addEndpoint("/ws/chat")
-            .setAllowedOriginPatterns("*") // TODO: Restrict in production
+            .setAllowedOrigins(
+                "https://pair-frontend-omega.vercel.app",
+                "http://localhost:5173",
+                "http://localhost:3000"
+            )
             .withSockJS();
 
         // Alternative endpoint without SockJS for native WebSocket clients
         registry.addEndpoint("/ws/chat")
-            .setAllowedOriginPatterns("*");
+            .setAllowedOrigins(
+                "https://pair-frontend-omega.vercel.app",
+                "http://localhost:5173",
+                "http://localhost:3000"
+            );
     }
 
     @Override

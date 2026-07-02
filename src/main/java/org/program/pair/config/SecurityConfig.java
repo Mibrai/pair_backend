@@ -84,16 +84,14 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
 
         // Origines autorisées (frontend)
-        configuration.setAllowedOriginPatterns(Arrays.asList(
-            "http://localhost:*",
-            "https://localhost:*",
-            "http://127.0.0.1:*",
-            "https://127.0.0.1:*",
-            "http://192.168.*.*:*",
-            "https://192.168.*.*:*",
-            "http://10.*.*.*:*",
-            "https://10.*.*.*:*",
-            "https://*.pair.app"
+        configuration.setAllowedOrigins(Arrays.asList(
+            // Production Vercel
+            "https://pair-frontend-omega.vercel.app",
+            // Développement local
+            "http://localhost:5173",
+            "http://localhost:3000",
+            "http://127.0.0.1:5173",
+            "http://127.0.0.1:3000"
         ));
 
         // Méthodes HTTP autorisées
