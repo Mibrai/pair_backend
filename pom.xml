@@ -122,6 +122,13 @@
             <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
 
+        <!-- SendGrid for email delivery -->
+        <dependency>
+            <groupId>com.sendgrid</groupId>
+            <artifactId>sendgrid-java</artifactId>
+            <version>4.10.2</version>
+        </dependency>
+
         <!-- Phase 2: WebFlux for LLM API calls -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
