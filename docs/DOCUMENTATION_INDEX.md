@@ -30,6 +30,9 @@
 
 | Document | Description | Format |
 |----------|-------------|--------|
+| **`RESEND_QUICKSTART.md`** ⭐ | Email Resend en 3 étapes | Guide |
+| `guides/EMAIL_CONFIGURATION.md` | Configuration email complète | Long |
+| `deployment/ENVIRONMENT_VARIABLES.md` | Variables d'environnement | Référence |
 | `frontend-config.json` | URLs + endpoints + paramètres | JSON |
 | `frontend-config.local.json` | Config réseau local | JSON |
 | `.env.example` | Template variables environnement | ENV |
@@ -38,6 +41,7 @@
 
 | Document | Problème Résolu | Status |
 |----------|-----------------|--------|
+| `troubleshooting/SMTP_TIMEOUT_FIX.md` | Timeout SMTP Hostinger | ✅ Résolu |
 | `CORS_FIX.md` | Erreurs CORS 403 | ✅ Résolu |
 | `FIREBASE_FIX.md` | Firebase crash au démarrage | ✅ Résolu |
 | `REDIS_FIX.md` | Redis connection refused | ✅ Résolu |

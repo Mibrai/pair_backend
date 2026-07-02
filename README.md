@@ -48,6 +48,7 @@ cp frontend-config.json src/config/
 | Document | Description |
 |----------|-------------|
 | **`DOCUMENTATION_INDEX.md`** ⭐ | Index complet (commencer ici!) |
+| **`RESEND_QUICKSTART.md`** ⭐ | Configuration email Resend (3 étapes) |
 | **`FRONTEND_QUICKSTART.md`** ⭐ | Frontend en 5 minutes |
 | **`COMMANDES_UTILES.md`** ⭐ | Toutes les commandes backend |
 | `frontend-config.json` | Configuration complète |
@@ -55,12 +56,15 @@ cp frontend-config.json src/config/
 
 ### Guides Complets
 
+- `docs/guides/EMAIL_CONFIGURATION.md` - Configuration email Resend (détaillé)
+- `docs/deployment/ENVIRONMENT_VARIABLES.md` - Variables d'environnement
 - `FRONTEND_SETUP.md` - Setup React/Vue/Angular (745 lignes)
 - `AUTHENTICATION_GUIDE.md` - JWT détaillé
 - `DEPLOYMENT_GUIDE.md` - Déploiement production
 
 ### Troubleshooting
 
+- `docs/troubleshooting/SMTP_TIMEOUT_FIX.md` - Erreurs SMTP (✅ Résolu)
 - `CORS_FIX.md` - Erreurs CORS (✅ Résolu)
 - `FIREBASE_FIX.md` - Firebase optionnel (✅ Résolu)
 - `REDIS_FIX.md` - Redis optionnel (✅ Résolu)
