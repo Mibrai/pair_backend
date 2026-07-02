@@ -4,6 +4,7 @@ import org.program.pair.domain.recommendation.PeerRecommendation;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -55,4 +56,16 @@ public interface PeerRecommendationRepository extends JpaRepository<PeerRecommen
      * Trouve les recommandations par contexte de programme
      */
     List<PeerRecommendation> findByProgramContext(UUID programId);
+
+    /**
+     * Find recommendations by recommender (for GDPR export)
+     */
+    List<PeerRecommendation> findByRecommenderId(UUID recommenderId);
+
+    /**
+     * Anonymize recommendations for GDPR purge (Article 17)
+     */
+    @Modifying
+    @Query("UPDATE PeerRecommendation r SET r.recommender = null, r.comment = '[Recommandation anonymisée]' WHERE r.recommender.id = :recommenderId")
+    void anonymizeByRecommenderId(@Param("recommenderId") UUID recommenderId);
 }

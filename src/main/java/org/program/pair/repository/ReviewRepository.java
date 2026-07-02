@@ -4,6 +4,7 @@ import org.program.pair.domain.review.Review;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -57,4 +58,16 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
         ORDER BY AVG(r.overallRating) DESC, COUNT(r) DESC
         """)
     List<Object[]> findTopRatedPrograms(Pageable pageable);
+
+    /**
+     * Find reviews by reviewer (for GDPR export)
+     */
+    List<Review> findByReviewerId(UUID reviewerId);
+
+    /**
+     * Anonymize reviews for GDPR purge (Article 17)
+     */
+    @Modifying
+    @Query("UPDATE Review r SET r.reviewer = null, r.comment = '[Avis anonymisé]' WHERE r.reviewer.id = :reviewerId")
+    void anonymizeByReviewerId(@Param("reviewerId") UUID reviewerId);
 }
