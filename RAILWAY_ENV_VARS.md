@@ -12,16 +12,28 @@ Configure these variables in your Railway project settings.
 ## Server
 - `PORT` - 8080 (default)
 
-## Mail Configuration (Hostinger)
-Required variables for email functionality:
+## Mail Configuration
+
+### SendGrid (Recommended for Railway)
+Railway blocks SMTP ports, so we use SendGrid API instead:
 
 ```
-MAIL_HOST=smtp.hostinger.com
-MAIL_PORT=587
-MAIL_USERNAME=infos@meetdo.fun
-MAIL_PASSWORD=Kamerun237@MeetDo
-MAIL_FROM=infos@meetdo.fun
+SENDGRID_ENABLED=true
+SENDGRID_API_KEY=your_sendgrid_api_key_here
+SENDGRID_FROM_EMAIL=infos@meetdo.fun
+SENDGRID_FROM_NAME=MeetDo
+FRONTEND_URL=https://your-frontend-domain.com
 ```
+
+**How to get SendGrid API Key:**
+1. Sign up at https://sendgrid.com (free tier: 100 emails/day)
+2. Go to Settings > API Keys
+3. Create a new API key with "Mail Send" permission
+4. Copy the key and add it to Railway variables
+
+**Domain verification (optional but recommended):**
+- Verify your domain `meetdo.fun` in SendGrid for better deliverability
+- Go to Settings > Sender Authentication > Domain Authentication
 
 ## Redis (Optional)
 ```
