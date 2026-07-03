@@ -519,11 +519,12 @@ public class MapService {
      * @return MapActivitiesResponse with all activity markers and default center
      */
     public MapActivitiesResponse getAllActivitiesForMap(Double userLat, Double userLng) {
-        // 1. Get all activities from database
-        List<Activity> allActivities = activityRepository.findAll();
+        try {
+            // 1. Get all activities from database
+            List<Activity> allActivities = activityRepository.findAll();
 
-        // 2. Get all schedules with locations
-        List<Schedule> allSchedules = scheduleRepository.findAll();
+            // 2. Get all schedules with locations
+            List<Schedule> allSchedules = scheduleRepository.findAll();
 
         // 3. Build a map of activity -> list of schedule locations
         Map<UUID, List<Schedule>> activityScheduleMap = new HashMap<>();
@@ -583,10 +584,20 @@ public class MapService {
             }
         }
 
-        // 5. Calculate default center (area with most activities)
-        MapActivitiesResponse.DefaultMapCenter defaultCenter = calculateDefaultCenter(markers);
+            // 5. Calculate default center (area with most activities)
+            MapActivitiesResponse.DefaultMapCenter defaultCenter = calculateDefaultCenter(markers);
 
-        return new MapActivitiesResponse(markers, defaultCenter);
+            return new MapActivitiesResponse(markers, defaultCenter);
+        } catch (Exception e) {
+            // Log error and return empty response with default center
+            System.err.println("Error in getAllActivitiesForMap: " + e.getMessage());
+            e.printStackTrace();
+
+            // Return empty response with default Paris center
+            MapActivitiesResponse.DefaultMapCenter defaultCenter =
+                new MapActivitiesResponse.DefaultMapCenter(48.8566, 2.3522, 12);
+            return new MapActivitiesResponse(new ArrayList<>(), defaultCenter);
+        }
     }
 
     /**
