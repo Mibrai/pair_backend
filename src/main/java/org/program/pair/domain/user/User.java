@@ -92,4 +92,8 @@ public class User {
     @Column(name = "is_active", nullable = false)
     @Builder.Default
     private Boolean isActive = true;
+
+    @Embedded
+    @Builder.Default
+    private PrivacySettings privacySettings = new PrivacySettings();
 }

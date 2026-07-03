@@ -65,4 +65,15 @@ public class AuthController {
         authService.resetPassword(request.token(), request.newPassword());
         return ResponseEntity.ok().build();
     }
+
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(HttpServletRequest httpRequest) {
+        // For JWT-based authentication, logout is primarily handled client-side
+        // by removing the token. This endpoint can be used for:
+        // - Logging logout events
+        // - Token blacklisting (if implemented)
+        // - Session cleanup (if needed)
+        authService.logout(httpRequest);
+        return ResponseEntity.ok().build();
+    }
 }
