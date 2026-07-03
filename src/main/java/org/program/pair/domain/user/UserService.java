@@ -76,7 +76,7 @@ public class UserService {
     public void updateLocation(UUID userId, UpdateLocationRequest request) {
         User user = findActiveUser(userId);
         Point point = geometryFactory.createPoint(
-            new Coordinate(request.lng(), request.lat()));
+            new Coordinate(request.longitude(), request.latitude()));
         user.setLocation(point);
         user.setLastActiveAt(Instant.now());
         userRepository.save(user);
