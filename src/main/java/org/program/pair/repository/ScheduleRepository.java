@@ -2,6 +2,7 @@ package org.program.pair.repository;
 
 import org.program.pair.domain.program.Schedule;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -14,4 +15,12 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
     List<Schedule> findByStartsAtBetween(Instant from, Instant to);
 
     List<Schedule> findByProgramId(UUID programId);
+
+    @Query("SELECT s FROM Schedule s " +
+           "LEFT JOIN FETCH s.program p " +
+           "LEFT JOIN FETCH p.userActivity ua " +
+           "LEFT JOIN FETCH ua.activity a " +
+           "LEFT JOIN FETCH a.category " +
+           "WHERE s.location IS NOT NULL")
+    List<Schedule> findAllWithActivityDetails();
 }
