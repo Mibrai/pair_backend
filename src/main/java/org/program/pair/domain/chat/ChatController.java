@@ -69,6 +69,59 @@ public class ChatController {
         chatService.markAsRead(principal.getId(), conversationId);
     }
 
+    @GetMapping("/api/conversations/{conversationId}")
+    @ResponseBody
+    public ConversationDetailDto getConversationDetail(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID conversationId) {
+        return chatService.getConversationDetail(principal.getId(), conversationId);
+    }
+
+    @DeleteMapping("/api/conversations/{conversationId}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteConversation(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID conversationId) {
+        chatService.deleteConversation(principal.getId(), conversationId);
+    }
+
+    @PatchMapping("/api/messages/{messageId}")
+    @ResponseBody
+    public MessageDto editMessage(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID messageId,
+            @Valid @RequestBody EditMessageRequest request) {
+        return chatService.editMessage(principal.getId(), messageId, request);
+    }
+
+    @DeleteMapping("/api/messages/{messageId}")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteMessage(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID messageId) {
+        chatService.deleteMessage(principal.getId(), messageId);
+    }
+
+    @PostMapping("/api/conversations/{conversationId}/read-all")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void markAllAsRead(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID conversationId) {
+        chatService.markAllAsRead(principal.getId(), conversationId);
+    }
+
+    @PostMapping("/api/conversations/{conversationId}/images")
+    @ResponseBody
+    public String uploadImage(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID conversationId,
+            @RequestParam("image") String imageUrl) {
+        return chatService.uploadImage(principal.getId(), conversationId, imageUrl);
+    }
+
     // WebSocket message handler
 
     @MessageMapping("/chat.send")

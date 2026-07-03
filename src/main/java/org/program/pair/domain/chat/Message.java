@@ -50,4 +50,13 @@ public class Message {
 
     @Column(name = "read_at")
     private Instant readAt;
+
+    @Column(name = "edited_at")
+    private Instant editedAt;
+
+    @Column(name = "deleted_at")
+    private Instant deletedAt;
+
+    @Column(name = "image_url", length = 500)
+    private String imageUrl;
 }

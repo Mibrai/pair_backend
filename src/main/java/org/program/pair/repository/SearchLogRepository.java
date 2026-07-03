@@ -1,6 +1,7 @@
 package org.program.pair.repository;
 
 import org.program.pair.domain.search.SearchLog;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -20,6 +21,25 @@ public interface SearchLogRepository extends JpaRepository<SearchLog, UUID> {
 
     @Query("SELECT COUNT(s) FROM SearchLog s WHERE s.searchedAt > :since")
     long countSearchesSince(@Param("since") Instant since);
+
+    /**
+     * Get popular searches across all users in the last 30 days
+     */
+    @Query("SELECT s.rawQuery as query, COUNT(s) as searchCount " +
+           "FROM SearchLog s " +
+           "WHERE s.searchedAt > :since " +
+           "GROUP BY s.rawQuery " +
+           "ORDER BY COUNT(s) DESC")
+    List<Object[]> findPopularSearches(@Param("since") Instant since);
+
+    /**
+     * Get user's recent searches (last 10)
+     */
+    @Query("SELECT s.rawQuery as query, s.searchedAt as searchedAt " +
+           "FROM SearchLog s " +
+           "WHERE s.user.id = :userId " +
+           "ORDER BY s.searchedAt DESC")
+    List<Object[]> findRecentSearchesByUser(@Param("userId") UUID userId, Pageable pageable);
 
     /**
      * Delete search logs for GDPR purge (Article 17)

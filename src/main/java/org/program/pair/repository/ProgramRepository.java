@@ -57,4 +57,30 @@ public interface ProgramRepository extends JpaRepository<Program, UUID> {
      */
     @Query("SELECT p FROM Program p WHERE p.userActivity.user.id = :organisateurId")
     List<Program> findByOrganisateurId(@Param("organisateurId") UUID organisateurId);
+
+    @Query(value = """
+        SELECT p.* FROM programs p
+        JOIN user_activities ua ON p.user_activity_id = ua.id
+        JOIN users u ON ua.user_id = u.id
+        WHERE p.status = 'ACTIVE'
+          AND p.is_public = true
+          AND u.is_active = true
+          AND u.location_public = true
+          AND ST_DWithin(
+              u.location::geography,
+              ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
+              :radiusMeters
+          )
+        ORDER BY ST_Distance(
+            u.location::geography,
+            ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
+        )
+        LIMIT :limit
+        """, nativeQuery = true)
+    List<Program> findVisibleInRadius(
+        @Param("lat") double lat,
+        @Param("lng") double lng,
+        @Param("radiusMeters") int radiusMeters,
+        @Param("limit") int limit
+    );
 }

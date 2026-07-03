@@ -1,5 +1,6 @@
 package org.program.pair.domain.auth;
 
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.auth.dto.AuthResponse;
 import org.program.pair.domain.auth.dto.LoginRequest;
@@ -98,6 +99,15 @@ public class AuthService {
         userRepository.save(user);
 
         emailVerificationService.consumePasswordResetToken(token);
+    }
+
+    public void logout(HttpServletRequest request) {
+        // For JWT-based authentication, logout is primarily handled client-side.
+        // This method can be extended to:
+        // - Log logout events for audit purposes
+        // - Implement token blacklisting if needed
+        // - Clear any server-side session data
+        // Currently a no-op, but provides an endpoint for future enhancements
     }
 
     private AuthResponse buildAuthResponse(User user) {

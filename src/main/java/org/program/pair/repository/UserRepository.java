@@ -50,4 +50,63 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      */
     @Query("SELECT u FROM User u WHERE u.isActive = false AND u.lastActiveAt < :cutoff")
     List<User> findInactiveAccountsBefore(@Param("cutoff") Instant cutoff);
+
+    /**
+     * Search users by name or bio with optional location filtering
+     * Returns only active users with public locations
+     */
+    @Query(value = """
+        SELECT u.* FROM users u
+        WHERE u.is_active = true
+          AND u.location_public = true
+          AND (
+            LOWER(u.display_name) LIKE LOWER(CONCAT('%', :query, '%'))
+            OR LOWER(u.bio) LIKE LOWER(CONCAT('%', :query, '%'))
+          )
+          AND (:lat IS NULL OR :lng IS NULL OR ST_DWithin(
+              u.location::geography,
+              ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
+              :radiusMeters
+          ))
+        ORDER BY
+          CASE WHEN :lat IS NULL OR :lng IS NULL THEN 0
+          ELSE ST_Distance(
+            u.location::geography,
+            ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
+          )
+          END
+        LIMIT :limit OFFSET :offset
+        """, nativeQuery = true)
+    List<User> searchUsers(
+        @Param("query") String query,
+        @Param("lat") Double lat,
+        @Param("lng") Double lng,
+        @Param("radiusMeters") int radiusMeters,
+        @Param("limit") int limit,
+        @Param("offset") int offset
+    );
+
+    /**
+     * Count search results for pagination
+     */
+    @Query(value = """
+        SELECT COUNT(*) FROM users u
+        WHERE u.is_active = true
+          AND u.location_public = true
+          AND (
+            LOWER(u.display_name) LIKE LOWER(CONCAT('%', :query, '%'))
+            OR LOWER(u.bio) LIKE LOWER(CONCAT('%', :query, '%'))
+          )
+          AND (:lat IS NULL OR :lng IS NULL OR ST_DWithin(
+              u.location::geography,
+              ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
+              :radiusMeters
+          ))
+        """, nativeQuery = true)
+    long countSearchResults(
+        @Param("query") String query,
+        @Param("lat") Double lat,
+        @Param("lng") Double lng,
+        @Param("radiusMeters") int radiusMeters
+    );
 }
