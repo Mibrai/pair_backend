@@ -90,4 +90,20 @@ public class MapController {
             @RequestParam double longitude) {
         return mapService.reverseGeocode(latitude, longitude);
     }
+
+    /**
+     * Get all activities for the map page.
+     * Returns all activities present in the database with their locations from schedules.
+     * Each activity marker includes category icon, name, title, and distance if user location is provided.
+     *
+     * @param userLat User's latitude (optional - if geolocation enabled)
+     * @param userLng User's longitude (optional - if geolocation enabled)
+     * @return MapActivitiesResponse with all activity markers and default center
+     */
+    @GetMapping("/activities")
+    public MapActivitiesResponse getAllActivitiesForMap(
+            @RequestParam(required = false) Double userLat,
+            @RequestParam(required = false) Double userLng) {
+        return mapService.getAllActivitiesForMap(userLat, userLng);
+    }
 }

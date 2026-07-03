@@ -509,4 +509,144 @@ public class MapService {
             "Mock Country"
         );
     }
+
+    /**
+     * Get all activities present in the database with their locations from schedules.
+     * Each activity is shown on the map with a badge containing category icon, name, title, and distance.
+     *
+     * @param userLat User's latitude (nullable if geolocation not enabled)
+     * @param userLng User's longitude (nullable if geolocation not enabled)
+     * @return MapActivitiesResponse with all activity markers and default center
+     */
+    public MapActivitiesResponse getAllActivitiesForMap(Double userLat, Double userLng) {
+        // 1. Get all activities from database
+        List<Activity> allActivities = activityRepository.findAll();
+
+        // 2. Get all schedules with locations
+        List<Schedule> allSchedules = scheduleRepository.findAll();
+
+        // 3. Build a map of activity -> list of schedule locations
+        Map<UUID, List<Schedule>> activityScheduleMap = new HashMap<>();
+        for (Schedule schedule : allSchedules) {
+            if (schedule.getLocation() == null) continue;
+
+            Program program = schedule.getProgram();
+            if (program == null || program.getUserActivity() == null) continue;
+
+            UserActivity userActivity = program.getUserActivity();
+            Activity activity = userActivity.getActivity();
+            if (activity == null) continue;
+
+            activityScheduleMap.computeIfAbsent(activity.getId(), k -> new ArrayList<>()).add(schedule);
+        }
+
+        // 4. Convert to MapActivityMarkerDto
+        List<MapActivityMarkerDto> markers = new ArrayList<>();
+        for (Activity activity : allActivities) {
+            List<Schedule> schedules = activityScheduleMap.get(activity.getId());
+            if (schedules == null || schedules.isEmpty()) continue;
+
+            // Group schedules by location (to count programs at same location)
+            Map<String, List<Schedule>> locationGroups = schedules.stream()
+                .collect(Collectors.groupingBy(s -> {
+                    double lat = Math.round(s.getLocation().getY() * 1000.0) / 1000.0;
+                    double lng = Math.round(s.getLocation().getX() * 1000.0) / 1000.0;
+                    return lat + "," + lng;
+                }));
+
+            // Create one marker per location
+            for (Map.Entry<String, List<Schedule>> entry : locationGroups.entrySet()) {
+                List<Schedule> locationSchedules = entry.getValue();
+                Schedule firstSchedule = locationSchedules.get(0);
+
+                double lat = firstSchedule.getLocation().getY();
+                double lng = firstSchedule.getLocation().getX();
+
+                // Calculate distance if user location available
+                Double distanceKm = null;
+                if (userLat != null && userLng != null) {
+                    distanceKm = calculateDistance(userLat, userLng, lat, lng);
+                }
+
+                markers.add(new MapActivityMarkerDto(
+                    activity.getId(),
+                    activity.getName(),
+                    activity.getSlug(),
+                    activity.getCategory() != null ? activity.getCategory().getName() : null,
+                    activity.getCategory() != null ? activity.getCategory().getIcon() : null,
+                    activity.getCategory() != null ? activity.getCategory().getColorRamp() : null,
+                    lat,
+                    lng,
+                    distanceKm,
+                    locationSchedules.size()
+                ));
+            }
+        }
+
+        // 5. Calculate default center (area with most activities)
+        MapActivitiesResponse.DefaultMapCenter defaultCenter = calculateDefaultCenter(markers);
+
+        return new MapActivitiesResponse(markers, defaultCenter);
+    }
+
+    /**
+     * Calculate distance between two points using Haversine formula.
+     * @return distance in kilometers
+     */
+    private double calculateDistance(double lat1, double lng1, double lat2, double lng2) {
+        final int EARTH_RADIUS_KM = 6371;
+
+        double dLat = Math.toRadians(lat2 - lat1);
+        double dLng = Math.toRadians(lng2 - lng1);
+
+        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+            + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
+            * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+
+        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+        return Math.round(EARTH_RADIUS_KM * c * 10.0) / 10.0; // Round to 1 decimal
+    }
+
+    /**
+     * Calculate default map center by finding the area with most activity density.
+     * Uses grid-based clustering to find the densest region.
+     */
+    private MapActivitiesResponse.DefaultMapCenter calculateDefaultCenter(List<MapActivityMarkerDto> markers) {
+        if (markers.isEmpty()) {
+            // Default to Paris if no activities
+            return new MapActivitiesResponse.DefaultMapCenter(48.8566, 2.3522, 12);
+        }
+
+        // Use grid-based clustering to find densest area
+        double gridSize = 0.1; // ~10km cells
+        Map<String, List<MapActivityMarkerDto>> grid = markers.stream()
+            .collect(Collectors.groupingBy(marker -> {
+                int gridLat = (int) Math.floor(marker.lat() / gridSize);
+                int gridLng = (int) Math.floor(marker.lng() / gridSize);
+                return gridLat + "," + gridLng;
+            }));
+
+        // Find the grid cell with most activities
+        Map.Entry<String, List<MapActivityMarkerDto>> densestCell = grid.entrySet().stream()
+            .max(Comparator.comparingInt(e -> e.getValue().size()))
+            .orElse(null);
+
+        if (densestCell == null || densestCell.getValue().isEmpty()) {
+            // Fallback to average of all markers
+            double avgLat = markers.stream().mapToDouble(MapActivityMarkerDto::lat).average().orElse(48.8566);
+            double avgLng = markers.stream().mapToDouble(MapActivityMarkerDto::lng).average().orElse(2.3522);
+            return new MapActivitiesResponse.DefaultMapCenter(avgLat, avgLng, 12);
+        }
+
+        // Calculate center of densest cell
+        List<MapActivityMarkerDto> densestMarkers = densestCell.getValue();
+        double centerLat = densestMarkers.stream().mapToDouble(MapActivityMarkerDto::lat).average().orElse(0);
+        double centerLng = densestMarkers.stream().mapToDouble(MapActivityMarkerDto::lng).average().orElse(0);
+
+        // Adjust zoom based on number of activities in densest area
+        int zoom = densestMarkers.size() > 20 ? 13 : densestMarkers.size() > 10 ? 12 : 11;
+
+        return new MapActivitiesResponse.DefaultMapCenter(centerLat, centerLng, zoom);
+    }
 }
