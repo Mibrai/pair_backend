@@ -55,6 +55,7 @@ public class SecurityConfig {
                 // Public endpoints for categories and activities (read-only)
                 .requestMatchers(HttpMethod.GET, "/api/categories").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/activities").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/map/activities").permitAll()
                 // Public Phase 3 endpoints
                 .requestMatchers(HttpMethod.GET, "/api/badges").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/badges/users/**").permitAll()
