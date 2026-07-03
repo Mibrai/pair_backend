@@ -523,8 +523,8 @@ public class MapService {
             // 1. Get all activities from database
             List<Activity> allActivities = activityRepository.findAll();
 
-            // 2. Get all schedules with locations
-            List<Schedule> allSchedules = scheduleRepository.findAll();
+            // 2. Get all schedules with locations and eagerly fetch related entities
+            List<Schedule> allSchedules = scheduleRepository.findAllWithActivityDetails();
 
         // 3. Build a map of activity -> list of schedule locations
         Map<UUID, List<Schedule>> activityScheduleMap = new HashMap<>();
