@@ -10,6 +10,8 @@ import org.program.pair.domain.user.User;
 import org.program.pair.repository.ProgramRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -27,6 +29,7 @@ public class FullTextSearchService {
     /**
      * Recherche full-text dans les programmes avec filtres géographiques
      */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public List<SearchResultDto> searchPrograms(String keywords, SearchRequest request, int limit) {
         // Préparer la query tsquery pour PostgreSQL full-text search
         String tsQuery = prepareTsQuery(keywords);
@@ -94,6 +97,7 @@ public class FullTextSearchService {
     /**
      * Recherche alternative par activité exacte (fallback si full-text échoue)
      */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     public List<SearchResultDto> searchByActivity(String activityKeyword, SearchRequest request, int limit) {
         int radius = request.radiusMeters() != null ? request.radiusMeters() : 5000;
 
