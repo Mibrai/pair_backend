@@ -16,10 +16,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -32,17 +29,9 @@ public class ReviewService {
     private final ConversationRepository conversationRepository;
     private final ProgramRepository programRepository;
 
-    private static final Set<String> VALID_CRITERIA = Set.of(
-        "ORGANIZATION", "COMMUNICATION", "ATMOSPHERE", "DIFFICULTY", "RECOMMENDATION"
-    );
-
-    /**
-     * Crée un avis sur un programme
-     */
     public Review createReview(UUID reviewerId, CreateReviewRequest request) {
         UUID programId = request.getProgramId();
 
-        // Validate program exists
         var program = programRepository.findById(programId)
             .orElseThrow(() -> new ResourceNotFoundException("Programme non trouvé"));
 
@@ -54,62 +43,45 @@ public class ReviewService {
             throw new BusinessException("Programme sans créateur identifié");
         }
 
-        // Validation 1: Cannot review own program
         if (reviewerId.equals(creatorId)) {
             throw new BusinessException("Vous ne pouvez pas évaluer votre propre programme");
         }
 
-        // Validation 2: Check if already reviewed
         if (reviewRepository.findByReviewerIdAndProgramId(reviewerId, programId).isPresent()) {
             throw new BusinessException("Vous avez déjà évalué ce programme");
         }
 
-        // Validation 3: Must have conversation with program creator
         UUID conversationId = conversationRepository.findDirectBetween(reviewerId, creatorId)
             .map(c -> c.getId())
             .orElseThrow(() -> new BusinessException(
                 "Vous devez avoir échangé des messages avec le créateur du programme avant de pouvoir l'évaluer"
             ));
 
-        // Validation 4: Validate criteria scores
-        validateCriteriaScores(request.getCriteriaScores());
-
-        // Create review
         Review review = Review.builder()
             .id(UUID.randomUUID())
             .reviewerId(reviewerId)
             .programId(programId)
-            .conversationId(conversationId)
-            .overallRating(request.getOverallRating())
-            .criteriaScores(request.getCriteriaScores())
+            .interactionProofId(conversationId)
+            .score(request.getScore())
             .comment(request.getComment())
             .build();
 
         review = reviewRepository.save(review);
-        log.info("User {} reviewed program {} with rating {}", reviewerId, programId, request.getOverallRating());
+        log.info("User {} reviewed program {} with score {}", reviewerId, programId, request.getScore());
 
         return review;
     }
 
-    /**
-     * Récupère les avis d'un programme
-     */
     @Transactional(readOnly = true)
     public Page<Review> getProgramReviews(UUID programId, Pageable pageable) {
         return reviewRepository.findByProgramIdOrderByCreatedAtDesc(programId, pageable);
     }
 
-    /**
-     * Récupère les avis donnés par un utilisateur
-     */
     @Transactional(readOnly = true)
     public Page<Review> getUserReviews(UUID userId, Pageable pageable) {
         return reviewRepository.findByReviewerIdOrderByCreatedAtDesc(userId, pageable);
     }
 
-    /**
-     * Vérifie si un utilisateur peut évaluer un programme
-     */
     @Transactional(readOnly = true)
     public boolean canReview(UUID reviewerId, UUID programId) {
         var program = programRepository.findById(programId).orElse(null);
@@ -131,52 +103,12 @@ public class ReviewService {
         long total = reviewRepository.countByProgramId(programId);
         Double avg = reviewRepository.findAverageRatingByProgramId(programId);
 
-        Map<String, Double> criteriaAverages = new HashMap<>();
-        if (total > 0) {
-            List<Review> allReviews = reviewRepository
-                .findByProgramIdOrderByCreatedAtDesc(programId, PageRequest.of(0, Integer.MAX_VALUE))
-                .getContent();
-
-            for (String criterion : VALID_CRITERIA) {
-                double criterionAvg = allReviews.stream()
-                    .map(r -> r.getCriteriaScores().get(criterion))
-                    .filter(score -> score != null)
-                    .mapToInt(Integer::intValue)
-                    .average()
-                    .orElse(0.0);
-                criteriaAverages.put(criterion, criterionAvg);
-            }
-        }
-
         List<ReviewDto> recent = reviewRepository
             .findByProgramIdOrderByCreatedAtDesc(programId, PageRequest.of(0, 5))
             .stream()
             .map(ReviewDto::fromEntity)
             .toList();
 
-        return new ReviewSummaryDto(programId, avg, total, criteriaAverages, recent);
-    }
-
-    private void validateCriteriaScores(Map<String, Integer> scores) {
-        if (scores == null || scores.size() != 5) {
-            throw new BusinessException("Les 5 critères doivent être évalués");
-        }
-
-        for (Map.Entry<String, Integer> entry : scores.entrySet()) {
-            if (!VALID_CRITERIA.contains(entry.getKey())) {
-                throw new BusinessException("Critère invalide: " + entry.getKey());
-            }
-            Integer score = entry.getValue();
-            if (score == null || score < 1 || score > 5) {
-                throw new BusinessException("Les scores doivent être entre 1 et 5");
-            }
-        }
-
-        // Check all criteria present
-        for (String criterion : VALID_CRITERIA) {
-            if (!scores.containsKey(criterion)) {
-                throw new BusinessException("Critère manquant: " + criterion);
-            }
-        }
+        return new ReviewSummaryDto(programId, avg, total, recent);
     }
 }
