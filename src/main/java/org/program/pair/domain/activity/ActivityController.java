@@ -3,6 +3,10 @@ package org.program.pair.domain.activity;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.activity.dto.*;
+import org.program.pair.domain.media.ImageProcessor;
+import org.program.pair.domain.media.MediaType;
+import org.program.pair.domain.media.MediaValidator;
+import org.program.pair.domain.media.StorageService;
 import org.program.pair.shared.security.UserPrincipal;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -10,7 +14,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 import java.util.UUID;
 
@@ -21,6 +28,9 @@ import java.util.UUID;
 public class ActivityController {
 
     private final ActivityService activityService;
+    private final StorageService storageService;
+    private final MediaValidator mediaValidator;
+    private final ImageProcessor imageProcessor;
 
     @GetMapping("/categories")
     public List<CategoryDto> getCategories() {
@@ -74,5 +84,37 @@ public class ActivityController {
             @RequestBody VisibilityRequest request) {
         return activityService.toggleMapVisibility(
             principal.getId(), userActivityId, request.visible());
+    }
+
+    @PostMapping("/activities/{activityId}/icon")
+    public ActivityDto uploadActivityIcon(
+            @PathVariable UUID activityId,
+            @RequestParam("file") MultipartFile file) throws IOException {
+        mediaValidator.validateImage(file);
+        InputStream processedImage = imageProcessor.processImage(file);
+        ProcessedMultipartFile processedFile = new ProcessedMultipartFile(
+            file.getOriginalFilename(), processedImage);
+        String filename = storageService.store(processedFile, activityId, MediaType.ACTIVITY_ICON);
+        String iconUrl = "/api/media/files/" + filename;
+        return activityService.updateActivityIcon(activityId, iconUrl);
+    }
+
+    private static class ProcessedMultipartFile implements MultipartFile {
+        private final String originalFilename;
+        private final InputStream inputStream;
+
+        ProcessedMultipartFile(String originalFilename, InputStream inputStream) {
+            this.originalFilename = originalFilename;
+            this.inputStream = inputStream;
+        }
+
+        @Override public String getName() { return "file"; }
+        @Override public String getOriginalFilename() { return originalFilename; }
+        @Override public String getContentType() { return "image/jpeg"; }
+        @Override public boolean isEmpty() { return false; }
+        @Override public long getSize() { return 0; }
+        @Override public byte[] getBytes() throws IOException { return inputStream.readAllBytes(); }
+        @Override public InputStream getInputStream() { return inputStream; }
+        @Override public void transferTo(java.io.File dest) throws IOException { throw new UnsupportedOperationException(); }
     }
 }
