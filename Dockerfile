@@ -6,6 +6,7 @@ COPY mvnw pom.xml ./
 RUN chmod +x mvnw
 RUN ./mvnw dependency:go-offline -B
 COPY src ./src
+ARG CACHE_BUST=1
 RUN ./mvnw clean package -DskipTests -B
 
 # Run stage
