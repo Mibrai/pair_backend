@@ -1,29 +1,54 @@
--- Fix peer_recommendations: rename columns and add missing ones
-ALTER TABLE peer_recommendations RENAME COLUMN from_user_id TO recommender_id;
-ALTER TABLE peer_recommendations RENAME COLUMN to_user_id TO recommended_id;
-ALTER TABLE peer_recommendations RENAME COLUMN interaction_proof_id TO conversation_id;
+-- Fix peer_recommendations: rename columns (idempotent) and add missing ones
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='peer_recommendations' AND column_name='from_user_id') THEN
+    ALTER TABLE peer_recommendations RENAME COLUMN from_user_id TO recommender_id;
+  END IF;
+END $$;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='peer_recommendations' AND column_name='to_user_id') THEN
+    ALTER TABLE peer_recommendations RENAME COLUMN to_user_id TO recommended_id;
+  END IF;
+END $$;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='peer_recommendations' AND column_name='interaction_proof_id') THEN
+    ALTER TABLE peer_recommendations RENAME COLUMN interaction_proof_id TO conversation_id;
+  END IF;
+END $$;
 ALTER TABLE peer_recommendations ADD COLUMN IF NOT EXISTS rating INTEGER;
 ALTER TABLE peer_recommendations ADD COLUMN IF NOT EXISTS activity_context UUID;
 ALTER TABLE peer_recommendations ADD COLUMN IF NOT EXISTS program_context UUID;
 ALTER TABLE peer_recommendations ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
-
--- Drop the old unique constraint and add the correct one
 ALTER TABLE peer_recommendations DROP CONSTRAINT IF EXISTS uq_peer_rec_from_to;
-ALTER TABLE peer_recommendations ADD CONSTRAINT unique_recommendation UNIQUE (recommender_id, recommended_id);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname='unique_recommendation') THEN
+    ALTER TABLE peer_recommendations ADD CONSTRAINT unique_recommendation UNIQUE (recommender_id, recommended_id);
+  END IF;
+END $$;
 
--- Fix reports: rename columns and add missing ones
-ALTER TABLE reports RENAME COLUMN target_type TO reported_entity_type;
-ALTER TABLE reports RENAME COLUMN target_id TO reported_entity_id;
+-- Fix reports: rename columns (idempotent) and add missing ones
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reports' AND column_name='target_type') THEN
+    ALTER TABLE reports RENAME COLUMN target_type TO reported_entity_type;
+  END IF;
+END $$;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='reports' AND column_name='target_id') THEN
+    ALTER TABLE reports RENAME COLUMN target_id TO reported_entity_id;
+  END IF;
+END $$;
 ALTER TABLE reports ADD COLUMN IF NOT EXISTS description VARCHAR(500);
 ALTER TABLE reports ADD COLUMN IF NOT EXISTS reviewed_by UUID;
 ALTER TABLE reports ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ;
 ALTER TABLE reports ADD COLUMN IF NOT EXISTS resolution_notes TEXT;
 ALTER TABLE reports ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
 
--- Fix search_logs: rename column and add missing one
-ALTER TABLE search_logs RENAME COLUMN created_at TO searched_at;
+-- Fix search_logs: rename column (idempotent)
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='search_logs' AND column_name='created_at') THEN
+    ALTER TABLE search_logs RENAME COLUMN created_at TO searched_at;
+  END IF;
+END $$;
 ALTER TABLE search_logs ADD COLUMN IF NOT EXISTS search_method VARCHAR(50) DEFAULT 'fulltext';
--- Fix user_id nullability (DB allows null, entity should too - no change needed in entity)
 
 -- Create message_edit_history table (missing)
 CREATE TABLE IF NOT EXISTS message_edit_history (
@@ -36,7 +61,7 @@ CREATE TABLE IF NOT EXISTS message_edit_history (
 CREATE INDEX IF NOT EXISTS idx_edit_history_message ON message_edit_history(message_id);
 CREATE INDEX IF NOT EXISTS idx_edit_history_edited_at ON message_edit_history(edited_at);
 
--- Create progressions table (missing, entity maps to it instead of progression_entries)
+-- Create progressions table (missing)
 CREATE TABLE IF NOT EXISTS progressions (
     id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     program_id   UUID NOT NULL,
@@ -54,7 +79,7 @@ CREATE TABLE IF NOT EXISTS progressions (
 CREATE INDEX IF NOT EXISTS idx_progressions_program ON progressions(program_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_progressions_user ON progressions(user_id, created_at);
 
--- Create program_enrollments table (missing, entity maps to it instead of user_programs)
+-- Create program_enrollments table (missing)
 CREATE TABLE IF NOT EXISTS program_enrollments (
     id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_id     UUID NOT NULL,
@@ -72,7 +97,7 @@ CREATE INDEX IF NOT EXISTS idx_enrollments_program ON program_enrollments(progra
 CREATE INDEX IF NOT EXISTS idx_enrollments_status ON program_enrollments(status);
 CREATE INDEX IF NOT EXISTS idx_enrollments_enrolled_at ON program_enrollments(enrolled_at);
 
--- Create program_progress table (missing, entity maps to it instead of program_activities)
+-- Create program_progress table (missing)
 CREATE TABLE IF NOT EXISTS program_progress (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     user_program_id UUID NOT NULL,
