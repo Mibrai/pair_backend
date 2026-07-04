@@ -69,6 +69,15 @@ public class Program {
     @Column(name = "updated_at")
     private Instant updatedAt;
 
+    @Column(name = "organizer_name", length = 80)
+    private String organizerName;
+
+    @Column(name = "organizer_avatar_url", length = 500)
+    private String organizerAvatarUrl;
+
+    @Column(name = "next_session_at")
+    private Instant nextSessionAt;
+
     @OneToMany(mappedBy = "program", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("startsAt ASC")
     @Builder.Default
