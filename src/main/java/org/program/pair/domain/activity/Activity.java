@@ -45,8 +45,8 @@ public class Activity {
     @Column(length = 500)
     private String description;
 
-    @Column(name = "icon_url", nullable = false, length = 500)
-    private String iconUrl = "/api/media/files/activity_icon/default.png";
+    @Column(nullable = false, length = 80)
+    private String icon = "sports";
 
     // La colonne embedding (vector 1536) existe en DB mais est gérée via JDBC dans IndexationService.
 
