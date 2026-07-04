@@ -1,2 +1,4 @@
+-- icon: Google Material Icons ligature name (e.g. "sports_soccer").
+-- Falls back to "sports" if no specific icon has been assigned.
 ALTER TABLE activities
-    ADD COLUMN icon_url VARCHAR(500) DEFAULT '/api/media/files/activity_icon/default.png' NOT NULL;
+    ADD COLUMN icon VARCHAR(80) DEFAULT 'sports' NOT NULL;

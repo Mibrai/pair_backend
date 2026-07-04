@@ -7,7 +7,7 @@ public record ActivityDto(
     String name,
     String slug,
     String description,
-    String iconUrl,
+    String icon,
     UUID parentId,
     CategoryDto category
 ) {}

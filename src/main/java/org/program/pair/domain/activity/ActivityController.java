@@ -86,7 +86,14 @@ public class ActivityController {
             principal.getId(), userActivityId, request.visible());
     }
 
-    @PostMapping("/activities/{activityId}/icon")
+    @PatchMapping("/activities/{activityId}/icon")
+    public ActivityDto setActivityIcon(
+            @PathVariable UUID activityId,
+            @RequestParam("icon") String icon) {
+        return activityService.updateActivityIcon(activityId, icon);
+    }
+
+    @PostMapping("/activities/{activityId}/icon/upload")
     public ActivityDto uploadActivityIcon(
             @PathVariable UUID activityId,
             @RequestParam("file") MultipartFile file) throws IOException {
@@ -95,8 +102,7 @@ public class ActivityController {
         ProcessedMultipartFile processedFile = new ProcessedMultipartFile(
             file.getOriginalFilename(), processedImage);
         String filename = storageService.store(processedFile, activityId, MediaType.ACTIVITY_ICON);
-        String iconUrl = "/api/media/files/" + filename;
-        return activityService.updateActivityIcon(activityId, iconUrl);
+        return activityService.updateActivityIcon(activityId, "/api/media/files/" + filename);
     }
 
     private static class ProcessedMultipartFile implements MultipartFile {
