@@ -563,6 +563,33 @@ public class MapService {
                 double lat = firstSchedule.getLocation().getY();
                 double lng = firstSchedule.getLocation().getX();
 
+                // Pick the schedule with the nearest upcoming starts_at for organizer info
+                Instant now = Instant.now();
+                Schedule representative = locationSchedules.stream()
+                    .filter(s -> s.getStartsAt() != null && s.getStartsAt().isAfter(now))
+                    .min(Comparator.comparing(Schedule::getStartsAt))
+                    .orElse(firstSchedule);
+
+                Program repProgram = representative.getProgram();
+                UserActivity repUa = repProgram != null ? repProgram.getUserActivity() : null;
+                User repUser = repUa != null ? repUa.getUser() : null;
+
+                String organizerName = repProgram != null ? repProgram.getOrganizerName() : null;
+                String organizerAvatarUrl = repProgram != null ? repProgram.getOrganizerAvatarUrl() : null;
+                // Fallback to live user fields if denormalized columns are null
+                if (organizerName == null && repUser != null) organizerName = repUser.getDisplayName();
+                if (organizerAvatarUrl == null && repUser != null) organizerAvatarUrl = repUser.getAvatarUrl();
+
+                Instant nextSessionAt = representative.getStartsAt() != null
+                    && representative.getStartsAt().isAfter(now)
+                    ? representative.getStartsAt() : null;
+
+                String address = representative.getPlaceType() == org.program.pair.domain.program.PlaceType.PUBLIC
+                    ? representative.getAddressPublic()
+                    : Boolean.TRUE.equals(representative.getShowExactAddress())
+                        ? representative.getAddressPublic()
+                        : representative.getPlaceName();
+
                 // Calculate distance if user location available
                 Double distanceKm = null;
                 if (userLat != null && userLng != null) {
@@ -579,7 +606,11 @@ public class MapService {
                     lat,
                     lng,
                     distanceKm,
-                    locationSchedules.size()
+                    locationSchedules.size(),
+                    organizerName,
+                    organizerAvatarUrl,
+                    nextSessionAt,
+                    address
                 ));
             }
         }
