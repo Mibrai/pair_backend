@@ -104,9 +104,8 @@ public class GdprExportDto {
     public static class ReviewDataDto {
         private String id;
         private String programTitle;
-        private Integer rating;
+        private Float score;
         private String comment;
-        private Map<String, Integer> criteriaScores;
         private Instant createdAt;
     }
 

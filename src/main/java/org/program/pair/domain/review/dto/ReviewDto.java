@@ -7,7 +7,6 @@ import lombok.NoArgsConstructor;
 import org.program.pair.domain.review.Review;
 
 import java.time.Instant;
-import java.util.Map;
 import java.util.UUID;
 
 @Data
@@ -20,8 +19,7 @@ public class ReviewDto {
     private String reviewerDisplayName;
     private UUID programId;
     private String programTitle;
-    private Integer overallRating;
-    private Map<String, Integer> criteriaScores;
+    private Float score;
     private String comment;
     private Instant createdAt;
 
@@ -32,8 +30,7 @@ public class ReviewDto {
             .reviewerDisplayName(review.getReviewer() != null ? review.getReviewer().getDisplayName() : null)
             .programId(review.getProgramId())
             .programTitle(review.getProgram() != null ? review.getProgram().getTitle() : null)
-            .overallRating(review.getOverallRating())
-            .criteriaScores(review.getCriteriaScores())
+            .score(review.getScore())
             .comment(review.getComment())
             .createdAt(review.getCreatedAt())
             .build();

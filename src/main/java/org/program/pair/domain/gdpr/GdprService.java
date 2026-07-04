@@ -210,9 +210,8 @@ public class GdprService {
                 .map(r -> GdprExportDto.ReviewDataDto.builder()
                         .id(r.getId().toString())
                         .programTitle(r.getProgram() != null ? r.getProgram().getTitle() : null)
-                        .rating(r.getOverallRating())
+                        .score(r.getScore())
                         .comment(r.getComment())
-                        .criteriaScores(r.getCriteriaScores())
                         .createdAt(r.getCreatedAt())
                         .build())
                 .collect(Collectors.toList());
