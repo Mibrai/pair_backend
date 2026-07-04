@@ -45,6 +45,8 @@ public class ProgramService {
         program.setDescription(sanitizer.sanitize(request.description()));
         program.setStatus(ProgramStatus.DRAFT);
         program.setIsPublic(request.isPublic() != null ? request.isPublic() : true);
+        program.setOrganizerName(ua.getUser().getDisplayName());
+        program.setOrganizerAvatarUrl(ua.getUser().getAvatarUrl());
 
         return toDto(programRepository.save(program), userId);
     }
@@ -125,7 +127,9 @@ public class ProgramService {
         schedule.setRecurrenceRule(request.recurrenceRule());
         schedule.setMaxParticipants(request.maxParticipants());
 
-        return toScheduleDto(scheduleRepository.save(schedule), userId);
+        ScheduleDto dto = toScheduleDto(scheduleRepository.save(schedule), userId);
+        refreshNextSessionAt(program);
+        return dto;
     }
 
     public ScheduleDto updateSchedule(UUID userId, UUID scheduleId,
@@ -163,7 +167,9 @@ public class ProgramService {
         if (request.recurrenceRule() != null) schedule.setRecurrenceRule(request.recurrenceRule());
         if (request.maxParticipants() != null) schedule.setMaxParticipants(request.maxParticipants());
 
-        return toScheduleDto(scheduleRepository.save(schedule), userId);
+        ScheduleDto dto = toScheduleDto(scheduleRepository.save(schedule), userId);
+        refreshNextSessionAt(schedule.getProgram());
+        return dto;
     }
 
     public void deleteSchedule(UUID userId, UUID scheduleId) {
@@ -175,7 +181,19 @@ public class ProgramService {
             throw new ForbiddenException("Vous ne pouvez pas supprimer ce créneau.");
         }
 
+        Program prog = schedule.getProgram();
         scheduleRepository.delete(schedule);
+        refreshNextSessionAt(prog);
+    }
+
+    private void refreshNextSessionAt(Program program) {
+        Instant next = scheduleRepository.findByProgramId(program.getId()).stream()
+            .map(Schedule::getStartsAt)
+            .filter(t -> t != null && t.isAfter(Instant.now()))
+            .min(Instant::compareTo)
+            .orElse(null);
+        program.setNextSessionAt(next);
+        programRepository.save(program);
     }
 
     private Program findProgramOwnedBy(UUID programId, UUID userId) {
@@ -212,12 +230,21 @@ public class ProgramService {
         Float averageScore = avgDouble != null ? avgDouble.floatValue() : null;
         Integer reviewCount = (int) reviewRepository.countByProgramId(p.getId());
 
+        Instant nextSession = p.getSchedules().stream()
+            .map(Schedule::getStartsAt)
+            .filter(t -> t != null && t.isAfter(Instant.now()))
+            .min(Instant::compareTo)
+            .orElse(null);
+
         return new ProgramDto(
             p.getId(),
             p.getTitle(),
             p.getDescription(),
             p.getStatus().name(),
             p.getIsPublic(),
+            p.getOrganizerName(),
+            p.getOrganizerAvatarUrl(),
+            nextSession,
             p.getCreatedAt(),
             p.getUpdatedAt(),
             schedules,
