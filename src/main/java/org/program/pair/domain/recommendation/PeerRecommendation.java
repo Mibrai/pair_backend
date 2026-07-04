@@ -20,7 +20,11 @@ import java.util.UUID;
     uniqueConstraints = @UniqueConstraint(
         name = "unique_recommendation",
         columnNames = {"recommender_id", "recommended_id"}
-    )
+    ),
+    indexes = {
+        @Index(name = "idx_peer_rec_to", columnList = "recommended_id"),
+        @Index(name = "idx_peer_rec_from", columnList = "recommender_id")
+    }
 )
 @Data
 @Builder
