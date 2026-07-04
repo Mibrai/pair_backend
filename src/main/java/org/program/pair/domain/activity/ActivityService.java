@@ -135,12 +135,20 @@ public class ActivityService {
         );
     }
 
+    public ActivityDto updateActivityIcon(UUID activityId, String iconUrl) {
+        Activity activity = activityRepository.findById(activityId)
+            .orElseThrow(() -> new ResourceNotFoundException("Activité introuvable."));
+        activity.setIconUrl(iconUrl);
+        return toActivityDto(activityRepository.save(activity));
+    }
+
     private ActivityDto toActivityDto(Activity activity) {
         return new ActivityDto(
             activity.getId(),
             activity.getName(),
             activity.getSlug(),
             activity.getDescription(),
+            activity.getIconUrl(),
             activity.getParent() != null ? activity.getParent().getId() : null,
             activity.getCategory() != null ? toCategoryDto(activity.getCategory()) : null
         );
