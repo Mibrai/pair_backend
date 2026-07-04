@@ -7,6 +7,6 @@ public record ProgramSummaryDto(
     UUID id,
     String title,
     String status,
-    boolean isPublic,
+    Boolean isPublic,
     Instant updatedAt
 ) {}
