@@ -10,9 +10,9 @@
 -- this migration performs the initial backfill.
 
 ALTER TABLE programs
-    ADD COLUMN organizer_name       VARCHAR(80),
-    ADD COLUMN organizer_avatar_url VARCHAR(500),
-    ADD COLUMN next_session_at      TIMESTAMPTZ;
+    ADD COLUMN IF NOT EXISTS organizer_name       VARCHAR(80),
+    ADD COLUMN IF NOT EXISTS organizer_avatar_url VARCHAR(500),
+    ADD COLUMN IF NOT EXISTS next_session_at      TIMESTAMPTZ;
 
 -- ============================================================
 -- Backfill organizer_name and organizer_avatar_url
