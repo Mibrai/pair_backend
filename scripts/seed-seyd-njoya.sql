@@ -211,7 +211,12 @@ ON CONFLICT (id) DO NOTHING;
 -- =============================================================
 -- 3. PROGRAMS
 -- =============================================================
-INSERT INTO programs (id, user_activity_id, title, description, status, is_public, created_at, updated_at) VALUES
+INSERT INTO programs (id, user_activity_id, title, description, status, is_public, organizer_name, organizer_avatar_url, created_at, updated_at)
+SELECT
+    p.id, p.ua_id, p.title, p.description, p.status, p.is_public,
+    u.display_name, u.avatar_url,
+    p.created_at, p.updated_at
+FROM (VALUES
     (v_prog1,  v_ua1,  'Football Academie Yaounde',   'Programme d''entrainement football niveau amateur, 3 séances/semaine.',          'ACTIVE', TRUE,  NOW() - INTERVAL '8 days', NOW() - INTERVAL '1 day'),
     (v_prog2,  v_ua2,  'Running Matin Cameroun',      'Sorties running matinales en groupe, tous les jours sauf dimanche.',             'ACTIVE', TRUE,  NOW() - INTERVAL '8 days', NOW() - INTERVAL '2 days'),
     (v_prog3,  v_ua3,  'Basket de Rue 3x3',           'Tournois et entrainements basket en plein air, accès libre.',                    'ACTIVE', TRUE,  NOW() - INTERVAL '8 days', NOW() - INTERVAL '1 day'),
@@ -222,6 +227,8 @@ INSERT INTO programs (id, user_activity_id, title, description, status, is_publi
     (v_prog8,  v_ua8,  'Cyclisme Routes de Yaounde',  'Sorties vélo sur routes et pistes, groupes de niveau intermédiaire.',           'DRAFT',  TRUE,  NOW() - INTERVAL '5 days', NOW() - INTERVAL '1 day'),
     (v_prog9,  v_ua9,  'Volley Plage Weekend',        'Volley-ball sur terrain extérieur, ambiance détendue, tous les samedis.',        'ACTIVE', TRUE,  NOW() - INTERVAL '5 days', NOW() - INTERVAL '1 day'),
     (v_prog10, v_ua10, 'MMA Initiation Cameroun',     'Introduction aux arts martiaux mixtes, accent sur la technique et la sécurité.', 'ACTIVE', TRUE,  NOW() - INTERVAL '4 days', NOW() - INTERVAL '1 day')
+) AS p(id, ua_id, title, description, status, is_public, created_at, updated_at)
+JOIN users u ON u.id = v_user_id
 ON CONFLICT (id) DO NOTHING;
 
 -- =============================================================

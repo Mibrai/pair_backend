@@ -236,14 +236,28 @@ public class ProgramService {
             .min(Instant::compareTo)
             .orElse(null);
 
+        var user = p.getUserActivity().getUser();
+        var activity = p.getUserActivity().getActivity();
+
+        // Fallback pour les programmes créés avant l'ajout des colonnes organizer*
+        String organizerName = p.getOrganizerName() != null
+            ? p.getOrganizerName()
+            : user.getDisplayName();
+        String organizerAvatarUrl = p.getOrganizerAvatarUrl() != null
+            ? p.getOrganizerAvatarUrl()
+            : user.getAvatarUrl();
+
         return new ProgramDto(
             p.getId(),
             p.getTitle(),
             p.getDescription(),
             p.getStatus().name(),
             p.getIsPublic(),
-            p.getOrganizerName(),
-            p.getOrganizerAvatarUrl(),
+            user.getId(),
+            organizerName,
+            organizerAvatarUrl,
+            activity.getName(),
+            activity.getIcon(),
             nextSession,
             p.getCreatedAt(),
             p.getUpdatedAt(),
