@@ -122,94 +122,74 @@ WHERE u.email = 'railway10@pair.app' AND a.slug = 'meditation';
 -- ============================================
 
 -- Program 1 - Yoga am Morgen
-INSERT INTO programs (id, user_activity_id, title, description, status, is_public, created_at)
+INSERT INTO programs (id, user_activity_id, title, description, status, is_public, organizer_name, organizer_avatar_url, created_at)
 SELECT gen_random_uuid(), ua.id, 'Yoga am Morgen',
        'Starte den Tag mit einer entspannenden Yoga-Session. Alle Level willkommen.',
-       'ACTIVE', true, NOW()
-FROM user_activities ua
-JOIN users u ON ua.user_id = u.id
-WHERE u.email = 'railway1@pair.app';
+       'ACTIVE', true, u.display_name, u.avatar_url, NOW()
+FROM user_activities ua JOIN users u ON ua.user_id = u.id WHERE u.email = 'railway1@pair.app';
 
 -- Program 2 - Marathon Vorbereitung
-INSERT INTO programs (id, user_activity_id, title, description, status, is_public, created_at)
+INSERT INTO programs (id, user_activity_id, title, description, status, is_public, organizer_name, organizer_avatar_url, created_at)
 SELECT gen_random_uuid(), ua.id, 'Marathon Vorbereitung',
        'Gemeinsames Training für den kommenden Marathon. Wöchentliche Läufe von 15-25km.',
-       'ACTIVE', true, NOW()
-FROM user_activities ua
-JOIN users u ON ua.user_id = u.id
-WHERE u.email = 'railway2@pair.app';
+       'ACTIVE', true, u.display_name, u.avatar_url, NOW()
+FROM user_activities ua JOIN users u ON ua.user_id = u.id WHERE u.email = 'railway2@pair.app';
 
 -- Program 3 - Kletter-Workshop
-INSERT INTO programs (id, user_activity_id, title, description, status, is_public, created_at)
+INSERT INTO programs (id, user_activity_id, title, description, status, is_public, organizer_name, organizer_avatar_url, created_at)
 SELECT gen_random_uuid(), ua.id, 'Kletter-Workshop',
        'Lerne die Grundlagen des Kletterns in einer professionellen Halle.',
-       'ACTIVE', true, NOW()
-FROM user_activities ua
-JOIN users u ON ua.user_id = u.id
-WHERE u.email = 'railway3@pair.app';
+       'ACTIVE', true, u.display_name, u.avatar_url, NOW()
+FROM user_activities ua JOIN users u ON ua.user_id = u.id WHERE u.email = 'railway3@pair.app';
 
 -- Program 4 - Fußball Freundschaftsspiel
-INSERT INTO programs (id, user_activity_id, title, description, status, is_public, created_at)
+INSERT INTO programs (id, user_activity_id, title, description, status, is_public, organizer_name, organizer_avatar_url, created_at)
 SELECT gen_random_uuid(), ua.id, 'Fußball Freundschaftsspiel',
        'Wöchentliches Freundschaftsspiel für alle Fußball-Fans.',
-       'ACTIVE', true, NOW()
-FROM user_activities ua
-JOIN users u ON ua.user_id = u.id
-WHERE u.email = 'railway4@pair.app';
+       'ACTIVE', true, u.display_name, u.avatar_url, NOW()
+FROM user_activities ua JOIN users u ON ua.user_id = u.id WHERE u.email = 'railway4@pair.app';
 
 -- Program 5 - Schwimmtraining
-INSERT INTO programs (id, user_activity_id, title, description, status, is_public, created_at)
+INSERT INTO programs (id, user_activity_id, title, description, status, is_public, organizer_name, organizer_avatar_url, created_at)
 SELECT gen_random_uuid(), ua.id, 'Schwimmtraining',
        'Techniktraining und Ausdauerschwimmen für Fortgeschrittene.',
-       'ACTIVE', true, NOW()
-FROM user_activities ua
-JOIN users u ON ua.user_id = u.id
-WHERE u.email = 'railway5@pair.app';
+       'ACTIVE', true, u.display_name, u.avatar_url, NOW()
+FROM user_activities ua JOIN users u ON ua.user_id = u.id WHERE u.email = 'railway5@pair.app';
 
 -- Program 6 - Tennis Doppel
-INSERT INTO programs (id, user_activity_id, title, description, status, is_public, created_at)
+INSERT INTO programs (id, user_activity_id, title, description, status, is_public, organizer_name, organizer_avatar_url, created_at)
 SELECT gen_random_uuid(), ua.id, 'Tennis Doppel',
        'Suche Spielpartner für regelmäßige Tennis-Doppel.',
-       'ACTIVE', true, NOW()
-FROM user_activities ua
-JOIN users u ON ua.user_id = u.id
-WHERE u.email = 'railway6@pair.app';
+       'ACTIVE', true, u.display_name, u.avatar_url, NOW()
+FROM user_activities ua JOIN users u ON ua.user_id = u.id WHERE u.email = 'railway6@pair.app';
 
 -- Program 7 - Hackathon Wochenende
-INSERT INTO programs (id, user_activity_id, title, description, status, is_public, created_at)
+INSERT INTO programs (id, user_activity_id, title, description, status, is_public, organizer_name, organizer_avatar_url, created_at)
 SELECT gen_random_uuid(), ua.id, 'Hackathon Wochenende',
        '48 Stunden coden, networken und neue Projekte starten.',
-       'ACTIVE', true, NOW()
-FROM user_activities ua
-JOIN users u ON ua.user_id = u.id
-WHERE u.email = 'railway7@pair.app';
+       'ACTIVE', true, u.display_name, u.avatar_url, NOW()
+FROM user_activities ua JOIN users u ON ua.user_id = u.id WHERE u.email = 'railway7@pair.app';
 
 -- Program 8 - Fotowalk durch die Stadt
-INSERT INTO programs (id, user_activity_id, title, description, status, is_public, created_at)
+INSERT INTO programs (id, user_activity_id, title, description, status, is_public, organizer_name, organizer_avatar_url, created_at)
 SELECT gen_random_uuid(), ua.id, 'Fotowalk durch die Stadt',
        'Entdecke die Stadt durch die Linse. Für Anfänger und Profis.',
-       'ACTIVE', true, NOW()
-FROM user_activities ua
-JOIN users u ON ua.user_id = u.id
-WHERE u.email = 'railway8@pair.app';
+       'ACTIVE', true, u.display_name, u.avatar_url, NOW()
+FROM user_activities ua JOIN users u ON ua.user_id = u.id WHERE u.email = 'railway8@pair.app';
 
 -- Program 9 - Kochkurs Asiatisch
-INSERT INTO programs (id, user_activity_id, title, description, status, is_public, created_at)
+INSERT INTO programs (id, user_activity_id, title, description, status, is_public, organizer_name, organizer_avatar_url, created_at)
 SELECT gen_random_uuid(), ua.id, 'Kochkurs Asiatisch',
        'Gemeinsam asiatische Gerichte kochen und genießen.',
-       'ACTIVE', true, NOW()
-FROM user_activities ua
-JOIN users u ON ua.user_id = u.id
-WHERE u.email = 'railway9@pair.app';
+       'ACTIVE', true, u.display_name, u.avatar_url, NOW()
+FROM user_activities ua JOIN users u ON ua.user_id = u.id WHERE u.email = 'railway9@pair.app';
 
 -- Program 10 - Meditation am Abend
-INSERT INTO programs (id, user_activity_id, title, description, status, is_public, created_at)
+INSERT INTO programs (id, user_activity_id, title, description, status, is_public, organizer_name, organizer_avatar_url, created_at)
 SELECT gen_random_uuid(), ua.id, 'Meditation am Abend',
        'Finde innere Ruhe durch geführte Meditation.',
-       'ACTIVE', true, NOW()
-FROM user_activities ua
-JOIN users u ON ua.user_id = u.id
-WHERE u.email = 'railway10@pair.app';
+       'ACTIVE', true, u.display_name, u.avatar_url, NOW()
+FROM user_activities ua JOIN users u ON ua.user_id = u.id WHERE u.email = 'railway10@pair.app';
 
 
 -- ============================================
