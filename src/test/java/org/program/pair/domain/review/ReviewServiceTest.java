@@ -15,7 +15,6 @@ import org.program.pair.repository.ProgramRepository;
 import org.program.pair.repository.ReviewRepository;
 import org.program.pair.shared.exception.BusinessException;
 
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -43,7 +42,7 @@ class ReviewServiceTest {
         when(programRepository.findById(program.getId())).thenReturn(Optional.of(program));
 
         CreateReviewRequest request = new CreateReviewRequest(
-            program.getId(), 5, buildValidCriteriaScores(), "Super programme, très bien organisé");
+            program.getId(), 5.0f, "Super programme, très bien organisé");
 
         // L'auteur EST le propriétaire
         assertThatThrownBy(() -> reviewService.createReview(ownerId, request))
@@ -61,7 +60,7 @@ class ReviewServiceTest {
             .thenReturn(Optional.empty()); // AUCUNE conversation
 
         CreateReviewRequest request = new CreateReviewRequest(
-            program.getId(), 5, buildValidCriteriaScores(), "Super programme, très bien organisé");
+            program.getId(), 5.0f, "Super programme, très bien organisé");
 
         assertThatThrownBy(() -> reviewService.createReview(reviewerId, request))
             .isInstanceOf(BusinessException.class)
@@ -80,7 +79,7 @@ class ReviewServiceTest {
             .thenReturn(Optional.of(new Review()));
 
         CreateReviewRequest request = new CreateReviewRequest(
-            program.getId(), 5, buildValidCriteriaScores(), "Super programme, très bien organisé");
+            program.getId(), 5.0f, "Super programme, très bien organisé");
 
         assertThatThrownBy(() -> reviewService.createReview(reviewerId, request))
             .isInstanceOf(BusinessException.class)
@@ -104,7 +103,7 @@ class ReviewServiceTest {
         when(reviewRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         CreateReviewRequest request = new CreateReviewRequest(
-            program.getId(), 5, buildValidCriteriaScores(), "Super programme, très bien organisé");
+            program.getId(), 5.0f, "Super programme, très bien organisé");
 
         assertThatCode(() -> reviewService.createReview(reviewerId, request))
             .doesNotThrowAnyException();
@@ -123,13 +122,5 @@ class ReviewServiceTest {
         return p;
     }
 
-    private Map<String, Integer> buildValidCriteriaScores() {
-        return Map.of(
-            "ORGANIZATION", 5,
-            "COMMUNICATION", 5,
-            "ATMOSPHERE", 5,
-            "DIFFICULTY", 4,
-            "RECOMMENDATION", 5
-        );
-    }
+
 }
