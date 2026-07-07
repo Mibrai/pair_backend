@@ -37,6 +37,14 @@ public class ActivityController {
         return activityService.getAllCategories();
     }
 
+    @PostMapping("/categories")
+    @ResponseStatus(HttpStatus.CREATED)
+    public CategoryDto createCategory(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody CreateCategoryRequest request) {
+        return activityService.createCategory(request);
+    }
+
     @GetMapping("/activities")
     public Page<ActivityDto> searchActivities(
             @RequestParam(required = false) UUID categoryId,

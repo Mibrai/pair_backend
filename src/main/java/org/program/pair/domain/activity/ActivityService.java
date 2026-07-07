@@ -35,6 +35,15 @@ public class ActivityService {
             .collect(Collectors.toList());
     }
 
+    public CategoryDto createCategory(CreateCategoryRequest request) {
+        String name = request.name().strip();
+        if (categoryRepository.existsByNameIgnoreCase(name)) {
+            throw new IllegalStateException("La catégorie \"" + name + "\" existe déjà.");
+        }
+        Category category = Category.builder().name(name).build();
+        return toCategoryDto(categoryRepository.save(category));
+    }
+
     @Transactional(readOnly = true)
     public Page<ActivityDto> searchActivities(UUID categoryId, String search, Pageable pageable) {
         Page<Activity> activities;
