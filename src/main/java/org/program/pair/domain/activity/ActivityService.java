@@ -35,6 +35,42 @@ public class ActivityService {
             .collect(Collectors.toList());
     }
 
+    public ActivityDto createActivity(CreateActivityRequest request) {
+        String name = request.name().strip();
+
+        Category category = categoryRepository.findById(request.categoryId())
+            .orElseThrow(() -> new ResourceNotFoundException("Catégorie introuvable."));
+
+        if (activityRepository.existsByCategoryIdAndNameIgnoreCase(category.getId(), name)) {
+            throw new IllegalStateException(
+                "L'activité \"" + name + "\" existe déjà dans cette catégorie.");
+        }
+
+        String slug = generateUniqueSlug(name);
+
+        Activity activity = Activity.builder()
+            .category(category)
+            .name(name)
+            .slug(slug)
+            .build();
+
+        return toActivityDto(activityRepository.save(activity));
+    }
+
+    private String generateUniqueSlug(String name) {
+        String base = java.text.Normalizer.normalize(name, java.text.Normalizer.Form.NFD)
+            .replaceAll("\\p{InCombiningDiacriticalMarks}+", "")
+            .toLowerCase()
+            .replaceAll("[^a-z0-9]+", "-")
+            .replaceAll("^-+|-+$", "");
+
+        if (!activityRepository.existsBySlug(base)) return base;
+
+        int suffix = 2;
+        while (activityRepository.existsBySlug(base + "-" + suffix)) suffix++;
+        return base + "-" + suffix;
+    }
+
     public CategoryDto createCategory(CreateCategoryRequest request) {
         String name = request.name().strip();
         if (categoryRepository.existsByNameIgnoreCase(name)) {
