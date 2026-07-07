@@ -36,6 +36,8 @@ public interface ActivityRepository extends JpaRepository<Activity, UUID> {
 
     boolean existsBySlug(String slug);
 
+    boolean existsByCategoryIdAndNameIgnoreCase(UUID categoryId, String name);
+
     @Query(value = "SELECT * FROM activities WHERE embedding IS NULL", nativeQuery = true)
     List<Activity> findByEmbeddingIsNull();
 
