@@ -45,6 +45,7 @@ public class Activity {
     @Column(length = 500)
     private String description;
 
+    @Builder.Default
     @Column(nullable = false, length = 80)
     private String icon = "sports";
 
