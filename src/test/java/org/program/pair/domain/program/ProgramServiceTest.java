@@ -47,6 +47,9 @@ class ProgramServiceTest {
     @Mock
     org.program.pair.repository.ReviewRepository reviewRepository;
 
+    @Mock
+    org.program.pair.repository.UserProgramRepository userProgramRepository;
+
     @InjectMocks
     ProgramService programService;
 
@@ -165,12 +168,14 @@ class ProgramServiceTest {
         when(programMediaRepository.findByProgramIdOrderBySortOrder(any())).thenReturn(java.util.List.of());
         when(reviewRepository.findAverageRatingByProgramId(any())).thenReturn(null);
         when(reviewRepository.countByProgramId(any())).thenReturn(0L);
+        when(userProgramRepository.countActiveParticipantsByProgramId(any())).thenReturn(0L);
 
         // When
         programService.updateProgram(
             program.getUserActivity().getUser().getId(),
             program.getId(),
-            new UpdateProgramRequest(null, null, ProgramStatus.ARCHIVED, null)
+            new UpdateProgramRequest(null, null, ProgramStatus.ARCHIVED, null,
+                null, null, null, null, null, null, null, null, null, null)
         );
 
         // Then
