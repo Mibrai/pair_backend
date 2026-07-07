@@ -6,6 +6,8 @@ import org.program.pair.domain.media.dto.MediaUploadResponse;
 import org.program.pair.domain.media.ImageProcessor;
 import org.program.pair.domain.media.MediaValidator;
 import org.program.pair.domain.media.StorageService;
+import org.program.pair.domain.program.ProgramService;
+import org.program.pair.domain.program.dto.ProgramDto;
 import org.program.pair.domain.user.dto.*;
 import org.program.pair.shared.security.UserPrincipal;
 import org.springframework.data.domain.Page;
@@ -18,6 +20,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -30,6 +33,7 @@ public class UserController {
     private final StorageService storageService;
     private final MediaValidator mediaValidator;
     private final ImageProcessor imageProcessor;
+    private final ProgramService programService;
 
     @GetMapping
     public Page<UserPublicDto> searchUsers(
@@ -122,6 +126,11 @@ public class UserController {
             @Valid @RequestBody ChangePasswordRequest request) {
         userService.changePassword(principal.getId(), request);
         return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/{userId}/programs")
+    public List<ProgramDto> getPublicProgramsByUser(@PathVariable UUID userId) {
+        return programService.getPublicProgramsByUser(userId);
     }
 
     @GetMapping("/me/privacy")

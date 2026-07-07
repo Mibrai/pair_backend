@@ -110,6 +110,14 @@ public class ProgramService {
             .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
+    public List<ProgramDto> getPublicProgramsByUser(UUID userId) {
+        return programRepository.findActivePublicByUserId(userId)
+            .stream()
+            .map(p -> toDto(p, null))
+            .collect(Collectors.toList());
+    }
+
     public ScheduleDto addSchedule(UUID userId, UUID programId,
                                     CreateScheduleRequest request) {
         Program program = findProgramOwnedBy(programId, userId);
@@ -271,8 +279,10 @@ public class ProgramService {
             .min(Instant::compareTo)
             .orElse(null);
 
-        var user = p.getUserActivity().getUser();
-        var activity = p.getUserActivity().getActivity();
+        var ua       = p.getUserActivity();
+        var user     = ua.getUser();
+        var activity = ua.getActivity();
+        var category = activity.getCategory();
 
         String organizerName = p.getOrganizerName() != null
             ? p.getOrganizerName()
@@ -290,8 +300,11 @@ public class ProgramService {
             user.getId(),
             organizerName,
             organizerAvatarUrl,
+            ua.getId(),
             activity.getName(),
             activity.getIcon(),
+            category != null ? category.getId() : null,
+            category != null ? category.getName() : null,
             nextSession,
             p.getCreatedAt(),
             p.getUpdatedAt(),
@@ -314,7 +327,8 @@ public class ProgramService {
     }
 
     private ScheduleDto toScheduleDto(Schedule s, UUID requesterId) {
-        boolean isOwner = s.getProgram().getUserActivity().getUser().getId().equals(requesterId);
+        UUID ownerId = s.getProgram().getUserActivity().getUser().getId();
+        boolean isOwner = requesterId != null && ownerId.equals(requesterId);
 
         Double lat = null;
         Double lng = null;
