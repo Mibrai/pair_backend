@@ -29,7 +29,8 @@ public class ProgramService {
     private final ScheduleRepository scheduleRepository;
     private final UserActivityRepository userActivityRepository;
     private final ProgramMediaRepository programMediaRepository;
-    private final org.program.pair.repository.ReviewRepository reviewRepository;
+    private final ReviewRepository reviewRepository;
+    private final UserProgramRepository userProgramRepository;
     private final HtmlSanitizer sanitizer;
     private final GeometryFactory geometryFactory = new GeometryFactory(
         new PrecisionModel(), 4326);
@@ -47,6 +48,11 @@ public class ProgramService {
         program.setIsPublic(request.isPublic() != null ? request.isPublic() : true);
         program.setOrganizerName(ua.getUser().getDisplayName());
         program.setOrganizerAvatarUrl(ua.getUser().getAvatarUrl());
+
+        applyOptionalFields(program, request.durationWeeks(), request.sessionsPerWeek(),
+            request.sessionDurationMinutes(), request.preferredDays(), request.preferredTime(),
+            request.maxParticipants(), request.privacy(), request.goals(),
+            request.prerequisites(), request.locationType());
 
         return toDto(programRepository.save(program), userId);
     }
@@ -67,6 +73,11 @@ public class ProgramService {
         }
         if (request.isPublic() != null) program.setIsPublic(request.isPublic());
 
+        applyOptionalFields(program, request.durationWeeks(), request.sessionsPerWeek(),
+            request.sessionDurationMinutes(), request.preferredDays(), request.preferredTime(),
+            request.maxParticipants(), request.privacy(), request.goals(),
+            request.prerequisites(), request.locationType());
+
         return toDto(programRepository.save(program), userId);
     }
 
@@ -82,7 +93,6 @@ public class ProgramService {
         Program program = programRepository.findById(programId)
             .orElseThrow(() -> new ResourceNotFoundException("Programme introuvable."));
 
-        // Check visibility
         boolean isOwner = program.getUserActivity().getUser().getId().equals(requesterId);
         if (!program.getIsPublic() && !isOwner) {
             throw new ForbiddenException("Ce programme est privé.");
@@ -112,8 +122,11 @@ public class ProgramService {
         schedule.setProgram(program);
         schedule.setPlaceName(sanitizer.sanitize(request.placeName()).strip());
         schedule.setPlaceType(request.placeType());
-        schedule.setLocation(geometryFactory.createPoint(
-            new Coordinate(request.lng(), request.lat())));
+
+        if (request.placeType() != PlaceType.ONLINE) {
+            schedule.setLocation(geometryFactory.createPoint(
+                new Coordinate(request.lng(), request.lat())));
+        }
 
         if (request.placeType() == PlaceType.PUBLIC) {
             schedule.setAddressPublic(request.addressPublic());
@@ -148,11 +161,14 @@ public class ProgramService {
         if (request.placeType() != null)
             schedule.setPlaceType(request.placeType());
 
-        if (request.lat() != null && request.lng() != null)
+        PlaceType effectivePlaceType = schedule.getPlaceType();
+
+        if (request.lat() != null && request.lng() != null
+                && effectivePlaceType != PlaceType.ONLINE) {
             schedule.setLocation(geometryFactory.createPoint(
                 new Coordinate(request.lng(), request.lat())));
+        }
 
-        PlaceType effectivePlaceType = schedule.getPlaceType();
         if (request.addressPublic() != null) {
             if (effectivePlaceType == PlaceType.PUBLIC
                     || Boolean.TRUE.equals(request.showExactAddress())) {
@@ -162,8 +178,8 @@ public class ProgramService {
         if (request.showExactAddress() != null)
             schedule.setShowExactAddress(request.showExactAddress());
 
-        if (request.startsAt() != null)   schedule.setStartsAt(request.startsAt());
-        if (request.endsAt() != null)     schedule.setEndsAt(request.endsAt());
+        if (request.startsAt() != null)       schedule.setStartsAt(request.startsAt());
+        if (request.endsAt() != null)         schedule.setEndsAt(request.endsAt());
         if (request.recurrenceRule() != null) schedule.setRecurrenceRule(request.recurrenceRule());
         if (request.maxParticipants() != null) schedule.setMaxParticipants(request.maxParticipants());
 
@@ -184,6 +200,24 @@ public class ProgramService {
         Program prog = schedule.getProgram();
         scheduleRepository.delete(schedule);
         refreshNextSessionAt(prog);
+    }
+
+    private void applyOptionalFields(Program program,
+                                      Integer durationWeeks, Integer sessionsPerWeek,
+                                      Integer sessionDurationMinutes, int[] preferredDays,
+                                      PreferredTime preferredTime, Integer maxParticipants,
+                                      ProgramPrivacy privacy, String goals,
+                                      String prerequisites, LocationType locationType) {
+        if (durationWeeks != null)           program.setDurationWeeks(durationWeeks);
+        if (sessionsPerWeek != null)         program.setSessionsPerWeek(sessionsPerWeek);
+        if (sessionDurationMinutes != null)  program.setSessionDurationMinutes(sessionDurationMinutes);
+        if (preferredDays != null)           program.setPreferredDays(preferredDays);
+        if (preferredTime != null)           program.setPreferredTime(preferredTime);
+        if (maxParticipants != null)         program.setMaxParticipants(maxParticipants);
+        if (privacy != null)                 program.setPrivacy(privacy);
+        if (goals != null)                   program.setGoals(sanitizer.sanitize(goals));
+        if (prerequisites != null)           program.setPrerequisites(sanitizer.sanitize(prerequisites));
+        if (locationType != null)            program.setLocationType(locationType);
     }
 
     private void refreshNextSessionAt(Program program) {
@@ -229,6 +263,7 @@ public class ProgramService {
         Double avgDouble = reviewRepository.findAverageRatingByProgramId(p.getId());
         Float averageScore = avgDouble != null ? avgDouble.floatValue() : null;
         Integer reviewCount = (int) reviewRepository.countByProgramId(p.getId());
+        Integer enrolledCount = (int) userProgramRepository.countActiveParticipantsByProgramId(p.getId());
 
         Instant nextSession = p.getSchedules().stream()
             .map(Schedule::getStartsAt)
@@ -239,7 +274,6 @@ public class ProgramService {
         var user = p.getUserActivity().getUser();
         var activity = p.getUserActivity().getActivity();
 
-        // Fallback pour les programmes créés avant l'ajout des colonnes organizer*
         String organizerName = p.getOrganizerName() != null
             ? p.getOrganizerName()
             : user.getDisplayName();
@@ -264,7 +298,18 @@ public class ProgramService {
             schedules,
             media,
             averageScore,
-            reviewCount
+            reviewCount,
+            enrolledCount,
+            p.getDurationWeeks(),
+            p.getSessionsPerWeek(),
+            p.getSessionDurationMinutes(),
+            p.getPreferredDays(),
+            p.getPreferredTime() != null ? p.getPreferredTime().name() : null,
+            p.getMaxParticipants(),
+            p.getPrivacy() != null ? p.getPrivacy().name() : ProgramPrivacy.PUBLIC.name(),
+            p.getGoals(),
+            p.getPrerequisites(),
+            p.getLocationType() != null ? p.getLocationType().name() : null
         );
     }
 
@@ -275,13 +320,19 @@ public class ProgramService {
         Double lng = null;
         String displayAddress = null;
 
-        if (s.getPlaceType() == PlaceType.PUBLIC) {
-            lat = s.getLocation().getY();
-            lng = s.getLocation().getX();
+        if (s.getPlaceType() == PlaceType.ONLINE) {
+            // Pas de coordonnées pour les séances en ligne
+        } else if (s.getPlaceType() == PlaceType.PUBLIC) {
+            if (s.getLocation() != null) {
+                lat = s.getLocation().getY();
+                lng = s.getLocation().getX();
+            }
             displayAddress = s.getAddressPublic();
         } else if (Boolean.TRUE.equals(s.getShowExactAddress()) || isOwner) {
-            lat = s.getLocation().getY();
-            lng = s.getLocation().getX();
+            if (s.getLocation() != null) {
+                lat = s.getLocation().getY();
+                lng = s.getLocation().getX();
+            }
             displayAddress = s.getAddressPublic();
         }
 

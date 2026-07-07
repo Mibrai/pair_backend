@@ -4,5 +4,6 @@ public enum ActivityLevel {
     BEGINNER,
     INTERMEDIATE,
     ADVANCED,
+    EXPERT,
     ANY
 }

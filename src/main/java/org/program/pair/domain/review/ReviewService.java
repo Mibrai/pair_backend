@@ -51,11 +51,10 @@ public class ReviewService {
             throw new BusinessException("Vous avez déjà évalué ce programme");
         }
 
+        // interaction_proof_id est optionnel — on attache la conversation si elle existe
         UUID conversationId = conversationRepository.findDirectBetween(reviewerId, creatorId)
             .map(c -> c.getId())
-            .orElseThrow(() -> new BusinessException(
-                "Vous devez avoir échangé des messages avec le créateur du programme avant de pouvoir l'évaluer"
-            ));
+            .orElse(null);
 
         Review review = Review.builder()
             .id(UUID.randomUUID())
@@ -95,7 +94,7 @@ public class ReviewService {
         if (reviewerId.equals(creatorId)) return false;
         if (reviewRepository.findByReviewerIdAndProgramId(reviewerId, programId).isPresent()) return false;
 
-        return conversationRepository.findDirectBetween(reviewerId, creatorId).isPresent();
+        return true;
     }
 
     @Transactional(readOnly = true)

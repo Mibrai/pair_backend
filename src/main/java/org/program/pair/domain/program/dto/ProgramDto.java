@@ -21,5 +21,17 @@ public record ProgramDto(
     List<ScheduleDto> schedules,
     List<ProgramMediaDto> media,
     Float averageScore,
-    Integer reviewCount
+    Integer reviewCount,
+    Integer enrolledCount,
+    // Champs ajoutés par V26
+    Integer durationWeeks,
+    Integer sessionsPerWeek,
+    Integer sessionDurationMinutes,
+    int[] preferredDays,
+    String preferredTime,
+    Integer maxParticipants,
+    String privacy,
+    String goals,
+    String prerequisites,
+    String locationType
 ) {}
