@@ -170,17 +170,37 @@ Un programme est une offre sportive récurrente créée par un utilisateur dans 
 
 ```
 programs
-├── id               UUID PK
-├── user_activity_id UUID → user_activities(id) CASCADE   ← lie programme à (user + activité)
-├── title            VARCHAR(150) NOT NULL
-├── description      TEXT
-├── embedding        vector(1536)   ← recherche sémantique
-├── status           VARCHAR(20) DEFAULT 'DRAFT'
+├── id                        UUID PK
+├── user_activity_id          UUID → user_activities(id) CASCADE   ← lie programme à (user + activité)
+├── title                     VARCHAR(150) NOT NULL
+├── description               TEXT
+├── embedding                 vector(1536)   ← recherche sémantique
+├── status                    VARCHAR(20) DEFAULT 'DRAFT'
 │     valeurs: DRAFT | ACTIVE | PAUSED | ARCHIVED
-├── is_public        BOOLEAN DEFAULT TRUE
-├── archived_at      TIMESTAMPTZ
-├── created_at       TIMESTAMPTZ
-└── updated_at       TIMESTAMPTZ
+├── is_public                 BOOLEAN DEFAULT TRUE
+├── archived_at               TIMESTAMPTZ
+├── created_at                TIMESTAMPTZ
+├── updated_at                TIMESTAMPTZ
+│
+│   ── colonnes dénormalisées (cache) ──
+├── organizer_name            VARCHAR(80)    ← copie de users.display_name
+├── organizer_avatar_url      VARCHAR(500)   ← copie de users.avatar_url
+├── next_session_at           TIMESTAMPTZ    ← prochain créneau futur (calculé)
+│
+│   ── colonnes ajoutées par V26 ──
+├── duration_weeks            INTEGER        ← durée du programme (1–52)
+├── sessions_per_week         INTEGER        ← séances par semaine (1–7)
+├── session_duration_minutes  INTEGER        ← durée d'une séance en minutes (30–180)
+├── preferred_days            INTEGER[]      ← jours préférés (0=Dim … 6=Sam)
+├── preferred_time            VARCHAR(20)
+│     valeurs: MORNING | AFTERNOON | EVENING | FLEXIBLE
+├── max_participants          INTEGER        ← capacité max au niveau programme (2–100)
+├── privacy                   VARCHAR(20) DEFAULT 'PUBLIC'
+│     valeurs: PUBLIC | FRIENDS_ONLY | PRIVATE
+├── goals                     TEXT           ← objectifs du programme
+├── prerequisites             TEXT           ← prérequis
+└── location_type             VARCHAR(20)
+      valeurs: REMOTE | IN_PERSON | HYBRID
 ```
 
 **Règle importante :** Pour obtenir l'organisateur d'un programme, il faut remonter la chaîne :
@@ -192,7 +212,7 @@ schedules                              ← créneaux géolocalisés
 ├── program_id        UUID → programs(id) CASCADE
 ├── place_name        VARCHAR(200) NOT NULL
 ├── place_type        VARCHAR(10) NOT NULL
-│     valeurs: PUBLIC | PRIVATE
+│     valeurs: PUBLIC | PRIVATE | ONLINE
 ├── location          GEOMETRY(Point, 4326) NOT NULL   ← PostGIS
 ├── address_public    VARCHAR(300)
 ├── show_exact_address BOOLEAN DEFAULT FALSE
@@ -510,13 +530,270 @@ audit_logs
 | `users.verification_status` | `UNVERIFIED` `VERIFIED` `SUSPENDED` |
 | `users.profile_visibility` | `PUBLIC` `FRIENDS` `PRIVATE` |
 | `users.allow_messages` | `EVERYONE` `FRIENDS` `NONE` |
-| `user_activities.level` | `ANY` `BEGINNER` `INTERMEDIATE` `ADVANCED` |
+| `user_activities.level` | `ANY` `BEGINNER` `INTERMEDIATE` `ADVANCED` `EXPERT` |
 | `user_activities.format` | `ANY` `SOLO` `DUO` `GROUP` |
 | `programs.status` | `DRAFT` `ACTIVE` `PAUSED` `ARCHIVED` |
-| `schedules.place_type` | `PUBLIC` `PRIVATE` |
+| `schedules.place_type` | `PUBLIC` `PRIVATE` `ONLINE` |
 | `user_programs.status` | `ACTIVE` `PAUSED` `COMPLETED` `LEFT` |
 | `program_activities.status` | `PENDING` `COMPLETED` `SKIPPED` |
 | `messages.status` | `SENT` `DELIVERED` `READ` |
 | `notifications.channel` | `PUSH` `IN_APP` `EMAIL` |
 | `reports.status` | `OPEN` `RESOLVED` `DISMISSED` |
 | `device_tokens.platform` | `IOS` `ANDROID` `WEB` |
+
+---
+
+## Endpoints API
+
+> **Base URL :** `/api` — Spring Boot, authentification JWT Bearer sauf mention contraire.  
+> **WebSocket :** STOMP/SockJS sur `ws://host/ws/chat`  
+> **Total :** 97 endpoints HTTP + 1 handler STOMP, répartis sur 16 contrôleurs.
+
+---
+
+### Auth — `/api/auth`
+
+| Méthode | Chemin | Description | Auth |
+|---------|--------|-------------|------|
+| POST | `/api/auth/register` | Créer un compte | Non (rate-limited) |
+| POST | `/api/auth/login` | Authentification → JWT | Non (rate-limited) |
+| POST | `/api/auth/refresh` | Renouveler l'access token | Non |
+| GET | `/api/auth/verify-email` | Vérifier l'email via token | Non |
+| POST | `/api/auth/forgot-password` | Envoyer un email de reset | Non (rate-limited) |
+| POST | `/api/auth/reset-password` | Réinitialiser le mot de passe | Non |
+| POST | `/api/auth/logout` | Déconnexion | Oui |
+
+---
+
+### Utilisateurs — `/api/users`
+
+| Méthode | Chemin | Description |
+|---------|--------|-------------|
+| GET | `/api/users` | Rechercher des utilisateurs (query + coords) |
+| GET | `/api/users/me` | Profil privé de l'utilisateur courant |
+| PUT | `/api/users/me` | Modifier son profil |
+| PUT | `/api/users/me/location` | Mettre à jour sa position géographique |
+| POST | `/api/users/me/avatar` | Uploader son avatar |
+| GET | `/api/users/{id}` | Profil public d'un utilisateur |
+| DELETE | `/api/users/me` | Désactiver son compte |
+| POST | `/api/users/me/change-password` | Changer son mot de passe |
+| GET | `/api/users/me/privacy` | Lire ses paramètres de confidentialité |
+| PUT | `/api/users/me/privacy` | Modifier ses paramètres de confidentialité |
+
+---
+
+### Activités — `/api/categories`, `/api/activities`, `/api/users/me/activities`
+
+| Méthode | Chemin | Description |
+|---------|--------|-------------|
+| GET | `/api/categories` | Lister toutes les catégories |
+| GET | `/api/activities` | Rechercher des activités (filtre catégorie / texte) |
+| GET | `/api/users/me/activities` | Lister ses activités déclarées |
+| POST | `/api/users/me/activities` | Ajouter une activité à son profil |
+| PUT | `/api/users/me/activities/{userActivityId}` | Modifier une activité de son profil |
+| DELETE | `/api/users/me/activities/{userActivityId}` | Supprimer une activité de son profil |
+| PATCH | `/api/users/me/activities/{userActivityId}/visibility` | Activer/désactiver la visibilité carte |
+| PATCH | `/api/activities/{activityId}/icon` | Définir l'icône d'une activité (URL/nom) |
+| POST | `/api/activities/{activityId}/icon/upload` | Uploader l'icône d'une activité |
+
+---
+
+### Programmes — `/api/programs`
+
+| Méthode | Chemin | Description |
+|---------|--------|-------------|
+| POST | `/api/programs` | Créer un programme |
+| GET | `/api/programs` | Lister ses programmes créés |
+| GET | `/api/programs/{programId}` | Détail d'un programme |
+| PUT | `/api/programs/{programId}` | Modifier un programme |
+| DELETE | `/api/programs/{programId}` | Supprimer un programme |
+| PATCH | `/api/programs/{programId}` | Mise à jour partielle d'un programme (brouillon) |
+| POST | `/api/programs/{programId}/schedules` | Ajouter un créneau |
+| PUT | `/api/programs/{programId}/schedules/{scheduleId}` | Modifier un créneau |
+| DELETE | `/api/programs/{programId}/schedules/{scheduleId}` | Supprimer un créneau |
+| POST | `/api/programs/{programId}/report` | Signaler un programme |
+
+---
+
+### Inscriptions aux programmes
+
+| Méthode | Chemin | Description |
+|---------|--------|-------------|
+| POST | `/api/programs/{programId}/join` | S'inscrire à un programme |
+| POST | `/api/programs/{programId}/leave` | Quitter un programme |
+| GET | `/api/programs/{programId}/participants/count` | Nombre de participants actifs |
+| GET | `/api/programs/{programId}/enrollment-status` | Vérifier son statut d'inscription |
+| GET | `/api/users/me/programs` | Ses programmes rejoints (filtre par statut) |
+| PATCH | `/api/users/me/programs/{userProgramId}` | Mettre à jour son avancement (%) |
+| DELETE | `/api/users/me/programs/{userProgramId}` | Se désinscrire |
+| POST | `/api/users/me/programs/{userProgramId}/activities/{activityId}/complete` | Marquer une activité comme terminée |
+| POST | `/api/users/me/programs/{userProgramId}/activities/{activityId}/skip` | Passer une activité |
+
+---
+
+### Messagerie — `/api/conversations`, `/api/messages`
+
+| Méthode | Chemin | Description |
+|---------|--------|-------------|
+| POST | `/api/conversations` | Créer une conversation |
+| GET | `/api/conversations` | Lister ses conversations |
+| GET | `/api/conversations/{conversationId}` | Détail d'une conversation |
+| DELETE | `/api/conversations/{conversationId}` | Supprimer une conversation |
+| POST | `/api/conversations/{conversationId}/messages` | Envoyer un message (REST) |
+| GET | `/api/conversations/{conversationId}/messages` | Lire les messages d'une conversation |
+| POST | `/api/conversations/{conversationId}/read` | Marquer la conversation comme lue |
+| POST | `/api/conversations/{conversationId}/read-all` | Marquer tous les messages comme lus |
+| POST | `/api/conversations/{conversationId}/images` | Uploader une image dans une conversation |
+| PATCH | `/api/messages/{messageId}` | Modifier un message |
+| DELETE | `/api/messages/{messageId}` | Supprimer un message |
+| WS `@MessageMapping` | `/chat.send` | Envoyer un message via STOMP/WebSocket |
+
+---
+
+### Badges — `/api/badges`
+
+| Méthode | Chemin | Description |
+|---------|--------|-------------|
+| GET | `/api/badges` | Lister tous les badges disponibles |
+| GET | `/api/badges/me` | Ses badges obtenus |
+| GET | `/api/badges/me/count` | Nombre de ses badges |
+| POST | `/api/badges/me/evaluate` | Déclencher l'évaluation et attribution des badges |
+| GET | `/api/badges/users/{userId}` | Badges d'un utilisateur spécifique |
+
+---
+
+### Carte — `/api/map`
+
+| Méthode | Chemin | Description |
+|---------|--------|-------------|
+| GET | `/api/map/activities` | Activités visibles sur la carte |
+| GET | `/api/map/users` | Utilisateurs visibles (filtre bounds/rayon) |
+| GET | `/api/map/clusters` | Clusters d'utilisateurs pour la carte |
+| GET | `/api/map/bounds` | Tous les marqueurs dans une zone (users + programmes + activités) |
+| GET | `/api/map/nearby/{type}` | Éléments proches par type, lat/lng, rayon |
+| GET | `/api/map/geocode` | Géocoder une adresse en coordonnées |
+| GET | `/api/map/reverse-geocode` | Géocoder des coordonnées en adresse |
+| POST | `/api/map/location` | Mettre à jour sa position depuis la carte |
+
+---
+
+### Médias — `/api/media`
+
+| Méthode | Chemin | Description |
+|---------|--------|-------------|
+| POST | `/api/media/upload/image` | Uploader et traiter une image |
+| POST | `/api/media/upload/avatar` | Uploader et traiter un avatar |
+| GET | `/api/media/files/**` | Servir / streamer un fichier stocké |
+| DELETE | `/api/media/files/**` | Supprimer un fichier stocké |
+
+---
+
+### Notifications — `/api/notifications`
+
+| Méthode | Chemin | Description |
+|---------|--------|-------------|
+| GET | `/api/notifications` | Ses notifications in-app (paginé) |
+| GET | `/api/notifications/unread-count` | Nombre de notifications non lues |
+| PUT | `/api/notifications/{id}/read` | Marquer une notification comme lue |
+| PUT | `/api/notifications/read-all` | Marquer toutes les notifications comme lues |
+| DELETE | `/api/notifications/{id}` | Supprimer une notification |
+| GET | `/api/notifications/preferences` | Lire ses préférences de notification |
+| PUT | `/api/notifications/preferences` | Modifier ses préférences de notification |
+| POST | `/api/notifications/devices` | Enregistrer un token push |
+| DELETE | `/api/notifications/devices/{token}` | Désinscrire un token push |
+| GET | `/api/notifications/devices` | Lister ses tokens push enregistrés |
+
+---
+
+### Progression — `/api/progressions`
+
+| Méthode | Chemin | Description |
+|---------|--------|-------------|
+| POST | `/api/progressions` | Créer une entrée de progression |
+| GET | `/api/progressions/my` | Ses entrées de progression |
+| GET | `/api/progressions/my/streak` | Sa série d'activité (streak) |
+| GET | `/api/progressions/my/stats` | Ses statistiques de progression |
+| GET | `/api/progressions/{id}` | Détail d'une entrée |
+| PUT | `/api/progressions/{id}` | Modifier une entrée |
+| DELETE | `/api/progressions/{id}` | Supprimer une entrée |
+| GET | `/api/progressions/program/{programId}` | Progressions d'un programme |
+| GET | `/api/progressions/user/{userId}` | Progressions d'un utilisateur |
+
+---
+
+### Recommandations — `/api/recommendations`
+
+| Méthode | Chemin | Description |
+|---------|--------|-------------|
+| POST | `/api/recommendations` | Créer une recommandation |
+| GET | `/api/recommendations/received` | Recommandations reçues |
+| GET | `/api/recommendations/given` | Recommandations données |
+| GET | `/api/recommendations/me/stats` | Ses statistiques de recommandation |
+| GET | `/api/recommendations/users/{userId}` | Recommandations publiques d'un utilisateur |
+| GET | `/api/recommendations/stats/{userId}` | Statistiques de recommandation d'un utilisateur |
+| GET | `/api/recommendations/can-recommend/{userId}` | Vérifier si on peut recommander un utilisateur |
+
+---
+
+### Signalements — `/api/reports`
+
+| Méthode | Chemin | Description | Rôle |
+|---------|--------|-------------|------|
+| POST | `/api/reports` | Signaler un utilisateur / programme / message | Tous |
+| GET | `/api/reports/me` | Ses signalements soumis | Tous |
+| GET | `/api/reports/pending` | Signalements en attente | MODERATOR / ADMIN |
+| PUT | `/api/reports/{reportId}/review` | Traiter / résoudre un signalement | MODERATOR / ADMIN |
+
+---
+
+### Avis — `/api/reviews`
+
+| Méthode | Chemin | Description |
+|---------|--------|-------------|
+| POST | `/api/reviews` | Créer un avis sur un programme |
+| GET | `/api/reviews/programs/{programId}` | Avis paginés d'un programme |
+| GET | `/api/reviews/programs/{programId}/summary` | Résumé agrégé des avis d'un programme |
+| GET | `/api/reviews/me` | Ses avis soumis |
+| GET | `/api/reviews/can-review/{programId}` | Vérifier si on peut noter un programme (sans contrainte conversation) |
+
+---
+
+### Recherche sémantique — `/api/search`
+
+| Méthode | Chemin | Description |
+|---------|--------|-------------|
+| POST | `/api/search` | Recherche NLP / sémantique (programmes + utilisateurs) |
+| GET | `/api/search/popular` | Recherches populaires (30 derniers jours) |
+| GET | `/api/search/recent` | Ses recherches récentes |
+| DELETE | `/api/search/recent` | Effacer son historique de recherche |
+| GET | `/api/search/tags` | Rechercher des tags/catégories |
+| GET | `/api/search/tags/popular` | Tags/catégories les plus utilisés |
+
+---
+
+### Indexation — `/api/indexation`
+
+| Méthode | Chemin | Description |
+|---------|--------|-------------|
+| GET | `/api/indexation/stats` | Statistiques d'indexation / embeddings |
+| POST | `/api/indexation/reindex/programs` | Réindexer tous les programmes |
+| POST | `/api/indexation/reindex/activities` | Réindexer toutes les activités |
+| POST | `/api/indexation/reindex/all` | Réindexer programmes + activités |
+
+---
+
+### RGPD — `/api/gdpr`
+
+| Méthode | Chemin | Description |
+|---------|--------|-------------|
+| GET | `/api/gdpr/export` | Exporter ses données personnelles (Art. 15) |
+| DELETE | `/api/gdpr/delete-account` | Demander la suppression définitive du compte (Art. 17, purge 30 j) |
+
+---
+
+### Administration — `/api/admin/seed` *(dev / staging uniquement)*
+
+| Méthode | Chemin | Description |
+|---------|--------|-------------|
+| POST | `/api/admin/seed/demo/reset` | Supprimer et recréer les données de démo |
+| POST | `/api/admin/seed/status` | Vérifier la disponibilité du contrôleur de seed |

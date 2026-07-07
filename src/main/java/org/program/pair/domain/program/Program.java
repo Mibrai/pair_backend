@@ -78,6 +78,41 @@ public class Program {
     @Column(name = "next_session_at")
     private Instant nextSessionAt;
 
+    // Champs ajoutés par V26
+    @Column(name = "duration_weeks")
+    private Integer durationWeeks;
+
+    @Column(name = "sessions_per_week")
+    private Integer sessionsPerWeek;
+
+    @Column(name = "session_duration_minutes")
+    private Integer sessionDurationMinutes;
+
+    @Column(name = "preferred_days", columnDefinition = "integer[]")
+    private int[] preferredDays;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "preferred_time", length = 20)
+    private PreferredTime preferredTime;
+
+    @Column(name = "max_participants")
+    private Integer maxParticipants;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "privacy", length = 20)
+    @Builder.Default
+    private ProgramPrivacy privacy = ProgramPrivacy.PUBLIC;
+
+    @Column(name = "goals", columnDefinition = "TEXT")
+    private String goals;
+
+    @Column(name = "prerequisites", columnDefinition = "TEXT")
+    private String prerequisites;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "location_type", length = 20)
+    private LocationType locationType;
+
     @OneToMany(mappedBy = "program", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("startsAt ASC")
     @Builder.Default

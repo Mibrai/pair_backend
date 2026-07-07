@@ -3,6 +3,9 @@ package org.program.pair.domain.program;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.program.dto.*;
+import org.program.pair.domain.report.ReportEntityType;
+import org.program.pair.domain.report.ReportService;
+import org.program.pair.domain.report.dto.CreateReportRequest;
 import org.program.pair.shared.exception.ValidationException;
 import org.program.pair.shared.security.UserPrincipal;
 import org.springframework.http.HttpStatus;
@@ -11,6 +14,7 @@ import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -20,6 +24,7 @@ import java.util.UUID;
 public class ProgramController {
 
     private final ProgramService programService;
+    private final ReportService reportService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -50,6 +55,14 @@ public class ProgramController {
 
     @PutMapping("/{programId}")
     public ProgramDto updateProgram(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID programId,
+            @Valid @RequestBody UpdateProgramRequest request) {
+        return programService.updateProgram(principal.getId(), programId, request);
+    }
+
+    @PatchMapping("/{programId}")
+    public ProgramDto patchProgram(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID programId,
             @Valid @RequestBody UpdateProgramRequest request) {
@@ -89,5 +102,21 @@ public class ProgramController {
             @PathVariable UUID programId,
             @PathVariable UUID scheduleId) {
         programService.deleteSchedule(principal.getId(), scheduleId);
+    }
+
+    @PostMapping("/{programId}/report")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Map<String, String> reportProgram(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID programId,
+            @Valid @RequestBody ProgramReportRequest request) {
+        CreateReportRequest reportRequest = CreateReportRequest.builder()
+            .reportedEntityType(ReportEntityType.PROGRAM)
+            .reportedEntityId(programId)
+            .reason(request.reason())
+            .description(request.description())
+            .build();
+        reportService.createReport(principal.getId(), reportRequest);
+        return Map.of("message", "Programme signalé");
     }
 }
