@@ -58,6 +58,12 @@ public interface ProgramRepository extends JpaRepository<Program, UUID> {
     @Query("SELECT p FROM Program p WHERE p.userActivity.user.id = :organisateurId")
     List<Program> findByOrganisateurId(@Param("organisateurId") UUID organisateurId);
 
+    /**
+     * Find active, public programs created by a given user (for public profile view).
+     */
+    @Query("SELECT p FROM Program p WHERE p.userActivity.user.id = :userId AND p.status = 'ACTIVE' AND p.isPublic = true")
+    List<Program> findActivePublicByUserId(@Param("userId") UUID userId);
+
     @Query(value = """
         SELECT p.* FROM programs p
         JOIN user_activities ua ON p.user_activity_id = ua.id

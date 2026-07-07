@@ -143,8 +143,12 @@ public class SemanticSearchService {
             double lat, double lng) {
 
         return programs.stream().map(p -> {
-            var owner = p.getUserActivity().getUser();
+            var ua    = p.getUserActivity();
+            var owner = ua.getUser();
+            var act   = ua.getActivity();
+            var cat   = act.getCategory();
             var ownerLoc = owner.getLocation();
+
             double dist = 0;
             if (ownerLoc != null) {
                 double dLat = Math.toRadians(ownerLoc.getY() - lat);
@@ -157,8 +161,18 @@ public class SemanticSearchService {
             boolean isOnline = owner.getLastActiveAt() != null
                 && owner.getLastActiveAt().isAfter(java.time.Instant.now().minusSeconds(300));
 
+            // Premier média IMAGE comme thumbnail
+            String thumbnailUrl = p.getMedia().stream()
+                .filter(m -> m.getMediaType() == org.program.pair.domain.program.MediaType.IMAGE)
+                .min(java.util.Comparator.comparingInt(
+                    org.program.pair.domain.program.ProgramMedia::getSortOrder))
+                .map(org.program.pair.domain.program.ProgramMedia::getUrl)
+                .orElse(null);
+
             return new SearchResultDto(
-                "program", p.getId(), p.getTitle(),
+                "program",
+                p.getId(),
+                p.getTitle(),
                 p.getDescription() != null
                     ? p.getDescription().substring(0, Math.min(200, p.getDescription().length()))
                     : null,
@@ -166,11 +180,27 @@ public class SemanticSearchService {
                 ownerLoc != null ? ownerLoc.getY() : null,
                 ownerLoc != null ? ownerLoc.getX() : null,
                 dist, 0f,
-                p.getUserActivity().getActivity().getName(),
-                p.getUserActivity().getLevel() != null ? p.getUserActivity().getLevel().name() : null,
-                p.getUserActivity().getFormat() != null ? p.getUserActivity().getFormat().name() : null,
+                act.getName(),
+                ua.getLevel() != null ? ua.getLevel().name() : null,
+                ua.getFormat() != null ? ua.getFormat().name() : null,
                 isOnline,
-                owner.getVerificationStatus().name()
+                owner.getVerificationStatus().name(),
+                // champs enrichis
+                ua.getId(),
+                cat != null ? cat.getId() : null,
+                cat != null ? cat.getName() : null,
+                owner.getId(),
+                owner.getDisplayName(),
+                owner.getAvatarUrl(),
+                thumbnailUrl,
+                null,   // averageScore : non chargé en JPA (évite N+1)
+                null,   // reviewCount
+                null,   // enrolledCount
+                p.getStatus().name(),
+                p.getLocationType() != null ? p.getLocationType().name() : null,
+                null,   // city
+                p.getCreatedAt(),
+                p.getUpdatedAt()
             );
         }).toList();
     }

@@ -10,20 +10,28 @@ public record ProgramDto(
     String description,
     String status,
     Boolean isPublic,
+    // organisateur
     UUID organizerId,
     String organizerName,
     String organizerAvatarUrl,
+    // activité / catégorie
+    UUID userActivityId,
     String activityName,
     String activityIcon,
+    UUID categoryId,
+    String categoryName,
+    // timing
     Instant nextSessionAt,
     Instant createdAt,
     Instant updatedAt,
+    // médias & créneaux
     List<ScheduleDto> schedules,
     List<ProgramMediaDto> media,
+    // agrégats
     Float averageScore,
     Integer reviewCount,
     Integer enrolledCount,
-    // Champs ajoutés par V26
+    // champs V26
     Integer durationWeeks,
     Integer sessionsPerWeek,
     Integer sessionDurationMinutes,
