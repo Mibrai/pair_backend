@@ -53,7 +53,12 @@ public class AuthService {
             .filter(u -> Boolean.TRUE.equals(u.getIsActive()))
             .orElseThrow(() -> new InvalidCredentialsException("Identifiants invalides."));
 
-        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+        String hash = user.getPasswordHash();
+        if (hash == null || hash.length() < 60) {
+            throw new InvalidCredentialsException("Identifiants invalides.");
+        }
+
+        if (!passwordEncoder.matches(request.password(), hash)) {
             throw new InvalidCredentialsException("Identifiants invalides.");
         }
 
