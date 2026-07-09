@@ -54,8 +54,16 @@ public class AuthService {
             .orElseThrow(() -> new InvalidCredentialsException("Identifiants invalides."));
 
         String hash = user.getPasswordHash();
-        if (hash == null || hash.length() < 60) {
+        if (hash == null) {
             throw new InvalidCredentialsException("Identifiants invalides.");
+        }
+        hash = hash.strip();
+        if (hash.length() < 60 || !hash.startsWith("$2")) {
+            throw new InvalidCredentialsException("Identifiants invalides.");
+        }
+        if (!hash.equals(user.getPasswordHash())) {
+            user.setPasswordHash(hash);
+            userRepository.save(user);
         }
 
         if (!passwordEncoder.matches(request.password(), hash)) {
