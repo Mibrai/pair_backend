@@ -14,7 +14,7 @@ INSERT INTO users (id, email, password_hash, phone, display_name, bio, avatar_ur
     profile_visibility, show_age, show_last_active, show_location, allow_messages, show_on_map)
 VALUES
   ('00000000-0000-0000-0000-000000000011','kai.hartmann@web.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491701234570','Kai Hartmann',
    'Basketballspieler aus Dortmund. Ligaspieler seit 12 Jahren.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=kai',
@@ -24,7 +24,7 @@ VALUES
    'PUBLIC',TRUE,TRUE,TRUE,'EVERYONE',TRUE),
 
   ('00000000-0000-0000-0000-000000000012','nina.schreiber@gmx.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491711234571','Nina Schreiber',
    'Outdoor-Kletterin aus Freiburg. Mehrseillängen und Sportklettern im Schwarzwald.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=nina',
@@ -34,7 +34,7 @@ VALUES
    'PUBLIC',TRUE,TRUE,TRUE,'EVERYONE',TRUE),
 
   ('00000000-0000-0000-0000-000000000013','leon.krause@posteo.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491721234572','Leon Krause',
    'Triathlet aus Hannover. Olympische Distanz ist mein Heimspiel.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=leon',
@@ -44,7 +44,7 @@ VALUES
    'PUBLIC',TRUE,TRUE,FALSE,'EVERYONE',TRUE),
 
   ('00000000-0000-0000-0000-000000000014','mia.wolf@icloud.com',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491731234573','Mia Wolf',
    'Vinyasa-Yoga-Lehrerin aus Dresden. RYT-500 zertifiziert.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=mia',
@@ -54,7 +54,7 @@ VALUES
    'PUBLIC',TRUE,TRUE,TRUE,'EVERYONE',TRUE),
 
   ('00000000-0000-0000-0000-000000000015','lukas.jung@yahoo.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491741234574','Lukas Jung',
    'CrossFit-Athlet aus Mannheim. Open-Teilnehmer 2023 und 2024.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=lukas',
@@ -64,7 +64,7 @@ VALUES
    'PUBLIC',FALSE,TRUE,TRUE,'EVERYONE',TRUE),
 
   ('00000000-0000-0000-0000-000000000016','emilia.baum@freenet.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491751234575','Emilia Baum',
    'Ruderin aus Magdeburg. Deutsche Meisterschaft im Doppelvierer.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=emilia',
@@ -74,7 +74,7 @@ VALUES
    'FRIENDS',TRUE,FALSE,FALSE,'FRIENDS',FALSE),
 
   ('00000000-0000-0000-0000-000000000017','noah.fuchs@protonmail.com',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491761234576','Noah Fuchs',
    'BJJ-Sportler (Blaugurt) aus Augsburg. Wettkampf-Grappling und No-Gi.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=noah',
@@ -84,7 +84,7 @@ VALUES
    'PUBLIC',TRUE,TRUE,TRUE,'EVERYONE',TRUE),
 
   ('00000000-0000-0000-0000-000000000018','emma.berger@web.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491771234577','Emma Berger',
    'Ballett- und Contemporary-Tänzerin aus Wiesbaden.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=emma',
@@ -94,7 +94,7 @@ VALUES
    'PUBLIC',TRUE,TRUE,TRUE,'EVERYONE',TRUE),
 
   ('00000000-0000-0000-0000-000000000019','paul.henning@gmx.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491781234578','Paul Henning',
    'Road-Cyclist aus Bonn. Granfondo-Fahrer und Hobbyrenner.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=paul',
@@ -104,7 +104,7 @@ VALUES
    'PUBLIC',TRUE,TRUE,FALSE,'EVERYONE',TRUE),
 
   ('00000000-0000-0000-0000-000000000020','lara.zimmermann@t-online.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491791234579','Lara Zimmermann',
    'Skifahrerin und Snowboarderin aus Garmisch-Partenkirchen.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=lara',
@@ -114,7 +114,7 @@ VALUES
    'PUBLIC',TRUE,TRUE,TRUE,'EVERYONE',TRUE),
 
   ('00000000-0000-0000-0000-000000000021','jan.schwarz@icloud.com',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491701234580','Jan Schwarz',
    'Handballspieler aus Kiel. Drittligaerfahrung und Jugendtrainer.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=jan',
@@ -124,7 +124,7 @@ VALUES
    'PUBLIC',TRUE,TRUE,TRUE,'EVERYONE',TRUE),
 
   ('00000000-0000-0000-0000-000000000022','sophie.klein@web.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491711234581','Sophie Klein',
    'Mountainbikerin aus Rosenheim. Enduro und Freeride im Chiemgau.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=sophiek',
@@ -134,7 +134,7 @@ VALUES
    'PUBLIC',TRUE,TRUE,TRUE,'EVERYONE',TRUE),
 
   ('00000000-0000-0000-0000-000000000023','tim.vogel@posteo.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491721234582','Tim Vogel',
    'Schwimmer aus Heidelberg. Freiwasserspezialist und Langstreckenläufer.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=tim',
@@ -144,7 +144,7 @@ VALUES
    'PUBLIC',TRUE,TRUE,FALSE,'EVERYONE',TRUE),
 
   ('00000000-0000-0000-0000-000000000024','anna.mueller@freenet.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491731234583','Anna Müller',
    'Lauftrainerin aus Münster. Spezialisiert auf Laufanalyse und Verletzungsprävention.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=annam',
@@ -154,7 +154,7 @@ VALUES
    'PUBLIC',TRUE,TRUE,TRUE,'EVERYONE',TRUE),
 
   ('00000000-0000-0000-0000-000000000025','david.kohl@yahoo.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491741234584','David Kohl',
    'Volleyball-Spieler aus Karlsruhe. Beachvolleyball im Sommer, Halle im Winter.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=david',
@@ -164,7 +164,7 @@ VALUES
    'PUBLIC',FALSE,TRUE,TRUE,'EVERYONE',TRUE),
 
   ('00000000-0000-0000-0000-000000000026','lisa.horn@gmx.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491751234585','Lisa Horn',
    'Ashtanga-Yoga-Praktizierende aus Potsdam. Mysore-Stil seit 5 Jahren.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=lisa',
@@ -174,7 +174,7 @@ VALUES
    'FRIENDS',TRUE,FALSE,FALSE,'FRIENDS',FALSE),
 
   ('00000000-0000-0000-0000-000000000027','ben.sommer@protonmail.com',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491761234586','Ben Sommer',
    'Kraftdreikämpfer aus Essen. Wettkampfstart IPF-Nationalliga.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=ben',
@@ -184,7 +184,7 @@ VALUES
    'PUBLIC',TRUE,TRUE,TRUE,'EVERYONE',TRUE),
 
   ('00000000-0000-0000-0000-000000000028','clara.otto@web.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491771234587','Clara Otto',
    'Lindy-Hop- und Swing-Tänzerin aus Bielefeld. Unterrichtet seit 7 Jahren.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=clara',
@@ -194,7 +194,7 @@ VALUES
    'PUBLIC',TRUE,TRUE,TRUE,'EVERYONE',TRUE),
 
   ('00000000-0000-0000-0000-000000000029','finn.brand@icloud.com',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491781234588','Finn Brand',
    'Ski-Alpin-Rennläufer aus Berchtesgaden. Kaderathleter Bayerischer Skiverband.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=finn',
@@ -204,7 +204,7 @@ VALUES
    'PUBLIC',TRUE,TRUE,FALSE,'EVERYONE',TRUE),
 
   ('00000000-0000-0000-0000-000000000030','mia.klein@t-online.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491791234589','Mia Klein',
    'Aqua-Fitness-Trainerin aus Lübeck. Spezialisiert auf Reha-Sport im Wasser.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=miak',

@@ -52,7 +52,7 @@ VALUES
   -- User 0: the preserved account (seyd.njoya@icloud.com)
   ('00000000-0000-0000-0000-000000000001',
    'seyd.njoya@icloud.com',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$k6/Gj1/qw1/QfpPoW/Cc2ecYndl0U28pdSVRzrghe3hrsvjzp8/Xy',
    '+491701234560', 'Seyd Njoya',
    'Sportbegeistert aus Berlin. Ich liebe Laufen, Yoga und Klettern.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=seyd',
@@ -64,7 +64,7 @@ VALUES
 
   ('00000000-0000-0000-0000-000000000002',
    'lena.mueller@web.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491711234561', 'Lena Müller',
    'Yogalehrerin aus München. Ich unterrichte Hatha und Vinyasa seit 8 Jahren.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=lena',
@@ -76,7 +76,7 @@ VALUES
 
   ('00000000-0000-0000-0000-000000000003',
    'max.schmidt@gmx.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491721234562', 'Max Schmidt',
    'Hobbyläufer und Radfahrer aus Hamburg. Halbmarathon unter 2 Stunden ist mein Ziel.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=max',
@@ -88,7 +88,7 @@ VALUES
 
   ('00000000-0000-0000-0000-000000000004',
    'anna.weber@t-online.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491731234563', 'Anna Weber',
    'Kletterbegeisterte aus Köln. Bouldern und Vorstieg im Kletterzentrum und draußen.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=anna',
@@ -100,7 +100,7 @@ VALUES
 
   ('00000000-0000-0000-0000-000000000005',
    'felix.bauer@freenet.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491741234564', 'Felix Bauer',
    'Personal Trainer aus Frankfurt. Krafttraining, HIIT und funktionelles Training.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=felix',
@@ -112,7 +112,7 @@ VALUES
 
   ('00000000-0000-0000-0000-000000000006',
    'sophie.hoffmann@yahoo.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491751234565', 'Sophie Hoffmann',
    'Schwimmerin und Triathletin aus Stuttgart. Ironman-Teilnehmerin seit 2021.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=sophie',
@@ -124,7 +124,7 @@ VALUES
 
   ('00000000-0000-0000-0000-000000000007',
    'tobias.wagner@posteo.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491761234566', 'Tobias Wagner',
    'Kampfsportler aus Düsseldorf. Kickboxen und Brazilian Jiu-Jitsu seit 10 Jahren.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=tobias',
@@ -136,7 +136,7 @@ VALUES
 
   ('00000000-0000-0000-0000-000000000008',
    'julia.braun@protonmail.com',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491771234567', 'Julia Braun',
    'Tanzlehrerin aus Leipzig. Salsa, Tango und modernen Tanz unterrichte ich mit Leidenschaft.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=julia',
@@ -148,7 +148,7 @@ VALUES
 
   ('00000000-0000-0000-0000-000000000009',
    'markus.fischer@icloud.com',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491781234568', 'Markus Fischer',
    'Radsportler aus Nürnberg. Gravel und Mountainbike in der fränkischen Schweiz.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=markus',
@@ -160,7 +160,7 @@ VALUES
 
   ('00000000-0000-0000-0000-000000000010',
    'sarah.richter@gmx.de',
-   '$2a$12$KIX8e2zR7k4aN3bQ1uO5XeABCDEF123456789012345678901234',
+   '$2a$12$IsKDviFJnbYbHfuzoQ2P0OlvIgRAtzUjmkuwyv0Ze7fAfoqrUWevi',
    '+491791234569', 'Sarah Richter',
    'Pilates- und Barre-Trainerin aus Bremen. Ich helfe dir, Kraft und Flexibilität aufzubauen.',
    'https://api.dicebear.com/7.x/avataaars/svg?seed=sarah',
