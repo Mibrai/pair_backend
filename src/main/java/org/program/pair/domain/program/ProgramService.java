@@ -142,7 +142,7 @@ public class ProgramService {
 
         int radiusMeters = Math.max(1, (int) Math.round(effectiveRadiusKm * 1000));
 
-        return programRepository.findVisibleInRadius(lat, lng, radiusMeters, 100)
+        return programRepository.findVisibleNearScheduleOrOrganizer(lat, lng, radiusMeters, 100)
             .stream()
             .map(p -> toDto(p, requesterId))
             .collect(Collectors.toList());
