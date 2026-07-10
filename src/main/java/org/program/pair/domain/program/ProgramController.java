@@ -36,7 +36,13 @@ public class ProgramController {
 
     @GetMapping
     public List<ProgramDto> getMyPrograms(
-            @AuthenticationPrincipal UserPrincipal principal) {
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(required = false) Double lat,
+            @RequestParam(required = false) Double lng,
+            @RequestParam(name = "radius_km", required = false) Double radiusKm) {
+        if (lat != null || lng != null) {
+            return programService.getNearbyPrograms(principal.getId(), lat, lng, radiusKm);
+        }
         return programService.getMyPrograms(principal.getId());
     }
 
