@@ -118,6 +118,36 @@ public class ProgramService {
             .collect(Collectors.toList());
     }
 
+    private static final double DEFAULT_RADIUS_KM = 5.0;
+    private static final double MIN_RADIUS_KM = 0.01;
+    private static final double MAX_RADIUS_KM = 100.0;
+
+    @Transactional(readOnly = true)
+    public List<ProgramDto> getNearbyPrograms(UUID requesterId, Double lat, Double lng, Double radiusKm) {
+        if (lat == null || lng == null) {
+            throw new ValidationException("Les paramètres 'lat' et 'lng' doivent être fournis ensemble.");
+        }
+        if (lat < -90 || lat > 90) {
+            throw new ValidationException("Le paramètre 'lat' doit être compris entre -90 et 90.");
+        }
+        if (lng < -180 || lng > 180) {
+            throw new ValidationException("Le paramètre 'lng' doit être compris entre -180 et 180.");
+        }
+
+        double effectiveRadiusKm = radiusKm != null ? radiusKm : DEFAULT_RADIUS_KM;
+        if (effectiveRadiusKm < MIN_RADIUS_KM || effectiveRadiusKm > MAX_RADIUS_KM) {
+            throw new ValidationException(
+                "Le paramètre 'radius_km' doit être compris entre " + MIN_RADIUS_KM + " et " + MAX_RADIUS_KM + ".");
+        }
+
+        int radiusMeters = Math.max(1, (int) Math.round(effectiveRadiusKm * 1000));
+
+        return programRepository.findVisibleInRadius(lat, lng, radiusMeters, 100)
+            .stream()
+            .map(p -> toDto(p, requesterId))
+            .collect(Collectors.toList());
+    }
+
     public ScheduleDto addSchedule(UUID userId, UUID programId,
                                     CreateScheduleRequest request) {
         Program program = findProgramOwnedBy(programId, userId);
