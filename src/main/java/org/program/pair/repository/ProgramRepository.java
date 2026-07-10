@@ -89,4 +89,43 @@ public interface ProgramRepository extends JpaRepository<Program, UUID> {
         @Param("radiusMeters") int radiusMeters,
         @Param("limit") int limit
     );
+
+    /**
+     * Same visibility filter as findVisibleInRadius, but matches on where the
+     * program actually takes place (its nearest schedule location, same source
+     * GET /map/activities uses for its markers) instead of the organizer's own
+     * profile location. Falls back to the organizer's location only when the
+     * program has no schedule with a location.
+     */
+    @Query(value = """
+        SELECT p.* FROM programs p
+        JOIN user_activities ua ON p.user_activity_id = ua.id
+        JOIN users u ON ua.user_id = u.id
+        LEFT JOIN LATERAL (
+            SELECT s.location AS loc
+            FROM schedules s
+            WHERE s.program_id = p.id AND s.location IS NOT NULL
+            ORDER BY s.location <-> ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)
+            LIMIT 1
+        ) nearest_schedule ON true
+        WHERE p.status = 'ACTIVE'
+          AND p.is_public = true
+          AND u.is_active = true
+          AND ST_DWithin(
+              COALESCE(nearest_schedule.loc, CASE WHEN u.location_public THEN u.location END)::geography,
+              ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
+              :radiusMeters
+          )
+        ORDER BY ST_Distance(
+            COALESCE(nearest_schedule.loc, u.location)::geography,
+            ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
+        )
+        LIMIT :limit
+        """, nativeQuery = true)
+    List<Program> findVisibleNearScheduleOrOrganizer(
+        @Param("lat") double lat,
+        @Param("lng") double lng,
+        @Param("radiusMeters") int radiusMeters,
+        @Param("limit") int limit
+    );
 }
