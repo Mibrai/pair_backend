@@ -25,6 +25,8 @@ public interface ProgramRepository extends JpaRepository<Program, UUID> {
           AND p.is_public = true
           AND u.is_active = true
           AND ua.visible_on_map = true
+          AND p.embedding IS NOT NULL
+          AND (p.embedding <=> CAST(:queryEmbedding AS vector)) <= :maxDistance
           AND ST_DWithin(
               u.location::geography,
               ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
@@ -38,6 +40,7 @@ public interface ProgramRepository extends JpaRepository<Program, UUID> {
         @Param("lat") double lat,
         @Param("lng") double lng,
         @Param("radiusMeters") int radiusMeters,
+        @Param("maxDistance") double maxDistance,
         @Param("limit") int limit
     );
 
@@ -51,6 +54,9 @@ public interface ProgramRepository extends JpaRepository<Program, UUID> {
     @Modifying
     @Query(value = "UPDATE programs SET embedding = CAST(:embedding AS vector) WHERE id = :id", nativeQuery = true)
     void updateEmbedding(@Param("id") UUID id, @Param("embedding") String embeddingVectorString);
+
+    @Query(value = "SELECT * FROM programs WHERE embedding IS NULL", nativeQuery = true)
+    List<Program> findByEmbeddingIsNull();
 
     /**
      * Find programs by organizer (user) ID for GDPR export

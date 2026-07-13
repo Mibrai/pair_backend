@@ -31,6 +31,7 @@ public class LlmIntentExtractor {
 
     private final WebClient.Builder webClientBuilder;
     private final ObjectMapper objectMapper;
+    private final ActivityTaxonomy activityTaxonomy;
 
     public SearchIntent extractIntent(String userQuery) {
         // Si pas d'API key configurée, fallback direct
@@ -40,30 +41,38 @@ public class LlmIntentExtractor {
         }
 
         String systemPrompt = """
-            Tu es un assistant d'extraction d'intention pour un réseau social d'activités sportives et culturelles.
+            Tu es un assistant d'extraction d'intention pour un réseau social d'activités sportives et culturelles,
+            utilisé par des utilisateurs en français, anglais ou allemand.
             Analyse la phrase de l'utilisateur et retourne UNIQUEMENT un JSON valide,
             sans texte avant ou après, avec exactement ces champs :
             {
-              "activityKeyword": "string ou null",
+              "activityKeyword": "string ou null (dans la langue de l'utilisateur)",
               "categoryHint": "string ou null",
               "level": "BEGINNER|INTERMEDIATE|ADVANCED|EXPERT ou null",
               "format": "SOLO|GROUP|BOTH ou null",
               "suggestedRadius": nombre en mètres (défaut 5000),
               "timeHint": "string ou null",
               "needsClarification": boolean,
-              "clarificationQuestion": "string ou null"
+              "clarificationQuestion": "string ou null",
+              "canonicalActivitySlug": "string ou null"
             }
+
+            "canonicalActivitySlug" DOIT être choisi UNIQUEMENT parmi cette liste connue
+            (ou null si aucune ne correspond clairement à la requête, quelle que soit sa langue) :
+            %s
 
             Exemples :
             - "je veux faire du sport" → needsClarification: true,
               clarificationQuestion: "Quel type de sport vous intéresse ?"
             - "cherche partenaire escalade débutant" → activityKeyword: "escalade",
-              level: "BEGINNER", needsClarification: false
+              level: "BEGINNER", canonicalActivitySlug: "climbing", needsClarification: false
             - "quelqu'un pour courir dimanche matin près de chez moi" → activityKeyword: "course",
-              timeHint: "dimanche matin", format: "GROUP", needsClarification: false
-            - "tennis niveau intermédiaire" → activityKeyword: "tennis", level: "INTERMEDIATE"
-            - "yoga en groupe" → activityKeyword: "yoga", format: "GROUP"
-            """;
+              timeHint: "dimanche matin", format: "GROUP", canonicalActivitySlug: "running", needsClarification: false
+            - "Laufen am Sonntag" → activityKeyword: "Laufen", timeHint: "Sonntag",
+              canonicalActivitySlug: "running", needsClarification: false
+            - "tennis niveau intermédiaire" → activityKeyword: "tennis", level: "INTERMEDIATE", canonicalActivitySlug: "tennis"
+            - "yoga en groupe" → activityKeyword: "yoga", format: "GROUP", canonicalActivitySlug: "yoga"
+            """.formatted(String.join(", ", activityTaxonomy.knownSlugs()));
 
         Map<String, Object> requestBody = Map.of(
             "model", model,
@@ -130,8 +139,12 @@ public class LlmIntentExtractor {
             format = "SOLO";
         }
 
-        // Si la requête est très courte et vague
-        boolean needsClarification = userQuery.trim().split("\\s+").length <= 2
+        // La taxonomie canonique EN/DE/FR permet de reconnaître une activité connue
+        // même sans LLM disponible (ex: "Laufen" -> "running").
+        String canonicalSlug = activityTaxonomy.matchSlugs(userQuery).stream().findFirst().orElse(null);
+
+        // Si la requête est très courte et vague, et qu'aucune activité connue n'est reconnue
+        boolean needsClarification = userQuery.trim().split("\\s+").length <= 2 && canonicalSlug == null
             && !lowercaseQuery.matches(".*(tennis|football|yoga|course|escalade|basket|natation).*");
 
         String clarification = needsClarification
@@ -146,7 +159,8 @@ public class LlmIntentExtractor {
             5000,
             null,
             needsClarification,
-            clarification
+            clarification,
+            canonicalSlug
         );
     }
 }

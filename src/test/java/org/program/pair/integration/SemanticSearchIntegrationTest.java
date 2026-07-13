@@ -82,10 +82,12 @@ class SemanticSearchIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void recherche_aucunResultat_devraitProposerAlternatives() {
-        // Mock du LLM pour une recherche précise
+        // Mock du LLM pour une recherche précise sur une activité qui n'existe pas
+        // dans les données de seed (contrairement à "escalade", que la couche
+        // taxonomie multilingue résout désormais correctement près de Paris).
         when(intentExtractor.extractIntent(any()))
             .thenReturn(new SearchIntent(
-                "escalade",
+                "fictionsport-xyz",
                 "Sport",
                 null,
                 null,
@@ -104,9 +106,9 @@ class SemanticSearchIntegrationTest extends AbstractIntegrationTest {
         // Créer un utilisateur et se connecter
         String token = registerAndLogin("noresult@pair.app");
 
-        // Effectuer une recherche dans une zone sans résultats
+        // Effectuer une recherche sur une activité qui n'existe pas
         SearchRequest searchReq = new SearchRequest(
-            "je cherche un partenaire d'escalade",
+            "je cherche un partenaire de fictionsport-xyz",
             48.85,
             2.35,
             null

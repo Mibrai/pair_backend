@@ -70,4 +70,29 @@ public class IndexationController {
             "totalUpdated", programs + activities
         );
     }
+
+    /**
+     * Backfill embeddings for all existing programs and activities that don't
+     * have one yet (embedding IS NULL). Idempotent: safe to call repeatedly,
+     * only processes rows still missing an embedding. Requires OPENAI_API_KEY
+     * to be configured (embedding.api-key) — otherwise a no-op.
+     *
+     * Run after deploying the multilingual embedding pipeline to backfill
+     * pre-existing content:
+     *   curl -X POST https://<host>/api/indexation/backfill-embeddings
+     */
+    @PostMapping("/backfill-embeddings")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    public Map<String, Object> backfillEmbeddings() {
+        log.info("Embedding backfill triggered");
+        int programs = indexationService.backfillProgramEmbeddings();
+        int activities = indexationService.backfillActivityEmbeddings();
+
+        return Map.of(
+            "status", "completed",
+            "programsUpdated", programs,
+            "activitiesUpdated", activities,
+            "totalUpdated", programs + activities
+        );
+    }
 }

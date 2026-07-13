@@ -10,9 +10,12 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -156,6 +159,71 @@ public class FullTextSearchService {
             return rows.stream().map(r -> mapRowToSearchResult(r, request.lat(), request.lng())).toList();
         } catch (Exception e) {
             log.error("Activity search error: {}", e.getMessage(), e);
+            return List.of();
+        }
+    }
+
+    /**
+     * Recherche déterministe via la taxonomie d'activités canonique EN/DE/FR :
+     * matche les programmes dont l'activité liée porte, dans son nom ou sa
+     * description (langue de stockage d'origine), l'un des libellés multilingues
+     * résolus par {@link ActivityTaxonomy}. Garantit le cross-lingue sur les
+     * activités connues indépendamment de la qualité des embeddings.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public List<SearchResultDto> searchByTaxonomyLabels(Set<String> labels, SearchRequest request, int limit) {
+        if (labels == null || labels.isEmpty()) return List.of();
+        int radius = request.radiusMeters() != null ? request.radiusMeters() : 5000;
+
+        String labelConditions = labels.stream()
+            .map(l -> "(LOWER(a.name) LIKE ? OR LOWER(a.description) LIKE ?)")
+            .collect(Collectors.joining(" OR "));
+
+        String sql = """
+            SELECT
+                %s,
+                ST_Distance(
+                    u.location::geography,
+                    ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography
+                ) AS distance_meters,
+                1.0 AS rank
+            FROM programs p
+            INNER JOIN user_activities ua  ON p.user_activity_id = ua.id
+            INNER JOIN users u             ON ua.user_id          = u.id
+            INNER JOIN activities a        ON ua.activity_id      = a.id
+            INNER JOIN categories cat      ON a.category_id       = cat.id
+            WHERE
+                p.status = 'ACTIVE'
+                AND p.is_public = true
+                AND u.location IS NOT NULL
+                AND (%s)
+                AND ST_DWithin(
+                    u.location::geography,
+                    ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
+                    ?
+                )
+            ORDER BY distance_meters ASC
+            LIMIT ?
+            """.formatted(PROGRAM_SELECT, labelConditions);
+
+        List<Object> params = new ArrayList<>();
+        params.add(request.lng());
+        params.add(request.lat());
+        for (String label : labels) {
+            String pattern = "%" + label.toLowerCase() + "%";
+            params.add(pattern);
+            params.add(pattern);
+        }
+        params.add(request.lng());
+        params.add(request.lat());
+        params.add(radius);
+        params.add(limit);
+
+        try {
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(sql, params.toArray());
+            return rows.stream().map(r -> mapRowToSearchResult(r, request.lat(), request.lng())).toList();
+        } catch (Exception e) {
+            log.error("Taxonomy search error: {}", e.getMessage(), e);
             return List.of();
         }
     }
