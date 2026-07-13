@@ -5,9 +5,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+import reactor.util.retry.Retry;
 
 import java.time.Duration;
 import java.util.List;
@@ -53,6 +56,10 @@ public class EmbeddingService {
                 .retrieve()
                 .bodyToMono(String.class)
                 .timeout(Duration.ofSeconds(15))
+                .retryWhen(Retry.backoff(4, Duration.ofSeconds(2))
+                    .maxBackoff(Duration.ofSeconds(30))
+                    .filter(EmbeddingService::isRetryable)
+                    .onRetryExhaustedThrow((spec, signal) -> signal.failure()))
                 .block();
 
             if (response == null) return null;
@@ -70,6 +77,13 @@ public class EmbeddingService {
             log.warn("Embedding generation failed: {}", e.getMessage());
             return null;
         }
+    }
+
+    /** 429 (rate limit/quota) et erreurs serveur transitoires (5xx) méritent un retry ; les 4xx (clé invalide, requête malformée) non. */
+    private static boolean isRetryable(Throwable throwable) {
+        if (!(throwable instanceof WebClientResponseException e)) return false;
+        HttpStatusCode status = e.getStatusCode();
+        return status.value() == 429 || status.is5xxServerError();
     }
 
     public String toVectorString(float[] embedding) {
