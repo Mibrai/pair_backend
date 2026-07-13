@@ -8,10 +8,13 @@ import org.program.pair.domain.search.dto.*;
 import org.program.pair.repository.ProgramRepository;
 import org.program.pair.repository.SearchLogRepository;
 import org.program.pair.repository.UserRepository;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -26,6 +29,11 @@ public class SemanticSearchService {
     private final SearchLogRepository searchLogRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
+    private final ActivityTaxonomy activityTaxonomy;
+
+    /** Similarité cosine minimale (0-1) pour qu'un résultat vectoriel soit retenu. */
+    @Value("${search.embedding.min-similarity:0.25}")
+    private double minSimilarity;
 
     @Transactional
     public SearchResponse search(SearchRequest request, UUID userId) {
@@ -91,23 +99,37 @@ public class SemanticSearchService {
         SearchRequest searchRequest = new SearchRequest(
             request.query(), request.lat(), request.lng(), radius);
 
-        List<SearchResultDto> results;
+        // 1. Couche déterministe : taxonomie d'activités canonique EN/DE/FR.
+        // Garantit le matching cross-lingue sur les activités connues (ex: "Laufen"
+        // -> slug "running" -> "course à pied"/"marche à pied"/"running"),
+        // indépendamment de la qualité du rappel sémantique.
+        Set<String> taxonomyLabels = activityTaxonomy.matchLabels(
+            request.query(), intent.activityKeyword(), intent.canonicalActivitySlug());
+        List<SearchResultDto> taxonomyResults = taxonomyLabels.isEmpty()
+            ? List.of()
+            : fullTextSearchService.searchByTaxonomyLabels(taxonomyLabels, searchRequest, 20);
 
+        // 2. Couche de rappel : embeddings multilingues (ou full-text en fallback).
+        List<SearchResultDto> recallResults;
         if (embeddingService.isConfigured()) {
-            // Recherche sémantique via pgvector
             float[] embedding = embeddingService.generateEmbedding(request.query());
             if (embedding != null) {
-                results = toSearchResultDtos(
+                double maxDistance = 1 - minSimilarity;
+                recallResults = toSearchResultDtos(
                     programRepository.semanticSearchInRadius(
                         embeddingService.toVectorString(embedding),
-                        request.lat(), request.lng(), radius, 20),
+                        request.lat(), request.lng(), radius, maxDistance, 20),
                     request.lat(), request.lng());
             } else {
-                results = fulltextFallback(intent, searchRequest);
+                recallResults = fulltextFallback(intent, searchRequest);
             }
         } else {
-            results = fulltextFallback(intent, searchRequest);
+            recallResults = fulltextFallback(intent, searchRequest);
         }
+
+        // 3. Fusion : les matchs taxonomiques (précision) priment, complétés par le
+        // rappel sémantique/full-text, dédupliqués par programme.
+        List<SearchResultDto> results = mergeResults(taxonomyResults, recallResults, 20);
 
         // Filtrer par niveau si spécifié par le LLM
         if (intent.level() != null && !results.isEmpty()) {
@@ -125,6 +147,14 @@ public class SemanticSearchService {
         }
 
         return results;
+    }
+
+    private List<SearchResultDto> mergeResults(
+            List<SearchResultDto> primary, List<SearchResultDto> secondary, int limit) {
+        LinkedHashMap<UUID, SearchResultDto> merged = new LinkedHashMap<>();
+        primary.forEach(r -> merged.put(r.id(), r));
+        secondary.forEach(r -> merged.putIfAbsent(r.id(), r));
+        return merged.values().stream().limit(limit).toList();
     }
 
     private List<SearchResultDto> fulltextFallback(SearchIntent intent, SearchRequest searchRequest) {

@@ -216,24 +216,44 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- Testcontainers -->
+        <!-- Testcontainers (version gérée par la BOM de spring-boot-starter-parent) -->
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>postgresql</artifactId>
-            <version>1.19.3</version>
+            <artifactId>testcontainers-postgresql</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.testcontainers</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <version>1.19.3</version>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
             <scope>test</scope>
+        </dependency>
+        <!-- Pin explicite : tika-core (2.9.1) tire commons-io 2.14.0, trop ancien
+             pour l'API utilisée par testcontainers 2.x (FileTimes.toUnixTime,
+             ajouté en 2.17.0), ce qui casse la construction d'image Docker. -->
+        <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+            <version>2.19.0</version>
         </dependency>
 
     </dependencies>
 
     <build>
         <plugins>
+            <!-- Un fork JVM par classe de test : les tests @SpringBootTest partagent
+                 sinon des ressources statiques par JVM (bucket4j en mémoire, pool
+                 Reactor Netty global) entre classes indépendantes, provoquant des
+                 échecs aléatoires (rate-limit atteint, timeouts réseau) quand la
+                 suite tourne en entier plutôt que classe par classe. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <reuseForks>false</reuseForks>
+                    <forkCount>1</forkCount>
+                </configuration>
+            </plugin>
+
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

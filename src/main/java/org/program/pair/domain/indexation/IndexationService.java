@@ -148,6 +148,66 @@ public class IndexationService {
     }
 
     /**
+     * Backfill embeddings for all programs that don't have one yet (e.g. content
+     * created before the embedding pipeline existed, or while OPENAI_API_KEY was
+     * unset). Synchronous and idempotent: safe to re-run, only touches rows where
+     * embedding IS NULL.
+     */
+    @Transactional
+    public int backfillProgramEmbeddings() {
+        if (!embeddingService.isConfigured()) {
+            log.warn("Embedding API not configured, skipping program embedding backfill");
+            return 0;
+        }
+        List<Program> missing = programRepository.findByEmbeddingIsNull();
+        log.info("Backfilling embeddings for {} programs", missing.size());
+
+        int updated = 0;
+        for (Program p : missing) {
+            try {
+                float[] embedding = embeddingService.generateEmbedding(buildProgramText(p));
+                if (embedding != null) {
+                    programRepository.updateEmbedding(p.getId(), embeddingService.toVectorString(embedding));
+                    updated++;
+                }
+            } catch (Exception e) {
+                log.error("Error backfilling embedding for program {}: {}", p.getId(), e.getMessage());
+            }
+        }
+        log.info("Program embedding backfill completed: {}/{} updated", updated, missing.size());
+        return updated;
+    }
+
+    /**
+     * Backfill embeddings for all activities that don't have one yet.
+     */
+    @Transactional
+    public int backfillActivityEmbeddings() {
+        if (!embeddingService.isConfigured()) {
+            log.warn("Embedding API not configured, skipping activity embedding backfill");
+            return 0;
+        }
+        List<org.program.pair.domain.activity.Activity> missing = activityRepository.findByEmbeddingIsNull();
+        log.info("Backfilling embeddings for {} activities", missing.size());
+
+        int updated = 0;
+        for (org.program.pair.domain.activity.Activity a : missing) {
+            try {
+                String text = a.getName() + " " + (a.getDescription() != null ? a.getDescription() : "");
+                float[] embedding = embeddingService.generateEmbedding(text);
+                if (embedding != null) {
+                    activityRepository.updateEmbedding(a.getId(), embeddingService.toVectorString(embedding));
+                    updated++;
+                }
+            } catch (Exception e) {
+                log.error("Error backfilling embedding for activity {}: {}", a.getId(), e.getMessage());
+            }
+        }
+        log.info("Activity embedding backfill completed: {}/{} updated", updated, missing.size());
+        return updated;
+    }
+
+    /**
      * Get statistics about indexed content
      */
     public IndexationStats getStats() {
