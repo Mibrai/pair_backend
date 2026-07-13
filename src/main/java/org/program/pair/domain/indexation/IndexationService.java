@@ -93,6 +93,15 @@ public class IndexationService {
         }
     }
 
+    /** Espacement entre appels d'embedding successifs pour rester sous les limites de débit OpenAI. */
+    private void throttleEmbeddingCalls() {
+        try {
+            Thread.sleep(250);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     private String buildProgramText(Program p) {
         StringBuilder sb = new StringBuilder(p.getTitle()).append(". ");
         if (p.getDescription() != null) sb.append(p.getDescription()).append(". ");
@@ -165,6 +174,7 @@ public class IndexationService {
         int updated = 0;
         for (Program p : missing) {
             try {
+                throttleEmbeddingCalls();
                 float[] embedding = embeddingService.generateEmbedding(buildProgramText(p));
                 if (embedding != null) {
                     programRepository.updateEmbedding(p.getId(), embeddingService.toVectorString(embedding));
@@ -193,6 +203,7 @@ public class IndexationService {
         int updated = 0;
         for (org.program.pair.domain.activity.Activity a : missing) {
             try {
+                throttleEmbeddingCalls();
                 String text = a.getName() + " " + (a.getDescription() != null ? a.getDescription() : "");
                 float[] embedding = embeddingService.generateEmbedding(text);
                 if (embedding != null) {
