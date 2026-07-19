@@ -117,6 +117,11 @@ public class PushNotificationService implements PushNotificationServiceInterface
             case ACCOUNT_VERIFICATION -> "Vérification de compte";
             case PASSWORD_RESET -> "Réinitialisation de mot de passe";
             case MODERATION_ACTION -> "Action de modération";
+            case AUTHOR_NEW_ACTIVITY -> payload.get("authorName") + " a créé une nouvelle activité";
+            case AUTHOR_NEW_PROGRAM -> payload.get("authorName") + " a créé un nouveau programme";
+            case ACTIVITY_UPDATED -> "Une activité que vous suivez a changé";
+            case ACTIVITY_NEW_PROGRAM -> "Nouveau programme sur une activité que vous suivez";
+            case CATEGORY_NEW_ACTIVITY -> "Nouvelle activité dans une catégorie suivie";
         };
     }
 
@@ -137,6 +142,11 @@ public class PushNotificationService implements PushNotificationServiceInterface
             case ACCOUNT_VERIFICATION -> "Vérifiez votre compte pour débloquer toutes les fonctionnalités";
             case PASSWORD_RESET -> "Cliquez pour réinitialiser votre mot de passe";
             case MODERATION_ACTION -> (String) payload.getOrDefault("message", "Une action a été prise sur votre contenu");
+            case AUTHOR_NEW_ACTIVITY -> String.valueOf(payload.get("activityName"));
+            case AUTHOR_NEW_PROGRAM -> String.valueOf(payload.get("programTitle"));
+            case ACTIVITY_UPDATED -> String.valueOf(payload.get("activityName"));
+            case ACTIVITY_NEW_PROGRAM -> String.valueOf(payload.get("programTitle"));
+            case CATEGORY_NEW_ACTIVITY -> String.valueOf(payload.get("activityName"));
         };
     }
 }

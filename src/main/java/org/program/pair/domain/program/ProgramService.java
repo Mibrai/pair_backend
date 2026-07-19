@@ -7,6 +7,7 @@ import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
 import org.program.pair.domain.activity.UserActivity;
 import org.program.pair.domain.program.dto.*;
+import org.program.pair.domain.subscription.SubscriptionService;
 import org.program.pair.repository.*;
 import org.program.pair.shared.exception.ForbiddenException;
 import org.program.pair.shared.exception.ResourceNotFoundException;
@@ -31,6 +32,7 @@ public class ProgramService {
     private final ProgramMediaRepository programMediaRepository;
     private final ReviewRepository reviewRepository;
     private final UserProgramRepository userProgramRepository;
+    private final SubscriptionService subscriptionService;
     private final HtmlSanitizer sanitizer;
     private final GeometryFactory geometryFactory = new GeometryFactory(
         new PrecisionModel(), 4326);
@@ -54,7 +56,9 @@ public class ProgramService {
             request.maxParticipants(), request.privacy(), request.goals(),
             request.prerequisites(), request.locationType());
 
-        return toDto(programRepository.save(program), userId);
+        Program saved = programRepository.save(program);
+        subscriptionService.notifySubscribersOfNewProgram(saved);
+        return toDto(saved, userId);
     }
 
     public ProgramDto updateProgram(UUID userId, UUID programId,
