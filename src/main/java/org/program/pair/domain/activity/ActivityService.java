@@ -2,6 +2,7 @@ package org.program.pair.domain.activity;
 
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.activity.dto.*;
+import org.program.pair.domain.subscription.SubscriptionService;
 import org.program.pair.domain.user.User;
 import org.program.pair.repository.*;
 import org.program.pair.shared.exception.ForbiddenException;
@@ -26,6 +27,7 @@ public class ActivityService {
     private final UserActivityRepository userActivityRepository;
     private final ProgramRepository programRepository;
     private final UserRepository userRepository;
+    private final SubscriptionService subscriptionService;
     private final HtmlSanitizer sanitizer;
 
     @Transactional(readOnly = true)
@@ -127,6 +129,7 @@ public class ActivityService {
         userActivity.setFormat(request.format());
 
         userActivity = userActivityRepository.save(userActivity);
+        subscriptionService.notifySubscribersOfNewUserActivity(userActivity);
         return toUserActivityDto(userActivity);
     }
 
@@ -150,6 +153,7 @@ public class ActivityService {
         }
 
         userActivity = userActivityRepository.save(userActivity);
+        subscriptionService.notifySubscribersOfUserActivityUpdate(userActivity);
         return toUserActivityDto(userActivity);
     }
 
