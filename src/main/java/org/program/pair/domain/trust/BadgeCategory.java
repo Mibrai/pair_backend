@@ -6,5 +6,10 @@ public enum BadgeCategory {
     ROLE,
     VERIFICATION,
     ENGAGEMENT,
-    SPECIAL
+    SPECIAL,
+    // Valeurs déjà présentes dans les données de seed V12/V27, absentes de l'enum d'origine
+    CREATION,
+    SOCIAL,
+    REPUTATION,
+    ACTIVITY
 }

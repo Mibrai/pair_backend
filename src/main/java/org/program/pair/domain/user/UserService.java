@@ -1,6 +1,7 @@
 package org.program.pair.domain.user;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
@@ -21,11 +22,13 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
 @Transactional
 @RequiredArgsConstructor
+@Slf4j
 public class UserService {
 
     private final UserRepository userRepository;
@@ -218,7 +221,18 @@ public class UserService {
             && user.getLastActiveAt().isAfter(Instant.now().minusSeconds(300)); // 5 min
 
         List<String> badgeCodes = badgeAwardRepository.findByUserId(user.getId()).stream()
-            .map(award -> award.getBadge().getCode())
+            .map(award -> {
+                try {
+                    return award.getBadge().getCode();
+                } catch (IllegalArgumentException e) {
+                    // Badge illisible (valeur d'enum inconnue en base) : on l'ignore plutôt
+                    // que de faire échouer tout le profil public.
+                    log.warn("Badge illisible pour l'award {} de l'utilisateur {} : {}",
+                        award.getId(), user.getId(), e.getMessage());
+                    return null;
+                }
+            })
+            .filter(Objects::nonNull)
             .toList();
 
         return new UserPublicDto(

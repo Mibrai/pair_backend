@@ -72,6 +72,9 @@ public class BadgeService {
             case ACTIVITY_DIVERSITY -> checkActivityDiversity(userId, badge.getConditionThreshold());
             case RECOMMENDATION_COUNT -> checkRecommendationCount(userId, badge.getConditionThreshold());
             case MANUAL -> false; // Manual badges cannot be auto-awarded
+            // Types utilisés uniquement par les badges pré-attribués via seed SQL (V12/V27) —
+            // pas encore d'évaluation automatique implémentée pour ceux-ci.
+            default -> false;
         };
     }
 

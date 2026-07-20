@@ -108,6 +108,16 @@ public class ActivityService {
             .collect(Collectors.toList());
     }
 
+    @Transactional(readOnly = true)
+    public List<UserActivityDto> getPublicUserActivities(UUID userId) {
+        if (!userRepository.existsById(userId)) {
+            throw new ResourceNotFoundException("Utilisateur introuvable.");
+        }
+        return userActivityRepository.findVisibleByUserId(userId).stream()
+            .map(this::toUserActivityDto)
+            .collect(Collectors.toList());
+    }
+
     public UserActivityDto addActivityToProfile(UUID userId, UpsertUserActivityRequest request) {
         Activity activity = activityRepository.findById(request.activityId())
             .orElseThrow(() -> new ResourceNotFoundException("Activité introuvable."));
