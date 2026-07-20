@@ -2,6 +2,10 @@ package org.program.pair.domain.program;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.program.pair.domain.media.ImageProcessor;
+import org.program.pair.domain.media.MediaType;
+import org.program.pair.domain.media.MediaValidator;
+import org.program.pair.domain.media.StorageService;
 import org.program.pair.domain.program.dto.*;
 import org.program.pair.domain.report.ReportEntityType;
 import org.program.pair.domain.report.ReportService;
@@ -12,7 +16,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -25,6 +32,9 @@ public class ProgramController {
 
     private final ProgramService programService;
     private final ReportService reportService;
+    private final StorageService storageService;
+    private final MediaValidator mediaValidator;
+    private final ImageProcessor imageProcessor;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -83,6 +93,36 @@ public class ProgramController {
         programService.deleteProgram(principal.getId(), programId);
     }
 
+    @PostMapping("/{programId}/image/upload")
+    public ProgramDto uploadProgramImage(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID programId,
+            @RequestParam("file") MultipartFile file) throws IOException {
+        mediaValidator.validateImage(file);
+        InputStream processedImage = imageProcessor.processImage(file);
+        ProcessedMultipartFile processedFile = new ProcessedMultipartFile(
+            file.getOriginalFilename(), processedImage);
+        String filename = storageService.store(processedFile, programId, MediaType.PROGRAM_IMAGE);
+        return programService.updateProgramImage(
+            principal.getId(), programId, "/api/media/files/" + filename);
+    }
+
+    @DeleteMapping("/{programId}/image")
+    public ProgramDto deleteProgramImage(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID programId) throws IOException {
+        String previousImageUrl = programService.removeProgramImage(principal.getId(), programId);
+        deleteStoredFile(previousImageUrl);
+        return programService.getProgram(programId, principal.getId());
+    }
+
+    private void deleteStoredFile(String url) throws IOException {
+        String prefix = "/api/media/files/";
+        if (url != null && url.startsWith(prefix)) {
+            storageService.delete(url.substring(prefix.length()));
+        }
+    }
+
     @PostMapping("/{programId}/schedules")
     @ResponseStatus(HttpStatus.CREATED)
     public ScheduleDto addSchedule(
@@ -124,5 +164,24 @@ public class ProgramController {
             .build();
         reportService.createReport(principal.getId(), reportRequest);
         return Map.of("message", "Programme signalé");
+    }
+
+    private static class ProcessedMultipartFile implements MultipartFile {
+        private final String originalFilename;
+        private final InputStream inputStream;
+
+        ProcessedMultipartFile(String originalFilename, InputStream inputStream) {
+            this.originalFilename = originalFilename;
+            this.inputStream = inputStream;
+        }
+
+        @Override public String getName() { return "file"; }
+        @Override public String getOriginalFilename() { return originalFilename; }
+        @Override public String getContentType() { return "image/jpeg"; }
+        @Override public boolean isEmpty() { return false; }
+        @Override public long getSize() { return 0; }
+        @Override public byte[] getBytes() throws IOException { return inputStream.readAllBytes(); }
+        @Override public InputStream getInputStream() { return inputStream; }
+        @Override public void transferTo(java.io.File dest) throws IOException { throw new UnsupportedOperationException(); }
     }
 }

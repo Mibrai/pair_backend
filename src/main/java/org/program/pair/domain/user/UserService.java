@@ -88,6 +88,14 @@ public class UserService {
         userRepository.save(user);
     }
 
+    public String removeAvatar(UUID userId) {
+        User user = findActiveUser(userId);
+        String previousAvatarUrl = user.getAvatarUrl();
+        user.setAvatarUrl(null);
+        userRepository.save(user);
+        return previousAvatarUrl;
+    }
+
     public void deactivateAccount(UUID userId) {
         User user = findActiveUser(userId);
         user.setIsActive(false);

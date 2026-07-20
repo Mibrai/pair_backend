@@ -75,6 +75,9 @@ public class Program {
     @Column(name = "organizer_avatar_url", length = 500)
     private String organizerAvatarUrl;
 
+    @Column(name = "image_url", length = 500)
+    private String imageUrl;
+
     @Column(name = "next_session_at")
     private Instant nextSessionAt;
 
