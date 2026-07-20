@@ -107,6 +107,17 @@ public class UserController {
         return userService.getMyProfile(principal.getId());
     }
 
+    @DeleteMapping("/me/avatar")
+    public UserPrivateDto deleteAvatar(
+            @AuthenticationPrincipal UserPrincipal principal) throws IOException {
+        String previousAvatarUrl = userService.removeAvatar(principal.getId());
+        String prefix = "/api/media/files/";
+        if (previousAvatarUrl != null && previousAvatarUrl.startsWith(prefix)) {
+            storageService.delete(previousAvatarUrl.substring(prefix.length()));
+        }
+        return userService.getMyProfile(principal.getId());
+    }
+
     @GetMapping("/{id}")
     public UserPublicDto getPublicProfile(
             @PathVariable UUID id,

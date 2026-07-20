@@ -14,6 +14,7 @@ public record ProgramDto(
     UUID organizerId,
     String organizerName,
     String organizerAvatarUrl,
+    String imageUrl,
     // activité / catégorie
     UUID userActivityId,
     String activityName,

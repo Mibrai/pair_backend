@@ -121,6 +121,16 @@ public class ActivityController {
         return activityService.updateActivityIcon(activityId, "/api/media/files/" + filename);
     }
 
+    @DeleteMapping("/activities/{activityId}/icon")
+    public ActivityDto deleteActivityIcon(@PathVariable UUID activityId) throws IOException {
+        ActivityService.IconRemovalResult result = activityService.removeActivityIcon(activityId);
+        String prefix = "/api/media/files/";
+        if (result.previousIcon() != null && result.previousIcon().startsWith(prefix)) {
+            storageService.delete(result.previousIcon().substring(prefix.length()));
+        }
+        return result.activity();
+    }
+
     private static class ProcessedMultipartFile implements MultipartFile {
         private final String originalFilename;
         private final InputStream inputStream;

@@ -191,6 +191,19 @@ public class ActivityService {
         return toActivityDto(activityRepository.save(activity));
     }
 
+    private static final String DEFAULT_ACTIVITY_ICON = "sports";
+
+    public record IconRemovalResult(String previousIcon, ActivityDto activity) {}
+
+    public IconRemovalResult removeActivityIcon(UUID activityId) {
+        Activity activity = activityRepository.findById(activityId)
+            .orElseThrow(() -> new ResourceNotFoundException("Activité introuvable."));
+        String previousIcon = activity.getIcon();
+        activity.setIcon(DEFAULT_ACTIVITY_ICON);
+        ActivityDto dto = toActivityDto(activityRepository.save(activity));
+        return new IconRemovalResult(previousIcon, dto);
+    }
+
     private ActivityDto toActivityDto(Activity activity) {
         return new ActivityDto(
             activity.getId(),

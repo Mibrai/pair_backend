@@ -92,6 +92,20 @@ public class ProgramService {
         programRepository.save(program);
     }
 
+    public ProgramDto updateProgramImage(UUID userId, UUID programId, String imageUrl) {
+        Program program = findProgramOwnedBy(programId, userId);
+        program.setImageUrl(imageUrl);
+        return toDto(programRepository.save(program), userId);
+    }
+
+    public String removeProgramImage(UUID userId, UUID programId) {
+        Program program = findProgramOwnedBy(programId, userId);
+        String previousImageUrl = program.getImageUrl();
+        program.setImageUrl(null);
+        programRepository.save(program);
+        return previousImageUrl;
+    }
+
     @Transactional(readOnly = true)
     public ProgramDto getProgram(UUID programId, UUID requesterId) {
         Program program = programRepository.findById(programId)
@@ -334,6 +348,7 @@ public class ProgramService {
             user.getId(),
             organizerName,
             organizerAvatarUrl,
+            p.getImageUrl(),
             ua.getId(),
             activity.getName(),
             activity.getIcon(),
