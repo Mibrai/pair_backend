@@ -69,6 +69,11 @@ public class ActivityController {
         return activityService.getUserActivities(principal.getId());
     }
 
+    @GetMapping("/users/{id}/activities")
+    public List<UserActivityDto> getPublicUserActivities(@PathVariable UUID id) {
+        return activityService.getPublicUserActivities(id);
+    }
+
     @PostMapping("/users/me/activities")
     @ResponseStatus(HttpStatus.CREATED)
     public UserActivityDto addActivity(

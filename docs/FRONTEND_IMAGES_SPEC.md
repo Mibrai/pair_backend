@@ -199,6 +199,8 @@ programmes à proximité, etc.) — c'est un champ additif, aucune réponse exis
 | Activity  | Suppression | DELETE  | `/api/activities/{activityId}/icon`         | —                             | non vérifiée ⚠️     |
 | Program   | Upload      | POST    | `/api/programs/{programId}/image/upload`    | `multipart/form-data: file` | oui (403 sinon)    |
 | Program   | Suppression | DELETE  | `/api/programs/{programId}/image`           | —                             | oui (403 sinon)    |
+| User      | Lecture (autre utilisateur) | GET | `/api/users/{id}`                    | —                             | n/a (lecture publique) |
+| User      | Activités publiques (autre utilisateur) | GET | `/api/users/{id}/activities` | —                     | n/a (lecture publique) |
 
 ## 8. Erreurs communes
 
@@ -213,3 +215,56 @@ Toutes les erreurs suivent le format `ErrorResponse` global :
 | 401       | Token manquant / invalide                                            |
 | 403       | (Program uniquement) l'utilisateur n'est pas propriétaire            |
 | 404       | `programId` / `activityId` inconnu                                   |
+
+---
+
+## 9. Correctif : consultation de l'avatar / des icônes d'un **autre** utilisateur
+
+Ce correctif (voir `docs/BACKEND_PROFILE_FIX.md`) concerne directement l'affichage des
+images documentées ci-dessus sur le **profil public d'un autre utilisateur** — jusqu'ici
+cassé, donc `avatarUrl` et les `activityIcon` d'un tiers n'étaient tout simplement pas
+consultables.
+
+### 9.1 `GET /api/users/{id}` — 500 corrigé
+
+Avant ce correctif, cette route renvoyait systématiquement `500 INTERNAL_ERROR` pour tout
+utilisateur possédant un badge dont la catégorie ou le type de condition en base ne
+correspondait à aucune valeur des enums `BadgeCategory` / `BadgeConditionType` côté backend
+(cas réel : les badges seedés `CREATION`/`SOCIAL`/`REPUTATION`/`ACTIVITY` et des
+`condition_type` comme `PROGRAMS_CREATED`). Concrètement, **aucun profil public d'un autre
+utilisateur ne pouvait s'afficher** dès que cet utilisateur avait un badge — donc son
+`avatarUrl` restait inaccessible pour le frontend.
+
+- Root cause corrigée côté enums (`BadgeCategory`, `BadgeConditionType` étendus pour
+  couvrir les valeurs déjà en base).
+- Filet de sécurité ajouté en plus : si un badge reste malgré tout illisible (donnée
+  future corrompue), il est désormais silencieusement exclu de `badgeCodes` au lieu de
+  faire échouer tout le profil — `GET /api/users/{id}` ne renverra plus jamais `500` pour
+  un utilisateur existant.
+- `GET /api/users/{id}` pour un id **inexistant** renvoie maintenant, comme avant, un
+  `404 NOT_FOUND` propre (comportement déjà correct, désormais couvert par un test
+  d'intégration).
+- Aucun changement de contrat : toujours un `UserPublicDto` (voir §6), avec `avatarUrl`
+  qui reflète bien la photo de profil de l'utilisateur consulté.
+
+### 9.2 `GET /api/users/{id}/activities` — nouvelle route
+
+N'existait pas auparavant (`404`). Renvoie désormais les activités **publiques**
+(`visibleOnMap = true`) d'un autre utilisateur, au même format que
+`GET /api/users/me/activities` :
+
+```
+GET /api/users/{id}/activities
+```
+
+- Auth requise (`Authorization: Bearer <token>`).
+- Réponse `200 OK` → `List<UserActivityDto>` (voir §6 pour `ActivityDto`, imbriqué dans
+  chaque élément via le champ `activity`) — chaque élément expose `activity.icon`,
+  utile pour afficher l'icône/image de l'activité sur le profil public.
+- `404 NOT_FOUND` si `id` ne correspond à aucun utilisateur.
+- Contrairement à `GET /api/users/me/activities` (qui renvoie **toutes** les activités,
+  y compris celles masquées sur la carte), cette route filtre sur `visibleOnMap = true` :
+  seules les activités que l'utilisateur a choisi de rendre visibles apparaissent.
+- Le champ `activities` du `UserPublicDto` renvoyé par `GET /api/users/{id}` reste vide
+  (`[]`) — il n'est pas rempli automatiquement. Pour afficher les activités (et leurs
+  icônes) sur un profil public, le frontend doit appeler cette nouvelle route séparément.
