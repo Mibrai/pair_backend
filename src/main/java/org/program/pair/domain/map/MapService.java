@@ -607,6 +607,7 @@ public class MapService {
                     lng,
                     distanceKm,
                     locationSchedules.size(),
+                    repUser != null ? repUser.getId() : null,
                     organizerName,
                     organizerAvatarUrl,
                     nextSessionAt,

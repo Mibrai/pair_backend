@@ -17,5 +17,13 @@ public enum NotificationType {
     AUTHOR_NEW_PROGRAM,
     ACTIVITY_UPDATED,
     ACTIVITY_NEW_PROGRAM,
-    CATEGORY_NEW_ACTIVITY
+    CATEGORY_NEW_ACTIVITY,
+    // Valeurs déjà présentes dans les données de seed V12/V13/V27, absentes de l'enum d'origine
+    NEW_REVIEW,
+    NEW_BADGE,
+    NEW_PEER_REC,
+    MATCH_FOUND,
+    PROGRAM_CANCELLED,
+    SCHEDULE_CHANGED,
+    SYSTEM
 }
