@@ -161,6 +161,39 @@ class MapActivitiesIntegrationTest extends AbstractIntegrationTest {
         }
     }
 
+    @Test
+    void shouldIncludeOrganizerIdWheneverOrganizerNameIsPresent() {
+        // Given: A logged-in user
+        String token = registerAndLogin("testuser5@pair.app");
+
+        // When: Fetching activities
+        MapActivitiesResponse response = webTestClient.get()
+            .uri("/api/map/activities")
+            .headers(h -> h.setBearerAuth(token))
+            .accept(MediaType.APPLICATION_JSON)
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody(MapActivitiesResponse.class)
+            .returnResult()
+            .getResponseBody();
+
+        // Then: organizerId must never be null when organizerName is present —
+        // the mobile client needs it to link to the organizer's profile.
+        assertThat(response).isNotNull();
+        assertThat(response.activities()).isNotEmpty();
+
+        List<MapActivityMarkerDto> withOrganizerName = response.activities().stream()
+            .filter(a -> a.organizerName() != null)
+            .toList();
+
+        assertThat(withOrganizerName).isNotEmpty();
+        for (MapActivityMarkerDto activity : withOrganizerName) {
+            assertThat(activity.organizerId())
+                .as("organizerId for activity %s (organizer '%s')", activity.activityId(), activity.organizerName())
+                .isNotNull();
+        }
+    }
+
     // Helper method
     private String registerAndLogin(String email) {
         try {

@@ -14,6 +14,7 @@ public record MapActivityMarkerDto(
     double lng,
     Double distanceKm,
     int programCount,
+    UUID organizerId,
     String organizerName,
     String organizerAvatarUrl,
     Instant nextSessionAt,

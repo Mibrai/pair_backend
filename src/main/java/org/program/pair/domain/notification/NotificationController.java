@@ -5,7 +5,9 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.program.pair.domain.notification.dto.DeviceTokenDto;
 import org.program.pair.domain.notification.dto.NotificationDto;
+import org.program.pair.domain.notification.dto.NotificationPrefDto;
 import org.program.pair.domain.notification.dto.RegisterDeviceRequest;
 import org.program.pair.domain.notification.dto.UpdatePreferenceRequest;
 import org.program.pair.repository.DeviceTokenRepository;
@@ -33,16 +35,14 @@ public class NotificationController {
 
     @GetMapping
     @Operation(summary = "Mes notifications", description = "Liste paginée des notifications in-app")
-    public ResponseEntity<Page<NotificationDto>> getNotifications(
+    public Page<NotificationDto> getNotifications(
             @AuthenticationPrincipal UserPrincipal currentUser,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        Page<NotificationDto> notifications = notificationService
+        return notificationService
             .getNotifications(currentUser.getId(), PageRequest.of(page, Math.min(size, 50)))
             .map(NotificationDto::fromEntity);
-
-        return ResponseEntity.ok(notifications);
     }
 
     @GetMapping("/unread-count")
@@ -85,16 +85,19 @@ public class NotificationController {
 
     @GetMapping("/preferences")
     @Operation(summary = "Mes préférences de notification")
-    public ResponseEntity<List<NotificationPref>> getPreferences(
+    public ResponseEntity<List<NotificationPrefDto>> getPreferences(
             @AuthenticationPrincipal UserPrincipal currentUser) {
 
-        List<NotificationPref> prefs = notificationService.getUserPreferences(currentUser.getId());
+        List<NotificationPrefDto> prefs = notificationService.getUserPreferences(currentUser.getId())
+            .stream()
+            .map(NotificationPrefDto::fromEntity)
+            .toList();
         return ResponseEntity.ok(prefs);
     }
 
     @PutMapping("/preferences")
     @Operation(summary = "Mettre à jour les préférences")
-    public ResponseEntity<NotificationPref> updatePreference(
+    public ResponseEntity<NotificationPrefDto> updatePreference(
             @AuthenticationPrincipal UserPrincipal currentUser,
             @Valid @RequestBody UpdatePreferenceRequest request) {
 
@@ -106,12 +109,12 @@ public class NotificationController {
             request.getFrequency()
         );
 
-        return ResponseEntity.ok(pref);
+        return ResponseEntity.ok(NotificationPrefDto.fromEntity(pref));
     }
 
     @PostMapping("/devices")
     @Operation(summary = "Enregistrer device token pour push")
-    public ResponseEntity<DeviceToken> registerDevice(
+    public ResponseEntity<DeviceTokenDto> registerDevice(
             @AuthenticationPrincipal UserPrincipal currentUser,
             @Valid @RequestBody RegisterDeviceRequest request) {
 
@@ -122,7 +125,7 @@ public class NotificationController {
             request.getDeviceName()
         );
 
-        return ResponseEntity.ok(token);
+        return ResponseEntity.ok(DeviceTokenDto.fromEntity(token));
     }
 
     @DeleteMapping("/devices/{token}")
@@ -134,10 +137,13 @@ public class NotificationController {
 
     @GetMapping("/devices")
     @Operation(summary = "Mes device tokens")
-    public ResponseEntity<List<DeviceToken>> getMyDevices(
+    public ResponseEntity<List<DeviceTokenDto>> getMyDevices(
             @AuthenticationPrincipal UserPrincipal currentUser) {
 
-        List<DeviceToken> tokens = deviceTokenService.getUserTokens(currentUser.getId());
+        List<DeviceTokenDto> tokens = deviceTokenService.getUserTokens(currentUser.getId())
+            .stream()
+            .map(DeviceTokenDto::fromEntity)
+            .toList();
         return ResponseEntity.ok(tokens);
     }
 }

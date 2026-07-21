@@ -122,6 +122,9 @@ public class PushNotificationService implements PushNotificationServiceInterface
             case ACTIVITY_UPDATED -> "Une activité que vous suivez a changé";
             case ACTIVITY_NEW_PROGRAM -> "Nouveau programme sur une activité que vous suivez";
             case CATEGORY_NEW_ACTIVITY -> "Nouvelle activité dans une catégorie suivie";
+            // Valeurs legacy utilisées uniquement par les données de seed (V12/V13/V27) —
+            // jamais émises par notify(), donc pas de titre push dédié.
+            default -> "Nouvelle notification";
         };
     }
 
@@ -147,6 +150,9 @@ public class PushNotificationService implements PushNotificationServiceInterface
             case ACTIVITY_UPDATED -> String.valueOf(payload.get("activityName"));
             case ACTIVITY_NEW_PROGRAM -> String.valueOf(payload.get("programTitle"));
             case CATEGORY_NEW_ACTIVITY -> String.valueOf(payload.get("activityName"));
+            // Valeurs legacy utilisées uniquement par les données de seed (V12/V13/V27) —
+            // jamais émises par notify(), donc pas de corps push dédié.
+            default -> "Vous avez une nouvelle notification";
         };
     }
 }
