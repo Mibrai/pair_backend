@@ -168,7 +168,9 @@ public class SemanticSearchService {
         return results;
     }
 
-    private List<SearchResultDto> toSearchResultDtos(
+    // Package-private (au lieu de private) pour permettre un test unitaire ciblé
+    // de la priorité imageUrl / media[0] sans dépendances Spring/DB.
+    List<SearchResultDto> toSearchResultDtos(
             List<org.program.pair.domain.program.Program> programs,
             double lat, double lng) {
 
@@ -191,13 +193,16 @@ public class SemanticSearchService {
             boolean isOnline = owner.getLastActiveAt() != null
                 && owner.getLastActiveAt().isAfter(java.time.Instant.now().minusSeconds(300));
 
-            // Premier média IMAGE comme thumbnail
-            String thumbnailUrl = p.getMedia().stream()
-                .filter(m -> m.getMediaType() == org.program.pair.domain.program.MediaType.IMAGE)
-                .min(java.util.Comparator.comparingInt(
-                    org.program.pair.domain.program.ProgramMedia::getSortOrder))
-                .map(org.program.pair.domain.program.ProgramMedia::getUrl)
-                .orElse(null);
+            // Image de couverture dédiée en priorité (cohérent avec la page détail),
+            // repli sur le premier média IMAGE de la galerie si absente.
+            String thumbnailUrl = p.getImageUrl() != null
+                ? p.getImageUrl()
+                : p.getMedia().stream()
+                    .filter(m -> m.getMediaType() == org.program.pair.domain.program.MediaType.IMAGE)
+                    .min(java.util.Comparator.comparingInt(
+                        org.program.pair.domain.program.ProgramMedia::getSortOrder))
+                    .map(org.program.pair.domain.program.ProgramMedia::getUrl)
+                    .orElse(null);
 
             return new SearchResultDto(
                 "program",

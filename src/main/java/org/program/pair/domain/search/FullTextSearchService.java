@@ -48,11 +48,14 @@ public class FullTextSearchService {
             a.name  AS activity_name,
             cat.id  AS category_id,
             cat.name AS category_name,
-            (SELECT pm.url
-               FROM program_media pm
-              WHERE pm.program_id = p.id AND pm.media_type = 'IMAGE'
-              ORDER BY pm.sort_order ASC
-              LIMIT 1)                     AS thumbnail_url,
+            COALESCE(
+                p.image_url,
+                (SELECT pm.url
+                   FROM program_media pm
+                  WHERE pm.program_id = p.id AND pm.media_type = 'IMAGE'
+                  ORDER BY pm.sort_order ASC
+                  LIMIT 1)
+            )                              AS thumbnail_url,
             (SELECT AVG(r.score)::float
                FROM reviews r
               WHERE r.program_id = p.id)   AS average_score,
