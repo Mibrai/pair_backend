@@ -221,6 +221,7 @@ public class ActivityService {
             activity.getSlug(),
             activity.getDescription(),
             activity.getIcon(),
+            activity.getImageUrl(),
             activity.getParent() != null ? activity.getParent().getId() : null,
             activity.getCategory() != null ? toCategoryDto(activity.getCategory()) : null
         );
