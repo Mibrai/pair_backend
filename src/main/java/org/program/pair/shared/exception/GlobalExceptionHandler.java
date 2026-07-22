@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.shared.dto.ErrorResponse;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.Instant;
@@ -135,6 +137,24 @@ public class GlobalExceptionHandler {
             log.warn("Resource not found: {}", uri);
         }
         return new ErrorResponse("NOT_FOUND", "Resource not found: " + uri, Instant.now());
+    }
+
+    @ExceptionHandler(ResponseStatusException.class)
+    public ResponseEntity<ErrorResponse> handleResponseStatusException(ResponseStatusException ex) {
+        // Sans ce handler dédié, ResponseStatusException correspond aussi à @ExceptionHandler(Exception.class)
+        // ci-dessous, qui la remplace systématiquement par un 500 générique en ignorant le status voulu
+        // (ex: ResponseStatusException(NOT_FOUND) devenait un 500 INTERNAL_ERROR).
+        HttpStatus status = HttpStatus.resolve(ex.getStatusCode().value());
+        if (status == null) {
+            status = HttpStatus.INTERNAL_SERVER_ERROR;
+        }
+        String message = ex.getReason() != null ? ex.getReason() : status.getReasonPhrase();
+        if (status.is5xxServerError()) {
+            log.error("ResponseStatusException: {} - {}", status, message, ex);
+        } else {
+            log.warn("ResponseStatusException: {} - {}", status, message);
+        }
+        return ResponseEntity.status(status).body(new ErrorResponse(status.name(), message, Instant.now()));
     }
 
     @ExceptionHandler(Exception.class)

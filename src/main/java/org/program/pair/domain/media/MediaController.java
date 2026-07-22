@@ -16,6 +16,8 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Locale;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/media")
@@ -84,42 +86,52 @@ public class MediaController {
         );
     }
 
-    @GetMapping("/files/**")
-    public ResponseEntity<InputStreamResource> serveFile(@AuthenticationPrincipal UserPrincipal principal,
-                                                          @RequestParam(required = false) String path) {
-        try {
-            // Extract path from request
-            String filename = path != null ? path : extractPath();
+    private static final Map<String, MediaType> CONTENT_TYPES_BY_EXTENSION = Map.of(
+        "jpg", MediaType.IMAGE_JPEG,
+        "jpeg", MediaType.IMAGE_JPEG,
+        "png", MediaType.IMAGE_PNG,
+        "gif", MediaType.IMAGE_GIF,
+        "webp", MediaType.valueOf("image/webp")
+    );
 
+    @GetMapping("/files/{*path}")
+    public ResponseEntity<InputStreamResource> serveFile(@AuthenticationPrincipal UserPrincipal principal,
+                                                          @PathVariable String path) {
+        String filename = path.startsWith("/") ? path.substring(1) : path;
+        try {
             InputStream inputStream = storageService.loadAsResource(filename);
 
             return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "inline")
-                .contentType(MediaType.IMAGE_JPEG)
+                .contentType(resolveContentType(filename))
                 .body(new InputStreamResource(inputStream));
 
         } catch (IOException e) {
-            log.error("Error serving file", e);
+            log.error("Error serving file: {}", filename, e);
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "File not found");
         }
     }
 
-    @DeleteMapping("/files/**")
+    @DeleteMapping("/files/{*path}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteFile(@AuthenticationPrincipal UserPrincipal principal) {
+    public void deleteFile(@AuthenticationPrincipal UserPrincipal principal, @PathVariable String path) {
+        String filename = path.startsWith("/") ? path.substring(1) : path;
         try {
-            String filename = extractPath();
             storageService.delete(filename);
             log.info("User {} deleted file: {}", principal.getId(), filename);
         } catch (IOException e) {
-            log.error("Error deleting file", e);
+            log.error("Error deleting file: {}", filename, e);
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not delete file");
         }
     }
 
-    private String extractPath() {
-        // TODO: Extract path from request context
-        throw new UnsupportedOperationException("Path extraction not implemented");
+    private MediaType resolveContentType(String filename) {
+        int lastDot = filename.lastIndexOf('.');
+        if (lastDot < 0 || lastDot == filename.length() - 1) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
+        String extension = filename.substring(lastDot + 1).toLowerCase(Locale.ROOT);
+        return CONTENT_TYPES_BY_EXTENSION.getOrDefault(extension, MediaType.APPLICATION_OCTET_STREAM);
     }
 
     // Helper class for processed files
