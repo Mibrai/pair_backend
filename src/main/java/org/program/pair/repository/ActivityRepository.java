@@ -44,4 +44,35 @@ public interface ActivityRepository extends JpaRepository<Activity, UUID> {
     @Modifying
     @Query(value = "UPDATE activities SET embedding = CAST(:embedding AS vector) WHERE id = :id", nativeQuery = true)
     void updateEmbedding(@Param("id") UUID id, @Param("embedding") String embeddingVectorString);
+
+    /**
+     * Activités de la même catégorie (proxy pratique de proximité sémantique)
+     * ayant au moins une personne visible sur la carte à proximité. Utilisé
+     * pour transformer un résultat de recherche vide en alternative concrète.
+     */
+    @Query(value = """
+        SELECT a.* FROM activities a
+        WHERE a.id <> :activityId
+          AND a.category_id = (SELECT category_id FROM activities WHERE id = :activityId)
+          AND EXISTS (
+              SELECT 1 FROM user_activities ua
+              JOIN users u ON u.id = ua.user_id
+              WHERE ua.activity_id = a.id
+                AND ua.visible_on_map = TRUE
+                AND u.is_active = TRUE
+                AND u.location_public = TRUE
+                AND ST_DWithin(
+                    u.location::geography,
+                    ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
+                    :radiusMeters)
+          )
+        LIMIT :limit
+        """, nativeQuery = true)
+    List<Activity> findSimilarActivitiesWithNearbyUsers(
+        @Param("activityId") UUID activityId,
+        @Param("lat") double lat,
+        @Param("lng") double lng,
+        @Param("radiusMeters") int radiusMeters,
+        @Param("limit") int limit
+    );
 }

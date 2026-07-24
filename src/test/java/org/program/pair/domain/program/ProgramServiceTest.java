@@ -55,6 +55,15 @@ class ProgramServiceTest {
     org.program.pair.repository.UserProgramRepository userProgramRepository;
 
     @Mock
+    org.program.pair.repository.SlotParticipationRepository slotParticipationRepository;
+
+    @Mock
+    org.program.pair.domain.notification.NotificationService notificationService;
+
+    @Mock
+    org.program.pair.domain.alert.ActivityAlertService activityAlertService;
+
+    @Mock
     SubscriptionService subscriptionService;
 
     @InjectMocks
@@ -119,6 +128,8 @@ class ProgramServiceTest {
             Instant.now(),
             null,
             null,
+            null,
+            null,
             null
         );
 
@@ -150,6 +161,8 @@ class ProgramServiceTest {
             "12 rue de la Paix", // adresse fournie
             false, // mais PAS de consentement explicite
             Instant.now(),
+            null,
+            null,
             null,
             null,
             null
@@ -192,6 +205,8 @@ class ProgramServiceTest {
             "12 rue de la Paix",
             true, // consentement explicite
             Instant.now(),
+            null,
+            null,
             null,
             null,
             null

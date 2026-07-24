@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.review.dto.CreateReviewRequest;
 import org.program.pair.domain.review.dto.ReviewDto;
 import org.program.pair.domain.review.dto.ReviewSummaryDto;
+import org.program.pair.domain.trust.InteractionProofType;
+import org.program.pair.repository.AttendanceRepository;
 import org.program.pair.repository.ConversationRepository;
 import org.program.pair.repository.ProgramRepository;
 import org.program.pair.repository.ReviewRepository;
@@ -27,6 +29,7 @@ public class ReviewService {
 
     private final ReviewRepository reviewRepository;
     private final ConversationRepository conversationRepository;
+    private final AttendanceRepository attendanceRepository;
     private final ProgramRepository programRepository;
 
     public Review createReview(UUID reviewerId, CreateReviewRequest request) {
@@ -51,16 +54,28 @@ public class ReviewService {
             throw new BusinessException("Vous avez déjà évalué ce programme");
         }
 
-        // interaction_proof_id est optionnel — on attache la conversation si elle existe
+        // Preuve d'interaction requise : conversation directe avec l'organisateur,
+        // ou présence partagée confirmée sur un même créneau (SHARED_ATTENDANCE).
         UUID conversationId = conversationRepository.findDirectBetween(reviewerId, creatorId)
             .map(c -> c.getId())
             .orElse(null);
+
+        InteractionProofType proofType;
+        if (conversationId != null) {
+            proofType = InteractionProofType.CONVERSATION;
+        } else if (attendanceRepository.existsSharedPresence(reviewerId, creatorId)) {
+            proofType = InteractionProofType.SHARED_ATTENDANCE;
+        } else {
+            throw new BusinessException(
+                "Vous devez avoir échangé des messages ou partagé une présence confirmée avec l'organisateur avant de pouvoir évaluer ce programme");
+        }
 
         Review review = Review.builder()
             .id(UUID.randomUUID())
             .reviewerId(reviewerId)
             .programId(programId)
             .interactionProofId(conversationId)
+            .interactionProofType(proofType)
             .score(request.getScore())
             .comment(request.getComment())
             .build();
@@ -94,7 +109,8 @@ public class ReviewService {
         if (reviewerId.equals(creatorId)) return false;
         if (reviewRepository.findByReviewerIdAndProgramId(reviewerId, programId).isPresent()) return false;
 
-        return true;
+        return conversationRepository.findDirectBetween(reviewerId, creatorId).isPresent()
+            || attendanceRepository.existsSharedPresence(reviewerId, creatorId);
     }
 
     @Transactional(readOnly = true)

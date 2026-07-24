@@ -10,6 +10,7 @@ import org.program.pair.domain.chat.Conversation;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.review.dto.CreateReviewRequest;
 import org.program.pair.domain.user.User;
+import org.program.pair.repository.AttendanceRepository;
 import org.program.pair.repository.ConversationRepository;
 import org.program.pair.repository.ProgramRepository;
 import org.program.pair.repository.ReviewRepository;
@@ -32,6 +33,8 @@ class ReviewServiceTest {
     ProgramRepository programRepository;
     @Mock
     ConversationRepository conversationRepository;
+    @Mock
+    AttendanceRepository attendanceRepository;
     @InjectMocks
     ReviewService reviewService;
 

@@ -2,6 +2,8 @@ package org.program.pair.domain.user;
 
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.program.pair.domain.attendance.PracticeStatsService;
+import org.program.pair.domain.attendance.dto.PracticeStatsDto;
 import org.program.pair.domain.media.dto.MediaUploadResponse;
 import org.program.pair.domain.media.ImageProcessor;
 import org.program.pair.domain.media.MediaValidator;
@@ -34,6 +36,7 @@ public class UserController {
     private final MediaValidator mediaValidator;
     private final ImageProcessor imageProcessor;
     private final ProgramService programService;
+    private final PracticeStatsService practiceStatsService;
 
     @GetMapping
     public Page<UserPublicDto> searchUsers(
@@ -62,6 +65,18 @@ public class UserController {
     @GetMapping("/me")
     public UserPrivateDto getMyProfile(@AuthenticationPrincipal UserPrincipal principal) {
         return userService.getMyProfile(principal.getId());
+    }
+
+    // Miroir personnel de régularité et de diversité des partenaires — jamais
+    // un classement. Voir PracticeStatsService.
+    @GetMapping("/me/practice-stats")
+    public PracticeStatsDto getMyPracticeStats(@AuthenticationPrincipal UserPrincipal principal) {
+        return practiceStatsService.getStats(principal.getId());
+    }
+
+    @GetMapping("/{userId}/practice-stats")
+    public PracticeStatsDto getPracticeStats(@PathVariable UUID userId) {
+        return practiceStatsService.getStats(userId);
     }
 
     @PutMapping("/me")

@@ -4,7 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.program.pair.domain.activity.Activity;
 import org.program.pair.domain.search.dto.*;
+import org.program.pair.repository.ActivityRepository;
 import org.program.pair.repository.ProgramRepository;
 import org.program.pair.repository.SearchLogRepository;
 import org.program.pair.repository.UserRepository;
@@ -14,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -26,6 +29,7 @@ public class SemanticSearchService {
     private final EmbeddingService embeddingService;
     private final FullTextSearchService fullTextSearchService;
     private final ProgramRepository programRepository;
+    private final ActivityRepository activityRepository;
     private final SearchLogRepository searchLogRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
@@ -76,8 +80,8 @@ public class SemanticSearchService {
         // 6. Si aucun résultat → suggestions alternatives
         if (results.isEmpty()) {
             log.info("No results found for query: '{}'", request.query());
-            List<String> alternatives = buildAlternativeSuggestions(request, intent, radius);
-            return SearchResponse.empty(alternatives, intent);
+            List<EmptyStateActionDto> actions = buildEmptyStateActions(request, intent, radius);
+            return SearchResponse.empty(actions, intent);
         }
 
         // 7. Retourner les résultats
@@ -240,25 +244,55 @@ public class SemanticSearchService {
         }).toList();
     }
 
-    private List<String> buildAlternativeSuggestions(SearchRequest request, SearchIntent intent, int radius) {
-        List<String> suggestions = new java.util.ArrayList<>();
+    private List<EmptyStateActionDto> buildEmptyStateActions(SearchRequest request, SearchIntent intent, int radius) {
+        List<EmptyStateActionDto> actions = new java.util.ArrayList<>();
 
-        // Suggérer d'élargir la zone
-        int newRadius = radius * 2;
-        if (newRadius <= 50000) { // Max 50km
-            suggestions.add("Élargir la zone de recherche à " + (newRadius / 1000) + " km");
+        // 1. Élargir le rayon (libellé conservé à l'identique : des clients/tests
+        // existants font correspondre ce texte, seul le type devient structuré)
+        int expanded = Math.min(radius * 3, 50000);
+        if (expanded > radius) {
+            actions.add(new EmptyStateActionDto("EXPAND_RADIUS",
+                "Élargir la zone de recherche à " + (expanded / 1000) + " km",
+                Map.of("radiusMeters", expanded)));
         }
 
-        // Suggérer de créer un programme
-        if (intent.activityKeyword() != null) {
-            suggestions.add("Être le premier à proposer " + intent.activityKeyword() + " dans votre zone");
+        // Résout un identifiant d'activité concret à partir du slug canonique
+        // détecté par le LLM, pour rendre CREATE_SLOT/SET_ALERT actionnables.
+        UUID activityId = intent.canonicalActivitySlug() != null
+            ? activityRepository.findBySlug(intent.canonicalActivitySlug()).map(Activity::getId).orElse(null)
+            : null;
+
+        if (activityId != null) {
+            // 2. Créer soi-même un créneau (transformer le vide en action)
+            actions.add(new EmptyStateActionDto("CREATE_SLOT",
+                "Proposer un créneau et être le premier ici",
+                Map.of("activityId", activityId)));
+
+            // 3. Poser une alerte
+            actions.add(new EmptyStateActionDto("SET_ALERT",
+                "Me prévenir quand quelqu'un arrive",
+                Map.of("activityId", activityId,
+                       "lat", request.lat(), "lng", request.lng(),
+                       "radiusMeters", radius)));
+
+            // 4. Activités de la même catégorie ayant du monde à proximité
+            List<Activity> neighbours = activityRepository
+                .findSimilarActivitiesWithNearbyUsers(activityId, request.lat(), request.lng(), radius, 3);
+            for (Activity a : neighbours) {
+                actions.add(new EmptyStateActionDto("SIMILAR_ACTIVITY",
+                    "Voir " + a.getName() + " à la place",
+                    Map.of("activityId", a.getId().toString(), "name", a.getName())));
+            }
+        } else if (intent.activityKeyword() != null) {
+            actions.add(new EmptyStateActionDto("CREATE_SLOT",
+                "Être le premier à proposer " + intent.activityKeyword() + " dans votre zone",
+                Map.of()));
         } else {
-            suggestions.add("Créer votre propre programme d'activité");
+            actions.add(new EmptyStateActionDto("CREATE_SLOT",
+                "Créer votre propre programme d'activité",
+                Map.of()));
         }
 
-        // Suggérer une alerte
-        suggestions.add("Recevoir une alerte quand quelqu'un propose cette activité");
-
-        return suggestions;
+        return actions;
     }
 }

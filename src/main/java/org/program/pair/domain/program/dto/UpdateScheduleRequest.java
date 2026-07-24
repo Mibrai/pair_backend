@@ -15,5 +15,7 @@ public record UpdateScheduleRequest(
     Instant startsAt,
     Instant endsAt,
     String recurrenceRule,
-    @Min(1) Integer maxParticipants
+    @Min(1) Integer maxParticipants,
+    Boolean isOpenToPartners,
+    @Size(max = 300) String welcomeNote
 ) {}

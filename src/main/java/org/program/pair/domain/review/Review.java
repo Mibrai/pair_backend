@@ -7,6 +7,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.program.pair.domain.program.Program;
+import org.program.pair.domain.trust.InteractionProofType;
 import org.program.pair.domain.user.User;
 
 import java.time.Instant;
@@ -44,8 +45,14 @@ public class Review {
     @JoinColumn(name = "program_id", insertable = false, updatable = false)
     private Program program;
 
-    @Column(name = "interaction_proof_id", nullable = false)
+    // Optionnel : une review ne requiert pas de preuve d'interaction stricte,
+    // contrairement à une recommandation (voir PeerRecommendation).
+    @Column(name = "interaction_proof_id")
     private UUID interactionProofId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "interaction_proof_type", length = 20)
+    private InteractionProofType interactionProofType;
 
     @Column(name = "score", nullable = false)
     private Float score;

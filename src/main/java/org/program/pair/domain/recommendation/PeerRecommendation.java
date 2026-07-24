@@ -9,6 +9,7 @@ import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 import org.program.pair.domain.activity.Activity;
 import org.program.pair.domain.program.Program;
+import org.program.pair.domain.trust.InteractionProofType;
 import org.program.pair.domain.user.User;
 
 import java.time.Instant;
@@ -50,8 +51,14 @@ public class PeerRecommendation {
     @JoinColumn(name = "recommended_id", insertable = false, updatable = false)
     private User recommended;
 
-    @Column(name = "conversation_id", nullable = false)
+    // Nullable : une preuve d'interaction peut aussi être une présence partagée
+    // confirmée sur un créneau (SHARED_ATTENDANCE), sans conversation directe.
+    @Column(name = "conversation_id")
     private UUID conversationId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "interaction_proof_type", length = 20)
+    private InteractionProofType interactionProofType;
 
     @Column(nullable = false, length = 500)
     private String comment;

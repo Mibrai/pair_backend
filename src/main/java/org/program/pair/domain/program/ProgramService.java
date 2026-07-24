@@ -6,6 +6,9 @@ import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
 import org.program.pair.domain.activity.UserActivity;
+import org.program.pair.domain.alert.ActivityAlertService;
+import org.program.pair.domain.notification.NotificationService;
+import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.program.dto.*;
 import org.program.pair.domain.subscription.SubscriptionService;
 import org.program.pair.repository.*;
@@ -18,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -32,6 +36,9 @@ public class ProgramService {
     private final ProgramMediaRepository programMediaRepository;
     private final ReviewRepository reviewRepository;
     private final UserProgramRepository userProgramRepository;
+    private final SlotParticipationRepository slotParticipationRepository;
+    private final NotificationService notificationService;
+    private final ActivityAlertService activityAlertService;
     private final SubscriptionService subscriptionService;
     private final HtmlSanitizer sanitizer;
     private final GeometryFactory geometryFactory = new GeometryFactory(
@@ -195,9 +202,17 @@ public class ProgramService {
         schedule.setEndsAt(request.endsAt());
         schedule.setRecurrenceRule(request.recurrenceRule());
         schedule.setMaxParticipants(request.maxParticipants());
+        if (request.isOpenToPartners() != null) {
+            schedule.setIsOpenToPartners(request.isOpenToPartners());
+        }
+        if (request.welcomeNote() != null) {
+            schedule.setWelcomeNote(sanitizer.sanitize(request.welcomeNote()).strip());
+        }
 
-        ScheduleDto dto = toScheduleDto(scheduleRepository.save(schedule), userId);
+        Schedule saved = scheduleRepository.save(schedule);
+        ScheduleDto dto = toScheduleDto(saved, userId);
         refreshNextSessionAt(program);
+        activityAlertService.evaluateAndNotify(saved);
         return dto;
     }
 
@@ -238,6 +253,8 @@ public class ProgramService {
         if (request.endsAt() != null)         schedule.setEndsAt(request.endsAt());
         if (request.recurrenceRule() != null) schedule.setRecurrenceRule(request.recurrenceRule());
         if (request.maxParticipants() != null) schedule.setMaxParticipants(request.maxParticipants());
+        if (request.isOpenToPartners() != null) schedule.setIsOpenToPartners(request.isOpenToPartners());
+        if (request.welcomeNote() != null)    schedule.setWelcomeNote(sanitizer.sanitize(request.welcomeNote()).strip());
 
         ScheduleDto dto = toScheduleDto(scheduleRepository.save(schedule), userId);
         refreshNextSessionAt(schedule.getProgram());
@@ -254,7 +271,38 @@ public class ProgramService {
         }
 
         Program prog = schedule.getProgram();
-        scheduleRepository.delete(schedule);
+
+        List<UUID> slotParticipantIds = slotParticipationRepository.findByScheduleId(scheduleId).stream()
+            .filter(p -> p.getStatus() == ParticipationStatus.CONFIRMED || p.getStatus() == ParticipationStatus.INTERESTED)
+            .map(p -> p.getUser().getId())
+            .toList();
+        List<UUID> programParticipantIds = userProgramRepository.findByProgramIdAndStatus(prog.getId(), UserProgramStatus.ACTIVE)
+            .stream()
+            .filter(up -> up.getSchedule() != null && up.getSchedule().getId().equals(scheduleId))
+            .map(up -> up.getUser().getId())
+            .toList();
+
+        if (slotParticipantIds.isEmpty() && programParticipantIds.isEmpty()) {
+            // Aucun participant : suppression définitive comme avant.
+            scheduleRepository.delete(schedule);
+        } else {
+            // Des personnes comptent sur ce créneau : on annule et on les
+            // prévient plutôt que de supprimer silencieusement la ligne
+            // (une suppression aurait cascade-delete les participations sans
+            // possibilité de notifier qui que ce soit).
+            schedule.setStatus(SlotStatus.CANCELLED);
+            scheduleRepository.save(schedule);
+
+            java.util.stream.Stream.concat(slotParticipantIds.stream(), programParticipantIds.stream())
+                .distinct()
+                .forEach(participantId -> notificationService.notify(participantId,
+                    NotificationType.SLOT_CANCELLED, Map.of(
+                        "scheduleId", scheduleId.toString(),
+                        "programTitle", prog.getTitle(),
+                        "placeName", schedule.getPlaceName()
+                    )));
+        }
+
         refreshNextSessionAt(prog);
     }
 
@@ -409,7 +457,11 @@ public class ProgramService {
             s.getStartsAt(),
             s.getEndsAt(),
             s.getRecurrenceRule(),
-            s.getMaxParticipants()
+            s.getMaxParticipants(),
+            s.getIsOpenToPartners(),
+            s.getStatus().name(),
+            s.getParticipantCount(),
+            s.getWelcomeNote()
         );
     }
 }

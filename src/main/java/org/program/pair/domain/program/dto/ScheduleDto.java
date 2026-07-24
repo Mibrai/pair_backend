@@ -13,5 +13,9 @@ public record ScheduleDto(
     Instant startsAt,
     Instant endsAt,
     String recurrenceRule,
-    Integer maxParticipants
+    Integer maxParticipants,
+    Boolean isOpenToPartners,
+    String status,
+    Integer participantCount,
+    String welcomeNote
 ) {}

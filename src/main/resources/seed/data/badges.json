@@ -26,5 +26,19 @@
   { "code": "MULTI_PASSION_5",         "category": "ACHIEVEMENT", "label": "Touche-à-tout",
     "conditionType": "ACTIVITY_DIVERSITY", "conditionThreshold": 5, "icon": "compass" },
   { "code": "REGULAR_ORGANIZER",       "category": "ROLE",        "label": "Organise régulièrement",
-    "conditionType": "PROGRAM_COUNT", "conditionThreshold": 3, "icon": "star" }
+    "conditionType": "PROGRAM_COUNT", "conditionThreshold": 3, "icon": "star" },
+  { "code": "FIRST_MEETUP",            "category": "ACHIEVEMENT", "label": "Première rencontre",
+    "conditionType": "ATTENDANCE_COUNT", "conditionThreshold": 1, "icon": "handshake" },
+  { "code": "TEN_MEETUPS",             "category": "ACHIEVEMENT", "label": "10 séances partagées",
+    "conditionType": "ATTENDANCE_COUNT", "conditionThreshold": 10, "icon": "calendar-check" },
+  { "code": "FIVE_PARTNERS",           "category": "ACHIEVEMENT", "label": "5 partenaires différents",
+    "conditionType": "DISTINCT_PARTNERS", "conditionThreshold": 5, "icon": "users" },
+  { "code": "TWENTY_PARTNERS",         "category": "ACHIEVEMENT", "label": "20 partenaires différents",
+    "conditionType": "DISTINCT_PARTNERS", "conditionThreshold": 20, "icon": "users-round" },
+  { "code": "STREAK_4_WEEKS",          "category": "ACHIEVEMENT", "label": "1 mois de régularité",
+    "conditionType": "WEEKLY_STREAK", "conditionThreshold": 4, "icon": "flame" },
+  { "code": "STREAK_12_WEEKS",         "category": "ACHIEVEMENT", "label": "3 mois de régularité",
+    "conditionType": "WEEKLY_STREAK", "conditionThreshold": 12, "icon": "flame" },
+  { "code": "SLOT_HOST",               "category": "ROLE",        "label": "Organise des créneaux",
+    "conditionType": "SLOT_HOSTED_COUNT", "conditionThreshold": 3, "icon": "star" }
 ]
