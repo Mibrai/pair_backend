@@ -1,0 +1,71 @@
+package org.program.pair.domain.program;
+
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.program.pair.domain.program.dto.JoinSlotRequest;
+import org.program.pair.domain.program.dto.SlotFeedItemDto;
+import org.program.pair.domain.program.dto.SlotFeedRequest;
+import org.program.pair.domain.program.dto.SlotParticipantDto;
+import org.program.pair.shared.security.UserPrincipal;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/api/slots")
+@RequiredArgsConstructor
+@Validated
+public class SlotController {
+
+    private final SlotService slotService;
+
+    @GetMapping("/feed")
+    public List<SlotFeedItemDto> getFeed(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @ModelAttribute SlotFeedRequest request) {
+        return slotService.getSlotFeed(request, principal.getId());
+    }
+
+    @GetMapping("/{scheduleId}")
+    public SlotFeedItemDto getSlot(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID scheduleId) {
+        return slotService.getSlot(scheduleId, principal.getId());
+    }
+
+    @PostMapping("/{scheduleId}/join")
+    @ResponseStatus(HttpStatus.CREATED)
+    public SlotFeedItemDto join(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID scheduleId,
+            @Valid @RequestBody(required = false) JoinSlotRequest request) {
+        return slotService.joinSlot(principal.getId(), scheduleId,
+            request != null ? request : new JoinSlotRequest(null));
+    }
+
+    @DeleteMapping("/{scheduleId}/join")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void leave(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID scheduleId) {
+        slotService.leaveSlot(principal.getId(), scheduleId);
+    }
+
+    @GetMapping("/mine")
+    public List<SlotFeedItemDto> getMySlots(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(required = false, defaultValue = "true") boolean upcoming) {
+        return slotService.getMySlots(principal.getId(), upcoming);
+    }
+
+    @GetMapping("/{scheduleId}/participants")
+    public List<SlotParticipantDto> getParticipants(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID scheduleId) {
+        return slotService.getParticipants(principal.getId(), scheduleId);
+    }
+}

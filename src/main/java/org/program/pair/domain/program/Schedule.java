@@ -9,6 +9,8 @@ import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Entity
@@ -62,6 +64,28 @@ public class Schedule {
     @Column(name = "max_participants")
     @Min(1)
     private Integer maxParticipants;
+
+    // Un créneau peut être ouvert à d'autres personnes (le coeur du produit meetDo)
+    @Column(name = "is_open_to_partners", nullable = false)
+    @Builder.Default
+    private Boolean isOpenToPartners = true;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    private SlotStatus status = SlotStatus.OPEN;
+
+    // Nombre de participants confirmés, tous mécanismes confondus (UserProgram + SlotParticipation)
+    @Column(name = "participant_count", nullable = false)
+    @Builder.Default
+    private Integer participantCount = 0;
+
+    @Column(name = "welcome_note", length = 300)
+    private String welcomeNote;
+
+    @OneToMany(mappedBy = "schedule", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<SlotParticipation> participations = new ArrayList<>();
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)

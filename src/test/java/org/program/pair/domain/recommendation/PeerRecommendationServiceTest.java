@@ -8,6 +8,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.program.pair.domain.badge.BadgeService;
 import org.program.pair.domain.chat.Conversation;
 import org.program.pair.domain.recommendation.dto.CreateRecommendationRequest;
+import org.program.pair.repository.AttendanceRepository;
 import org.program.pair.repository.ConversationRepository;
 import org.program.pair.repository.PeerRecommendationRepository;
 import org.program.pair.shared.exception.BusinessException;
@@ -25,6 +26,8 @@ class PeerRecommendationServiceTest {
     PeerRecommendationRepository recommendationRepository;
     @Mock
     ConversationRepository conversationRepository;
+    @Mock
+    AttendanceRepository attendanceRepository;
     @Mock
     BadgeService badgeService;
     @InjectMocks

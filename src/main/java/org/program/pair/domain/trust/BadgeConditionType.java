@@ -18,5 +18,10 @@ public enum BadgeConditionType {
     GROUP_ENROLLMENTS,
     PERFECT_REVIEWS,
     STREAK_DAYS,
-    UNIQUE_ACTIVITIES
+    UNIQUE_ACTIVITIES,
+    // meetDo — régularité et diversité des partenaires (jamais un classement)
+    ATTENDANCE_COUNT,
+    DISTINCT_PARTNERS,
+    WEEKLY_STREAK,
+    SLOT_HOSTED_COUNT
 }

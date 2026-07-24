@@ -10,6 +10,7 @@ import org.program.pair.repository.BadgeAwardRepository;
 import org.program.pair.repository.BadgeRepository;
 import org.program.pair.repository.ProgramRepository;
 import org.program.pair.repository.ProgressionRepository;
+import org.program.pair.repository.ScheduleRepository;
 import org.program.pair.repository.UserActivityRepository;
 import org.program.pair.repository.UserRepository;
 import org.springframework.stereotype.Service;
@@ -34,6 +35,7 @@ public class BadgeService {
     private final UserActivityRepository userActivityRepository;
     private final org.program.pair.repository.PeerRecommendationRepository peerRecommendationRepository;
     private final UserRepository userRepository;
+    private final ScheduleRepository scheduleRepository;
 
     /**
      * Évalue tous les badges pour un utilisateur et attribue ceux qu'il mérite
@@ -71,6 +73,10 @@ public class BadgeService {
             case PROGRESSION_STREAK -> checkProgressionStreak(userId, badge.getConditionThreshold());
             case ACTIVITY_DIVERSITY -> checkActivityDiversity(userId, badge.getConditionThreshold());
             case RECOMMENDATION_COUNT -> checkRecommendationCount(userId, badge.getConditionThreshold());
+            case ATTENDANCE_COUNT -> checkAttendanceCount(userId, badge.getConditionThreshold());
+            case DISTINCT_PARTNERS -> checkDistinctPartners(userId, badge.getConditionThreshold());
+            case WEEKLY_STREAK -> checkWeeklyStreak(userId, badge.getConditionThreshold());
+            case SLOT_HOSTED_COUNT -> checkSlotHostedCount(userId, badge.getConditionThreshold());
             case MANUAL -> false; // Manual badges cannot be auto-awarded
             // Types utilisés uniquement par les badges pré-attribués via seed SQL (V12/V27) —
             // pas encore d'évaluation automatique implémentée pour ceux-ci.
@@ -183,5 +189,27 @@ public class BadgeService {
     private boolean checkRecommendationCount(UUID userId, Integer threshold) {
         long count = peerRecommendationRepository.countByRecommendedId(userId);
         return count >= threshold;
+    }
+
+    private boolean checkAttendanceCount(UUID userId, Integer threshold) {
+        return userRepository.findById(userId)
+            .map(u -> u.getAttendanceCount() >= threshold)
+            .orElse(false);
+    }
+
+    private boolean checkDistinctPartners(UUID userId, Integer threshold) {
+        return userRepository.findById(userId)
+            .map(u -> u.getDistinctPartnersCount() >= threshold)
+            .orElse(false);
+    }
+
+    private boolean checkWeeklyStreak(UUID userId, Integer threshold) {
+        return userRepository.findById(userId)
+            .map(u -> u.getCurrentStreakWeeks() >= threshold)
+            .orElse(false);
+    }
+
+    private boolean checkSlotHostedCount(UUID userId, Integer threshold) {
+        return scheduleRepository.countHostedByUserId(userId) >= threshold;
     }
 }

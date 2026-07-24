@@ -70,17 +70,20 @@ public class ProgramEnrollmentService {
         // Validate schedule if provided
         Schedule schedule = null;
         if (scheduleId != null) {
-            schedule = scheduleRepository.findById(scheduleId)
+            // Verrou pessimiste : la capacité est partagée avec SlotParticipation
+            // (rejoindre un créneau via /api/slots), donc les deux chemins doivent
+            // se synchroniser sur la même ligne pour éviter un sur-booking.
+            schedule = scheduleRepository.lockById(scheduleId)
                 .orElseThrow(() -> new ResourceNotFoundException("Schedule not found"));
 
             if (!schedule.getProgram().getId().equals(programId)) {
                 throw new ValidationException("Schedule does not belong to this program");
             }
 
-            // Check schedule capacity
+            // Check schedule capacity (toutes sources de participation confondues)
             if (schedule.getMaxParticipants() != null) {
-                long currentParticipants = userProgramRepository
-                    .countActiveParticipantsByScheduleId(scheduleId);
+                long currentParticipants = scheduleRepository
+                    .countConfirmedParticipants(scheduleId);
 
                 if (currentParticipants >= schedule.getMaxParticipants()) {
                     throw new ValidationException("This schedule is full");

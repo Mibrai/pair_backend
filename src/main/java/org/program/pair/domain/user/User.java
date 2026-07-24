@@ -96,4 +96,21 @@ public class User {
     @Embedded
     @Builder.Default
     private PrivacySettings privacySettings = new PrivacySettings();
+
+    // Métriques de valeur meetDo : régularité et diversité des partenaires,
+    // jamais un score comparatif entre personnes (voir PracticeStatsService).
+    @Column(name = "distinct_partners_count", nullable = false)
+    @Builder.Default
+    private Integer distinctPartnersCount = 0;
+
+    @Column(name = "attendance_count", nullable = false)
+    @Builder.Default
+    private Integer attendanceCount = 0;
+
+    @Column(name = "current_streak_weeks", nullable = false)
+    @Builder.Default
+    private Integer currentStreakWeeks = 0;
+
+    @Column(name = "last_attendance_at")
+    private Instant lastAttendanceAt;
 }

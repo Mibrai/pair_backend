@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.badge.BadgeService;
 import org.program.pair.domain.recommendation.dto.CreateRecommendationRequest;
 import org.program.pair.domain.recommendation.dto.RecommendationStatsDto;
+import org.program.pair.domain.trust.InteractionProofType;
+import org.program.pair.repository.AttendanceRepository;
 import org.program.pair.repository.ConversationRepository;
 import org.program.pair.repository.PeerRecommendationRepository;
 import org.program.pair.shared.exception.BusinessException;
@@ -23,11 +25,15 @@ public class PeerRecommendationService {
 
     private final PeerRecommendationRepository recommendationRepository;
     private final ConversationRepository conversationRepository;
+    private final AttendanceRepository attendanceRepository;
     private final BadgeService badgeService;
 
     /**
-     * Crée une recommandation entre pairs
-     * Vérifie qu'une conversation existe (preuve d'interaction)
+     * Crée une recommandation entre pairs.
+     * Vérifie qu'une preuve d'interaction réelle existe : soit une conversation
+     * directe, soit une double confirmation de présence sur le même créneau
+     * (SHARED_ATTENDANCE) — cette dernière est une preuve au moins aussi forte
+     * qu'une simple conversation.
      */
     public PeerRecommendation createRecommendation(UUID recommenderId, CreateRecommendationRequest request) {
         UUID recommendedId = request.getRecommendedId();
@@ -42,10 +48,15 @@ public class PeerRecommendationService {
             throw new BusinessException("Vous avez déjà recommandé cet utilisateur");
         }
 
-        // Validation 3: Must have conversation (proof of interaction)
+        // Validation 3: Must have proof of interaction (conversation OR shared attendance)
         UUID conversationId = findConversationBetween(recommenderId, recommendedId);
-        if (conversationId == null) {
-            throw new BusinessException("Vous devez avoir échangé des messages avec cet utilisateur avant de pouvoir le recommander");
+        InteractionProofType proofType;
+        if (conversationId != null) {
+            proofType = InteractionProofType.CONVERSATION;
+        } else if (attendanceRepository.existsSharedPresence(recommenderId, recommendedId)) {
+            proofType = InteractionProofType.SHARED_ATTENDANCE;
+        } else {
+            throw new BusinessException("Vous devez avoir échangé des messages ou partagé une présence confirmée avec cet utilisateur avant de pouvoir le recommander");
         }
 
         // Create recommendation
@@ -54,6 +65,7 @@ public class PeerRecommendationService {
             .recommenderId(recommenderId)
             .recommendedId(recommendedId)
             .conversationId(conversationId)
+            .interactionProofType(proofType)
             .rating(request.getRating())
             .comment(request.getComment())
             .activityContext(request.getActivityContext())
@@ -116,8 +128,8 @@ public class PeerRecommendationService {
     }
 
     /**
-     * Vérifie si un utilisateur peut recommander un autre
-     * (doit avoir une conversation)
+     * Vérifie si un utilisateur peut recommander un autre (preuve d'interaction
+     * requise : conversation OU présence partagée confirmée).
      */
     @Transactional(readOnly = true)
     public boolean canRecommend(UUID recommenderId, UUID recommendedId) {
@@ -127,7 +139,8 @@ public class PeerRecommendationService {
         if (hasRecommended(recommenderId, recommendedId)) {
             return false;
         }
-        return findConversationBetween(recommenderId, recommendedId) != null;
+        return findConversationBetween(recommenderId, recommendedId) != null
+            || attendanceRepository.existsSharedPresence(recommenderId, recommendedId);
     }
 
     /**
