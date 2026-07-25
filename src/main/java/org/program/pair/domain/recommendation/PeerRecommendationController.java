@@ -31,7 +31,11 @@ public class PeerRecommendationController {
     @PostMapping
     @Operation(
         summary = "Créer une recommandation",
-        description = "Recommander un utilisateur avec qui vous avez échangé des messages. Nécessite une conversation existante."
+        description = "Geste binaire et positif : recommander quelqu'un, sans note ni commentaire "
+            + "obligatoires (rating et comment sont facultatifs, aucune valeur par défaut n'est "
+            + "appliquée). Nécessite une preuve d'interaction réelle : soit une conversation "
+            + "directe, soit une double confirmation de présence sur le même créneau "
+            + "(SHARED_ATTENDANCE) — les deux personnes n'ont pas besoin de s'être jamais écrit."
     )
     public ResponseEntity<PeerRecommendationDto> createRecommendation(
             @AuthenticationPrincipal UserPrincipal currentUser,
@@ -113,7 +117,8 @@ public class PeerRecommendationController {
     @GetMapping("/can-recommend/{userId}")
     @Operation(
         summary = "Puis-je recommander cet utilisateur?",
-        description = "Vérifie si je peux recommander cet utilisateur (conversation existante, pas déjà recommandé)"
+        description = "Vérifie si je peux recommander cet utilisateur (conversation directe ou "
+            + "présence partagée confirmée, pas déjà recommandé)"
     )
     public ResponseEntity<Boolean> canRecommend(
             @AuthenticationPrincipal UserPrincipal currentUser,

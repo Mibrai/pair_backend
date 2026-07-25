@@ -17,13 +17,14 @@ public class CreateRecommendationRequest {
     @NotNull(message = "L'utilisateur recommandé est requis")
     private UUID recommendedId;
 
-    @NotNull(message = "La note est requise")
+    // Facultatif : une recommandation est un geste binaire, pas une note
+    // comparative. Quand fournie, reste bornée à 1..5.
     @Min(value = 1, message = "La note doit être entre 1 et 5")
     @Max(value = 5, message = "La note doit être entre 1 et 5")
     private Integer rating;
 
-    @NotBlank(message = "Le commentaire est requis")
-    @Size(min = 20, max = 500, message = "Le commentaire doit contenir entre 20 et 500 caractères")
+    // Facultatif : pas de minimum de longueur imposé, un mot suffit.
+    @Size(max = 500, message = "Le commentaire ne doit pas dépasser 500 caractères")
     private String comment;
 
     private UUID activityContext;
