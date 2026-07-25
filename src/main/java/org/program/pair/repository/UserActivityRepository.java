@@ -20,6 +20,8 @@ public interface UserActivityRepository extends JpaRepository<UserActivity, UUID
 
     boolean existsByUserIdAndActivityId(UUID userId, UUID activityId);
 
+    Optional<UserActivity> findByUserIdAndActivityId(UUID userId, UUID activityId);
+
     @Query("SELECT ua FROM UserActivity ua WHERE ua.user.id = :userId AND ua.visibleOnMap = true")
     List<UserActivity> findVisibleByUserId(@Param("userId") UUID userId);
 

@@ -17,6 +17,7 @@ import org.program.pair.domain.user.UserService;
 import org.program.pair.repository.ScheduleRepository;
 import org.program.pair.repository.SlotParticipationRepository;
 import org.program.pair.repository.UserRepository;
+import org.program.pair.shared.GeoUtils;
 import org.program.pair.shared.exception.BusinessException;
 import org.program.pair.shared.exception.ForbiddenException;
 import org.program.pair.shared.exception.ResourceNotFoundException;
@@ -205,23 +206,11 @@ public class SlotService {
         Activity activity = userActivity.getActivity();
         Category category = activity.getCategory();
 
-        Double lat = null;
-        Double lng = null;
-        String displayAddress = null;
-        boolean canSeeExactPlace = slot.getPlaceType() == PlaceType.PUBLIC
-            || Boolean.TRUE.equals(slot.getShowExactAddress())
-            || (requesterId != null && participationRepository
-                .existsByScheduleIdAndUserIdAndStatus(slot.getId(), requesterId, ParticipationStatus.CONFIRMED));
-
-        if (slot.getPlaceType() != PlaceType.ONLINE && canSeeExactPlace && slot.getLocation() != null) {
-            lat = slot.getLocation().getY();
-            lng = slot.getLocation().getX();
-            displayAddress = slot.getAddressPublic();
-        }
+        SlotAddressVisibility.Resolved place = SlotAddressVisibility.resolve(slot, requesterId, participationRepository);
 
         Double distanceMeters = null;
         if (viewerLat != null && viewerLng != null && slot.getLocation() != null) {
-            distanceMeters = haversineMeters(viewerLat, viewerLng,
+            distanceMeters = GeoUtils.haversineMeters(viewerLat, viewerLng,
                 slot.getLocation().getY(), slot.getLocation().getX());
         }
 
@@ -240,9 +229,9 @@ public class SlotService {
             userActivity.getFormat() != null ? userActivity.getFormat().name() : null,
             userService.getPublicProfile(userActivity.getUser().getId(), requesterId),
             slot.getPlaceName(),
-            displayAddress,
-            lat,
-            lng,
+            place.displayAddress(),
+            place.lat(),
+            place.lng(),
             distanceMeters,
             slot.getStartsAt(),
             slot.getEndsAt(),
@@ -252,16 +241,5 @@ public class SlotService {
             slot.getWelcomeNote(),
             myParticipationStatus
         );
-    }
-
-    private double haversineMeters(double lat1, double lng1, double lat2, double lng2) {
-        final int EARTH_RADIUS_M = 6371000;
-        double dLat = Math.toRadians(lat2 - lat1);
-        double dLng = Math.toRadians(lng2 - lng1);
-        double a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
-            + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2))
-            * Math.sin(dLng / 2) * Math.sin(dLng / 2);
-        double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-        return EARTH_RADIUS_M * c;
     }
 }

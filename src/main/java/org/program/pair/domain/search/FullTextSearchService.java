@@ -296,7 +296,8 @@ public class FullTextSearchService {
             (String) row.get("location_type"),
             null,   // city : non dénormalisé en DB, nullable
             createdAt,
-            updatedAt
+            updatedAt,
+            null, null, null // startsAt/endsAt/maxParticipants : spécifiques aux résultats "slot"
         );
     }
 
