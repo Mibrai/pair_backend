@@ -1,11 +1,14 @@
 package org.program.pair.domain.search.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import java.time.Instant;
 import java.util.UUID;
 
 public record SearchResultDto(
-    // — commun user / program —
-    String resultType,          // "user" | "program"
+    // — commun user / program / slot —
+    @Schema(allowableValues = {"user", "program", "slot"})
+    String resultType,
     UUID id,
     String title,
     String description,
@@ -20,7 +23,7 @@ public record SearchResultDto(
     boolean isOnline,
     String verificationStatus,
 
-    // — spécifique program —
+    // — spécifique program / slot —
     UUID userActivityId,
     UUID categoryId,
     String categoryName,
@@ -35,9 +38,17 @@ public record SearchResultDto(
     String locationType,
     String city,
     Instant createdAt,
-    Instant updatedAt
+    Instant updatedAt,
+
+    // — spécifique slot (nullable, absent pour user/program) —
+    @Schema(description = "Date de début du créneau. Obligatoire pour resultType=\"slot\", absent sinon.")
+    Instant startsAt,
+    @Schema(description = "Date de fin du créneau, si connue.")
+    Instant endsAt,
+    @Schema(description = "Capacité du créneau, pour afficher par ex. \"3 / 8\".")
+    Integer maxParticipants
 ) {
-    /** Constructeur court pour les résultats de type "user" (champs program à null). */
+    /** Constructeur court pour les résultats de type "user" (champs program/slot à null). */
     public static SearchResultDto forUser(
             UUID id, String displayName, String avatarUrl,
             Double lat, Double lng, Double distanceMeters,
@@ -48,7 +59,8 @@ public record SearchResultDto(
             lat, lng, distanceMeters, 0f,
             activityName, level, format, isOnline, verificationStatus,
             null, null, null, null, null, null, null,
-            null, null, null, null, null, null, null, null
+            null, null, null, null, null, null, null, null,
+            null, null, null
         );
     }
 }

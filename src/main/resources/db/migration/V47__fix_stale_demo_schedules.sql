@@ -18,9 +18,9 @@
 
 -- ---- 1. Rattrapage des schedules récurrents déjà passés ----
 UPDATE schedules
-SET starts_at = starts_at + (CEIL(EXTRACT(EPOCH FROM (NOW() - starts_at)) / 604800.0) * INTERVAL '7 days'),
+SET starts_at = starts_at + (CEIL(EXTRACT(EPOCH FROM (NOW() + INTERVAL '1 hour' - starts_at)) / 604800.0) * INTERVAL '7 days'),
     ends_at   = CASE WHEN ends_at IS NOT NULL
-                     THEN ends_at + (CEIL(EXTRACT(EPOCH FROM (NOW() - starts_at)) / 604800.0) * INTERVAL '7 days')
+                     THEN ends_at + (CEIL(EXTRACT(EPOCH FROM (NOW() + INTERVAL '1 hour' - starts_at)) / 604800.0) * INTERVAL '7 days')
                      ELSE NULL END,
     status    = 'OPEN',
     participant_count = 0

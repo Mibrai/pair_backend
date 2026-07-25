@@ -5,15 +5,26 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.activity.Activity;
+import org.program.pair.domain.activity.Category;
+import org.program.pair.domain.activity.UserActivity;
+import org.program.pair.domain.program.Program;
+import org.program.pair.domain.program.Schedule;
+import org.program.pair.domain.program.SlotAddressVisibility;
 import org.program.pair.domain.search.dto.*;
+import org.program.pair.domain.user.User;
 import org.program.pair.repository.ActivityRepository;
 import org.program.pair.repository.ProgramRepository;
+import org.program.pair.repository.ScheduleRepository;
 import org.program.pair.repository.SearchLogRepository;
+import org.program.pair.repository.SlotParticipationRepository;
 import org.program.pair.repository.UserRepository;
+import org.program.pair.shared.GeoUtils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,10 +41,16 @@ public class SemanticSearchService {
     private final FullTextSearchService fullTextSearchService;
     private final ProgramRepository programRepository;
     private final ActivityRepository activityRepository;
+    private final ScheduleRepository scheduleRepository;
+    private final SlotParticipationRepository slotParticipationRepository;
     private final SearchLogRepository searchLogRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
     private final ActivityTaxonomy activityTaxonomy;
+
+    /** Nombre maximal de résultats "slot" mélangés aux résultats programme/personne. */
+    private static final int MAX_SLOT_RESULTS = 10;
+    private static final int MAX_TOTAL_RESULTS = 20;
 
     /** Similarité cosine minimale (0-1) pour qu'un résultat vectoriel soit retenu. */
     @Value("${search.embedding.min-similarity:0.25}")
@@ -72,7 +89,7 @@ public class SemanticSearchService {
         int radius = determineRadius(request, intent);
 
         // 5. Recherche full-text dans la base
-        List<SearchResultDto> results = performSearch(request, intent, radius);
+        List<SearchResultDto> results = performSearch(request, intent, radius, userId);
 
         searchLog.setResultsCount(results.size());
         searchLogRepository.save(searchLog);
@@ -99,7 +116,7 @@ public class SemanticSearchService {
         return 5000; // Default 5km
     }
 
-    private List<SearchResultDto> performSearch(SearchRequest request, SearchIntent intent, int radius) {
+    private List<SearchResultDto> performSearch(SearchRequest request, SearchIntent intent, int radius, UUID requesterId) {
         SearchRequest searchRequest = new SearchRequest(
             request.query(), request.lat(), request.lng(), radius);
 
@@ -150,7 +167,119 @@ public class SemanticSearchService {
                 .toList();
         }
 
-        return results;
+        // 4. Créneaux correspondant à l'intention temporelle — priorité absolue :
+        // un créneau dans 2h vaut plus qu'un programme sans date. Triés par
+        // date croissante, puis complétés par les programmes (le reste de la
+        // liste ci-dessus), jamais tronqués par la limite globale.
+        List<SearchResultDto> slotResults = searchSlots(request, intent, radius, requesterId);
+        int programBudget = Math.max(0, MAX_TOTAL_RESULTS - slotResults.size());
+        List<SearchResultDto> boundedPrograms = results.size() > programBudget
+            ? results.subList(0, programBudget)
+            : results;
+
+        return java.util.stream.Stream.concat(slotResults.stream(), boundedPrograms.stream()).toList();
+    }
+
+    /**
+     * Créneaux ouverts correspondant à l'activité résolue, dans la fenêtre
+     * temporelle déduite de `timeHint`. Réutilise exactement la même requête
+     * de filtrage que GET /api/slots/feed (ScheduleRepository.findOpenSlotsInRadius)
+     * pour que les deux surfaces ne divergent jamais : hôte actif, programme
+     * public et actif, activité non masquée, statut OPEN/FULL, créneaux de
+     * l'appelant exclus.
+     */
+    private List<SearchResultDto> searchSlots(SearchRequest request, SearchIntent intent, int radius, UUID requesterId) {
+        UUID activityId = resolveActivityId(intent);
+        if (activityId == null) {
+            return List.of();
+        }
+
+        TimeHintParser.Window window = TimeHintParser.resolveWindow(intent.timeHint(), Instant.now());
+
+        List<Schedule> slots = scheduleRepository.findOpenSlotsInRadius(
+            request.lat(), request.lng(), radius, window.from(), window.to(), activityId, null, MAX_SLOT_RESULTS);
+
+        return slots.stream()
+            .filter(s -> !s.getProgram().getUserActivity().getUser().getId().equals(requesterId))
+            .sorted(Comparator.comparing(Schedule::getStartsAt))
+            .map(s -> toSlotResultDto(s, request.lat(), request.lng(), requesterId))
+            .toList();
+    }
+
+    private SearchResultDto toSlotResultDto(Schedule schedule, double viewerLat, double viewerLng, UUID requesterId) {
+        Program program = schedule.getProgram();
+        UserActivity userActivity = program.getUserActivity();
+        Activity activity = userActivity.getActivity();
+        Category category = activity.getCategory();
+        User host = userActivity.getUser();
+
+        SlotAddressVisibility.Resolved place =
+            SlotAddressVisibility.resolve(schedule, requesterId, slotParticipationRepository);
+
+        Double distanceMeters = schedule.getLocation() != null
+            ? GeoUtils.haversineMeters(viewerLat, viewerLng, schedule.getLocation().getY(), schedule.getLocation().getX())
+            : null;
+
+        return new SearchResultDto(
+            "slot",
+            schedule.getId(),
+            program.getTitle(),
+            schedule.getWelcomeNote(),
+            host.getAvatarUrl(),
+            place.lat(),
+            place.lng(),
+            distanceMeters,
+            timeProximityScore(schedule.getStartsAt()),
+            activity.getName(),
+            userActivity.getLevel() != null ? userActivity.getLevel().name() : null,
+            userActivity.getFormat() != null ? userActivity.getFormat().name() : null,
+            false,
+            host.getVerificationStatus().name(),
+            userActivity.getId(),
+            category != null ? category.getId() : null,
+            category != null ? category.getName() : null,
+            host.getId(),
+            host.getDisplayName(),
+            host.getAvatarUrl(),
+            program.getImageUrl(),
+            null, null, // averageScore, reviewCount : non pertinents pour un créneau
+            schedule.getParticipantCount(),
+            schedule.getStatus().name(),
+            null,   // locationType : notion programme, pas créneau
+            null,   // city : non dénormalisé (voir toSearchResultDtos)
+            schedule.getStartsAt(), // createdAt réutilisé pour un tri générique côté client
+            null,
+            schedule.getStartsAt(),
+            schedule.getEndsAt(),
+            schedule.getMaxParticipants()
+        );
+    }
+
+    /** Score décroissant avec l'éloignement temporel : un créneau proche prime. */
+    private Float timeProximityScore(Instant startsAt) {
+        long hoursUntilStart = Math.max(0, java.time.Duration.between(Instant.now(), startsAt).toHours());
+        return (float) (1.0 / (1.0 + hoursUntilStart));
+    }
+
+    /**
+     * Résout un identifiant d'activité concret à partir de l'intention : le
+     * slug canonique de la taxonomie en priorité, puis un match approximatif
+     * sur le mot-clé brut en repli. Partagé entre la recherche de créneaux et
+     * les actions d'état vide pour qu'elles s'accordent sur la même activité.
+     */
+    private UUID resolveActivityId(SearchIntent intent) {
+        if (intent.canonicalActivitySlug() != null) {
+            UUID bySlug = activityRepository.findBySlug(intent.canonicalActivitySlug())
+                .map(Activity::getId).orElse(null);
+            if (bySlug != null) return bySlug;
+        }
+        if (intent.activityKeyword() != null) {
+            return activityRepository
+                .findByNameContainingIgnoreCase(intent.activityKeyword(),
+                    org.springframework.data.domain.PageRequest.of(0, 1))
+                .stream().findFirst().map(Activity::getId).orElse(null);
+        }
+        return null;
     }
 
     private List<SearchResultDto> mergeResults(
@@ -239,7 +368,8 @@ public class SemanticSearchService {
                 p.getLocationType() != null ? p.getLocationType().name() : null,
                 null,   // city
                 p.getCreatedAt(),
-                p.getUpdatedAt()
+                p.getUpdatedAt(),
+                null, null, null // startsAt/endsAt/maxParticipants : spécifiques aux résultats "slot"
             );
         }).toList();
     }
@@ -256,11 +386,9 @@ public class SemanticSearchService {
                 Map.of("radiusMeters", expanded)));
         }
 
-        // Résout un identifiant d'activité concret à partir du slug canonique
-        // détecté par le LLM, pour rendre CREATE_SLOT/SET_ALERT actionnables.
-        UUID activityId = intent.canonicalActivitySlug() != null
-            ? activityRepository.findBySlug(intent.canonicalActivitySlug()).map(Activity::getId).orElse(null)
-            : null;
+        // Même résolution que la recherche de créneaux, pour rendre
+        // CREATE_SLOT/SET_ALERT actionnables sur la même activité.
+        UUID activityId = resolveActivityId(intent);
 
         if (activityId != null) {
             // 2. Créer soi-même un créneau (transformer le vide en action)
