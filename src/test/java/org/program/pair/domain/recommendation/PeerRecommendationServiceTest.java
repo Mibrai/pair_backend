@@ -8,6 +8,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.program.pair.domain.badge.BadgeService;
 import org.program.pair.domain.chat.Conversation;
 import org.program.pair.domain.recommendation.dto.CreateRecommendationRequest;
+import org.program.pair.domain.trust.InteractionProofType;
 import org.program.pair.repository.AttendanceRepository;
 import org.program.pair.repository.ConversationRepository;
 import org.program.pair.repository.PeerRecommendationRepository;
@@ -16,7 +17,11 @@ import org.program.pair.shared.exception.BusinessException;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -79,5 +84,111 @@ class PeerRecommendationServiceTest {
         assertThatThrownBy(() -> recommendationService.createRecommendation(fromId, request))
             .isInstanceOf(BusinessException.class)
             .hasMessageContaining("déjà recommandé");
+    }
+
+    @Test
+    void create_devraitAccepter_sansRatingNiComment_siConversationExiste() {
+        UUID fromId = UUID.randomUUID();
+        UUID toId = UUID.randomUUID();
+        Conversation conversation = new Conversation();
+        conversation.setId(UUID.randomUUID());
+
+        when(conversationRepository.findDirectBetween(fromId, toId))
+            .thenReturn(Optional.of(conversation));
+        when(recommendationRepository.findByRecommenderIdAndRecommendedId(fromId, toId))
+            .thenReturn(Optional.empty());
+        when(recommendationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        CreateRecommendationRequest request = new CreateRecommendationRequest(toId, null, null, null, null);
+
+        PeerRecommendation result = recommendationService.createRecommendation(fromId, request);
+
+        assertThat(result.getRating()).isNull();
+        assertThat(result.getComment()).isNull();
+        assertThat(result.getInteractionProofType()).isEqualTo(InteractionProofType.CONVERSATION);
+    }
+
+    @Test
+    void create_devraitAccepter_commentSeulSansRating_viaPresencePartagee() {
+        UUID fromId = UUID.randomUUID();
+        UUID toId = UUID.randomUUID();
+
+        when(conversationRepository.findDirectBetween(fromId, toId))
+            .thenReturn(Optional.empty());
+        when(attendanceRepository.existsSharedPresence(fromId, toId)).thenReturn(true);
+        when(recommendationRepository.findByRecommenderIdAndRecommendedId(fromId, toId))
+            .thenReturn(Optional.empty());
+        when(recommendationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        CreateRecommendationRequest request = new CreateRecommendationRequest(
+            toId, null, "On a couru ensemble, super rythme.", null, null);
+
+        PeerRecommendation result = recommendationService.createRecommendation(fromId, request);
+
+        assertThat(result.getComment()).isEqualTo("On a couru ensemble, super rythme.");
+        assertThat(result.getInteractionProofType()).isEqualTo(InteractionProofType.SHARED_ATTENDANCE);
+        assertThat(result.getConversationId()).isNull();
+    }
+
+    @Test
+    void create_devraitRejeter_siNiConversationNiPresencePartagee() {
+        UUID fromId = UUID.randomUUID();
+        UUID toId = UUID.randomUUID();
+
+        when(conversationRepository.findDirectBetween(fromId, toId)).thenReturn(Optional.empty());
+        when(attendanceRepository.existsSharedPresence(fromId, toId)).thenReturn(false);
+        when(recommendationRepository.findByRecommenderIdAndRecommendedId(fromId, toId))
+            .thenReturn(Optional.empty());
+
+        CreateRecommendationRequest request = new CreateRecommendationRequest(toId, null, null, null, null);
+
+        assertThatThrownBy(() -> recommendationService.createRecommendation(fromId, request))
+            .isInstanceOf(BusinessException.class);
+
+        verify(recommendationRepository, org.mockito.Mockito.never()).save(any());
+    }
+
+    @Test
+    void validation_devraitAccepter_ratingEtCommentAbsents() {
+        var validator = jakarta.validation.Validation.buildDefaultValidatorFactory().getValidator();
+        CreateRecommendationRequest request = new CreateRecommendationRequest(
+            UUID.randomUUID(), null, null, null, null);
+
+        var violations = validator.validate(request);
+
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void validation_devraitAccepter_commentCourt() {
+        var validator = jakarta.validation.Validation.buildDefaultValidatorFactory().getValidator();
+        CreateRecommendationRequest request = new CreateRecommendationRequest(
+            UUID.randomUUID(), null, "Super !", null, null);
+
+        var violations = validator.validate(request);
+
+        assertThat(violations).isEmpty();
+    }
+
+    @Test
+    void validation_devraitRejeter_ratingHorsBornes() {
+        var validator = jakarta.validation.Validation.buildDefaultValidatorFactory().getValidator();
+        CreateRecommendationRequest request = new CreateRecommendationRequest(
+            UUID.randomUUID(), 6, null, null, null);
+
+        var violations = validator.validate(request);
+
+        assertThat(violations).isNotEmpty();
+    }
+
+    @Test
+    void validation_devraitRejeter_commentTropLong() {
+        var validator = jakarta.validation.Validation.buildDefaultValidatorFactory().getValidator();
+        CreateRecommendationRequest request = new CreateRecommendationRequest(
+            UUID.randomUUID(), null, "x".repeat(501), null, null);
+
+        var violations = validator.validate(request);
+
+        assertThat(violations).isNotEmpty();
     }
 }

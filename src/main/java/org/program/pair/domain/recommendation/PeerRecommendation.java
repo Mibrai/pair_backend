@@ -60,11 +60,13 @@ public class PeerRecommendation {
     @Column(name = "interaction_proof_type", length = 20)
     private InteractionProofType interactionProofType;
 
-    @Column(nullable = false, length = 500)
+    // Facultatif : une recommandation est un geste binaire, pas une note
+    // comparative avec justification obligatoire.
+    @Column(length = 500)
     private String comment;
 
-    @Column(nullable = false)
-    private Integer rating; // 1-5
+    @Column
+    private Integer rating; // 1-5, facultatif
 
     @Column(name = "activity_context")
     private UUID activityContext;
