@@ -92,9 +92,14 @@ public class BadgeService {
         id.setBadgeId(badge.getId());
         id.setUserId(userId);
 
+        // L'id composite est dérivé des associations badge/user via @MapsId :
+        // les deux DOIVENT être renseignées, sinon Hibernate lève
+        // IdentifierGenerationException("Could not assign id from null
+        // association 'user'") au premier badge attribué à quiconque.
         BadgeAward award = BadgeAward.builder()
             .id(id)
             .badge(badge)
+            .user(userRepository.getReferenceById(userId))
             .awardedAt(Instant.now())
             .build();
 

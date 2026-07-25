@@ -2,6 +2,8 @@ package org.program.pair.domain.notification;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 import org.program.pair.domain.user.User;
 
 import java.time.Instant;
@@ -36,6 +38,10 @@ public class Notification {
     @Column(nullable = false, length = 10)
     private NotificationChannel channel;
 
+    // @JdbcTypeCode force Hibernate à lier ce paramètre comme jsonb plutôt
+    // que varchar (défaut pour un champ String) — sans ça, l'insert échoue
+    // avec "column is jsonb but expression is of type character varying".
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(columnDefinition = "jsonb")
     private String payload;
 

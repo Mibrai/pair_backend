@@ -26,6 +26,8 @@ public class Category {
     @Column(length = 80)
     private String icon;
 
-    @Column(name = "color_ramp", length = 30)
+    // Toujours un nom de rampe ("orange-red"), jamais un hexadécimal ni NULL —
+    // voir V46 pour la normalisation des données historiques.
+    @Column(name = "color_ramp", nullable = false, length = 30)
     private String colorRamp;
 }

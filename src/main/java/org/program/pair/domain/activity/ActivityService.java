@@ -73,12 +73,22 @@ public class ActivityService {
         return base + "-" + suffix;
     }
 
+    // Rampe de secours pour toute catégorie créée sans couleur explicite.
+    // Un seul format doit exister en base (voir V46) : jamais de hex, jamais
+    // de NULL — GET /api/categories doit toujours renvoyer une valeur
+    // exploitable telle quelle par le client.
+    private static final String[] DEFAULT_COLOR_RAMPS = {
+        "orange-red", "purple-violet", "brown-amber", "blue-indigo", "green-teal",
+        "cyan-blue", "red-orange", "pink-rose", "lime-green", "sky-blue"
+    };
+
     public CategoryDto createCategory(CreateCategoryRequest request) {
         String name = request.name().strip();
         if (categoryRepository.existsByNameIgnoreCase(name)) {
             throw new IllegalStateException("La catégorie \"" + name + "\" existe déjà.");
         }
-        Category category = Category.builder().name(name).build();
+        String colorRamp = DEFAULT_COLOR_RAMPS[Math.floorMod(name.hashCode(), DEFAULT_COLOR_RAMPS.length)];
+        Category category = Category.builder().name(name).colorRamp(colorRamp).build();
         return toCategoryDto(categoryRepository.save(category));
     }
 
