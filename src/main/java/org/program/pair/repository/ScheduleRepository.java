@@ -4,6 +4,7 @@ import jakarta.persistence.LockModeType;
 import org.program.pair.domain.program.Schedule;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -71,6 +72,28 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
 
     @Query("SELECT s FROM Schedule s WHERE s.status IN ('OPEN', 'FULL') AND s.startsAt < :cutoff")
     List<Schedule> findOpenOrFullStartedBefore(@Param("cutoff") Instant cutoff);
+
+    /**
+     * Un schedule "récurrent" (recurrence_rule non nul, ex. "FREQ=WEEKLY;...")
+     * n'a qu'une seule occurrence bookable (starts_at/ends_at) dans ce modèle
+     * de données — rien n'expanse automatiquement les occurrences suivantes.
+     * Une fois passée, cette unique occurrence doit être avancée du nombre de
+     * semaines nécessaire pour retomber dans le futur, plutôt que de rester
+     * PAST indéfiniment (voir RecurringSlotRolloverJob).
+     */
+    @Modifying
+    @Query(value = """
+        UPDATE schedules
+        SET starts_at = starts_at + (CEIL(EXTRACT(EPOCH FROM (NOW() - starts_at)) / 604800.0) * INTERVAL '7 days'),
+            ends_at   = CASE WHEN ends_at IS NOT NULL
+                             THEN ends_at + (CEIL(EXTRACT(EPOCH FROM (NOW() - starts_at)) / 604800.0) * INTERVAL '7 days')
+                             ELSE NULL END,
+            status    = 'OPEN',
+            participant_count = 0
+        WHERE recurrence_rule IS NOT NULL
+          AND starts_at < NOW()
+        """, nativeQuery = true)
+    int rollRecurringSchedulesForward();
 
     /**
      * Feed "autour de moi" — créneaux ouverts aux partenaires, à venir, dans le
