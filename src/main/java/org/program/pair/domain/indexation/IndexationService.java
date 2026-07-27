@@ -3,7 +3,7 @@ package org.program.pair.domain.indexation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.program.Program;
-import org.program.pair.domain.search.EmbeddingService;
+import org.program.pair.domain.search.embedding.LocalEmbeddingService;
 import org.program.pair.repository.ActivityRepository;
 import org.program.pair.repository.ProgramRepository;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -21,7 +21,7 @@ import java.util.UUID;
 public class IndexationService {
 
     private final JdbcTemplate jdbcTemplate;
-    private final EmbeddingService embeddingService;
+    private final LocalEmbeddingService embeddingService;
     private final ProgramRepository programRepository;
     private final ActivityRepository activityRepository;
 
@@ -41,11 +41,11 @@ public class IndexationService {
                 """, programId);
             log.debug("Updated tsvector for program {}", programId);
 
-            if (embeddingService.isConfigured()) {
+            if (embeddingService.isEnabled()) {
                 programRepository.findById(programId).ifPresent(p -> {
                     String text = buildProgramText(p);
                     float[] embedding = embeddingService.generateEmbedding(text);
-                    if (embedding != null) {
+                    if (!LocalEmbeddingService.isZeroVector(embedding)) {
                         jdbcTemplate.update(
                             "UPDATE programs SET embedding = CAST(? AS vector) WHERE id = ?",
                             embeddingService.toVectorString(embedding), programId);
@@ -75,11 +75,11 @@ public class IndexationService {
                 """, activityId);
             log.debug("Updated tsvector for activity {}", activityId);
 
-            if (embeddingService.isConfigured()) {
+            if (embeddingService.isEnabled()) {
                 activityRepository.findById(activityId).ifPresent(a -> {
                     String text = a.getName() + " " + (a.getDescription() != null ? a.getDescription() : "");
                     float[] embedding = embeddingService.generateEmbedding(text);
-                    if (embedding != null) {
+                    if (!LocalEmbeddingService.isZeroVector(embedding)) {
                         jdbcTemplate.update(
                             "UPDATE activities SET embedding = CAST(? AS vector) WHERE id = ?",
                             embeddingService.toVectorString(embedding), activityId);
@@ -90,15 +90,6 @@ public class IndexationService {
 
         } catch (Exception e) {
             log.error("Error updating index for activity {}: {}", activityId, e.getMessage());
-        }
-    }
-
-    /** Espacement entre appels d'embedding successifs pour rester sous les limites de débit OpenAI. */
-    private void throttleEmbeddingCalls() {
-        try {
-            Thread.sleep(250);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
         }
     }
 
@@ -158,25 +149,19 @@ public class IndexationService {
 
     /**
      * Backfill embeddings for all programs that don't have one yet (e.g. content
-     * created before the embedding pipeline existed, or while OPENAI_API_KEY was
-     * unset). Synchronous and idempotent: safe to re-run, only touches rows where
-     * embedding IS NULL.
+     * created before the embedding pipeline existed). Synchronous and idempotent:
+     * safe to re-run, only touches rows where embedding IS NULL.
      */
     @Transactional
     public int backfillProgramEmbeddings() {
-        if (!embeddingService.isConfigured()) {
-            log.warn("Embedding API not configured, skipping program embedding backfill");
-            return 0;
-        }
         List<Program> missing = programRepository.findByEmbeddingIsNull();
         log.info("Backfilling embeddings for {} programs", missing.size());
 
         int updated = 0;
         for (Program p : missing) {
             try {
-                throttleEmbeddingCalls();
                 float[] embedding = embeddingService.generateEmbedding(buildProgramText(p));
-                if (embedding != null) {
+                if (!LocalEmbeddingService.isZeroVector(embedding)) {
                     programRepository.updateEmbedding(p.getId(), embeddingService.toVectorString(embedding));
                     updated++;
                 }
@@ -193,20 +178,15 @@ public class IndexationService {
      */
     @Transactional
     public int backfillActivityEmbeddings() {
-        if (!embeddingService.isConfigured()) {
-            log.warn("Embedding API not configured, skipping activity embedding backfill");
-            return 0;
-        }
         List<org.program.pair.domain.activity.Activity> missing = activityRepository.findByEmbeddingIsNull();
         log.info("Backfilling embeddings for {} activities", missing.size());
 
         int updated = 0;
         for (org.program.pair.domain.activity.Activity a : missing) {
             try {
-                throttleEmbeddingCalls();
                 String text = a.getName() + " " + (a.getDescription() != null ? a.getDescription() : "");
                 float[] embedding = embeddingService.generateEmbedding(text);
-                if (embedding != null) {
+                if (!LocalEmbeddingService.isZeroVector(embedding)) {
                     activityRepository.updateEmbedding(a.getId(), embeddingService.toVectorString(embedding));
                     updated++;
                 }

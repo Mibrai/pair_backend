@@ -16,9 +16,7 @@ import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.ProgramStatus;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotStatus;
-import org.program.pair.domain.search.EmbeddingService;
-import org.program.pair.domain.search.LlmIntentExtractor;
-import org.program.pair.domain.search.dto.SearchIntent;
+import org.program.pair.domain.search.embedding.LocalEmbeddingService;
 import org.program.pair.domain.search.dto.SearchRequest;
 import org.program.pair.domain.search.dto.SearchResponse;
 import org.program.pair.domain.search.dto.SearchResultDto;
@@ -42,7 +40,8 @@ import static org.mockito.Mockito.when;
 /**
  * POST /api/search doit désormais renvoyer des créneaux (resultType="slot"),
  * pas seulement des personnes/programmes — voir docs/specs/BACKEND_SEARCH_SLOTS.md.
- * Le LLM est mocké pour un test déterministe (comme SemanticSearchIntegrationTest).
+ * RuleBasedIntentExtractor tourne réellement (déterministe) ; seul
+ * LocalEmbeddingService est mocké (vecteur nul, comme SemanticSearchIntegrationTest).
  *
  * N'enregistre que 2 comptes pour toute la classe (une fois, via un garde
  * statique) : l'inscription est limitée à 5/heure/IP (RateLimiterService), un
@@ -53,8 +52,7 @@ import static org.mockito.Mockito.when;
  */
 class SearchSlotsIntegrationTest extends AbstractIntegrationTest {
 
-    @MockitoBean LlmIntentExtractor intentExtractor;
-    @MockitoBean EmbeddingService embeddingService;
+    @MockitoBean LocalEmbeddingService embeddingService;
 
     @Autowired UserRepository userRepository;
     @Autowired ActivityRepository activityRepository;
@@ -84,7 +82,7 @@ class SearchSlotsIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void search_duYogaDemainSoir_devraitRenvoyerLeCreneauCorrespondant() {
-        stubIntent("demain soir");
+        forceFulltextFallback();
         createSchedule(host, "yoga", tomorrowEvening(), PlaceType.PUBLIC, true, SlotStatus.OPEN, true, "Cours du soir");
 
         SearchResponse response = search(searcherToken, "du yoga demain soir");
@@ -99,7 +97,7 @@ class SearchSlotsIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void search_neDoitJamaisRenvoyer_creneauFermeAuxPartenaires() {
-        stubIntent(null);
+        forceFulltextFallback();
         createSchedule(host, "yoga", Instant.now().plus(2, ChronoUnit.DAYS),
             PlaceType.PUBLIC, false, SlotStatus.OPEN, true, "Cours fermé");
 
@@ -111,7 +109,7 @@ class SearchSlotsIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void search_neDoitJamaisRenvoyer_creneauAppartenantAuCall() {
-        stubIntent(null);
+        forceFulltextFallback();
         // Le chercheur est ici lui-même l'hôte : doit être exclu comme /api/slots/feed
         // exclut l'appelant de son propre feed.
         createSchedule(searcher, "yoga", Instant.now().plus(2, ChronoUnit.DAYS),
@@ -125,7 +123,7 @@ class SearchSlotsIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void search_creneauPriveSansAdresseExacte_neDoitJamaisExposerLatLng() {
-        stubIntent(null);
+        forceFulltextFallback();
         createSchedule(host, "yoga", Instant.now().plus(2, ChronoUnit.DAYS),
             PlaceType.PRIVATE, true, SlotStatus.OPEN, false, "Cours privé");
 
@@ -138,7 +136,7 @@ class SearchSlotsIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void search_neDoitJamaisRenvoyer_creneauAnnuleOuPasse() {
-        stubIntent(null);
+        forceFulltextFallback();
         createSchedule(host, "yoga", Instant.now().plus(2, ChronoUnit.DAYS),
             PlaceType.PUBLIC, true, SlotStatus.CANCELLED, true, "Cours annulé");
         createSchedule(host, "yoga", Instant.now().minus(1, ChronoUnit.HOURS),
@@ -150,10 +148,12 @@ class SearchSlotsIntegrationTest extends AbstractIntegrationTest {
         assertThat(anySlotTitled(response, "Cours déjà passé")).isFalse();
     }
 
-    private void stubIntent(String timeHint) {
-        when(embeddingService.isConfigured()).thenReturn(false);
-        when(intentExtractor.extractIntent(any())).thenReturn(new SearchIntent(
-            "yoga", "Sport", null, null, 5000, timeHint, false, null, "yoga"));
+    // RuleBasedIntentExtractor tourne réellement et résout "yoga" via la taxonomie
+    // à partir de la requête brute (canonicalActivitySlug + timeHint dérivés du
+    // texte, sans mock) ; seul l'embedding est forcé à un vecteur nul pour isoler
+    // le chemin plein texte / créneaux.
+    private void forceFulltextFallback() {
+        when(embeddingService.generateEmbedding(any())).thenReturn(new float[384]);
     }
 
     private Instant tomorrowEvening() {

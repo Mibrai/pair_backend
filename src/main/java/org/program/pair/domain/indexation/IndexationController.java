@@ -3,6 +3,7 @@ package org.program.pair.domain.indexation;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -25,10 +26,10 @@ public class IndexationController {
 
     /**
      * Trigger full reindex of all programs
-     * Admin endpoint - should be protected with proper authorization in production
      */
     @PostMapping("/reindex/programs")
     @ResponseStatus(HttpStatus.ACCEPTED)
+    @PreAuthorize("hasRole('MODERATOR') or hasRole('ADMIN')")
     public Map<String, Object> reindexPrograms() {
         log.info("Manual reindex of programs triggered");
         int updated = indexationService.reindexAllPrograms();
@@ -40,10 +41,10 @@ public class IndexationController {
 
     /**
      * Trigger full reindex of all activities
-     * Admin endpoint - should be protected with proper authorization in production
      */
     @PostMapping("/reindex/activities")
     @ResponseStatus(HttpStatus.ACCEPTED)
+    @PreAuthorize("hasRole('MODERATOR') or hasRole('ADMIN')")
     public Map<String, Object> reindexActivities() {
         log.info("Manual reindex of activities triggered");
         int updated = indexationService.reindexAllActivities();
@@ -58,6 +59,7 @@ public class IndexationController {
      */
     @PostMapping("/reindex/all")
     @ResponseStatus(HttpStatus.ACCEPTED)
+    @PreAuthorize("hasRole('MODERATOR') or hasRole('ADMIN')")
     public Map<String, Object> reindexAll() {
         log.info("Full reindex triggered");
         int programs = indexationService.reindexAllPrograms();
@@ -74,8 +76,7 @@ public class IndexationController {
     /**
      * Backfill embeddings for all existing programs and activities that don't
      * have one yet (embedding IS NULL). Idempotent: safe to call repeatedly,
-     * only processes rows still missing an embedding. Requires OPENAI_API_KEY
-     * to be configured (embedding.api-key) — otherwise a no-op.
+     * only processes rows still missing an embedding.
      *
      * Run after deploying the multilingual embedding pipeline to backfill
      * pre-existing content:
@@ -83,6 +84,7 @@ public class IndexationController {
      */
     @PostMapping("/backfill-embeddings")
     @ResponseStatus(HttpStatus.ACCEPTED)
+    @PreAuthorize("hasRole('MODERATOR') or hasRole('ADMIN')")
     public Map<String, Object> backfillEmbeddings() {
         log.info("Embedding backfill triggered");
         int programs = indexationService.backfillProgramEmbeddings();

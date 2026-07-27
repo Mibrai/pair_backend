@@ -5,9 +5,7 @@ import org.program.pair.AbstractIntegrationTest;
 import org.program.pair.domain.auth.dto.AuthResponse;
 import org.program.pair.domain.auth.dto.LoginRequest;
 import org.program.pair.domain.auth.dto.RegisterRequest;
-import org.program.pair.domain.search.EmbeddingService;
-import org.program.pair.domain.search.LlmIntentExtractor;
-import org.program.pair.domain.search.dto.SearchIntent;
+import org.program.pair.domain.search.embedding.LocalEmbeddingService;
 import org.program.pair.domain.search.dto.SearchRequest;
 import org.program.pair.domain.search.dto.SearchResponse;
 import org.program.pair.domain.user.dto.UpdateLocationRequest;
@@ -23,36 +21,25 @@ import static org.mockito.Mockito.*;
 /**
  * SemanticSearchIntegrationTest — Tests d'intégration de la recherche sémantique
  *
- * Utilise @MockBean pour LlmIntentExtractor et EmbeddingService afin d'éviter
- * les coûts API externes et garantir des tests déterministes.
+ * RuleBasedIntentExtractor est déterministe et sans dépendance externe : il
+ * tourne réellement (non mocké). Seul LocalEmbeddingService est mocké pour
+ * éviter de charger le modèle ONNX dans les tests (voir
+ * meetdo.embedding.enabled=false dans application-test.properties).
  *
  * Valide :
- * - Le pipeline de recherche avec clarification LLM
+ * - Le pipeline de recherche avec clarification sur question vague
  * - Le comportement en cas d'aucun résultat
  * - La confidentialité des programmes non publics
  */
 class SemanticSearchIntegrationTest extends AbstractIntegrationTest {
 
     @MockitoBean
-    LlmIntentExtractor intentExtractor;
-
-    @MockitoBean
-    EmbeddingService embeddingService;
+    LocalEmbeddingService embeddingService;
 
     @Test
     void recherche_questionVague_devraitRetournerClarification() {
-        // Mock du LLM pour détecter une question vague nécessitant une clarification
-        when(intentExtractor.extractIntent("je veux faire du sport"))
-            .thenReturn(new SearchIntent(
-                null,
-                "Sport",
-                null,
-                null,
-                5000,
-                null,
-                true,  // needsClarification = true
-                "Quel type de sport vous intéresse ?"
-            ));
+        // "je veux faire du sport" est reconnue comme vague par
+        // RuleBasedIntentExtractor (phrase courte, sans activité connue).
 
         // Créer un utilisateur et se connecter
         String token = registerAndLogin("searcher@pair.app");
@@ -74,7 +61,7 @@ class SemanticSearchIntegrationTest extends AbstractIntegrationTest {
         assertThat(response).isNotNull();
         assertThat(response.type()).isEqualTo("clarification");
         assertThat(response.clarificationQuestion()).isNotBlank();
-        assertThat(response.clarificationQuestion()).contains("Quel type de sport");
+        assertThat(response.clarificationQuestion()).contains("activité");
 
         // Aucun embedding ne doit être généré inutilement
         verify(embeddingService, never()).generateEmbedding(any());
@@ -82,37 +69,21 @@ class SemanticSearchIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void recherche_aucunResultat_devraitProposerAlternatives() {
-        // Mock du LLM pour une recherche précise sur une activité qui n'existe pas
-        // dans les données de seed (contrairement à "escalade", que la couche
-        // taxonomie multilingue résout désormais correctement près de Paris).
-        when(intentExtractor.extractIntent(any()))
-            .thenReturn(new SearchIntent(
-                "fictionsport-xyz",
-                "Sport",
-                null,
-                null,
-                5000,
-                null,
-                false,  // needsClarification = false
-                null
-            ));
-
-        // Mock de l'embedding service
-        float[] mockEmbedding = new float[1536];
-        when(embeddingService.isConfigured()).thenReturn(true);
-        when(embeddingService.generateEmbedding(any())).thenReturn(mockEmbedding);
-        when(embeddingService.toVectorString(any())).thenReturn("[0,0,0]");
+        // "fictionsport-xyz" n'est reconnue par aucune activité de la taxonomie
+        // (contrairement à "escalade", que la couche taxonomie multilingue résout
+        // désormais correctement près de Paris) — RuleBasedIntentExtractor tourne
+        // réellement, aucun mock nécessaire. Requête réduite au seul terme
+        // inconnu (pas de mots de liaison français) : RuleBasedIntentExtractor
+        // conserve la requête brute comme activityKeyword pour le repli plein
+        // texte, une phrase complète y introduirait des mots courants qui
+        // matcheraient de vrais programmes et fausserait ce test.
+        when(embeddingService.generateEmbedding(any())).thenReturn(new float[384]);
 
         // Créer un utilisateur et se connecter
         String token = registerAndLogin("noresult@pair.app");
 
         // Effectuer une recherche sur une activité qui n'existe pas
-        SearchRequest searchReq = new SearchRequest(
-            "je cherche un partenaire de fictionsport-xyz",
-            48.85,
-            2.35,
-            null
-        );
+        SearchRequest searchReq = new SearchRequest("fictionsport-xyz", 48.85, 2.35, null);
 
         SearchResponse response = webTestClient.post()
             .uri("/api/search")
@@ -143,23 +114,9 @@ class SemanticSearchIntegrationTest extends AbstractIntegrationTest {
         // Si non disponible, ce test pourrait nécessiter un setup direct en base de données
         // ou être simplifié pour vérifier uniquement le comportement du service de recherche
 
-        // Mock du LLM et de l'embedding
-        when(intentExtractor.extractIntent(any()))
-            .thenReturn(new SearchIntent(
-                "yoga",
-                null,
-                null,
-                null,
-                5000,
-                null,
-                false,
-                null
-            ));
-
-        float[] mockEmbedding = new float[1536];
-        when(embeddingService.isConfigured()).thenReturn(true);
-        when(embeddingService.generateEmbedding(any())).thenReturn(mockEmbedding);
-        when(embeddingService.toVectorString(any())).thenReturn("[0,0,0]");
+        // "yoga" est résolue par la taxonomie sans mock nécessaire ; vecteur nul
+        // pour forcer le repli plein texte / taxonomie.
+        when(embeddingService.generateEmbedding(any())).thenReturn(new float[384]);
 
         // Créer un chercheur
         String searcherToken = registerAndLogin("searcher2@pair.app");

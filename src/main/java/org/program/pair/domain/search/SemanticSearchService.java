@@ -11,6 +11,7 @@ import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotAddressVisibility;
 import org.program.pair.domain.search.dto.*;
+import org.program.pair.domain.search.embedding.LocalEmbeddingService;
 import org.program.pair.domain.user.User;
 import org.program.pair.repository.ActivityRepository;
 import org.program.pair.repository.ProgramRepository;
@@ -36,8 +37,8 @@ import java.util.UUID;
 @Slf4j
 public class SemanticSearchService {
 
-    private final LlmIntentExtractor intentExtractor;
-    private final EmbeddingService embeddingService;
+    private final RuleBasedIntentExtractor intentExtractor;
+    private final LocalEmbeddingService embeddingService;
     private final FullTextSearchService fullTextSearchService;
     private final ProgramRepository programRepository;
     private final ActivityRepository activityRepository;
@@ -61,7 +62,7 @@ public class SemanticSearchService {
         log.info("Search request from user {}: '{}'", userId, request.query());
 
         // 1. Logger la recherche brute
-        String method = embeddingService.isConfigured() ? "semantic" : "fulltext";
+        String method = "semantic";
         SearchLog searchLog = SearchLog.builder()
             .user(userRepository.getReferenceById(userId))
             .rawQuery(request.query())
@@ -130,23 +131,16 @@ public class SemanticSearchService {
             ? List.of()
             : fullTextSearchService.searchByTaxonomyLabels(taxonomyLabels, searchRequest, 20);
 
-        // 2. Couche de rappel : embeddings multilingues (ou full-text en fallback).
-        List<SearchResultDto> recallResults;
-        if (embeddingService.isConfigured()) {
-            float[] embedding = embeddingService.generateEmbedding(request.query());
-            if (embedding != null) {
-                double maxDistance = 1 - minSimilarity;
-                recallResults = toSearchResultDtos(
-                    programRepository.semanticSearchInRadius(
-                        embeddingService.toVectorString(embedding),
-                        request.lat(), request.lng(), radius, maxDistance, 20),
-                    request.lat(), request.lng());
-            } else {
-                recallResults = fulltextFallback(intent, searchRequest);
-            }
-        } else {
-            recallResults = fulltextFallback(intent, searchRequest);
-        }
+        // 2. Couche de rappel : embeddings multilingues (ou full-text en fallback si
+        // le modèle local n'a pas pu être chargé/n'a rien produit).
+        float[] embedding = embeddingService.generateEmbedding(request.query());
+        List<SearchResultDto> recallResults = LocalEmbeddingService.isZeroVector(embedding)
+            ? fulltextFallback(intent, searchRequest)
+            : toSearchResultDtos(
+                programRepository.semanticSearchInRadius(
+                    embeddingService.toVectorString(embedding),
+                    request.lat(), request.lng(), radius, 1 - minSimilarity, 20),
+                request.lat(), request.lng());
 
         // 3. Fusion : les matchs taxonomiques (précision) priment, complétés par le
         // rappel sémantique/full-text, dédupliqués par programme.
