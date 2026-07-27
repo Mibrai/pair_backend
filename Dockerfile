@@ -11,6 +11,7 @@ RUN ./mvnw clean package -DskipTests -B
 
 # Run stage
 FROM eclipse-temurin:21-jre-alpine
+RUN apk add --no-cache libstdc++ libgcc
 WORKDIR /app
 RUN addgroup -S spring && adduser -S spring -G spring
 RUN mkdir -p /app/uploads && chown -R spring:spring /app/uploads
