@@ -6,7 +6,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.activity.Activity;
 import org.program.pair.domain.activity.Category;
-import org.program.pair.domain.search.EmbeddingService;
+import org.program.pair.domain.search.embedding.LocalEmbeddingService;
 import org.program.pair.domain.trust.Badge;
 import org.program.pair.domain.trust.BadgeCategory;
 import org.program.pair.domain.trust.BadgeConditionType;
@@ -33,7 +33,7 @@ public class ReferenceDataSeeder implements CommandLineRunner {
     private final CategoryRepository categoryRepository;
     private final ActivityRepository activityRepository;
     private final BadgeRepository badgeRepository;
-    private final EmbeddingService embeddingService;
+    private final LocalEmbeddingService embeddingService;
     private final ObjectMapper objectMapper;
 
     @Override
@@ -130,8 +130,8 @@ public class ReferenceDataSeeder implements CommandLineRunner {
 
     @Async
     public void generateMissingEmbeddings() {
-        if (!embeddingService.isConfigured()) {
-            log.info("EmbeddingService non configuré, génération des embeddings ignorée");
+        if (!embeddingService.isEnabled()) {
+            log.info("Modèle d'embeddings désactivé, génération ignorée");
             return;
         }
 
@@ -151,7 +151,7 @@ public class ReferenceDataSeeder implements CommandLineRunner {
                 String text = activity.getName() + " " + (activity.getDescription() != null ? activity.getDescription() : "");
                 float[] embedding = embeddingService.generateEmbedding(text);
 
-                if (embedding != null) {
+                if (!LocalEmbeddingService.isZeroVector(embedding)) {
                     String vectorString = embeddingService.toVectorString(embedding);
                     activityRepository.updateEmbedding(activity.getId(), vectorString);
                     generated++;
@@ -160,9 +160,6 @@ public class ReferenceDataSeeder implements CommandLineRunner {
                     failed++;
                     log.warn("Échec génération embedding pour: {}", activity.getName());
                 }
-
-                // Throttle entre chaque requête
-                Thread.sleep(200);
 
             } catch (Exception e) {
                 failed++;

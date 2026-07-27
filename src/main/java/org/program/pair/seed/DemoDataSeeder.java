@@ -14,7 +14,7 @@ import org.program.pair.domain.program.PlaceType;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.ProgramStatus;
 import org.program.pair.domain.program.Schedule;
-import org.program.pair.domain.search.EmbeddingService;
+import org.program.pair.domain.search.embedding.LocalEmbeddingService;
 import org.program.pair.domain.user.User;
 import org.program.pair.domain.user.VerificationStatus;
 import org.program.pair.repository.ActivityRepository;
@@ -48,7 +48,7 @@ public class DemoDataSeeder implements CommandLineRunner {
     private final ScheduleRepository scheduleRepository;
     private final ActivityRepository activityRepository;
     private final PasswordEncoder passwordEncoder;
-    private final EmbeddingService embeddingService;
+    private final LocalEmbeddingService embeddingService;
 
     @Value("${seed.center-lat:48.8566}")
     private double centerLat;
@@ -145,19 +145,19 @@ public class DemoDataSeeder implements CommandLineRunner {
                 log.debug("Created program: {}", program.getTitle());
 
                 // Generate embedding synchronously for the program
-                if (embeddingService.isConfigured()) {
-                    try {
+                try {
+                    if (embeddingService.isEnabled()) {
                         String text = buildProgramText(program);
                         float[] embedding = embeddingService.generateEmbedding(text);
-                        if (embedding != null) {
+                        if (!LocalEmbeddingService.isZeroVector(embedding)) {
                             String vectorString = embeddingService.toVectorString(embedding);
                             programRepository.updateEmbedding(program.getId(), vectorString);
                             log.debug("Generated embedding for program: {}", program.getTitle());
                         }
-                    } catch (Exception e) {
-                        log.warn("Failed to generate embedding for program {}: {}",
-                            program.getTitle(), e.getMessage());
                     }
+                } catch (Exception e) {
+                    log.warn("Failed to generate embedding for program {}: {}",
+                        program.getTitle(), e.getMessage());
                 }
 
                 // Create Schedule

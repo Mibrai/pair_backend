@@ -13,9 +13,7 @@ import org.program.pair.domain.program.ProgramStatus;
 import org.program.pair.domain.program.dto.CreateProgramRequest;
 import org.program.pair.domain.program.dto.ProgramDto;
 import org.program.pair.domain.program.dto.UpdateProgramRequest;
-import org.program.pair.domain.search.EmbeddingService;
-import org.program.pair.domain.search.LlmIntentExtractor;
-import org.program.pair.domain.search.dto.SearchIntent;
+import org.program.pair.domain.search.embedding.LocalEmbeddingService;
 import org.program.pair.domain.search.dto.SearchRequest;
 import org.program.pair.domain.search.dto.SearchResponse;
 import org.program.pair.domain.user.dto.UpdateLocationRequest;
@@ -33,8 +31,9 @@ import static org.mockito.Mockito.when;
  * une langue doit remonter les programmes liés à une activité décrite dans une
  * autre langue, via la taxonomie déterministe ({@link org.program.pair.domain.search.ActivityTaxonomy}).
  *
- * LlmIntentExtractor et EmbeddingService sont mockés pour isoler et garantir la
- * couche taxonomique, indépendamment de toute API externe.
+ * RuleBasedIntentExtractor tourne réellement (déterministe, sans dépendance
+ * externe). Seul LocalEmbeddingService est mocké (vecteur nul) pour isoler et
+ * garantir la couche taxonomique, indépendamment du modèle d'embeddings.
  */
 class MultilingualSearchIntegrationTest extends AbstractIntegrationTest {
 
@@ -45,17 +44,13 @@ class MultilingualSearchIntegrationTest extends AbstractIntegrationTest {
         UUID.fromString("20000000-0000-0000-0000-000000000001");
 
     @MockitoBean
-    LlmIntentExtractor intentExtractor;
-
-    @MockitoBean
-    EmbeddingService embeddingService;
+    LocalEmbeddingService embeddingService;
 
     @Test
     void recherche_laufen_jogging_courseAPied_doiventToutesRemonterLeMemeProgramme() {
-        // Le LLM est mocké : seule la couche taxonomie déterministe est testée ici.
-        when(intentExtractor.extractIntent(any())).thenAnswer(invocation ->
-            new SearchIntent(null, null, null, null, 5000, null, false, null, null));
-        when(embeddingService.isConfigured()).thenReturn(false);
+        // Vecteur nul : force le repli plein texte/taxonomie, seule la couche
+        // taxonomie déterministe est testée ici.
+        when(embeddingService.generateEmbedding(any())).thenReturn(new float[384]);
 
         String organizerToken = registerAndLogin("organizer-multi@pair.app");
         updateLocation(organizerToken, 48.8566, 2.3522);

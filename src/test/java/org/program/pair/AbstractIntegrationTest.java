@@ -43,9 +43,6 @@ public abstract class AbstractIntegrationTest {
         registry.add("spring.datasource.username", postgres::getUsername);
         registry.add("spring.datasource.password", postgres::getPassword);
         registry.add("spring.flyway.enabled", () -> "true");
-        // Mocker les services externes coûteux par défaut
-        registry.add("llm.api-key", () -> "test-key");
-        registry.add("embedding.api-key", () -> "test-key");
     }
 
     @LocalServerPort private int port;

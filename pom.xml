@@ -28,6 +28,8 @@
     </scm>
     <properties>
         <java.version>17</java.version>
+        <!-- Surchargeable en ligne de commande : mvn test -DexcludedGroups= -->
+        <excludedGroups>model-integration</excludedGroups>
     </properties>
     <dependencies>
         <!-- Spring Boot Starters -->
@@ -126,6 +128,23 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+
+        <!-- Local trilingual embedding model (ONNX via DJL) -->
+        <dependency>
+            <groupId>ai.djl</groupId>
+            <artifactId>api</artifactId>
+            <version>0.31.1</version>
+        </dependency>
+        <dependency>
+            <groupId>ai.djl.onnxruntime</groupId>
+            <artifactId>onnxruntime-engine</artifactId>
+            <version>0.31.1</version>
+        </dependency>
+        <dependency>
+            <groupId>ai.djl.huggingface</groupId>
+            <artifactId>tokenizers</artifactId>
+            <version>0.31.1</version>
         </dependency>
 
         <!-- Jackson Databind (should be included but explicit) -->
@@ -251,6 +270,9 @@
                 <configuration>
                     <reuseForks>false</reuseForks>
                     <forkCount>1</forkCount>
+                    <!-- Charge un vrai modèle ONNX (~120 Mo, téléchargement réseau) :
+                         exclu par défaut, exécuter avec -DexcludedGroups= . -->
+                    <excludedGroups>${excludedGroups}</excludedGroups>
                 </configuration>
             </plugin>
 
