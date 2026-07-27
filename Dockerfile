@@ -10,11 +10,8 @@ COPY src ./src
 RUN ./mvnw clean package -DskipTests -B
 
 # Run stage
-FROM eclipse-temurin:21-jre-alpine
-RUN apk add --no-cache libstdc++ libgcc
+FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
-RUN addgroup -S spring && adduser -S spring -G spring
-RUN mkdir -p /app/uploads && chown -R spring:spring /app/uploads
 COPY --from=build /app/target/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
