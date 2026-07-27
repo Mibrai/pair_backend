@@ -14,6 +14,7 @@ FROM eclipse-temurin:21-jre-alpine
 WORKDIR /app
 RUN addgroup -S spring && adduser -S spring -G spring
 RUN mkdir -p /app/uploads && chown -R spring:spring /app/uploads
+RUN mkdir -p /app/models/embedding && chown -R spring:spring /app/models
 USER spring:spring
 COPY --from=build /app/target/*.jar app.jar
 EXPOSE 8080
