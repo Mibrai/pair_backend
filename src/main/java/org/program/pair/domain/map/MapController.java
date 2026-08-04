@@ -92,18 +92,24 @@ public class MapController {
     }
 
     /**
-     * Get all activities for the map page.
-     * Returns all activities present in the database with their locations from schedules.
-     * Each activity marker includes category icon, name, title, and distance if user location is provided.
+     * Marqueurs d'activité de la carte.
      *
-     * @param userLat User's latitude (optional - if geolocation enabled)
-     * @param userLng User's longitude (optional - if geolocation enabled)
-     * @return MapActivitiesResponse with all activity markers and default center
+     * <p>Chaque marqueur porte l'icône de catégorie, le nom, l'organisateur et,
+     * si {@code userLat}/{@code userLng} sont fournis, la distance.
+     *
+     * <p>Le bornage est optionnel et additif : {@code radiusMeters} (avec la
+     * position de l'utilisateur), une bbox {@code north}/{@code south}/{@code east}/{@code west},
+     * et un {@code limit}. Sans aucun de ces paramètres, la réponse est celle
+     * d'avant leur introduction — les clients déployés ne voient aucune
+     * différence. Voir {@link MapActivitiesRequest} pour les bornes et les codes
+     * d'erreur.
+     *
+     * @return marqueurs, centre par défaut, et l'état de troncature
+     *         ({@code truncated}, {@code totalInBounds})
      */
     @GetMapping("/activities")
     public MapActivitiesResponse getAllActivitiesForMap(
-            @RequestParam(required = false) Double userLat,
-            @RequestParam(required = false) Double userLng) {
-        return mapService.getAllActivitiesForMap(userLat, userLng);
+            @Valid @ModelAttribute MapActivitiesRequest request) {
+        return mapService.getAllActivitiesForMap(request);
     }
 }
