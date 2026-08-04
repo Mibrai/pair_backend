@@ -560,7 +560,11 @@ public class MapService {
         for (List<Schedule> schedules : activityScheduleMap.values()) {
             Activity activity = schedules.get(0).getProgram().getUserActivity().getActivity();
 
-            // Group schedules by location (to count programs at same location)
+            // Un marqueur par (activité, lieu) : les créneaux sont regroupés sur des
+            // coordonnées arrondies à 3 décimales (~111 m). La règle exacte est
+            // documentée sur MapActivityMarkerDto — un client qui déduplique doit la
+            // reproduire, et Math.round arrondit les demis vers +∞, pas à l'opposé
+            // de zéro comme le font Dart et Python.
             Map<String, List<Schedule>> locationGroups = schedules.stream()
                 .collect(Collectors.groupingBy(s -> {
                     double lat = Math.round(s.getLocation().getY() * 1000.0) / 1000.0;
@@ -609,6 +613,16 @@ public class MapService {
                     distanceKm = calculateDistance(userLat, userLng, lat, lng);
                 }
 
+                // programCount comptait locationSchedules.size(), c'est-à-dire des
+                // créneaux : un programme unique à trois séances hebdomadaires
+                // s'affichait « 3 programmes », y compris dans la confirmation de
+                // suppression d'une activité. Le nombre de créneaux reste exposé,
+                // sous son vrai nom.
+                int programCount = (int) locationSchedules.stream()
+                    .map(s -> s.getProgram().getId())
+                    .distinct()
+                    .count();
+
                 markers.add(new MapActivityMarkerDto(
                     activity.getId(),
                     activity.getName(),
@@ -619,6 +633,7 @@ public class MapService {
                     lat,
                     lng,
                     distanceKm,
+                    programCount,
                     locationSchedules.size(),
                     repUser != null ? repUser.getId() : null,
                     organizerName,
