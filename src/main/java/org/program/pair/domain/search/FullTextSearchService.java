@@ -98,7 +98,10 @@ public class FullTextSearchService {
                     ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
                     ?
                 )
-            ORDER BY rank DESC, distance_meters ASC
+            -- p.id en dernier critère : sans lui, deux programmes de même rang
+            -- et même distance peuvent sortir dans un ordre différent d'un appel
+            -- à l'autre, ce qui ferait bouger les pages sous le client.
+            ORDER BY rank DESC, distance_meters ASC, p.id
             LIMIT ?
             """.formatted(PROGRAM_SELECT);
 
@@ -147,7 +150,7 @@ public class FullTextSearchService {
                     ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
                     ?
                 )
-            ORDER BY distance_meters ASC
+            ORDER BY distance_meters ASC, p.id
             LIMIT ?
             """.formatted(PROGRAM_SELECT);
 
@@ -205,7 +208,7 @@ public class FullTextSearchService {
                     ST_SetSRID(ST_MakePoint(?, ?), 4326)::geography,
                     ?
                 )
-            ORDER BY distance_meters ASC
+            ORDER BY distance_meters ASC, p.id
             LIMIT ?
             """.formatted(PROGRAM_SELECT, labelConditions);
 
