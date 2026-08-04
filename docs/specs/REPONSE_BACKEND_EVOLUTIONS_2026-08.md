@@ -354,12 +354,27 @@ C'est la seule demande qui touche le modèle de données. Votre critère
 
 ### Demande 5 — bornage / clustering
 
-**Le bornage de `/map/activities` est livré** (voir la section suivante). Reste,
-pour clore la demande :
+**Livrée, Options A et B** (voir la section suivante).
 
-- les bounds du cluster sur `MapCluster`, sans quoi le recadrage au tap est
-  impossible — c'est l'Option B ;
-- `truncated` / `totalInBounds` sur `/map/bounds`, par symétrie.
+**Une correction importante à la réponse 4 ci-dessus, et à notre arbitrage.**
+Nous avions annoncé étendre `/map/clusters` pour l'Option B. En ouvrant le code,
+cette route s'est révélée agréger des **utilisateurs**, pas des activités :
+`MapService.getClusters()` appelle `userRepository.findVisibleUsersInRadius()`
+puis `clusterUsers()`. C'est la couche « personnes autour de moi », pas la couche
+des marqueurs d'activité dont vous parlez.
+
+Votre Option B décrit sans ambiguïté des clusters d'activités : `categoryIcon`
+sur le cluster, et un champ `activities` contenant « les entrées non agrégées,
+mêmes champs que `/map/activities` ». Le clustering d'activités a donc été
+ajouté à **`/map/activities`** — la route qui produit déjà ces marqueurs, et qui
+porte déjà le bornage et `totalInBounds` sur lesquels vos deux critères
+d'acceptation reposent. C'est toujours une extension d'une route existante, mais
+pas de celle que nous avions annoncée.
+
+`MapCluster` gagne ses bornes dans les deux cas : la route utilisateurs en
+profite aussi, elle en avait le même besoin.
+
+Reste : `truncated` / `totalInBounds` sur `/map/bounds`, par symétrie.
 
 ### Demande 6 — `DELETE /search/recent/{id}`
 
@@ -511,9 +526,59 @@ celui d'avant — mêmes marqueurs, mêmes champs, `truncated: false` et
 `totalInBounds` égal à la taille de la liste. Seul l'ordre change, et il n'était
 pas garanti.
 
+### Demande 5, Option B — agrégation
+
+Un paramètre `zoom` (1–20) de plus sur `GET /map/activities`. Fourni, il agrège
+les marqueurs proches ; absent, rien ne change et `clusters` est vide.
+
+```jsonc
+{
+  "activities": [ /* les marqueurs restés seuls, mêmes champs qu'avant */ ],
+  "clusters": [
+    { "latitude": 48.86, "longitude": 2.34, "count": 47, "type": "cluster",
+      "boundsSouth": 48.85, "boundsNorth": 48.87,
+      "boundsWest": 2.32,  "boundsEast": 2.36,
+      "categoryIcon": "sports" }
+  ],
+  "defaultCenter": { "lat": 48.86, "lng": 2.34, "zoom": 12 },
+  "truncated": false,
+  "totalInBounds": 812
+}
+```
+
+**Règle d'agrégation** : une cellule de grille portant au moins deux marqueurs
+devient un cluster ; une cellule seule laisse son marqueur dans `activities`.
+Les deux listes sont donc **disjointes**, ce qui rend votre premier critère
+vérifiable — `somme(count) + activities.length === totalInBounds`. Il est testé
+aux zooms 3, 7, 12 et 20.
+
+**Nommage des bornes** : `boundsSouth` / `boundsNorth` / `boundsWest` /
+`boundsEast`, et non les `boundsMinLat` / `boundsMaxLng` de votre proposition —
+même raison que pour la bbox, le domaine carte reste cohérent avec lui-même.
+
+**Les bornes portent l'étendue réelle des membres**, pas la cellule de grille qui
+les a regroupés. Recadrer sur la cellule laisserait des marges vides, ou
+couperait un membre posé sur son bord.
+
+**Sur votre second critère** — « zoomer jusqu'au niveau maximum ne renvoie plus
+que des `activities` » — il est vrai en pratique et testé, mais la formulation
+exacte mérite d'être connue : au zoom 20 la maille fait ~1 km, donc deux
+activités distinctes de plus d'un kilomètre tombent dans des cellules distinctes
+et ressortent non agrégées. **Deux activités à moins d'un kilomètre resteront
+agrégées même au zoom maximal.** C'est le comportement voulu — sinon la carte
+redessinerait des marqueurs superposés — mais ce n'est pas « aucun cluster,
+jamais ».
+
+**Interaction avec `limit`** : la troncature ne porte que sur les marqueurs non
+agrégés, un cluster étant déjà une réduction de volume. L'identité de somme
+ci-dessus vaut donc quand `truncated` est `false` ; `truncated: true` signale
+précisément qu'elle ne vaut plus.
+
+**Code d'erreur** : `MAP_ZOOM_OUT_OF_RANGE` (400) hors de 1–20.
+
 ### Tests
 
-Vingt-trois tests d'intégration, un par critère d'acceptation, verts contre
+Vingt-neuf tests d'intégration, un par critère d'acceptation, verts contre
 Postgres + PostGIS + pgvector (Testcontainers) :
 
 - `RecentSearchDeletionIntegrationTest` (6) — id stable entre deux appels, 204 +
@@ -523,13 +588,21 @@ Postgres + PostGIS + pgvector (Testcontainers) :
   `SLOT_OWN_SLOT`, `SLOT_FULL` et `SLOT_NOT_OPEN_TO_PARTNERS` distincts, code
   identique sous `Accept-Language: fr|en|de|it`, et non-régression du
   `NOT_FOUND` générique.
-- `MapActivitiesBoundingIntegrationTest` (11) — rayon appliqué (une activité à
+- `MapActivitiesBoundingIntegrationTest` (17) — rayon appliqué (une activité à
   60 km absente pour `radiusMeters=25000`), bbox appliquée, `limit` respecté
   avec `truncated`/`totalInBounds` corrects, ordre stable entre deux appels
-  identiques, réponse inchangée sans paramètre, et les cinq refus de validation.
+  identiques, réponse inchangée sans paramètre, les six refus de validation ;
+  puis, pour l'agrégation : deux marqueurs regroupés au zoom 7 avec les bonnes
+  bornes, aucun cluster au zoom 20, aucun cluster sans `zoom`, l'identité de
+  somme à quatre zooms, et l'invariant de forme des bornes sur `/map/clusters`.
   Les fixtures sont posées au milieu de l'Atlantique (10°N, 30°O) pour être
   isolées des données de seed, ce qui permet des assertions exactes plutôt que
   des « au moins un ».
+
+  Réserve à connaître : le test sur `/map/clusters` ne vérifie qu'un invariant de
+  forme (bornes non nulles, centre à l'intérieur, sud ≤ nord), parce que le
+  contenu de cette route dépend des utilisateurs présents en base. Les bornes des
+  clusters **d'activité**, elles, sont vérifiées sur des valeurs exactes.
 
 ---
 
@@ -598,8 +671,8 @@ L'ordre de valeur diffère un peu de vos priorités déclarées.
 |---|---|---|---|---|
 | 1 | **6** — id + `DELETE /{id}` | ✅ **livré** | — | |
 | 2 | **3(c)** — codes d'erreur | ✅ **livré** | — | débloque votre traduction sans dépendre du reste |
-| 3 | **5** — bornage `/map/activities` | ✅ **livré** | — | supprime aussi un `findAll()` non borné en production |
-| 4 | **5** — bounds de cluster (Option B) | à faire | faible | recadrage au tap |
+| 3 | **5 Option A** — bornage `/map/activities` | ✅ **livré** | — | supprime aussi un `findAll()` non borné en production |
+| 4 | **5 Option B** — agrégation + bornes de cluster | ✅ **livré** | — | sur `/map/activities`, pas `/map/clusters` — voir la correction |
 | 5 | **3(a,b)** — `Accept-Language` | à faire | moyen | `MessageSource` + ~10 clés, coût runtime nul |
 | 6 | **1** — `/activities/browse` | à faire | élevé | projection nouvelle, maille `UserActivity` |
 | 7 | **2** — pagination `/search` | à faire | élevé | plafonds relevés + pagination en mémoire |
@@ -611,11 +684,16 @@ L'ordre de valeur diffère un peu de vos priorités déclarées.
    en-tête absent → `fr` ? (les deux règles sont différentes, cf. § Faisabilité)
 2. **Demande 6** — voulez-vous une déduplication de `GET /search/recent` par
    requête ? (par défaut : non, comportement inchangé)
-3. **Demande 5** — le client s'aligne bien sur `north/south/east/west` ? Et
-   avez-vous besoin des bbox à cheval sur l'antiméridien ?
-4. **Correction 1** — un `curl` sur `/map/activities` en production pour savoir si
+3. **Demande 5** — le client s'aligne bien sur `north/south/east/west` (bbox) et
+   `boundsSouth/North/West/East` (clusters) ? Et avez-vous besoin des bbox à
+   cheval sur l'antiméridien ?
+4. **Demande 5, Option B** — le clustering est sur `/map/activities?zoom=`, pas
+   sur `/map/clusters` qui agrège des utilisateurs. Confirmez que c'est bien ce
+   dont vous avez besoin, ou dites-nous si vous vouliez réellement agréger la
+   couche « personnes ».
+5. **Correction 1** — un `curl` sur `/map/activities` en production pour savoir si
    `organizerId` y est déjà.
-5. **Correction 3** — corrige-t-on `programCount` ? Cela change un affichage
+6. **Correction 3** — corrige-t-on `programCount` ? Cela change un affichage
    existant.
 
 ### Une question qui nous revient, et qu'on vous signale

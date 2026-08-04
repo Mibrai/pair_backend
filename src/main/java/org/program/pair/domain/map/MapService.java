@@ -160,26 +160,16 @@ public class MapService {
             .map(entry -> {
                 List<User> cellUsers = entry.getValue();
 
-                // Calculate cluster center (average of all user positions)
-                double avgLat = cellUsers.stream()
-                    .mapToDouble(u -> u.getLocation().getY())
-                    .average()
-                    .orElse(0.0);
-
-                double avgLng = cellUsers.stream()
-                    .mapToDouble(u -> u.getLocation().getX())
-                    .average()
-                    .orElse(0.0);
+                List<double[]> points = cellUsers.stream()
+                    .map(u -> new double[]{u.getLocation().getY(), u.getLocation().getX()})
+                    .toList();
 
                 // Determine cluster type based on size
                 String type = cellUsers.size() == 1 ? "single" : "cluster";
 
-                return new MapCluster(
-                    Math.round(avgLat * 10000.0) / 10000.0,
-                    Math.round(avgLng * 10000.0) / 10000.0,
-                    cellUsers.size(),
-                    type
-                );
+                // Les bornes portent l'étendue des membres : sans elles, un tap sur
+                // un cluster ne peut pas recadrer la carte dessus.
+                return MapCluster.of(points, type, null);
             })
             .toList();
     }
@@ -643,18 +633,28 @@ public class MapService {
             // marqueurs arbitraires et deux appels identiques pourraient différer.
             markers.sort(markerOrder(userLat, userLng));
 
-            // 6. Troncature explicite, jamais silencieuse.
+            // 6. Agrégation optionnelle. totalInBounds est figé avant, pour que la
+            // somme des count des clusters et de la liste restante lui soit égale.
             int totalInBounds = markers.size();
+            List<MapCluster> clusters = List.of();
+            if (request.zoom() != null) {
+                ClusteredMarkers clustered = clusterMarkers(markers, request.zoom());
+                clusters = clustered.clusters();
+                markers = clustered.loose();
+            }
+
+            // 7. Troncature explicite, jamais silencieuse. Elle ne porte que sur les
+            // marqueurs non agrégés : un cluster est déjà une réduction de volume.
             int effectiveLimit = effectiveLimit(request);
-            boolean truncated = totalInBounds > effectiveLimit;
+            boolean truncated = markers.size() > effectiveLimit;
             if (truncated) {
                 markers = new ArrayList<>(markers.subList(0, effectiveLimit));
             }
 
-            // 7. Calculate default center (area with most activities)
+            // 8. Calculate default center (area with most activities)
             MapActivitiesResponse.DefaultMapCenter defaultCenter = calculateDefaultCenter(markers);
 
-            return new MapActivitiesResponse(markers, defaultCenter, truncated, totalInBounds);
+            return new MapActivitiesResponse(markers, defaultCenter, truncated, totalInBounds, clusters);
         } catch (Exception e) {
             // Log error and return empty response with default center
             System.err.println("Error in getAllActivitiesForMap: " + e.getMessage());
@@ -698,6 +698,69 @@ public class MapService {
             .thenComparing(m -> m.activityId().toString())
             .thenComparingDouble(MapActivityMarkerDto::lat)
             .thenComparingDouble(MapActivityMarkerDto::lng);
+    }
+
+    /** Résultat d'une agrégation : les clusters, et les marqueurs restés seuls. */
+    private record ClusteredMarkers(List<MapCluster> clusters, List<MapActivityMarkerDto> loose) {}
+
+    /**
+     * Agrège les marqueurs proches selon la maille du zoom.
+     *
+     * <p>Une cellule portant au moins deux marqueurs devient un cluster ; une
+     * cellule seule laisse son marqueur intact. Les deux listes sont donc
+     * disjointes, et {@code somme(count) + loose.size()} vaut le nombre de
+     * marqueurs entrants — c'est ce qui rend {@code totalInBounds} vérifiable
+     * par le client.
+     *
+     * <p>Corollaire : plus le zoom est élevé, plus la maille est fine, moins il
+     * reste de cellules peuplées — au zoom maximal (~1 km), des activités
+     * distinctes tombent en pratique dans des cellules distinctes et il ne reste
+     * que des marqueurs. Ce n'est pas une garantie absolue : deux activités à
+     * moins d'un kilomètre resteront agrégées, ce qui est le comportement voulu.
+     *
+     * <p>L'ordre d'entrée est préservé dans {@code loose} et détermine l'ordre
+     * des clusters (première apparition), donc l'agrégation ne réintroduit pas
+     * l'indéterminisme que le tri vient d'éliminer.
+     */
+    private ClusteredMarkers clusterMarkers(List<MapActivityMarkerDto> markers, int zoom) {
+        double gridSize = calculateGridSize(zoom);
+
+        Map<String, List<MapActivityMarkerDto>> grid = new LinkedHashMap<>();
+        for (MapActivityMarkerDto marker : markers) {
+            String cell = (int) Math.floor(marker.lat() / gridSize)
+                + "," + (int) Math.floor(marker.lng() / gridSize);
+            grid.computeIfAbsent(cell, k -> new ArrayList<>()).add(marker);
+        }
+
+        List<MapCluster> clusters = new ArrayList<>();
+        List<MapActivityMarkerDto> loose = new ArrayList<>();
+
+        for (List<MapActivityMarkerDto> cell : grid.values()) {
+            if (cell.size() < 2) {
+                loose.addAll(cell);
+                continue;
+            }
+            List<double[]> points = cell.stream()
+                .map(m -> new double[]{m.lat(), m.lng()})
+                .toList();
+            clusters.add(MapCluster.of(points, "cluster", dominantCategoryIcon(cell)));
+        }
+
+        return new ClusteredMarkers(clusters, loose);
+    }
+
+    /** Icône la plus représentée parmi les membres, pour dessiner le cluster. */
+    private String dominantCategoryIcon(List<MapActivityMarkerDto> cell) {
+        return cell.stream()
+            .map(MapActivityMarkerDto::categoryIcon)
+            .filter(Objects::nonNull)
+            .collect(Collectors.groupingBy(icon -> icon, Collectors.counting()))
+            .entrySet().stream()
+            // Départage sur l'icône elle-même : deux catégories à égalité ne
+            // doivent pas donner un résultat différent d'un appel à l'autre.
+            .max(Map.Entry.<String, Long>comparingByValue().thenComparing(Map.Entry.comparingByKey()))
+            .map(Map.Entry::getKey)
+            .orElse(null);
     }
 
     /** Plafond effectif : celui demandé, ramené au plafond dur ; sinon aucun. */
@@ -759,6 +822,11 @@ public class MapService {
         if (request.limit() != null && request.limit() < 1) {
             throw new ValidationException(ErrorCode.MAP_LIMIT_OUT_OF_RANGE,
                 "Le paramètre 'limit' doit être supérieur ou égal à 1.");
+        }
+
+        if (request.zoom() != null && (request.zoom() < 1 || request.zoom() > 20)) {
+            throw new ValidationException(ErrorCode.MAP_ZOOM_OUT_OF_RANGE,
+                "Le paramètre 'zoom' doit être compris entre 1 et 20.");
         }
     }
 

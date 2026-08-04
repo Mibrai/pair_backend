@@ -21,13 +21,19 @@ public record MapActivitiesResponse(
     boolean truncated,
 
     @Schema(description = "Nombre total de marqueurs dans la zone demandée, avant "
-        + "application du plafond. Égal à activities.size() quand truncated vaut false.")
-    int totalInBounds
+        + "agrégation et avant application du plafond. Sans troncature, la somme des "
+        + "count des clusters plus la taille d'activities lui est égale.")
+    int totalInBounds,
+
+    @Schema(description = "Agrégats de marqueurs proches, quand le paramètre zoom est "
+        + "fourni. Vide sinon. Les marqueurs agrégés ici ne figurent pas dans "
+        + "activities : les deux listes sont disjointes.")
+    List<MapCluster> clusters
 ) {
-    /** Réponse non tronquée — totalInBounds se déduit de la liste. */
+    /** Réponse non tronquée et non agrégée — totalInBounds se déduit de la liste. */
     public static MapActivitiesResponse untruncated(List<MapActivityMarkerDto> activities,
                                                      DefaultMapCenter defaultCenter) {
-        return new MapActivitiesResponse(activities, defaultCenter, false, activities.size());
+        return new MapActivitiesResponse(activities, defaultCenter, false, activities.size(), List.of());
     }
 
     public record DefaultMapCenter(
