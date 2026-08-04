@@ -32,6 +32,19 @@
         <excludedGroups>model-integration</excludedGroups>
     </properties>
     <dependencies>
+        <!--
+            Moteur de récurrence RFC 5545. Écrit à la main, il couvrirait FREQ et
+            INTERVAL puis buterait sur BYDAY multi-jours, UNTIL et COUNT —
+            exactement le moteur partiel que le client a déjà côté Flutter et
+            qu'il nous demande de remplacer. Autant prendre une implémentation
+            complète : la règle et le calendrier sont ici.
+        -->
+        <dependency>
+            <groupId>org.mnode.ical4j</groupId>
+            <artifactId>ical4j</artifactId>
+            <version>4.0.4</version>
+        </dependency>
+
         <!-- Spring Boot Starters -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
