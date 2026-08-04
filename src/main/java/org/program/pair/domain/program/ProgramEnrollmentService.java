@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.program.dto.*;
 import org.program.pair.domain.user.User;
 import org.program.pair.repository.*;
+import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.exception.ForbiddenException;
 import org.program.pair.shared.exception.ResourceNotFoundException;
 import org.program.pair.shared.exception.ValidationException;
@@ -54,17 +55,17 @@ public class ProgramEnrollmentService {
             .orElseThrow(() -> new ResourceNotFoundException("Program not found"));
 
         if (program.getStatus() != ProgramStatus.ACTIVE) {
-            throw new ValidationException("Program is not active and cannot accept new participants");
+            throw new ValidationException(ErrorCode.PROGRAM_NOT_ACTIVE, "Program is not active and cannot accept new participants");
         }
 
         // Check if user is the program organizer
         if (program.getUserActivity().getUser().getId().equals(userId)) {
-            throw new ForbiddenException("You cannot join your own program");
+            throw new ForbiddenException(ErrorCode.PROGRAM_OWN_PROGRAM, "You cannot join your own program");
         }
 
         // Check if already enrolled
         if (userProgramRepository.existsByUserIdAndProgramIdAndStatusActive(userId, programId)) {
-            throw new ValidationException("You are already enrolled in this program");
+            throw new ValidationException(ErrorCode.PROGRAM_ALREADY_ENROLLED, "You are already enrolled in this program");
         }
 
         // Validate schedule if provided
@@ -77,7 +78,7 @@ public class ProgramEnrollmentService {
                 .orElseThrow(() -> new ResourceNotFoundException("Schedule not found"));
 
             if (!schedule.getProgram().getId().equals(programId)) {
-                throw new ValidationException("Schedule does not belong to this program");
+                throw new ValidationException(ErrorCode.PROGRAM_SCHEDULE_MISMATCH, "Schedule does not belong to this program");
             }
 
             // Check schedule capacity (toutes sources de participation confondues)
@@ -86,7 +87,7 @@ public class ProgramEnrollmentService {
                     .countConfirmedParticipants(scheduleId);
 
                 if (currentParticipants >= schedule.getMaxParticipants()) {
-                    throw new ValidationException("This schedule is full");
+                    throw new ValidationException(ErrorCode.PROGRAM_SCHEDULE_FULL, "This schedule is full");
                 }
             }
         }
@@ -126,12 +127,12 @@ public class ProgramEnrollmentService {
 
         // Validate ownership
         if (!userProgram.getUser().getId().equals(userId)) {
-            throw new ForbiddenException("You can only leave your own enrollments");
+            throw new ForbiddenException(ErrorCode.ENROLLMENT_NOT_OWNED, "You can only leave your own enrollments");
         }
 
         // Check if already left
         if (userProgram.getStatus() == UserProgramStatus.LEFT) {
-            throw new ValidationException("You have already left this program");
+            throw new ValidationException(ErrorCode.ENROLLMENT_ALREADY_LEFT, "You have already left this program");
         }
 
         // Update status
@@ -182,7 +183,7 @@ public class ProgramEnrollmentService {
                  userId, progressPercentage, userProgramId);
 
         if (progressPercentage < 0 || progressPercentage > 100) {
-            throw new ValidationException("Progress percentage must be between 0 and 100");
+            throw new ValidationException(ErrorCode.ENROLLMENT_PROGRESS_OUT_OF_RANGE, "Progress percentage must be between 0 and 100");
         }
 
         UserProgram userProgram = userProgramRepository.findById(userProgramId)
@@ -190,12 +191,12 @@ public class ProgramEnrollmentService {
 
         // Validate ownership
         if (!userProgram.getUser().getId().equals(userId)) {
-            throw new ForbiddenException("You can only update your own enrollments");
+            throw new ForbiddenException(ErrorCode.ENROLLMENT_NOT_OWNED, "You can only update your own enrollments");
         }
 
         // Validate status
         if (userProgram.getStatus() != UserProgramStatus.ACTIVE) {
-            throw new ValidationException("Can only update progress for active enrollments");
+            throw new ValidationException(ErrorCode.ENROLLMENT_NOT_ACTIVE, "Can only update progress for active enrollments");
         }
 
         userProgram.setProgressPercentage(progressPercentage);
@@ -242,7 +243,7 @@ public class ProgramEnrollmentService {
 
         // Update to completed
         if (programActivity.getStatus() == ProgramActivityStatus.COMPLETED) {
-            throw new ValidationException("Activity already completed");
+            throw new ValidationException(ErrorCode.ACTIVITY_ALREADY_COMPLETED, "Activity already completed");
         }
 
         ProgramActivityStatus previousStatus = programActivity.getStatus();
@@ -294,7 +295,7 @@ public class ProgramEnrollmentService {
 
         // Update to skipped
         if (programActivity.getStatus() == ProgramActivityStatus.SKIPPED) {
-            throw new ValidationException("Activity already skipped");
+            throw new ValidationException(ErrorCode.ACTIVITY_ALREADY_SKIPPED, "Activity already skipped");
         }
 
         ProgramActivityStatus previousStatus = programActivity.getStatus();
@@ -346,11 +347,11 @@ public class ProgramEnrollmentService {
             .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found"));
 
         if (!userProgram.getUser().getId().equals(userId)) {
-            throw new ForbiddenException("You can only modify your own enrollments");
+            throw new ForbiddenException(ErrorCode.ENROLLMENT_NOT_OWNED, "You can only modify your own enrollments");
         }
 
         if (userProgram.getStatus() != UserProgramStatus.ACTIVE) {
-            throw new ValidationException("Can only modify active enrollments");
+            throw new ValidationException(ErrorCode.ENROLLMENT_NOT_ACTIVE, "Can only modify active enrollments");
         }
 
         return userProgram;
