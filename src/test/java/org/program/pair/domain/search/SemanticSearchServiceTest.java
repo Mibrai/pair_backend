@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class SemanticSearchServiceTest {
 
     private final SemanticSearchService service =
-        new SemanticSearchService(null, null, null, null, null, null, null, null, null, null, null);
+        new SemanticSearchService(null, null, null, null, null, null, null, null, null, null, null, null);
 
     @Test
     void thumbnailUrl_devraitPrivilegierImageUrl_quandAucunMedia() {

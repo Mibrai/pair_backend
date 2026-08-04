@@ -20,6 +20,7 @@ import org.program.pair.repository.SearchLogRepository;
 import org.program.pair.repository.SlotParticipationRepository;
 import org.program.pair.repository.UserRepository;
 import org.program.pair.shared.GeoUtils;
+import org.program.pair.shared.i18n.Messages;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +39,7 @@ import java.util.UUID;
 public class SemanticSearchService {
 
     private final RuleBasedIntentExtractor intentExtractor;
+    private final Messages messages;
     private final LocalEmbeddingService embeddingService;
     private final FullTextSearchService fullTextSearchService;
     private final ProgramRepository programRepository;
@@ -376,7 +378,7 @@ public class SemanticSearchService {
         int expanded = Math.min(radius * 3, 50000);
         if (expanded > radius) {
             actions.add(new EmptyStateActionDto("EXPAND_RADIUS",
-                "Élargir la zone de recherche à " + (expanded / 1000) + " km",
+                messages.get("search.action.expandRadius", expanded / 1000),
                 Map.of("radiusMeters", expanded)));
         }
 
@@ -387,12 +389,12 @@ public class SemanticSearchService {
         if (activityId != null) {
             // 2. Créer soi-même un créneau (transformer le vide en action)
             actions.add(new EmptyStateActionDto("CREATE_SLOT",
-                "Proposer un créneau et être le premier ici",
+                messages.get("search.action.createSlot.here"),
                 Map.of("activityId", activityId)));
 
             // 3. Poser une alerte
             actions.add(new EmptyStateActionDto("SET_ALERT",
-                "Me prévenir quand quelqu'un arrive",
+                messages.get("search.action.setAlert"),
                 Map.of("activityId", activityId,
                        "lat", request.lat(), "lng", request.lng(),
                        "radiusMeters", radius)));
@@ -402,16 +404,16 @@ public class SemanticSearchService {
                 .findSimilarActivitiesWithNearbyUsers(activityId, request.lat(), request.lng(), radius, 3);
             for (Activity a : neighbours) {
                 actions.add(new EmptyStateActionDto("SIMILAR_ACTIVITY",
-                    "Voir " + a.getName() + " à la place",
+                    messages.get("search.action.similarActivity", a.getName()),
                     Map.of("activityId", a.getId().toString(), "name", a.getName())));
             }
         } else if (intent.activityKeyword() != null) {
             actions.add(new EmptyStateActionDto("CREATE_SLOT",
-                "Être le premier à proposer " + intent.activityKeyword() + " dans votre zone",
+                messages.get("search.action.createSlot.keyword", intent.activityKeyword()),
                 Map.of()));
         } else {
             actions.add(new EmptyStateActionDto("CREATE_SLOT",
-                "Créer votre propre programme d'activité",
+                messages.get("search.action.createSlot.generic"),
                 Map.of()));
         }
 
