@@ -28,9 +28,28 @@ import java.util.UUID;
 public class ActivityController {
 
     private final ActivityService activityService;
+    private final ActivityBrowseService activityBrowseService;
     private final StorageService storageService;
     private final MediaValidator mediaValidator;
     private final ImageProcessor imageProcessor;
+
+    /**
+     * L'Explorer : une activité telle qu'une personne la propose, avec sa photo,
+     * son organisateur, son nombre de programmes, sa prochaine séance et son
+     * adresse — l'objet que le client fabriquait jusqu'ici en croisant
+     * /programs, /map/activities et /activities, avec le nom d'activité pour
+     * clé étrangère.
+     *
+     * <p>Maille : {@code UserActivity}. Enveloppe : {@code Page<T>} Spring,
+     * comme /notifications. Distances en mètres.
+     *
+     * @return page de cartes, triée par distance croissante puis par nom
+     */
+    @GetMapping("/activities/browse")
+    public Page<BrowsedActivityDto> browseActivities(
+            @Valid @ModelAttribute ActivityBrowseRequest request) {
+        return activityBrowseService.browse(request);
+    }
 
     @GetMapping("/categories")
     public List<CategoryDto> getCategories() {
