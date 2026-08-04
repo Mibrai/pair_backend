@@ -5,10 +5,9 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
-@Schema(description = "Seuls query/lat/lng/radiusMeters sont pris en compte. "
-    + "Il n'y a pas de pagination (page/pageSize sont ignorés, pas d'erreur) : "
-    + "chaque appel renvoie sa liste complète de résultats en une fois. "
-    + "filters/locale/sort_by/sort_order sont également ignorés s'ils sont envoyés.")
+@Schema(description = "Recherche en langage naturel, paginée. "
+    + "filters/locale/sort_by/sort_order restent ignorés s'ils sont envoyés — "
+    + "la langue passe désormais par l'en-tête Accept-Language.")
 public record SearchRequest(
     @NotBlank(message = "La requête de recherche est requise")
     @Size(max = 500, message = "La requête ne peut pas dépasser 500 caractères")
@@ -20,5 +19,25 @@ public record SearchRequest(
     @NotNull(message = "La longitude est requise")
     Double lng,
 
-    Integer radiusMeters  // override du rayon détecté par le LLM
-) {}
+    Integer radiusMeters,  // override du rayon détecté par le LLM
+
+    @Schema(description = "Page indexée à 0. Absente : 0.", defaultValue = "0")
+    Integer page,
+
+    @Schema(description = "Taille de page. Absente : 20, la taille que la route "
+        + "renvoyait avant d'être paginée. Plafonnée à 100.", defaultValue = "20")
+    Integer pageSize
+) {
+    /** Constructeur court, pour les appelants qui ne paginent pas. */
+    public SearchRequest(String query, Double lat, Double lng, Integer radiusMeters) {
+        this(query, lat, lng, radiusMeters, null, null);
+    }
+
+    public int effectivePage() {
+        return page != null ? page : 0;
+    }
+
+    public int effectivePageSize() {
+        return pageSize != null ? pageSize : 20;
+    }
+}

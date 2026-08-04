@@ -53,7 +53,14 @@ public class SemanticSearchService {
 
     /** Nombre maximal de résultats "slot" mélangés aux résultats programme/personne. */
     private static final int MAX_SLOT_RESULTS = 10;
-    private static final int MAX_TOTAL_RESULTS = 20;
+    /**
+     * Nombre de candidats que le moteur produit avant découpe. C'était 20, la
+     * taille d'une page : au-delà de la première, il n'y avait rien à servir.
+     * totalCount est donc exact jusqu'à ce plafond, et un « au moins N »
+     * au-delà — c'est l'arbitrage (a) retenu avec le client.
+     */
+    private static final int CANDIDATE_LIMIT = 200;
+    private static final int MAX_PAGE_SIZE = 100;
 
     /** Similarité cosine minimale (0-1) pour qu'un résultat vectoriel soit retenu. */
     @Value("${search.embedding.min-similarity:0.25}")
@@ -104,9 +111,37 @@ public class SemanticSearchService {
             return SearchResponse.empty(actions, intent);
         }
 
-        // 7. Retourner les résultats
-        log.info("Found {} results for query: '{}'", results.size(), request.query());
-        return SearchResponse.results(results, intent);
+        // 7. Découpe. Les compteurs portent sur la requête entière, pas sur la
+        // page : un onglet « Personnes (3) » qui afficherait 3 puis 0 en page 2
+        // serait pire que pas de compteur du tout.
+        int pageSize = Math.min(Math.max(request.effectivePageSize(), 1), MAX_PAGE_SIZE);
+        int page = Math.max(request.effectivePage(), 0);
+        int from = Math.min((int) Math.min((long) page * pageSize, Integer.MAX_VALUE), results.size());
+        int to = Math.min(from + pageSize, results.size());
+
+        List<SearchResultDto> pageResults = results.subList(from, to);
+        log.info("Found {} results for query: '{}' (page {}, {} servis)",
+            results.size(), request.query(), page, pageResults.size());
+
+        return SearchResponse.results(pageResults, intent, results.size(), page, pageSize,
+            countsByType(results));
+    }
+
+    /**
+     * Total par type sur la liste entière. Les clés reprennent l'énumération
+     * {@code resultType} — {@code user}, {@code program}, {@code slot} — et les
+     * trois sont toujours présentes, à zéro le cas échéant : un client qui
+     * affiche des onglets ne doit pas avoir à distinguer « zéro » de « absent ».
+     */
+    private Map<String, Integer> countsByType(List<SearchResultDto> all) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        counts.put("user", 0);
+        counts.put("program", 0);
+        counts.put("slot", 0);
+        for (SearchResultDto result : all) {
+            counts.merge(result.resultType(), 1, Integer::sum);
+        }
+        return counts;
     }
 
     private int determineRadius(SearchRequest request, SearchIntent intent) {
@@ -131,7 +166,7 @@ public class SemanticSearchService {
             request.query(), intent.activityKeyword(), intent.canonicalActivitySlug());
         List<SearchResultDto> taxonomyResults = taxonomyLabels.isEmpty()
             ? List.of()
-            : fullTextSearchService.searchByTaxonomyLabels(taxonomyLabels, searchRequest, 20);
+            : fullTextSearchService.searchByTaxonomyLabels(taxonomyLabels, searchRequest, CANDIDATE_LIMIT);
 
         // 2. Couche de rappel : embeddings multilingues (ou full-text en fallback si
         // le modèle local n'a pas pu être chargé/n'a rien produit).
@@ -141,12 +176,12 @@ public class SemanticSearchService {
             : toSearchResultDtos(
                 programRepository.semanticSearchInRadius(
                     embeddingService.toVectorString(embedding),
-                    request.lat(), request.lng(), radius, 1 - minSimilarity, 20),
+                    request.lat(), request.lng(), radius, 1 - minSimilarity, CANDIDATE_LIMIT),
                 request.lat(), request.lng());
 
         // 3. Fusion : les matchs taxonomiques (précision) priment, complétés par le
         // rappel sémantique/full-text, dédupliqués par programme.
-        List<SearchResultDto> results = mergeResults(taxonomyResults, recallResults, 20);
+        List<SearchResultDto> results = mergeResults(taxonomyResults, recallResults, CANDIDATE_LIMIT);
 
         // Filtrer par niveau si spécifié par le LLM
         if (intent.level() != null && !results.isEmpty()) {
@@ -168,7 +203,7 @@ public class SemanticSearchService {
         // date croissante, puis complétés par les programmes (le reste de la
         // liste ci-dessus), jamais tronqués par la limite globale.
         List<SearchResultDto> slotResults = searchSlots(request, intent, radius, requesterId);
-        int programBudget = Math.max(0, MAX_TOTAL_RESULTS - slotResults.size());
+        int programBudget = Math.max(0, CANDIDATE_LIMIT - slotResults.size());
         List<SearchResultDto> boundedPrograms = results.size() > programBudget
             ? results.subList(0, programBudget)
             : results;
