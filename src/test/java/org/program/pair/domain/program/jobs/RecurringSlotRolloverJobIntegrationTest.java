@@ -82,7 +82,14 @@ class RecurringSlotRolloverJobIntegrationTest extends AbstractIntegrationTest {
         assertThat(reloaded.getStartsAt()).isAfter(Instant.now());
         assertThat(reloaded.getStatus()).isEqualTo(SlotStatus.OPEN);
         assertThat(reloaded.getParticipantCount()).isZero();
-        // La récurrence hebdomadaire est préservée (multiple de 7 jours).
-        assertThat(java.time.Duration.between(staleStart, reloaded.getStartsAt()).toDays() % 7).isZero();
+        // Cette assertion vérifiait « un multiple de 7 jours depuis la graine »,
+        // ce qui revenait à exiger que le créneau garde le jour de semaine de sa
+        // PREMIÈRE séance. Or staleStart tombe un mardi et la règle dit BYDAY=MO :
+        // l'ancien job, qui ajoutait sept jours en aveugle, laissait donc un
+        // créneau « du lundi » sur un mardi indéfiniment. Le job lit maintenant la
+        // règle — d'où la seule assertion qui ait du sens ici.
+        assertThat(reloaded.getStartsAt().atZone(java.time.ZoneId.of("Europe/Paris")).getDayOfWeek())
+            .as("BYDAY=MO doit donner un lundi, quel que soit le jour de la première séance")
+            .isEqualTo(java.time.DayOfWeek.MONDAY);
     }
 }

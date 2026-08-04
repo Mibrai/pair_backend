@@ -41,6 +41,7 @@ public class ProgramService {
     private final ActivityAlertService activityAlertService;
     private final SubscriptionService subscriptionService;
     private final HtmlSanitizer sanitizer;
+    private final RecurrenceExpander recurrenceExpander;
     private final GeometryFactory geometryFactory = new GeometryFactory(
         new PrecisionModel(), 4326);
 
@@ -324,10 +325,21 @@ public class ProgramService {
         if (locationType != null)            program.setLocationType(locationType);
     }
 
+    /**
+     * Prochaine séance du programme, <b>récurrences développées</b>.
+     *
+     * <p>Le balayage naïf d'avant prenait le plus petit {@code startsAt} futur :
+     * un créneau hebdomadaire dont la première séance était passée donnait
+     * {@code null}, et le programme paraissait terminé. Le développement se fait
+     * ici plutôt que d'attendre {@code RecurringSlotRolloverJob}, pour qu'un
+     * programme créé ou modifié porte immédiatement la bonne date au lieu de la
+     * porter au prochain passage du job.
+     */
     private void refreshNextSessionAt(Program program) {
+        Instant now = Instant.now();
         Instant next = scheduleRepository.findByProgramId(program.getId()).stream()
-            .map(Schedule::getStartsAt)
-            .filter(t -> t != null && t.isAfter(Instant.now()))
+            .map(s -> recurrenceExpander.nextOccurrence(s.getStartsAt(), s.getRecurrenceRule(), now))
+            .filter(java.util.Objects::nonNull)
             .min(Instant::compareTo)
             .orElse(null);
         program.setNextSessionAt(next);
