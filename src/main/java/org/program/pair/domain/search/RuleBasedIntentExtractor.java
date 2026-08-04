@@ -3,7 +3,9 @@ package org.program.pair.domain.search;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.activity.ActivityFormat;
 import org.program.pair.domain.activity.ActivityLevel;
+import org.program.pair.config.LocaleConfig;
 import org.program.pair.domain.search.dto.SearchIntent;
+import org.program.pair.shared.i18n.Messages;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashSet;
@@ -29,6 +31,7 @@ import java.util.regex.Pattern;
 public class RuleBasedIntentExtractor {
 
     private final ActivityTaxonomy activityTaxonomy;
+    private final Messages messages;
 
     // Listes ordonnées (et non Map.ofEntries, dont l'ordre d'itération n'est pas
     // garanti) : les expressions les plus spécifiques doivent être testées avant
@@ -239,13 +242,30 @@ public class RuleBasedIntentExtractor {
         return matchesVague && isShort;
     }
 
+    /**
+     * Question de clarification, dans la langue de l'appelant.
+     *
+     * <p>Quand l'appelant a posé un {@code Accept-Language}, il fait autorité :
+     * c'est la langue de son appareil, pas une devinette.
+     *
+     * <p>Sans en-tête, on garde l'heuristique par mots-clés qui existait avant.
+     * La règle générale du produit est « pas d'en-tête ⇒ français », mais
+     * l'appliquer ici ferait <b>régresser</b> les germanophones et anglophones
+     * des binaires déjà déployés, qui reçoivent aujourd'hui leur langue parce
+     * qu'ils l'ont écrite dans leur requête. Une non-régression prime sur une
+     * règle uniforme ; l'heuristique disparaîtra d'elle-même quand le client
+     * posera l'en-tête.
+     */
     private String clarificationQuestionFor(String normalizedText) {
+        if (messages.localeWasRequested()) {
+            return messages.get("search.clarification.generic");
+        }
         if (normalizedText.matches(".*\\b(i|want|looking|bored)\\b.*")) {
-            return "What kind of activity would you enjoy today?";
+            return messages.getIn(LocaleConfig.ENGLISH, "search.clarification.generic");
         }
         if (normalizedText.matches(".*\\b(ich|will|suche|langweilig)\\b.*")) {
-            return "Welche Aktivität würde dir heute gefallen?";
+            return messages.getIn(LocaleConfig.GERMAN, "search.clarification.generic");
         }
-        return "Quel type d'activité te ferait plaisir aujourd'hui ?";
+        return messages.getIn(LocaleConfig.FRENCH, "search.clarification.generic");
     }
 }
