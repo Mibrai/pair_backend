@@ -17,6 +17,25 @@ public interface ProgramRepository extends JpaRepository<Program, UUID> {
     @Query("SELECT COUNT(p) FROM Program p WHERE p.userActivity.user.id = :userId")
     long countProgramsByUser(@Param("userId") UUID userId);
 
+    /**
+     * Programmes actifs et publics de plusieurs {@code UserActivity}, avec leur
+     * nombre d'inscrits actifs — pour {@code /activities/browse?includePrograms=true}.
+     *
+     * <p>Une seule requête pour toute la page : une par entrée ferait vingt
+     * allers-retours sur un écran de liste.
+     */
+    @Query("""
+        SELECT p, (SELECT COUNT(up) FROM UserProgram up
+                   WHERE up.program = p AND up.status = 'ACTIVE')
+        FROM Program p
+        JOIN FETCH p.userActivity ua
+        WHERE ua.id IN :userActivityIds
+          AND p.status = 'ACTIVE'
+          AND p.isPublic = true
+        """)
+    List<Object[]> findActiveWithEnrolmentsByUserActivityIds(
+        @Param("userActivityIds") List<UUID> userActivityIds);
+
     @Query(value = """
         SELECT p.* FROM programs p
         JOIN user_activities ua ON p.user_activity_id = ua.id
