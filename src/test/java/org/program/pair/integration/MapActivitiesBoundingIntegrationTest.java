@@ -14,6 +14,8 @@ import org.program.pair.domain.auth.dto.RegisterRequest;
 import org.program.pair.domain.map.dto.MapActivitiesResponse;
 import org.program.pair.domain.map.dto.MapActivityMarkerDto;
 import org.program.pair.domain.map.dto.MapCluster;
+import org.program.pair.domain.map.dto.MapMarkersResponse;
+import org.program.pair.domain.map.dto.MapProgramDto;
 import org.program.pair.domain.program.PlaceType;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.ProgramStatus;
@@ -32,6 +34,7 @@ import org.springframework.web.util.UriBuilder;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.UUID;
 import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -72,6 +75,11 @@ class MapActivitiesBoundingIntegrationTest extends AbstractIntegrationTest {
     private static final double TRIPLE_LNG = -20.0;
     private static final double DUO_LAT = 6.0;
     private static final double DUO_LNG = -20.0;
+
+    // Zone dédiée à GET /map/bounds, isolée des deux jeux précédents.
+    private static final double BOUNDS_LAT = 20.0;
+    private static final double BOUNDS_LNG = -40.0;
+    private static boolean boundsFixturesCreated = false;
 
     private static final String HOST_EMAIL = "map-bounding-host@pair.app";
 
@@ -354,7 +362,113 @@ class MapActivitiesBoundingIntegrationTest extends AbstractIntegrationTest {
         }
     }
 
+    // — GET /map/bounds : truncated / totalInBounds, par symétrie avec /map/activities —
+    //
+    // Ces tests vivent ici, et non dans une classe dédiée, pour réutiliser le
+    // compte de la classe : l'inscription est plafonnée à 5/heure/IP et le
+    // budget est partagé entre toutes les classes de test.
+
+    @Test
+    void bounds_sansTroncature_doitRendreTouteLaZone() {
+        createBoundsFixtures();
+
+        MapMarkersResponse response = fetchBounds(100, 0);
+
+        assertThat(response.programs()).hasSize(3);
+        assertThat(response.truncated()).isFalse();
+        assertThat(response.totalInBounds()).isGreaterThanOrEqualTo(3);
+    }
+
+    @Test
+    void bounds_avecLimit_doitSignalerLaTroncature() {
+        createBoundsFixtures();
+
+        MapMarkersResponse response = fetchBounds(1, 0);
+
+        assertThat(response.programs()).hasSize(1);
+        assertThat(response.truncated())
+            .as("deux programmes de la zone ont été écartés")
+            .isTrue();
+    }
+
+    @Test
+    void bounds_deuxPagesSuccessives_neDoiventPasSeRecouvrir() {
+        createBoundsFixtures();
+
+        List<UUID> page0 = fetchBounds(2, 0).programs().stream().map(MapProgramDto::id).toList();
+        List<UUID> page1 = fetchBounds(2, 2).programs().stream().map(MapProgramDto::id).toList();
+
+        assertThat(page0).hasSize(2);
+        assertThat(page1).hasSize(1);
+        assertThat(page0).doesNotContainAnyElementsOf(page1);
+    }
+
+    @Test
+    void bounds_deuxAppelsIdentiques_doiventRendreLaMemePage() {
+        createBoundsFixtures();
+
+        assertThat(fetchBounds(2, 0).programs().stream().map(MapProgramDto::id).toList())
+            .isEqualTo(fetchBounds(2, 0).programs().stream().map(MapProgramDto::id).toList());
+    }
+
+    @Test
+    void bounds_bornesInversees_doiventEtreRefusees() {
+        webTestClient.get()
+            .uri(b -> b.path("/api/map/bounds")
+                .queryParam("south", BOUNDS_LAT + 1).queryParam("north", BOUNDS_LAT - 1)
+                .queryParam("west", BOUNDS_LNG - 1).queryParam("east", BOUNDS_LNG + 1)
+                .build())
+            .headers(h -> h.setBearerAuth(token))
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.code").isEqualTo("MAP_BOUNDS_INVALID");
+    }
+
+    @Test
+    void bounds_limitNul_doitEtreRefuse() {
+        webTestClient.get()
+            .uri(b -> b.path("/api/map/bounds")
+                .queryParam("south", BOUNDS_LAT - 1).queryParam("north", BOUNDS_LAT + 1)
+                .queryParam("west", BOUNDS_LNG - 1).queryParam("east", BOUNDS_LNG + 1)
+                .queryParam("limit", 0)
+                .build())
+            .headers(h -> h.setBearerAuth(token))
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.code").isEqualTo("MAP_LIMIT_OUT_OF_RANGE");
+    }
+
     // — helpers —
+
+    private MapMarkersResponse fetchBounds(int limit, int offset) {
+        return webTestClient.get()
+            .uri(b -> b.path("/api/map/bounds")
+                .queryParam("south", BOUNDS_LAT - 1).queryParam("north", BOUNDS_LAT + 1)
+                .queryParam("west", BOUNDS_LNG - 1).queryParam("east", BOUNDS_LNG + 1)
+                .queryParam("limit", limit).queryParam("offset", offset)
+                .build())
+            .headers(h -> h.setBearerAuth(token))
+            .accept(MediaType.APPLICATION_JSON)
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody(MapMarkersResponse.class)
+            .returnResult()
+            .getResponseBody();
+    }
+
+    /** Trois programmes d'un créneau chacun, dans une zone isolée des seeds. */
+    private void createBoundsFixtures() {
+        if (boundsFixturesCreated) {
+            return;
+        }
+        for (int i = 0; i < 3; i++) {
+            createSchedulesForOneProgram(
+                "Carte bounds — " + i, BOUNDS_LAT + i * 0.01, BOUNDS_LNG, 1);
+        }
+        boundsFixturesCreated = true;
+    }
 
     /** Le marqueur posé à cette latitude, cherché sans filtre géographique. */
     private MapActivityMarkerDto fetchMarkerAt(double lat) {
