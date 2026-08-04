@@ -30,6 +30,15 @@ public class MapService {
     private final UserProgramRepository userProgramRepository;
     private final Random random = new Random();
 
+    /**
+     * Plafond de personnes examinées pour agréger la couche « activités » de
+     * {@code /map/bounds}. Une {@code Activity} n'ayant pas de coordonnées, elle
+     * n'existe sur la carte qu'à travers ceux qui la déclarent ; au-delà de ce
+     * plafond, la couche est calculée sur un échantillon et {@code truncated}
+     * passe à vrai.
+     */
+    private static final int MAX_USERS_FOR_ACTIVITY_AGGREGATION = 1_000;
+
     public List<MapUserDto> getUsersOnMap(MapSearchRequest request, UUID requesterId) {
         // 1. Find visible users in radius
         List<User> nearbyUsers = userRepository.findVisibleUsersInRadius(
@@ -207,30 +216,18 @@ public class MapService {
     }
 
     public List<MapUserDto> getUsersInBounds(MapBoundsRequest request, UUID requesterId) {
-        // Calculate bounds center and radius for query
-        double centerLat = (request.north() + request.south()) / 2.0;
-        double centerLng = (request.east() + request.west()) / 2.0;
+        return usersLayer(request, requesterId).items();
+    }
 
-        // Calculate radius from bounds (in meters)
-        double latDiff = Math.abs(request.north() - request.south());
-        double lngDiff = Math.abs(request.east() - request.west());
-        int radiusMeters = (int) (Math.max(latDiff, lngDiff) * 111320.0 / 2.0);
-
-        // Cap radius at 100km for performance
-        radiusMeters = Math.min(radiusMeters, 100000);
-
-        // Find visible users in radius
-        List<User> nearbyUsers = userRepository.findVisibleUsersInRadius(
-            centerLat, centerLng, radiusMeters, request.limit(), request.offset());
-
-        // Filter by bounds precisely
-        nearbyUsers = nearbyUsers.stream()
-            .filter(u -> u.getLocation() != null
-                && u.getLocation().getY() >= request.south()
-                && u.getLocation().getY() <= request.north()
-                && u.getLocation().getX() >= request.west()
-                && u.getLocation().getX() <= request.east())
-            .toList();
+    private Layer<MapUserDto> usersLayer(MapBoundsRequest request, UUID requesterId) {
+        // Le filtre bbox est en SQL : le « rayon déduit de la bbox puis filtre
+        // en Java » d'avant ne couvrait pas les coins du rectangle et plafonnait
+        // à 100 km, écartant silencieusement des personnes pourtant dans les
+        // bornes demandées.
+        List<User> nearbyUsers = userRepository.findVisibleUsersInBounds(
+            request.south(), request.north(), request.west(), request.east(),
+            request.limit(), request.offset());
+        int fetched = nearbyUsers.size();
 
         // Filter by activity levels if provided
         if (request.activityLevels() != null && !request.activityLevels().isEmpty()) {
@@ -244,33 +241,35 @@ public class MapService {
         }
 
         // Never return the requester themselves
-        return nearbyUsers.stream()
+        List<MapUserDto> items = nearbyUsers.stream()
             .filter(u -> !u.getId().equals(requesterId))
             .map(u -> toMapDto(u, null))
             .filter(dto -> dto != null)
             .toList();
+
+        // La troncature se juge sur ce que la base a écarté, pas sur la taille
+        // de la liste finale : l'exclusion de l'appelant et le filtre de niveau
+        // s'appliquent après le limit et la réduiraient sans qu'aucun marqueur
+        // n'ait manqué.
+        long total = userRepository.countVisibleUsersInBounds(
+            request.south(), request.north(), request.west(), request.east());
+        boolean truncated = total > (long) request.offset() + fetched;
+
+        return new Layer<>(items, (int) Math.min(total, Integer.MAX_VALUE), truncated);
     }
 
     public List<MapActivityDto> getActivitiesInBounds(MapBoundsRequest request) {
-        // Get all activities (activities don't have location, but users with activities do)
-        // So we find users in bounds who have activities, then aggregate by unique activities
-        double centerLat = (request.north() + request.south()) / 2.0;
-        double centerLng = (request.east() + request.west()) / 2.0;
-        double latDiff = Math.abs(request.north() - request.south());
-        double lngDiff = Math.abs(request.east() - request.west());
-        int radiusMeters = Math.min((int) (Math.max(latDiff, lngDiff) * 111320.0 / 2.0), 100000);
+        return activitiesLayer(request).items();
+    }
 
-        List<User> nearbyUsers = userRepository.findVisibleUsersInRadius(
-            centerLat, centerLng, radiusMeters, 1000, 0);
-
-        // Filter by bounds
-        nearbyUsers = nearbyUsers.stream()
-            .filter(u -> u.getLocation() != null
-                && u.getLocation().getY() >= request.south()
-                && u.getLocation().getY() <= request.north()
-                && u.getLocation().getX() >= request.west()
-                && u.getLocation().getX() <= request.east())
-            .toList();
+    private Layer<MapActivityDto> activitiesLayer(MapBoundsRequest request) {
+        // Une Activity n'a pas de coordonnées : la couche est agrégée depuis les
+        // personnes qui la déclarent. D'où un plafond interne sur ces personnes,
+        // qui est aussi la raison pour laquelle totalInBounds n'est qu'un
+        // minorant sur cette couche (cf. MapMarkersResponse).
+        List<User> nearbyUsers = userRepository.findVisibleUsersInBounds(
+            request.south(), request.north(), request.west(), request.east(),
+            MAX_USERS_FOR_ACTIVITY_AGGREGATION, 0);
 
         // Get unique activities from these users
         Map<UUID, List<User>> activityUserMap = new HashMap<>();
@@ -282,7 +281,7 @@ public class MapService {
         }
 
         // Convert to DTOs with representative location (first user's location)
-        return activityUserMap.entrySet().stream()
+        List<MapActivityDto> aggregated = activityUserMap.entrySet().stream()
             .map(entry -> {
                 UUID activityId = entry.getKey();
                 List<User> users = entry.getValue();
@@ -307,22 +306,30 @@ public class MapService {
                 );
             })
             .filter(dto -> dto != null)
-            .limit(request.limit())
+            .sorted(Comparator.comparing(dto -> dto.id().toString()))
             .toList();
+
+        long usersInBounds = userRepository.countVisibleUsersInBounds(
+            request.south(), request.north(), request.west(), request.east());
+        boolean sampled = usersInBounds > MAX_USERS_FOR_ACTIVITY_AGGREGATION;
+
+        List<MapActivityDto> items = aggregated.stream().limit(request.limit()).toList();
+        return new Layer<>(items, aggregated.size(), sampled || aggregated.size() > items.size());
     }
 
     public List<MapProgramDto> getProgramsInBounds(MapBoundsRequest request) {
-        // Programs have schedules with locations
-        // Get schedules within bounds
-        List<Schedule> allSchedules = scheduleRepository.findAll();
+        return programsLayer(request).items();
+    }
 
-        List<Schedule> schedulesInBounds = allSchedules.stream()
-            .filter(s -> s.getLocation() != null
-                && s.getLocation().getY() >= request.south()
-                && s.getLocation().getY() <= request.north()
-                && s.getLocation().getX() >= request.west()
-                && s.getLocation().getX() <= request.east())
-            .toList();
+    private Layer<MapProgramDto> programsLayer(MapBoundsRequest request) {
+        // Le scan complet de la table des créneaux, suivi d'un filtre en Java,
+        // a disparu : la bbox est appliquée en base, comme sur /map/activities.
+        List<UUID> ids = scheduleRepository.findLocatedScheduleIdsWithin(
+            null, null, null,
+            request.north(), request.south(), request.east(), request.west());
+        List<Schedule> schedulesInBounds = ids.isEmpty()
+            ? List.of()
+            : scheduleRepository.findWithActivityDetailsByIds(ids);
 
         // Filter by category if provided
         if (request.categoryIds() != null && !request.categoryIds().isEmpty()) {
@@ -339,7 +346,8 @@ public class MapService {
         }
 
         // Convert to DTOs
-        return schedulesInBounds.stream()
+        List<MapProgramDto> all = schedulesInBounds.stream()
+            .sorted(Comparator.comparing(s -> s.getId().toString()))
             .map(schedule -> {
                 Program program = schedule.getProgram();
                 if (program == null || program.getUserActivity() == null) return null;
@@ -367,9 +375,16 @@ public class MapService {
                 );
             })
             .filter(dto -> dto != null)
+            .toList();
+
+        // skip/limit sur une liste triée : sans l'ordre, deux appels identiques
+        // pouvaient rendre des pages qui se recouvrent ou se manquent.
+        List<MapProgramDto> items = all.stream()
             .skip(request.offset())
             .limit(request.limit())
             .toList();
+
+        return new Layer<>(items, all.size(), all.size() > (long) request.offset() + items.size());
     }
 
     public List<?> getNearbyItems(String type, double lat, double lng, int radiusKm, UUID requesterId) {
@@ -453,11 +468,47 @@ public class MapService {
     }
 
     public MapMarkersResponse getAllMarkersInBounds(MapBoundsRequest request, UUID requesterId) {
-        List<MapUserDto> users = getUsersInBounds(request, requesterId);
-        List<MapActivityDto> activities = getActivitiesInBounds(request);
-        List<MapProgramDto> programs = getProgramsInBounds(request);
+        validateBounds(request);
 
-        return new MapMarkersResponse(users, activities, programs);
+        Layer<MapUserDto> users = usersLayer(request, requesterId);
+        Layer<MapActivityDto> activities = activitiesLayer(request);
+        Layer<MapProgramDto> programs = programsLayer(request);
+
+        return new MapMarkersResponse(
+            users.items(), activities.items(), programs.items(),
+            users.truncated() || activities.truncated() || programs.truncated(),
+            users.totalInBounds() + activities.totalInBounds() + programs.totalInBounds());
+    }
+
+    /** Une couche de marqueurs, avec de quoi dire si elle est complète. */
+    private record Layer<T>(List<T> items, int totalInBounds, boolean truncated) {}
+
+    /**
+     * Les quatre bornes sont déjà obligatoires ({@code MapBoundsRequest}) ; il
+     * reste à refuser celles qui ne décrivent pas un rectangle. Mêmes règles et
+     * même code que sur {@code /map/activities}, pour que le client n'ait pas
+     * deux comportements à apprendre.
+     */
+    private void validateBounds(MapBoundsRequest request) {
+        if (request.south() > request.north()) {
+            throw new ValidationException(ErrorCode.MAP_BOUNDS_INVALID,
+                "'south' ne peut pas être supérieur à 'north'.");
+        }
+        if (request.west() > request.east()) {
+            throw new ValidationException(ErrorCode.MAP_BOUNDS_INVALID,
+                "'west' ne peut pas être supérieur à 'east' : une zone à cheval "
+                    + "sur l'antiméridien n'est pas supportée.");
+        }
+        if (request.south() < -90 || request.north() > 90
+                || request.west() < -180 || request.east() > 180) {
+            throw new ValidationException(ErrorCode.MAP_BOUNDS_INVALID,
+                "Les bornes doivent rester dans [-90, 90] en latitude et "
+                    + "[-180, 180] en longitude.");
+        }
+        if (request.limit() < 1) {
+            throw new ValidationException(ErrorCode.MAP_LIMIT_OUT_OF_RANGE,
+                "Le paramètre 'limit' doit être supérieur ou égal à 1.");
+        }
     }
 
     /**
