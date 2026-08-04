@@ -66,6 +66,13 @@ class MapActivitiesBoundingIntegrationTest extends AbstractIntegrationTest {
     private static final double FAR_LAT = 10.539;
     private static final double FAR_LNG = -30.0;
 
+    // Fixtures des compteurs, posées hors de la fenêtre de longitude et de la bbox
+    // des tests de bornage, pour qu'aucun des deux jeux ne perturbe l'autre.
+    private static final double TRIPLE_LAT = 5.0;
+    private static final double TRIPLE_LNG = -20.0;
+    private static final double DUO_LAT = 6.0;
+    private static final double DUO_LNG = -20.0;
+
     private static final String HOST_EMAIL = "map-bounding-host@pair.app";
 
     private static boolean fixturesCreated = false;
@@ -306,7 +313,56 @@ class MapActivitiesBoundingIntegrationTest extends AbstractIntegrationTest {
         }
     }
 
+    // — programCount / scheduleCount —
+
+    @Test
+    void programCount_doitCompterDesProgrammes_pasDesCreneaux() {
+        // Un programme unique à trois séances hebdomadaires au même lieu : le
+        // compteur affichait « 3 programmes », y compris dans la confirmation de
+        // suppression d'une activité côté client.
+        createSchedulesForOneProgram("Carte bornage — hebdo", TRIPLE_LAT, TRIPLE_LNG, 3);
+
+        MapActivityMarkerDto marker = fetchMarkerAt(TRIPLE_LAT);
+
+        assertThat(marker.programCount()).isEqualTo(1);
+        assertThat(marker.scheduleCount())
+            .as("le nombre de créneaux reste exposé, sous son vrai nom")
+            .isEqualTo(3);
+    }
+
+    @Test
+    void programCount_doitCompterChaqueProgrammeUneFois_quandPlusieursCoexistent() {
+        createSchedulesForOneProgram("Carte bornage — duo A", DUO_LAT, DUO_LNG, 2);
+        createSchedulesForOneProgram("Carte bornage — duo B", DUO_LAT, DUO_LNG, 1);
+
+        MapActivityMarkerDto marker = fetchMarkerAt(DUO_LAT);
+
+        assertThat(marker.programCount()).isEqualTo(2);
+        assertThat(marker.scheduleCount()).isEqualTo(3);
+    }
+
+    @Test
+    void scheduleCount_doitToujoursEtreSuperieurOuEgalAProgramCount() {
+        MapActivitiesResponse response = fetch(b -> b.path("/api/map/activities").build());
+
+        assertThat(response.activities()).isNotEmpty();
+        for (MapActivityMarkerDto marker : response.activities()) {
+            assertThat(marker.scheduleCount())
+                .as("marqueur %s", marker.activityName())
+                .isGreaterThanOrEqualTo(marker.programCount());
+            assertThat(marker.programCount()).isPositive();
+        }
+    }
+
     // — helpers —
+
+    /** Le marqueur posé à cette latitude, cherché sans filtre géographique. */
+    private MapActivityMarkerDto fetchMarkerAt(double lat) {
+        return fetch(b -> b.path("/api/map/activities").build()).activities().stream()
+            .filter(m -> m.lat() == lat)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Aucun marqueur à la latitude " + lat));
+    }
 
     /** Bbox isolant les deux fixtures atlantiques, avec un zoom optionnel. */
     private Function<UriBuilder, java.net.URI> atlanticBbox(Integer zoom) {
@@ -351,24 +407,39 @@ class MapActivitiesBoundingIntegrationTest extends AbstractIntegrationTest {
             .jsonPath("$.code").isEqualTo(expectedCode);
     }
 
+    /** Un programme unique portant {@code count} créneaux au même lieu. */
+    private void createSchedulesForOneProgram(String title, double lat, double lng, int count) {
+        User owner = userRepository.findByEmail(HOST_EMAIL).orElseThrow();
+        Program program = createProgram(owner, title);
+        for (int i = 0; i < count; i++) {
+            saveSchedule(program, title + " #" + i, lat, lng);
+        }
+    }
+
     private void createLocatedSchedule(User owner, String title, double lat, double lng) {
+        saveSchedule(createProgram(owner, title), title, lat, lng);
+    }
+
+    private Program createProgram(User owner, String title) {
         Activity activity = activityRepository.findBySlug("yoga").orElseThrow();
         UserActivity userActivity = userActivityRepository
             .findByUserIdAndActivityId(owner.getId(), activity.getId())
             .orElseGet(() -> userActivityRepository.save(
                 UserActivity.builder().user(owner).activity(activity).build()));
 
-        Program program = programRepository.save(Program.builder()
+        return programRepository.save(Program.builder()
             .userActivity(userActivity)
             .title(title)
             .status(ProgramStatus.ACTIVE)
             .isPublic(true)
             .build());
+    }
 
+    private void saveSchedule(Program program, String placeName, double lat, double lng) {
         Instant startsAt = Instant.now().plus(2, ChronoUnit.DAYS);
         scheduleRepository.save(Schedule.builder()
             .program(program)
-            .placeName(title)
+            .placeName(placeName)
             .placeType(PlaceType.PUBLIC)
             .addressPublic("1 rue du Bornage")
             .showExactAddress(true)
