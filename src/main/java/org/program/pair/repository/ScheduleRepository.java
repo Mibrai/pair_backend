@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,6 +29,47 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
            "LEFT JOIN FETCH a.category " +
            "WHERE s.location IS NOT NULL")
     List<Schedule> findAllWithActivityDetails();
+
+    /**
+     * Ids des créneaux localisés à l'intérieur d'un rayon et/ou d'une bbox.
+     *
+     * <p>Ne renvoie que des ids : la reprise par
+     * {@link #findWithActivityDetailsByIds} conserve les {@code LEFT JOIN FETCH}
+     * qui évitent le N+1 sur program → userActivity → activity → category. Une
+     * requête native renvoyant directement des entités les perdrait, et le
+     * bornage se paierait en requêtes supplémentaires — l'inverse du but.
+     *
+     * <p>Chaque filtre est neutralisé quand ses paramètres sont nuls, ce qui
+     * permet de demander un rayon seul, une bbox seule, ou l'intersection des
+     * deux. L'opérateur {@code &&} (intersection de bbox) est indexable par le
+     * GiST sur {@code location} ; pour un point il équivaut à l'inclusion.
+     */
+    @Query(value = """
+        SELECT s.id FROM schedules s
+        WHERE s.location IS NOT NULL
+          AND (CAST(:radiusMeters AS double precision) IS NULL
+               OR ST_DWithin(
+                    s.location::geography,
+                    ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
+                    :radiusMeters))
+          AND (CAST(:south AS double precision) IS NULL
+               OR s.location && ST_MakeEnvelope(:west, :south, :east, :north, 4326))
+        """, nativeQuery = true)
+    List<UUID> findLocatedScheduleIdsWithin(@Param("lat") Double lat,
+                                             @Param("lng") Double lng,
+                                             @Param("radiusMeters") Integer radiusMeters,
+                                             @Param("north") Double north,
+                                             @Param("south") Double south,
+                                             @Param("east") Double east,
+                                             @Param("west") Double west);
+
+    @Query("SELECT s FROM Schedule s " +
+           "LEFT JOIN FETCH s.program p " +
+           "LEFT JOIN FETCH p.userActivity ua " +
+           "LEFT JOIN FETCH ua.activity a " +
+           "LEFT JOIN FETCH a.category " +
+           "WHERE s.location IS NOT NULL AND s.id IN :ids")
+    List<Schedule> findWithActivityDetailsByIds(@Param("ids") Collection<UUID> ids);
 
     /**
      * Verrou pessimiste sur le schedule pendant la vérification de capacité,

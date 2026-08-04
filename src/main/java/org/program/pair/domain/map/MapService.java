@@ -8,6 +8,8 @@ import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.user.User;
 import org.program.pair.repository.*;
+import org.program.pair.shared.exception.ErrorCode;
+import org.program.pair.shared.exception.ValidationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -510,24 +512,39 @@ public class MapService {
         );
     }
 
-    /**
-     * Get all activities present in the database with their locations from schedules.
-     * Each activity is shown on the map with a badge containing category icon, name, title, and distance.
-     *
-     * @param userLat User's latitude (nullable if geolocation not enabled)
-     * @param userLng User's longitude (nullable if geolocation not enabled)
-     * @return MapActivitiesResponse with all activity markers and default center
-     */
-    public MapActivitiesResponse getAllActivitiesForMap(Double userLat, Double userLng) {
-        try {
-            // 1. Get all activities from database
-            List<Activity> allActivities = activityRepository.findAll();
+    // Bornes du rayon, documentées dans l'OpenAPI via MapActivitiesRequest.
+    private static final int MIN_RADIUS_METERS = 1;
+    private static final int MAX_RADIUS_METERS = 200_000;
+    // Plafond dur du nombre de marqueurs : un limit supérieur est ramené ici.
+    private static final int MAX_MARKER_LIMIT = 1_000;
 
-            // 2. Get all schedules with locations and eagerly fetch related entities
-            List<Schedule> allSchedules = scheduleRepository.findAllWithActivityDetails();
+    /**
+     * Marqueurs d'activité de la carte, éventuellement bornés par un rayon et/ou
+     * une bbox.
+     *
+     * <p>Sans aucun paramètre de bornage, le comportement est celui d'avant :
+     * tous les créneaux localisés, aucune limite. C'est ce que font les clients
+     * déployés, et cela ne doit pas changer.
+     *
+     * <p>Avec bornage, le filtre géographique est appliqué <b>en SQL</b>
+     * (PostGIS), pas après coup sur une liste déjà chargée : c'était le point
+     * de la demande. Le tri est déterministe — distance croissante quand la
+     * position de l'utilisateur est connue, puis activityId, puis coordonnées —
+     * pour que la troncature garde les marqueurs les plus proches et que deux
+     * appels identiques renvoient la même chose.
+     *
+     * @return marqueurs, centre par défaut, et de quoi savoir si la carte est
+     *         partielle ({@code truncated}, {@code totalInBounds})
+     */
+    public MapActivitiesResponse getAllActivitiesForMap(MapActivitiesRequest request) {
+        validate(request);
+
+        try {
+            // 1. Créneaux localisés, bornés en base si un filtre est demandé.
+            List<Schedule> allSchedules = loadSchedules(request);
 
         // 3. Build a map of activity -> list of schedule locations
-        Map<UUID, List<Schedule>> activityScheduleMap = new HashMap<>();
+        Map<UUID, List<Schedule>> activityScheduleMap = new LinkedHashMap<>();
         for (Schedule schedule : allSchedules) {
             if (schedule.getLocation() == null) continue;
 
@@ -541,11 +558,17 @@ public class MapService {
             activityScheduleMap.computeIfAbsent(activity.getId(), k -> new ArrayList<>()).add(schedule);
         }
 
+        Double userLat = request.userLat();
+        Double userLng = request.userLng();
+
         // 4. Convert to MapActivityMarkerDto
+        // On itère les activités effectivement porteuses de créneaux localisés,
+        // au lieu de charger tout le référentiel : les autres étaient de toute
+        // façon écartées, et activityRepository.findAll() était un scan complet
+        // à chaque ouverture de carte.
         List<MapActivityMarkerDto> markers = new ArrayList<>();
-        for (Activity activity : allActivities) {
-            List<Schedule> schedules = activityScheduleMap.get(activity.getId());
-            if (schedules == null || schedules.isEmpty()) continue;
+        for (List<Schedule> schedules : activityScheduleMap.values()) {
+            Activity activity = schedules.get(0).getProgram().getUserActivity().getActivity();
 
             // Group schedules by location (to count programs at same location)
             Map<String, List<Schedule>> locationGroups = schedules.stream()
@@ -616,10 +639,22 @@ public class MapService {
             }
         }
 
-            // 5. Calculate default center (area with most activities)
+            // 5. Ordre total déterministe : sans lui, une troncature garderait des
+            // marqueurs arbitraires et deux appels identiques pourraient différer.
+            markers.sort(markerOrder(userLat, userLng));
+
+            // 6. Troncature explicite, jamais silencieuse.
+            int totalInBounds = markers.size();
+            int effectiveLimit = effectiveLimit(request);
+            boolean truncated = totalInBounds > effectiveLimit;
+            if (truncated) {
+                markers = new ArrayList<>(markers.subList(0, effectiveLimit));
+            }
+
+            // 7. Calculate default center (area with most activities)
             MapActivitiesResponse.DefaultMapCenter defaultCenter = calculateDefaultCenter(markers);
 
-            return new MapActivitiesResponse(markers, defaultCenter);
+            return new MapActivitiesResponse(markers, defaultCenter, truncated, totalInBounds);
         } catch (Exception e) {
             // Log error and return empty response with default center
             System.err.println("Error in getAllActivitiesForMap: " + e.getMessage());
@@ -628,7 +663,102 @@ public class MapService {
             // Return empty response with default Paris center
             MapActivitiesResponse.DefaultMapCenter defaultCenter =
                 new MapActivitiesResponse.DefaultMapCenter(48.8566, 2.3522, 12);
-            return new MapActivitiesResponse(new ArrayList<>(), defaultCenter);
+            return MapActivitiesResponse.untruncated(new ArrayList<>(), defaultCenter);
+        }
+    }
+
+    /**
+     * Charge les créneaux localisés, bornés en base quand un filtre est demandé.
+     *
+     * <p>Sans filtre, on retombe sur la requête historique : un client déployé
+     * obtient exactement ce qu'il obtenait.
+     */
+    private List<Schedule> loadSchedules(MapActivitiesRequest request) {
+        if (!request.hasGeoFilter()) {
+            return scheduleRepository.findAllWithActivityDetails();
+        }
+
+        List<UUID> ids = scheduleRepository.findLocatedScheduleIdsWithin(
+            request.userLat(), request.userLng(), request.radiusMeters(),
+            request.north(), request.south(), request.east(), request.west());
+
+        return ids.isEmpty() ? List.of() : scheduleRepository.findWithActivityDetailsByIds(ids);
+    }
+
+    /**
+     * Distance croissante quand elle est connue, puis activityId, puis
+     * coordonnées : deux marqueurs ne peuvent pas rester à égalité, donc l'ordre
+     * est total. Sans position utilisateur, distanceKm est null partout et le
+     * tri se réduit à activityId puis coordonnées.
+     */
+    private Comparator<MapActivityMarkerDto> markerOrder(Double userLat, Double userLng) {
+        Comparator<MapActivityMarkerDto> byDistance = Comparator.comparingDouble(
+            m -> m.distanceKm() != null ? m.distanceKm() : Double.MAX_VALUE);
+        return byDistance
+            .thenComparing(m -> m.activityId().toString())
+            .thenComparingDouble(MapActivityMarkerDto::lat)
+            .thenComparingDouble(MapActivityMarkerDto::lng);
+    }
+
+    /** Plafond effectif : celui demandé, ramené au plafond dur ; sinon aucun. */
+    private int effectiveLimit(MapActivitiesRequest request) {
+        if (request.limit() == null) {
+            return Integer.MAX_VALUE;
+        }
+        return Math.min(request.limit(), MAX_MARKER_LIMIT);
+    }
+
+    /**
+     * Rejette les combinaisons de paramètres qui n'ont pas de sens, avec un code
+     * stable par cas — un 400 « mauvaise requête » sans code obligerait le client
+     * à lire un message français pour savoir quoi corriger.
+     *
+     * <p>Appelé hors du try/catch de {@link #getAllActivitiesForMap} : celui-ci
+     * avale toute exception pour renvoyer une carte vide, ce qui transformerait
+     * une erreur de paramètre en réponse 200 silencieusement vide.
+     */
+    private void validate(MapActivitiesRequest request) {
+        if (request.radiusMeters() != null) {
+            if (request.userLat() == null || request.userLng() == null) {
+                throw new ValidationException(ErrorCode.MAP_RADIUS_REQUIRES_USER_LOCATION,
+                    "Le paramètre 'radiusMeters' exige 'userLat' et 'userLng'.");
+            }
+            if (request.radiusMeters() < MIN_RADIUS_METERS || request.radiusMeters() > MAX_RADIUS_METERS) {
+                throw new ValidationException(ErrorCode.MAP_RADIUS_OUT_OF_RANGE,
+                    "Le paramètre 'radiusMeters' doit être compris entre "
+                        + MIN_RADIUS_METERS + " et " + MAX_RADIUS_METERS + ".");
+            }
+        }
+
+        if (request.hasBounds()) {
+            if (request.north() == null || request.south() == null
+                    || request.east() == null || request.west() == null) {
+                throw new ValidationException(ErrorCode.MAP_BOUNDS_INCOMPLETE,
+                    "Les bornes 'north', 'south', 'east' et 'west' vont ensemble : "
+                        + "fournissez les quatre ou aucune.");
+            }
+            if (request.south() > request.north()) {
+                throw new ValidationException(ErrorCode.MAP_BOUNDS_INVALID,
+                    "'south' ne peut pas être supérieur à 'north'.");
+            }
+            // Une bbox à cheval sur l'antiméridien demanderait deux enveloppes ;
+            // le cas n'est pas supporté, autant le dire plutôt que renvoyer vide.
+            if (request.west() > request.east()) {
+                throw new ValidationException(ErrorCode.MAP_BOUNDS_INVALID,
+                    "'west' ne peut pas être supérieur à 'east' : une zone à cheval "
+                        + "sur l'antiméridien n'est pas supportée.");
+            }
+            if (request.south() < -90 || request.north() > 90
+                    || request.west() < -180 || request.east() > 180) {
+                throw new ValidationException(ErrorCode.MAP_BOUNDS_INVALID,
+                    "Les bornes doivent rester dans [-90, 90] en latitude et "
+                        + "[-180, 180] en longitude.");
+            }
+        }
+
+        if (request.limit() != null && request.limit() < 1) {
+            throw new ValidationException(ErrorCode.MAP_LIMIT_OUT_OF_RANGE,
+                "Le paramètre 'limit' doit être supérieur ou égal à 1.");
         }
     }
 
