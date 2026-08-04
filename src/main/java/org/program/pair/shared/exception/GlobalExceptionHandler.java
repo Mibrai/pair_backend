@@ -1,8 +1,10 @@
 package org.program.pair.shared.exception;
 
 import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.shared.dto.ErrorResponse;
+import org.program.pair.shared.i18n.Messages;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -20,7 +22,10 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @RestControllerAdvice
+@RequiredArgsConstructor
 public class GlobalExceptionHandler {
+
+    private final Messages messages;
 
     /**
      * Code stable du refus : celui porté par l'exception s'il existe, sinon le
@@ -33,6 +38,30 @@ public class GlobalExceptionHandler {
             return holder.getErrorCode().name();
         }
         return fallback.name();
+    }
+
+    /**
+     * Message destiné à l'utilisateur, dans la langue demandée quand le refus
+     * est nommé et traduit ({@code error.<CODE>}), sinon celui de l'exception.
+     *
+     * <p>La traduction ne couvre donc que les refus explicitement nommés : tout
+     * le reste garde mot pour mot le message qu'il produisait. C'est ce qui rend
+     * ce changement additif — un client sans {@code Accept-Language} reçoit la
+     * locale par défaut, donc le français, donc les mêmes chaînes qu'avant.
+     *
+     * <p>Réserve connue : les refus d'inscription à un programme étaient rédigés
+     * en anglais dans une API par défaut francophone. Leur version française est
+     * désormais servie sans en-tête. C'est un changement visible, assumé, et
+     * signalé au client.
+     */
+    private String messageOf(Throwable ex, String code) {
+        String translated = messages.getOrNull("error." + code);
+        return translated != null ? translated : ex.getMessage();
+    }
+
+    private ErrorResponse errorFor(Throwable ex, ErrorCode fallback) {
+        String code = codeOf(ex, fallback);
+        return new ErrorResponse(code, messageOf(ex, code), Instant.now());
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -53,7 +82,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ForbiddenException.class)
     @ResponseStatus(HttpStatus.FORBIDDEN)
     public ErrorResponse handleForbidden(ForbiddenException ex) {
-        return new ErrorResponse(codeOf(ex, ErrorCode.FORBIDDEN), ex.getMessage(), Instant.now());
+        return errorFor(ex, ErrorCode.FORBIDDEN);
     }
 
     @ExceptionHandler(InvalidCredentialsException.class)
@@ -83,7 +112,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ResourceNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public ErrorResponse handleResourceNotFound(ResourceNotFoundException ex) {
-        return new ErrorResponse(codeOf(ex, ErrorCode.NOT_FOUND), ex.getMessage(), Instant.now());
+        return errorFor(ex, ErrorCode.NOT_FOUND);
     }
 
     @ExceptionHandler(IllegalStateException.class)
@@ -95,13 +124,13 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ValidationException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ErrorResponse handleValidation(ValidationException ex) {
-        return new ErrorResponse(codeOf(ex, ErrorCode.VALIDATION_ERROR), ex.getMessage(), Instant.now());
+        return errorFor(ex, ErrorCode.VALIDATION_ERROR);
     }
 
     @ExceptionHandler(BusinessException.class)
     @ResponseStatus(HttpStatus.UNPROCESSABLE_ENTITY)
     public ErrorResponse handleBusiness(BusinessException ex) {
-        return new ErrorResponse(codeOf(ex, ErrorCode.BUSINESS_RULE_VIOLATION), ex.getMessage(), Instant.now());
+        return errorFor(ex, ErrorCode.BUSINESS_RULE_VIOLATION);
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
