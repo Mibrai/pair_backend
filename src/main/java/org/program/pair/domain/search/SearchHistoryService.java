@@ -5,6 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.search.dto.PopularSearchDto;
 import org.program.pair.domain.search.dto.RecentSearchDto;
 import org.program.pair.repository.SearchLogRepository;
+import org.program.pair.shared.exception.ErrorCode;
+import org.program.pair.shared.exception.ResourceNotFoundException;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,10 +57,33 @@ public class SearchHistoryService {
 
         return results.stream()
             .map(row -> new RecentSearchDto(
-                (String) row[0],
-                (Instant) row[1]
+                (UUID) row[0],
+                (String) row[1],
+                (Instant) row[2]
             ))
             .toList();
+    }
+
+    /**
+     * Supprime une entrée d'historique de l'appelant.
+     *
+     * <p>Une entrée inexistante et une entrée appartenant à un autre utilisateur
+     * donnent toutes deux un 404 : la suppression ne doit jamais réussir
+     * silencieusement sans effet, et l'appartenance d'un id ne doit pas être
+     * observable. Corollaire assumé : un second DELETE sur le même id renvoie
+     * 404, pas 204 — l'opération n'est pas idempotente.
+     *
+     * @throws ResourceNotFoundException si l'entrée n'existe pas ou n'appartient
+     *         pas à {@code userId}
+     */
+    @Transactional
+    public void deleteRecentSearch(UUID userId, UUID searchId) {
+        int deleted = searchLogRepository.deleteByIdAndUserId(searchId, userId);
+        if (deleted == 0) {
+            throw new ResourceNotFoundException(
+                ErrorCode.SEARCH_HISTORY_ENTRY_NOT_FOUND, "Recherche récente introuvable.");
+        }
+        log.info("Deleted search history entry {} for user {}", searchId, userId);
     }
 
     /**

@@ -22,73 +22,86 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
+    /**
+     * Code stable du refus : celui porté par l'exception s'il existe, sinon le
+     * code générique historique du type d'exception. Les exceptions levées sans
+     * code explicite gardent donc exactement le corps d'erreur qu'elles
+     * produisaient avant l'introduction de {@link ErrorCode}.
+     */
+    private static String codeOf(Throwable ex, ErrorCode fallback) {
+        if (ex instanceof HasErrorCode holder && holder.getErrorCode() != null) {
+            return holder.getErrorCode().name();
+        }
+        return fallback.name();
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ErrorResponse handleValidation(MethodArgumentNotValidException ex) {
         String message = ex.getBindingResult().getFieldErrors().stream()
             .map(f -> f.getField() + " : " + f.getDefaultMessage())
             .collect(Collectors.joining(", "));
-        return new ErrorResponse("VALIDATION_ERROR", message, Instant.now());
+        return new ErrorResponse(ErrorCode.VALIDATION_ERROR.name(), message, Instant.now());
     }
 
     @ExceptionHandler(UserNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public ErrorResponse handleNotFound(UserNotFoundException ex) {
-        return new ErrorResponse("NOT_FOUND", ex.getMessage(), Instant.now());
+        return new ErrorResponse(ErrorCode.NOT_FOUND.name(), ex.getMessage(), Instant.now());
     }
 
     @ExceptionHandler(ForbiddenException.class)
     @ResponseStatus(HttpStatus.FORBIDDEN)
     public ErrorResponse handleForbidden(ForbiddenException ex) {
-        return new ErrorResponse("FORBIDDEN", ex.getMessage(), Instant.now());
+        return new ErrorResponse(codeOf(ex, ErrorCode.FORBIDDEN), ex.getMessage(), Instant.now());
     }
 
     @ExceptionHandler(InvalidCredentialsException.class)
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     public ErrorResponse handleUnauth(InvalidCredentialsException ex) {
-        return new ErrorResponse("INVALID_CREDENTIALS", "Identifiants invalides.", Instant.now());
+        return new ErrorResponse(ErrorCode.INVALID_CREDENTIALS.name(), "Identifiants invalides.", Instant.now());
     }
 
     @ExceptionHandler(InvalidTokenException.class)
     @ResponseStatus(HttpStatus.UNAUTHORIZED)
     public ErrorResponse handleInvalidToken(InvalidTokenException ex) {
-        return new ErrorResponse("INVALID_TOKEN", ex.getMessage(), Instant.now());
+        return new ErrorResponse(ErrorCode.INVALID_TOKEN.name(), ex.getMessage(), Instant.now());
     }
 
     @ExceptionHandler(EmailAlreadyExistsException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public ErrorResponse handleEmailExists(EmailAlreadyExistsException ex) {
-        return new ErrorResponse("EMAIL_EXISTS", ex.getMessage(), Instant.now());
+        return new ErrorResponse(ErrorCode.EMAIL_EXISTS.name(), ex.getMessage(), Instant.now());
     }
 
     @ExceptionHandler(TooManyRequestsException.class)
     @ResponseStatus(HttpStatus.TOO_MANY_REQUESTS)
     public ErrorResponse handleRateLimit(TooManyRequestsException ex) {
-        return new ErrorResponse("RATE_LIMITED", ex.getMessage(), Instant.now());
+        return new ErrorResponse(ErrorCode.RATE_LIMITED.name(), ex.getMessage(), Instant.now());
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     public ErrorResponse handleResourceNotFound(ResourceNotFoundException ex) {
-        return new ErrorResponse("NOT_FOUND", ex.getMessage(), Instant.now());
+        return new ErrorResponse(codeOf(ex, ErrorCode.NOT_FOUND), ex.getMessage(), Instant.now());
     }
 
     @ExceptionHandler(IllegalStateException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public ErrorResponse handleIllegalState(IllegalStateException ex) {
-        return new ErrorResponse("CONFLICT", ex.getMessage(), Instant.now());
+        return new ErrorResponse(ErrorCode.CONFLICT.name(), ex.getMessage(), Instant.now());
     }
 
     @ExceptionHandler(ValidationException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ErrorResponse handleValidation(ValidationException ex) {
-        return new ErrorResponse("VALIDATION_ERROR", ex.getMessage(), Instant.now());
+        return new ErrorResponse(codeOf(ex, ErrorCode.VALIDATION_ERROR), ex.getMessage(), Instant.now());
     }
 
     @ExceptionHandler(BusinessException.class)
     @ResponseStatus(HttpStatus.UNPROCESSABLE_ENTITY)
     public ErrorResponse handleBusiness(BusinessException ex) {
-        return new ErrorResponse("BUSINESS_RULE_VIOLATION", ex.getMessage(), Instant.now());
+        return new ErrorResponse(codeOf(ex, ErrorCode.BUSINESS_RULE_VIOLATION), ex.getMessage(), Instant.now());
     }
 
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
@@ -97,7 +110,7 @@ public class GlobalExceptionHandler {
         String message = String.format("Paramètre '%s' invalide : valeur '%s' n'est pas du type attendu.",
             ex.getName(), ex.getValue());
         log.warn("Type mismatch: {}", message);
-        return new ErrorResponse("INVALID_PARAMETER", message, Instant.now());
+        return new ErrorResponse(ErrorCode.INVALID_PARAMETER.name(), message, Instant.now());
     }
 
     @ExceptionHandler(HttpMessageNotReadableException.class)
@@ -105,7 +118,7 @@ public class GlobalExceptionHandler {
     public ErrorResponse handleJsonParseError(HttpMessageNotReadableException ex, HttpServletRequest request) {
         String message = "Invalid JSON format. Ensure you're using double quotes (\") for strings, not single quotes (') or backticks (`).";
         log.warn("JSON parse error on {}: {}", request.getRequestURI(), ex.getMessage());
-        return new ErrorResponse("INVALID_JSON", message, Instant.now());
+        return new ErrorResponse(ErrorCode.INVALID_JSON.name(), message, Instant.now());
     }
 
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
@@ -120,7 +133,7 @@ public class GlobalExceptionHandler {
         log.warn("Method not supported: {} {} (supported: {})", method, uri, supported);
 
         return new ErrorResponse(
-            "METHOD_NOT_ALLOWED",
+            ErrorCode.METHOD_NOT_ALLOWED.name(),
             String.format("HTTP %s not supported for %s. Supported methods: %s", method, uri, supported),
             Instant.now()
         );
@@ -136,7 +149,7 @@ public class GlobalExceptionHandler {
         } else {
             log.warn("Resource not found: {}", uri);
         }
-        return new ErrorResponse("NOT_FOUND", "Resource not found: " + uri, Instant.now());
+        return new ErrorResponse(ErrorCode.NOT_FOUND.name(), "Resource not found: " + uri, Instant.now());
     }
 
     @ExceptionHandler(ResponseStatusException.class)
@@ -167,6 +180,6 @@ public class GlobalExceptionHandler {
         } else {
             log.error("Erreur non gérée", ex);
         }
-        return new ErrorResponse("INTERNAL_ERROR", "Une erreur est survenue.", Instant.now());
+        return new ErrorResponse(ErrorCode.INTERNAL_ERROR.name(), "Une erreur est survenue.", Instant.now());
     }
 }

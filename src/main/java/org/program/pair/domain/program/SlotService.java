@@ -19,6 +19,7 @@ import org.program.pair.repository.SlotParticipationRepository;
 import org.program.pair.repository.UserRepository;
 import org.program.pair.shared.GeoUtils;
 import org.program.pair.shared.exception.BusinessException;
+import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.exception.ForbiddenException;
 import org.program.pair.shared.exception.ResourceNotFoundException;
 import org.program.pair.shared.exception.ValidationException;
@@ -87,23 +88,23 @@ public class SlotService {
         User host = slot.getProgram().getUserActivity().getUser();
 
         if (host.getId().equals(userId)) {
-            throw new ValidationException("Vous ne pouvez pas rejoindre votre propre créneau.");
+            throw new ValidationException(ErrorCode.SLOT_OWN_SLOT, "Vous ne pouvez pas rejoindre votre propre créneau.");
         }
         if (!Boolean.TRUE.equals(slot.getIsOpenToPartners())) {
-            throw new ValidationException("Ce créneau n'est pas ouvert aux partenaires.");
+            throw new ValidationException(ErrorCode.SLOT_NOT_OPEN_TO_PARTNERS, "Ce créneau n'est pas ouvert aux partenaires.");
         }
         if (slot.getStatus() != SlotStatus.OPEN) {
-            throw new ValidationException("Ce créneau n'accepte plus de participants.");
+            throw new ValidationException(ErrorCode.SLOT_NOT_ACCEPTING_PARTICIPANTS, "Ce créneau n'accepte plus de participants.");
         }
         if (slot.getStartsAt().isBefore(Instant.now())) {
-            throw new ValidationException("Ce créneau est déjà passé.");
+            throw new ValidationException(ErrorCode.SLOT_ALREADY_STARTED, "Ce créneau est déjà passé.");
         }
         if (participationRepository.existsByScheduleIdAndUserId(scheduleId, userId)) {
-            throw new BusinessException("Vous avez déjà rejoint ce créneau.");
+            throw new BusinessException(ErrorCode.SLOT_ALREADY_JOINED, "Vous avez déjà rejoint ce créneau.");
         }
         if (slot.getMaxParticipants() != null
                 && scheduleRepository.countConfirmedParticipants(scheduleId) >= slot.getMaxParticipants()) {
-            throw new ValidationException("Ce créneau est complet.");
+            throw new ValidationException(ErrorCode.SLOT_FULL, "Ce créneau est complet.");
         }
 
         SlotParticipation participation = new SlotParticipation();
@@ -186,7 +187,7 @@ public class SlotService {
 
         UUID hostId = slot.getProgram().getUserActivity().getUser().getId();
         if (!hostId.equals(userId)) {
-            throw new ForbiddenException("Seul l'hôte peut voir les participants.");
+            throw new ForbiddenException(ErrorCode.SLOT_PARTICIPANTS_HOST_ONLY, "Seul l'hôte peut voir les participants.");
         }
 
         return participationRepository.findByScheduleId(scheduleId).stream()

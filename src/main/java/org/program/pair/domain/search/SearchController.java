@@ -13,6 +13,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/search")
@@ -89,6 +90,24 @@ public class SearchController {
     public ResponseEntity<Void> clearRecentSearches(
             @AuthenticationPrincipal UserPrincipal principal) {
         searchHistoryService.clearRecentSearches(principal.getId());
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * DELETE /api/search/recent/{id}
+     *
+     * Supprime une seule entrée d'historique, identifiée par l'{@code id} rendu
+     * par GET /api/search/recent.
+     *
+     * @return 204 No Content, ou 404 SEARCH_HISTORY_ENTRY_NOT_FOUND si l'entrée
+     *         n'existe pas ou appartient à un autre utilisateur (indistinguables
+     *         à dessein). Non idempotent : un second appel renvoie 404.
+     */
+    @DeleteMapping("/recent/{id}")
+    public ResponseEntity<Void> deleteRecentSearch(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        searchHistoryService.deleteRecentSearch(principal.getId(), id);
         return ResponseEntity.noContent().build();
     }
 
