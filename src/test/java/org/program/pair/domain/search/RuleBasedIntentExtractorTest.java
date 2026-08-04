@@ -3,14 +3,19 @@ package org.program.pair.domain.search;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.program.pair.config.LocaleConfig;
 import org.program.pair.domain.search.dto.SearchIntent;
+import org.program.pair.shared.i18n.Messages;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 class RuleBasedIntentExtractorTest {
 
-    private final RuleBasedIntentExtractor extractor = new RuleBasedIntentExtractor(new ActivityTaxonomy());
+    // Messages branché sur les vrais bundles plutôt que mocké : une clé absente
+    // de messages*.properties doit faire échouer ces tests, pas passer inaperçue.
+    private final RuleBasedIntentExtractor extractor =
+        new RuleBasedIntentExtractor(new ActivityTaxonomy(), new Messages(new LocaleConfig().messageSource()));
 
     @ParameterizedTest
     @ValueSource(strings = {
