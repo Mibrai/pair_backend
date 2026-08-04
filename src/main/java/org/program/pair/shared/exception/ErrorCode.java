@@ -60,5 +60,12 @@ public enum ErrorCode {
     ACTIVITY_ALREADY_SKIPPED,
 
     // — historique de recherche (SearchHistoryService) —
-    SEARCH_HISTORY_ENTRY_NOT_FOUND
+    SEARCH_HISTORY_ENTRY_NOT_FOUND,
+
+    // — bornage de la carte (MapService) —
+    MAP_RADIUS_REQUIRES_USER_LOCATION,
+    MAP_RADIUS_OUT_OF_RANGE,
+    MAP_BOUNDS_INCOMPLETE,
+    MAP_BOUNDS_INVALID,
+    MAP_LIMIT_OUT_OF_RANGE
 }

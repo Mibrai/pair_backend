@@ -354,16 +354,12 @@ C'est la seule demande qui touche le modèle de données. Votre critère
 
 ### Demande 5 — bornage / clustering
 
-**À moitié déjà là** (cf. réponse 4). Restent :
+**Le bornage de `/map/activities` est livré** (voir la section suivante). Reste,
+pour clore la demande :
 
-- borner `/map/activities` elle-même — le vrai point chaud ;
-- `truncated` / `totalInBounds` sur `MapActivitiesResponse` (champs additifs,
-  l'enveloppe `{ "activities": [...] }` ne change pas) ;
 - les bounds du cluster sur `MapCluster`, sans quoi le recadrage au tap est
-  impossible.
-
-Votre critère « sans aucun de ces paramètres, la réponse est identique à
-aujourd'hui » est tenable et sera testé.
+  impossible — c'est l'Option B ;
+- `truncated` / `totalInBounds` sur `/map/bounds`, par symétrie.
 
 ### Demande 6 — `DELETE /search/recent/{id}`
 
@@ -456,10 +452,69 @@ de code métier (c'est une exception du JDK, levée depuis plusieurs endroits).
 Les 409 restent donc génériques pour l'instant. Signalez-nous les cas que vous
 avez besoin de distinguer, nous les convertirons en `BusinessException` nommées.
 
+### Demande 5 — bornage de `GET /map/activities`
+
+Trois paramètres optionnels, tous additifs :
+
+| Paramètre | Type | Notes |
+|---|---|---|
+| `radiusMeters` | int | mètres, exige `userLat` + `userLng`. Borné **1 – 200 000**. |
+| `north` / `south` / `east` / `west` | double | bbox, **les quatre ou aucune** |
+| `limit` | int | ≥ 1, **plafonné à 1000** côté serveur |
+
+Rayon et bbox se **cumulent** (intersection) quand les deux sont fournis. Les
+noms de bornes sont `north/south/east/west`, ceux déjà employés par
+`/map/bounds` et `/map/clusters` — le domaine carte reste cohérent avec
+lui-même. C'est l'arbitrage que vous avez validé ; **alignez le client** (votre
+proposition disait `minLat/maxLat/minLng/maxLng`).
+
+Réponse enrichie de deux champs, l'enveloppe `{ "activities": [...] }` étant
+inchangée :
+
+```jsonc
+{
+  "activities": [ /* … */ ],
+  "defaultCenter": { "lat": 48.86, "lng": 2.34, "zoom": 12 },
+  "truncated": true,
+  "totalInBounds": 812
+}
+```
+
+**Le filtre est appliqué en SQL** (PostGIS `ST_DWithin` sur `geography` pour le
+rayon, opérateur `&&` sur l'enveloppe pour la bbox), pas après coup sur une liste
+déjà chargée — c'était l'objet de la demande. Les ids sont sélectionnés d'abord,
+puis repris par la requête à `LEFT JOIN FETCH` existante, ce qui préserve le
+chargement anticipé : sans ça, le bornage se serait payé en N+1 sur
+`program → userActivity → activity → category`.
+
+**Deux effets de bord positifs, y compris pour les clients déployés :**
+
+1. `activityRepository.findAll()` — un scan complet du référentiel à chaque
+   ouverture de carte — **a disparu**. Les activités sans créneau localisé
+   étaient de toute façon écartées ; on itère désormais celles qui en ont.
+2. **L'ordre des marqueurs devient déterministe** : distance croissante quand la
+   position de l'utilisateur est connue, puis `activityId`, puis coordonnées.
+   Il ne l'était pas auparavant (`findAll()` sans `ORDER BY`). C'est ce qui rend
+   la troncature honnête — elle garde les marqueurs les plus proches, et deux
+   appels identiques renvoient la même chose.
+
+**Codes d'erreur** (400, tous nouveaux) : `MAP_RADIUS_REQUIRES_USER_LOCATION`,
+`MAP_RADIUS_OUT_OF_RANGE`, `MAP_BOUNDS_INCOMPLETE`, `MAP_BOUNDS_INVALID`,
+`MAP_LIMIT_OUT_OF_RANGE`.
+
+**Limite connue** : une bbox à cheval sur l'antiméridien (`west > east`) est
+rejetée en `MAP_BOUNDS_INVALID` plutôt que traitée comme deux enveloppes. Dites-
+nous si vous en avez besoin.
+
+**Non-régression** : sans aucun de ces paramètres, le contenu de la réponse est
+celui d'avant — mêmes marqueurs, mêmes champs, `truncated: false` et
+`totalInBounds` égal à la taille de la liste. Seul l'ordre change, et il n'était
+pas garanti.
+
 ### Tests
 
-Douze tests d'intégration, un par critère d'acceptation, verts contre Postgres +
-PostGIS + pgvector (Testcontainers) :
+Vingt-trois tests d'intégration, un par critère d'acceptation, verts contre
+Postgres + PostGIS + pgvector (Testcontainers) :
 
 - `RecentSearchDeletionIntegrationTest` (6) — id stable entre deux appels, 204 +
   disparition, entrée d'autrui intacte, second DELETE en 404, `DELETE /recent`
@@ -468,6 +523,13 @@ PostGIS + pgvector (Testcontainers) :
   `SLOT_OWN_SLOT`, `SLOT_FULL` et `SLOT_NOT_OPEN_TO_PARTNERS` distincts, code
   identique sous `Accept-Language: fr|en|de|it`, et non-régression du
   `NOT_FOUND` générique.
+- `MapActivitiesBoundingIntegrationTest` (11) — rayon appliqué (une activité à
+  60 km absente pour `radiusMeters=25000`), bbox appliquée, `limit` respecté
+  avec `truncated`/`totalInBounds` corrects, ordre stable entre deux appels
+  identiques, réponse inchangée sans paramètre, et les cinq refus de validation.
+  Les fixtures sont posées au milieu de l'Atlantique (10°N, 30°O) pour être
+  isolées des données de seed, ce qui permet des assertions exactes plutôt que
+  des « au moins un ».
 
 ---
 
@@ -536,11 +598,12 @@ L'ordre de valeur diffère un peu de vos priorités déclarées.
 |---|---|---|---|---|
 | 1 | **6** — id + `DELETE /{id}` | ✅ **livré** | — | |
 | 2 | **3(c)** — codes d'erreur | ✅ **livré** | — | débloque votre traduction sans dépendre du reste |
-| 3 | **5 / Q4** — bornage `/map/activities` | à faire | faible | corrige un `findAll()` non borné en production |
-| 4 | **3(a,b)** — `Accept-Language` | à faire | moyen | `MessageSource` + ~10 clés, coût runtime nul |
-| 5 | **1** — `/activities/browse` | à faire | élevé | projection nouvelle, maille `UserActivity` |
-| 6 | **2** — pagination `/search` | à faire | élevé | plafonds relevés + pagination en mémoire |
-| 7 | **4** — RRULE | à faire | élevé | seule demande touchant le modèle de données |
+| 3 | **5** — bornage `/map/activities` | ✅ **livré** | — | supprime aussi un `findAll()` non borné en production |
+| 4 | **5** — bounds de cluster (Option B) | à faire | faible | recadrage au tap |
+| 5 | **3(a,b)** — `Accept-Language` | à faire | moyen | `MessageSource` + ~10 clés, coût runtime nul |
+| 6 | **1** — `/activities/browse` | à faire | élevé | projection nouvelle, maille `UserActivity` |
+| 7 | **2** — pagination `/search` | à faire | élevé | plafonds relevés + pagination en mémoire |
+| 8 | **4** — RRULE | à faire | élevé | seule demande touchant le modèle de données |
 
 ### Ce qu'il nous faut de votre côté
 
@@ -548,9 +611,22 @@ L'ordre de valeur diffère un peu de vos priorités déclarées.
    en-tête absent → `fr` ? (les deux règles sont différentes, cf. § Faisabilité)
 2. **Demande 6** — voulez-vous une déduplication de `GET /search/recent` par
    requête ? (par défaut : non, comportement inchangé)
-3. **Correction 1** — un `curl` sur `/map/activities` en production pour savoir si
+3. **Demande 5** — le client s'aligne bien sur `north/south/east/west` ? Et
+   avez-vous besoin des bbox à cheval sur l'antiméridien ?
+4. **Correction 1** — un `curl` sur `/map/activities` en production pour savoir si
    `organizerId` y est déjà.
-4. **Correction 3** — corrige-t-on `programCount` ? Cela change un affichage
+5. **Correction 3** — corrige-t-on `programCount` ? Cela change un affichage
    existant.
-5. **Arbitrage 5** — confirmez que le client s'aligne sur
-   `north/south/east/west` plutôt que sur `minLat/maxLat/minLng/maxLng`.
+
+### Une question qui nous revient, et qu'on vous signale
+
+`GET /api/map/activities` est **explicitement publique** :
+`SecurityConfig.java:63` la déclare en `permitAll()`. Or
+`MapActivitiesIntegrationTest.shouldRequireAuthentication` exige un 401 — ce test
+échoue depuis avant ces travaux, et il affirme l'inverse d'une ligne de
+configuration délibérée.
+
+L'un des deux a tort, et nous ne savons pas lequel : est-ce que la carte doit
+être consultable sans compte (auquel cas c'est le test qui est périmé), ou est-ce
+que le `permitAll()` est un reste ? Si vous appelez cette route sans jeton depuis
+l'app, dites-le-nous — c'est l'information qui tranche.
