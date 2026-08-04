@@ -13,6 +13,7 @@ import org.program.pair.domain.auth.dto.LoginRequest;
 import org.program.pair.domain.auth.dto.RegisterRequest;
 import org.program.pair.domain.map.dto.MapActivitiesResponse;
 import org.program.pair.domain.map.dto.MapActivityMarkerDto;
+import org.program.pair.domain.map.dto.MapCluster;
 import org.program.pair.domain.program.PlaceType;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.ProgramStatus;
@@ -209,7 +210,116 @@ class MapActivitiesBoundingIntegrationTest extends AbstractIntegrationTest {
             .build(), "MAP_LIMIT_OUT_OF_RANGE");
     }
 
+    // — agrégation (demande 5, option B) —
+
+    @Test
+    void sansZoom_aucuneAgregation() {
+        MapActivitiesResponse response = fetch(atlanticBbox(null));
+
+        assertThat(response.clusters()).isEmpty();
+        assertThat(response.activities()).hasSize(2);
+    }
+
+    @Test
+    void zoomFaible_doitAgregerLesMarqueursProches_avecLeursBornes() {
+        // Maille de 1° au zoom 7 : les deux fixtures (0,539° d'écart en latitude)
+        // tombent dans la même cellule.
+        MapActivitiesResponse response = fetch(atlanticBbox(7));
+
+        assertThat(response.activities()).as("plus rien de non agrégé").isEmpty();
+        assertThat(response.clusters()).hasSize(1);
+
+        MapCluster cluster = response.clusters().get(0);
+        assertThat(cluster.count()).isEqualTo(2);
+        assertThat(cluster.type()).isEqualTo("cluster");
+
+        // Les bornes portent l'étendue réelle des membres — c'est ce qui permet
+        // au client de recadrer sur le cluster au tap.
+        assertThat(cluster.boundsSouth()).isEqualTo(ORIGIN_LAT);
+        assertThat(cluster.boundsNorth()).isEqualTo(FAR_LAT);
+        assertThat(cluster.boundsWest()).isEqualTo(ORIGIN_LNG);
+        assertThat(cluster.boundsEast()).isEqualTo(FAR_LNG);
+
+        assertThat(cluster.latitude())
+            .as("le centre doit tomber dans les bornes")
+            .isBetween(cluster.boundsSouth(), cluster.boundsNorth());
+    }
+
+    @Test
+    void zoomMaximal_neDoitPlusRenvoyerQueDesActivites() {
+        // Critère du prompt client : au zoom maximum, plus aucun cluster.
+        MapActivitiesResponse response = fetch(atlanticBbox(20));
+
+        assertThat(response.clusters()).isEmpty();
+        assertThat(response.activities()).hasSize(2);
+    }
+
+    @Test
+    void sommeDesClustersEtDesActivites_doitEgalerTotalInBounds() {
+        for (int zoom : new int[]{3, 7, 12, 20}) {
+            MapActivitiesResponse response = fetch(atlanticBbox(zoom));
+
+            int aggregated = response.clusters().stream().mapToInt(MapCluster::count).sum();
+            assertThat(aggregated + response.activities().size())
+                .as("zoom %d : rien ne doit être perdu ni compté deux fois", zoom)
+                .isEqualTo(response.totalInBounds());
+            assertThat(response.truncated()).isFalse();
+        }
+    }
+
+    @Test
+    void zoomHorsBornes_doitEtreRefuse() {
+        expectError(b -> b.path("/api/map/activities")
+            .queryParam("zoom", 25)
+            .build(), "MAP_ZOOM_OUT_OF_RANGE");
+    }
+
+    @Test
+    void clustersDUtilisateurs_doiventAussiPorterLeursBornes() {
+        // /map/clusters agrège des utilisateurs, pas des activités : le contenu
+        // dépend des données de seed. On vérifie donc l'invariant de forme, qui
+        // lui ne dépend de rien — un cluster sans bornes reste inexploitable.
+        List<MapCluster> clusters = webTestClient.get()
+            .uri(b -> b.path("/api/map/clusters")
+                .queryParam("south", -90).queryParam("north", 90)
+                .queryParam("west", -180).queryParam("east", 180)
+                .queryParam("zoom", 5)
+                .build())
+            .headers(h -> h.setBearerAuth(token))
+            .accept(MediaType.APPLICATION_JSON)
+            .exchange()
+            .expectStatus().isOk()
+            .expectBodyList(MapCluster.class)
+            .returnResult()
+            .getResponseBody();
+
+        assertThat(clusters).isNotNull();
+        for (MapCluster cluster : clusters) {
+            assertThat(cluster.boundsSouth()).isNotNull();
+            assertThat(cluster.boundsNorth()).isNotNull();
+            assertThat(cluster.boundsWest()).isNotNull();
+            assertThat(cluster.boundsEast()).isNotNull();
+            assertThat(cluster.boundsSouth()).isLessThanOrEqualTo(cluster.boundsNorth());
+            assertThat(cluster.boundsWest()).isLessThanOrEqualTo(cluster.boundsEast());
+            assertThat(cluster.latitude()).isBetween(cluster.boundsSouth(), cluster.boundsNorth());
+            assertThat(cluster.longitude()).isBetween(cluster.boundsWest(), cluster.boundsEast());
+        }
+    }
+
     // — helpers —
+
+    /** Bbox isolant les deux fixtures atlantiques, avec un zoom optionnel. */
+    private Function<UriBuilder, java.net.URI> atlanticBbox(Integer zoom) {
+        return b -> {
+            b.path("/api/map/activities")
+                .queryParam("south", 9.0).queryParam("north", 11.0)
+                .queryParam("west", -31.0).queryParam("east", -29.0);
+            if (zoom != null) {
+                b.queryParam("zoom", zoom);
+            }
+            return b.build();
+        };
+    }
 
     /** Marqueurs des fixtures atlantiques, isolés des données de seed. */
     private List<MapActivityMarkerDto> atlanticMarkers(MapActivitiesResponse response) {

@@ -49,10 +49,18 @@ public record MapActivitiesRequest(
     @Schema(description = "Longitude minimale de la bbox.")
     Double west,
 
-    @Schema(description = "Nombre maximal de marqueurs renvoyés. Plafonné à 1000 côté "
-        + "serveur. Quand des marqueurs sont écartés, truncated vaut true et "
+    @Schema(description = "Nombre maximal de marqueurs non agrégés renvoyés. Plafonné à "
+        + "1000 côté serveur. Quand des marqueurs sont écartés, truncated vaut true et "
         + "totalInBounds donne le total réel.", minimum = "1", maximum = "1000")
-    Integer limit
+    Integer limit,
+
+    @Schema(description = "Niveau de zoom de la carte (1-20). Quand il est fourni, les "
+        + "marqueurs proches sont agrégés en clusters : une cellule de grille portant "
+        + "au moins deux marqueurs devient un cluster, une cellule seule reste un "
+        + "marqueur d'activité. Plus le zoom est élevé, plus la maille est fine, donc "
+        + "moins il y a de clusters. Absent, aucune agrégation n'a lieu et le champ "
+        + "clusters de la réponse est vide.", minimum = "1", maximum = "20")
+    Integer zoom
 ) {
 
     /** Vrai si un filtre géographique quelconque a été demandé. */
