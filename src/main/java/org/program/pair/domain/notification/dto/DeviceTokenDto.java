@@ -19,6 +19,9 @@ public class DeviceTokenDto {
     private String token;
     private DevicePlatform platform;
     private String deviceName;
+    // Langue effectivement retenue pour cet appareil ("fr", "en", "de"), après
+    // normalisation — pas l'étiquette envoyée. Nulle = repli français.
+    private String locale;
     private Instant createdAt;
     private Instant lastUsedAt;
 
@@ -28,6 +31,7 @@ public class DeviceTokenDto {
             .token(deviceToken.getToken())
             .platform(deviceToken.getPlatform())
             .deviceName(deviceToken.getDeviceName())
+            .locale(deviceToken.getLocale())
             .createdAt(deviceToken.getCreatedAt())
             .lastUsedAt(deviceToken.getLastUsedAt())
             .build();

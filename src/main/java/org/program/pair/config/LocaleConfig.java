@@ -33,6 +33,26 @@ public class LocaleConfig {
 
     static final List<Locale> SUPPORTED = List.of(FRENCH, ENGLISH, GERMAN);
 
+    /**
+     * La langue servie la plus proche d'une étiquette BCP 47 ({@code "de-DE"} →
+     * allemand), ou {@code null} si l'étiquette est nulle/vide.
+     *
+     * <p>Une étiquette fournie mais hors des trois langues donne l'<b>anglais</b>
+     * — même règle que l'en-tête {@code Accept-Language} présent mais illisible :
+     * quelqu'un qui a demandé le portugais est mieux servi en anglais qu'en
+     * français.
+     *
+     * <p>Sert là où la langue est persistée plutôt que lue sur la requête —
+     * aujourd'hui, la locale par appareil des textes push
+     * ({@code device_tokens.locale}).
+     */
+    public static Locale closestSupported(String languageTag) {
+        if (languageTag == null || languageTag.isBlank()) {
+            return null;
+        }
+        return AcceptLanguageLocaleResolver.resolve(languageTag);
+    }
+
     @Bean
     public MessageSource messageSource() {
         ReloadableResourceBundleMessageSource source = new ReloadableResourceBundleMessageSource();

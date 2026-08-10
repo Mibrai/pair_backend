@@ -10,7 +10,7 @@ import org.program.pair.domain.notification.dto.NotificationDto;
 import org.program.pair.domain.notification.dto.NotificationPrefDto;
 import org.program.pair.domain.notification.dto.RegisterDeviceRequest;
 import org.program.pair.domain.notification.dto.UpdatePreferenceRequest;
-import org.program.pair.repository.DeviceTokenRepository;
+import org.program.pair.config.LocaleConfig;
 import org.program.pair.shared.security.UserPrincipal;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -113,19 +114,38 @@ public class NotificationController {
     }
 
     @PostMapping("/devices")
-    @Operation(summary = "Enregistrer device token pour push")
+    @Operation(summary = "Enregistrer device token pour push",
+        description = "Le champ locale fixe la langue des textes push de cet appareil. "
+            + "Absent, l'Accept-Language de cette requête fait foi — c'est l'appareil "
+            + "lui-même qui appelle, son en-tête dit sa langue. Sans l'un ni l'autre, "
+            + "français.")
     public ResponseEntity<DeviceTokenDto> registerDevice(
             @AuthenticationPrincipal UserPrincipal currentUser,
+            @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage,
             @Valid @RequestBody RegisterDeviceRequest request) {
 
         DeviceToken token = deviceTokenService.registerToken(
             currentUser.getId(),
             request.getToken(),
             request.getPlatform(),
-            request.getDeviceName()
+            request.getDeviceName(),
+            resolveDeviceLocale(request.getLocale(), acceptLanguage)
         );
 
         return ResponseEntity.ok(DeviceTokenDto.fromEntity(token));
+    }
+
+    /**
+     * Langue à persister pour l'appareil : le champ explicite d'abord, sinon
+     * l'en-tête de la requête d'enregistrement — qui vient de l'appareil
+     * lui-même —, sinon rien. On stocke la langue <b>servie</b> ({@code fr},
+     * {@code en}, {@code de}), pas l'étiquette reçue : c'est elle que le moment
+     * de l'envoi doit relire sans re-négocier.
+     */
+    private static String resolveDeviceLocale(String explicit, String acceptLanguage) {
+        Locale resolved = LocaleConfig.closestSupported(
+            explicit != null && !explicit.isBlank() ? explicit : acceptLanguage);
+        return resolved != null ? resolved.toLanguageTag() : null;
     }
 
     @DeleteMapping("/devices/{token}")
