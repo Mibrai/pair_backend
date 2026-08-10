@@ -2,11 +2,15 @@ package org.program.pair.domain.program;
 
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.program.dto.*;
+import org.program.pair.shared.dto.ScheduleConflictResponse;
 import org.program.pair.shared.security.UserPrincipal;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -30,8 +34,15 @@ public class ProgramEnrollmentController {
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(
         summary = "Join a program",
-        description = "Enroll the authenticated user in a program with an optional schedule"
+        description = "Enroll the authenticated user in a program with an optional schedule. "
+            + "Refusé si l'un des créneaux visés chevauche un engagement déjà pris : la règle "
+            + "de non-chevauchement est appliquée ici, et pas seulement affichée par le client. "
+            + "Sans scheduleId, ce sont tous les créneaux du programme qui sont confrontés à "
+            + "l'agenda."
     )
+    @ApiResponse(responseCode = "201", description = "Inscription enregistrée")
+    @ApiResponse(responseCode = "409", description = "Chevauchement d'agenda (SCHEDULE_CONFLICT)",
+        content = @Content(schema = @Schema(implementation = ScheduleConflictResponse.class)))
     public UserProgramDto joinProgram(
             @AuthenticationPrincipal UserPrincipal principal,
             @Parameter(description = "ID of the program to join") @PathVariable UUID programId,

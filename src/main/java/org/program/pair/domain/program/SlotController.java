@@ -1,11 +1,16 @@
 package org.program.pair.domain.program;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.program.dto.JoinSlotRequest;
 import org.program.pair.domain.program.dto.SlotFeedItemDto;
 import org.program.pair.domain.program.dto.SlotFeedRequest;
 import org.program.pair.domain.program.dto.SlotParticipantDto;
+import org.program.pair.shared.dto.ScheduleConflictResponse;
 import org.program.pair.shared.security.UserPrincipal;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -39,6 +44,13 @@ public class SlotController {
 
     @PostMapping("/{scheduleId}/join")
     @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Rejoindre un créneau ouvert",
+        description = "Même règle de non-chevauchement et même enveloppe de refus que "
+            + "POST /api/programs/{programId}/join : le chemin d'entrée ne change pas ce "
+            + "qui est autorisé.")
+    @ApiResponse(responseCode = "201", description = "Participation enregistrée")
+    @ApiResponse(responseCode = "409", description = "Chevauchement d'agenda (SCHEDULE_CONFLICT)",
+        content = @Content(schema = @Schema(implementation = ScheduleConflictResponse.class)))
     public SlotFeedItemDto join(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID scheduleId,

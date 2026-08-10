@@ -16,8 +16,9 @@ import java.util.UUID;
 public class NoOpPushNotificationService implements PushNotificationServiceInterface {
 
     @Override
-    public void sendPush(UUID userId, NotificationType type, Map<String, Object> payload) {
-        log.debug("Push notification not sent (Firebase disabled): type={}, userId={}", type, userId);
+    public void sendPush(UUID userId, NotificationType type, Map<String, Object> payload, long unreadCount) {
+        log.debug("Push notification not sent (Firebase disabled): type={}, userId={}, unreadCount={}",
+            type, userId, unreadCount);
         // Ne rien faire - Firebase est désactivé
     }
 }

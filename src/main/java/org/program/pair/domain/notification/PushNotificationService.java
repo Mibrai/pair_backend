@@ -29,7 +29,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
      * Envoyer une notification push à un utilisateur
      */
     @Override
-    public void sendPush(UUID userId, NotificationType type, Map<String, Object> payload) {
+    public void sendPush(UUID userId, NotificationType type, Map<String, Object> payload, long unreadCount) {
         List<String> tokens = deviceTokenRepository.findTokensByUserId(userId);
 
         if (tokens.isEmpty()) {
@@ -39,6 +39,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
 
         String title = buildTitle(type, payload);
         String body = buildBody(type, payload);
+        int badge = badgeValue(unreadCount);
 
         MulticastMessage message = MulticastMessage.builder()
             .addAllTokens(tokens)
@@ -51,9 +52,14 @@ public class PushNotificationService implements PushNotificationServiceInterface
                     Map.Entry::getKey,
                     e -> String.valueOf(e.getValue())
                 )))
+            // Le badge valait 1 en dur : l'icône affichait « 1 » quel que soit le
+            // nombre réel de notifications en attente, et n'était juste que dans le
+            // cas d'une seule. C'est le compteur du destinataire, celle qui part
+            // comprise, qui doit voyager avec la charge — application fermée, aucun
+            // code client ne s'exécute pour aller le chercher.
             .setApnsConfig(ApnsConfig.builder()
                 .setAps(Aps.builder()
-                    .setBadge(1)
+                    .setBadge(badge)
                     .setSound("default")
                     .build())
                 .build())
@@ -62,6 +68,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
                 .setNotification(AndroidNotification.builder()
                     .setSound("default")
                     .setColor("#FF5722")
+                    .setNotificationCount(badge)
                     .build())
                 .build())
             .build();
@@ -76,6 +83,18 @@ public class PushNotificationService implements PushNotificationServiceInterface
         } catch (FirebaseMessagingException e) {
             log.error("Error sending push notifications to user {}: {}", userId, e.getMessage());
         }
+    }
+
+    /**
+     * Valeur du badge d'icône, bornée à ce que les deux plateformes acceptent.
+     *
+     * <p>{@code aps.badge} et {@code notification_count} sont des entiers positifs :
+     * un compteur négatif est impossible, mais un compteur qui déborderait de
+     * {@code int} ferait échouer l'envoi entier. Zéro est une valeur utile et non
+     * un cas dégradé — c'est ainsi qu'on efface le badge.
+     */
+    private int badgeValue(long unreadCount) {
+        return (int) Math.max(0, Math.min(unreadCount, Integer.MAX_VALUE));
     }
 
     /**

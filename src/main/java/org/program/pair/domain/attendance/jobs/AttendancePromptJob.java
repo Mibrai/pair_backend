@@ -2,6 +2,7 @@ package org.program.pair.domain.attendance.jobs;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.program.pair.domain.notification.NotificationPayload;
 import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.program.ParticipationStatus;
@@ -55,11 +56,8 @@ public class AttendancePromptJob {
             int notified = 0;
             for (Schedule slot : finished) {
                 for (UUID userId : unconfirmedParticipantIds(slot)) {
-                    notificationService.notify(userId, NotificationType.ATTENDANCE_PROMPT, Map.of(
-                        "scheduleId", slot.getId().toString(),
-                        "programTitle", slot.getProgram().getTitle(),
-                        "placeName", slot.getPlaceName()
-                    ));
+                    notificationService.notify(userId, NotificationType.ATTENDANCE_PROMPT,
+                        NotificationPayload.ofSchedule(slot).build());
                     notified++;
                 }
             }

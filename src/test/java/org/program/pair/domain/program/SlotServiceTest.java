@@ -42,6 +42,9 @@ class SlotServiceTest {
     @Mock UserService userService;
     @Mock ChatService chatService;
     @Mock NotificationService notificationService;
+    // Non stubbé : un mock Mockito rend une liste vide par défaut, soit « aucun
+    // conflit » — le comportement d'avant l'introduction de la règle B1.
+    @Mock ScheduleConflictDetector conflictDetector;
     @Mock HtmlSanitizer sanitizer;
 
     @InjectMocks
