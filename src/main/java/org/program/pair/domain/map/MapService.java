@@ -324,26 +324,17 @@ public class MapService {
     private Layer<MapProgramDto> programsLayer(MapBoundsRequest request) {
         // Le scan complet de la table des créneaux, suivi d'un filtre en Java,
         // a disparu : la bbox est appliquée en base, comme sur /map/activities.
+        // Le filtre de catégorie l'a rejointe — il ne servait à rien de charger des
+        // créneaux pour les jeter juste après.
+        boolean filterByCategory = request.categoryIds() != null && !request.categoryIds().isEmpty();
         List<UUID> ids = scheduleRepository.findLocatedScheduleIdsWithin(
             null, null, null,
-            request.north(), request.south(), request.east(), request.west());
+            request.north(), request.south(), request.east(), request.west(),
+            filterByCategory,
+            filterByCategory ? request.categoryIds() : ScheduleRepository.NO_CATEGORY_FILTER);
         List<Schedule> schedulesInBounds = ids.isEmpty()
             ? List.of()
             : scheduleRepository.findWithActivityDetailsByIds(ids);
-
-        // Filter by category if provided
-        if (request.categoryIds() != null && !request.categoryIds().isEmpty()) {
-            schedulesInBounds = schedulesInBounds.stream()
-                .filter(s -> {
-                    Program program = s.getProgram();
-                    if (program == null || program.getUserActivity() == null) return false;
-                    Activity activity = program.getUserActivity().getActivity();
-                    return activity != null
-                        && activity.getCategory() != null
-                        && request.categoryIds().contains(activity.getCategory().getId());
-                })
-                .toList();
-        }
 
         // Convert to DTOs
         List<MapProgramDto> all = schedulesInBounds.stream()
@@ -678,6 +669,7 @@ public class MapService {
                     activity.getId(),
                     activity.getName(),
                     activity.getSlug(),
+                    activity.getCategory() != null ? activity.getCategory().getId() : null,
                     activity.getCategory() != null ? activity.getCategory().getName() : null,
                     activity.getCategory() != null ? activity.getCategory().getIcon() : null,
                     activity.getCategory() != null ? activity.getCategory().getColorRamp() : null,
@@ -740,13 +732,18 @@ public class MapService {
      * obtient exactement ce qu'il obtenait.
      */
     private List<Schedule> loadSchedules(MapActivitiesRequest request) {
-        if (!request.hasGeoFilter()) {
+        Set<UUID> categoryIds = request.effectiveCategoryIds();
+        boolean filterByCategory = !categoryIds.isEmpty();
+
+        if (!request.hasGeoFilter() && !filterByCategory) {
             return scheduleRepository.findAllWithActivityDetails();
         }
 
         List<UUID> ids = scheduleRepository.findLocatedScheduleIdsWithin(
             request.userLat(), request.userLng(), request.radiusMeters(),
-            request.north(), request.south(), request.east(), request.west());
+            request.north(), request.south(), request.east(), request.west(),
+            filterByCategory,
+            filterByCategory ? categoryIds : ScheduleRepository.NO_CATEGORY_FILTER);
 
         return ids.isEmpty() ? List.of() : scheduleRepository.findWithActivityDetailsByIds(ids);
     }
@@ -809,7 +806,14 @@ public class MapService {
             List<double[]> points = cell.stream()
                 .map(m -> new double[]{m.lat(), m.lng()})
                 .toList();
-            clusters.add(MapCluster.of(points, "cluster", dominantCategoryIcon(cell)));
+            // Les identifiants des membres voyagent avec le cluster : c'est
+            // l'information que la réponse avait déjà en main, et pour laquelle le
+            // client refaisait un GET /activities/browse centré sur la pastille.
+            List<UUID> memberActivityIds = cell.stream()
+                .map(MapActivityMarkerDto::activityId)
+                .distinct()
+                .toList();
+            clusters.add(MapCluster.of(points, "cluster", dominantCategoryIcon(cell), memberActivityIds));
         }
 
         return new ClusteredMarkers(clusters, loose);

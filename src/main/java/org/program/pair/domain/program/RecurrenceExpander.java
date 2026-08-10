@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.List;
 
 /**
  * Développe les règles de récurrence RFC 5545 des créneaux.
@@ -39,6 +40,9 @@ public class RecurrenceExpander {
      * de produire 730 dates pour en garder une sur une règle quotidienne.
      */
     private static final int[] HORIZONS_DAYS = {8, 40, 400, 731};
+
+    /** Plafond d'occurrences rendues par {@link #occurrencesBetween}. */
+    private static final int MAX_OCCURRENCES = 500;
 
     private final ZoneId zone;
 
@@ -93,6 +97,51 @@ public class RecurrenceExpander {
             // l'API : on retombe sur le comportement d'avant, la séance unique.
             log.warn("Règle de récurrence illisible ({}) : {}", rule, malformed.getMessage());
             return seed.isAfter(from) ? seed : null;
+        }
+    }
+
+    /**
+     * Toutes les occurrences dont le début tombe dans {@code [from, to]}, bornes
+     * comprises.
+     *
+     * <p>Complément de {@link #nextOccurrence} : celle-ci répond « quand est la
+     * prochaine ? », celle-là « lesquelles tombent dans cette fenêtre ? ». La
+     * détection de chevauchement d'agenda a besoin de la seconde question — deux
+     * séances hebdomadaires décalées d'un jour ne se heurtent pas à leur première
+     * occurrence mais à la cinquième, et ne comparer que les prochaines ferait
+     * conclure à tort qu'elles sont compatibles.
+     *
+     * <p>Le nombre d'occurrences est plafonné à {@value #MAX_OCCURRENCES} : une
+     * règle quotidienne sur une fenêtre de trois mois en produit une centaine, une
+     * règle horaire mal formée en produirait des milliers. Le plafond protège la
+     * réponse HTTP, pas la justesse : sur les fenêtres que nous utilisons, il
+     * n'est pas atteint par une récurrence réaliste.
+     *
+     * @return les occurrences dans l'ordre chronologique, éventuellement vide
+     */
+    public List<Instant> occurrencesBetween(Instant seed, String rule, Instant from, Instant to) {
+        if (seed == null || from == null || to == null || to.isBefore(from)) {
+            return List.of();
+        }
+        if (rule == null || rule.isBlank()) {
+            // Séance unique : elle est sa propre et seule occurrence.
+            return seed.isBefore(from) || seed.isAfter(to) ? List.of() : List.of(seed);
+        }
+
+        try {
+            Recur<ZonedDateTime> recur = new Recur<>(stripPrefix(rule));
+            return recur.getDates(seed.atZone(zone), from.atZone(zone), to.atZone(zone))
+                .stream()
+                .map(ZonedDateTime::toInstant)
+                .filter(occurrence -> !occurrence.isBefore(from) && !occurrence.isAfter(to))
+                .sorted()
+                .limit(MAX_OCCURRENCES)
+                .toList();
+        } catch (Exception malformed) {
+            // Même repli que nextOccurrence : une règle illisible dégrade le
+            // créneau en séance unique plutôt que de le faire disparaître.
+            log.warn("Règle de récurrence illisible ({}) : {}", rule, malformed.getMessage());
+            return seed.isBefore(from) || seed.isAfter(to) ? List.of() : List.of(seed);
         }
     }
 

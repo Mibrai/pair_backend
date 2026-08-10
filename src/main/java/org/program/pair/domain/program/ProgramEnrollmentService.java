@@ -8,6 +8,7 @@ import org.program.pair.repository.*;
 import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.exception.ForbiddenException;
 import org.program.pair.shared.exception.ResourceNotFoundException;
+import org.program.pair.shared.exception.ScheduleConflictException;
 import org.program.pair.shared.exception.ValidationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +32,7 @@ public class ProgramEnrollmentService {
     private final ProgramRepository programRepository;
     private final ScheduleRepository scheduleRepository;
     private final UserRepository userRepository;
+    private final ScheduleConflictDetector conflictDetector;
 
     /**
      * Enroll a user in a program
@@ -90,6 +92,22 @@ public class ProgramEnrollmentService {
                     throw new ValidationException(ErrorCode.PROGRAM_SCHEDULE_FULL, "This schedule is full");
                 }
             }
+        }
+
+        // Règle de non-chevauchement, vérifiée après les refus propres au programme
+        // (inactif, déjà inscrit, complet) : un créneau complet doit dire qu'il est
+        // complet, pas parler d'agenda.
+        //
+        // Sans scheduleId, l'inscription porte sur le programme entier : ce sont donc
+        // tous ses créneaux qu'il faut confronter à l'agenda, pas seulement le
+        // prochain.
+        List<Schedule> targets = schedule != null
+            ? List.of(schedule)
+            : scheduleRepository.findByProgramId(programId);
+        List<ScheduleConflictDto> conflicts = conflictDetector.detect(userId, targets);
+        if (!conflicts.isEmpty()) {
+            throw new ScheduleConflictException(
+                "Ce créneau chevauche un engagement que vous avez déjà pris.", conflicts);
         }
 
         // Create enrollment

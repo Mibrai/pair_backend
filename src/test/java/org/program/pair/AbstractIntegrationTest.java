@@ -57,6 +57,10 @@ public abstract class AbstractIntegrationTest {
         webTestClient = WebTestClient.bindToServer()
             .baseUrl("http://localhost:" + port)
             .responseTimeout(java.time.Duration.ofSeconds(30))
+            // /v3/api-docs dépasse les 256 KB par défaut depuis que les schémas
+            // sont réellement documentés (lot 7) : sans cette marge, les tests de
+            // contrat OpenAPI échouent en DataBufferLimitException.
+            .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(4 * 1024 * 1024))
             .build();
     }
 

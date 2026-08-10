@@ -38,6 +38,13 @@ public record MapActivityMarkerDto(
     UUID activityId,
     String activityName,
     String activitySlug,
+
+    @Schema(description = "Catégorie de l'activité. Le marqueur portait déjà son nom, son "
+        + "icône et sa teinte, mais pas son identifiant : filtrer par catégorie obligeait à "
+        + "comparer des noms — fragile au renommage, et sensible à la langue de service. "
+        + "Nul seulement si l'activité n'est rattachée à aucune catégorie.")
+    UUID categoryId,
+
     String categoryName,
     String categoryIcon,
     String categoryColorRamp,

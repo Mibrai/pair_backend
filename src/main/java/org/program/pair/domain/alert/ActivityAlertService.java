@@ -8,6 +8,7 @@ import org.program.pair.domain.activity.Activity;
 import org.program.pair.domain.alert.dto.ActivityAlertDto;
 import org.program.pair.domain.alert.dto.CreateActivityAlertRequest;
 import org.program.pair.domain.alert.dto.UpdateActivityAlertRequest;
+import org.program.pair.domain.notification.NotificationPayload;
 import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.program.Schedule;
@@ -117,12 +118,8 @@ public class ActivityAlertService {
         for (ActivityAlert alert : matching) {
             if (alert.getUser().getId().equals(hostId)) continue;
 
-            notificationService.notify(alert.getUser().getId(), NotificationType.ACTIVITY_ALERT_MATCH, Map.of(
-                "activityName", slot.getProgram().getUserActivity().getActivity().getName(),
-                "scheduleId", slot.getId().toString(),
-                "placeName", slot.getPlaceName(),
-                "startsAt", slot.getStartsAt().toString()
-            ));
+            notificationService.notify(alert.getUser().getId(), NotificationType.ACTIVITY_ALERT_MATCH,
+                NotificationPayload.ofSchedule(slot).build());
 
             alert.setLastTriggeredAt(Instant.now());
             alertRepository.save(alert);

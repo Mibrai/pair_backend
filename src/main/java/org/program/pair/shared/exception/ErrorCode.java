@@ -52,6 +52,9 @@ public enum ErrorCode {
     PROGRAM_ALREADY_ENROLLED,
     PROGRAM_SCHEDULE_MISMATCH,
     PROGRAM_SCHEDULE_FULL,
+    // Seul refus dont le corps porte plus que code + message : voir
+    // ScheduleConflictResponse.
+    SCHEDULE_CONFLICT,
     ENROLLMENT_NOT_OWNED,
     ENROLLMENT_ALREADY_LEFT,
     ENROLLMENT_NOT_ACTIVE,
