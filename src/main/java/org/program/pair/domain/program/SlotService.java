@@ -6,9 +6,11 @@ import org.program.pair.domain.activity.Category;
 import org.program.pair.domain.activity.UserActivity;
 import org.program.pair.domain.chat.ChatService;
 import org.program.pair.domain.chat.dto.CreateConversationRequest;
+import org.program.pair.domain.notification.NotificationPayload;
 import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.program.dto.JoinSlotRequest;
+import org.program.pair.domain.program.dto.ScheduleConflictDto;
 import org.program.pair.domain.program.dto.SlotFeedItemDto;
 import org.program.pair.domain.program.dto.SlotFeedRequest;
 import org.program.pair.domain.program.dto.SlotParticipantDto;
@@ -22,15 +24,17 @@ import org.program.pair.shared.exception.BusinessException;
 import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.exception.ForbiddenException;
 import org.program.pair.shared.exception.ResourceNotFoundException;
+import org.program.pair.shared.exception.ScheduleConflictException;
 import org.program.pair.shared.exception.ValidationException;
 import org.program.pair.shared.sanitizer.HtmlSanitizer;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -51,6 +55,7 @@ public class SlotService {
     private final UserService userService;
     private final ChatService chatService;
     private final NotificationService notificationService;
+    private final ScheduleConflictDetector conflictDetector;
     private final HtmlSanitizer sanitizer;
 
     @Transactional(readOnly = true)
@@ -58,9 +63,17 @@ public class SlotService {
         Instant from = request.from() != null ? request.from() : Instant.now();
         Instant to = request.to() != null ? request.to() : Instant.now().plus(7, ChronoUnit.DAYS);
 
+        // Hibernate ne sait pas lier une liste vide dans un IN : quand aucune
+        // catégorie n'est demandée, on passe le drapeau à faux et une liste
+        // factice non vide, que la requête ne regarde alors pas.
+        Set<UUID> categoryIds = request.effectiveCategoryIds();
+        boolean filterByCategory = !categoryIds.isEmpty();
+
         List<Schedule> slots = scheduleRepository.findOpenSlotsInRadius(
             request.lat(), request.lng(), request.radiusMeters(),
-            from, to, request.activityId(), request.categoryId(), 100);
+            from, to, request.activityId(),
+            filterByCategory, filterByCategory ? categoryIds : ScheduleRepository.NO_CATEGORY_FILTER,
+            request.createdSince(), 100);
 
         return slots.stream()
             .filter(s -> !s.getProgram().getUserActivity().getUser().getId().equals(requesterId))
@@ -107,6 +120,16 @@ public class SlotService {
             throw new ValidationException(ErrorCode.SLOT_FULL, "Ce créneau est complet.");
         }
 
+        // Même règle et même enveloppe que POST /programs/{id}/join : le chemin
+        // d'entrée ne doit pas changer ce qui est autorisé. Vérifiée en dernier,
+        // sous le verrou pessimiste posé plus haut — c'est ce qui empêche deux
+        // appareils de s'inscrire en parallèle sur deux créneaux qui se chevauchent.
+        List<ScheduleConflictDto> conflicts = conflictDetector.detect(userId, List.of(slot));
+        if (!conflicts.isEmpty()) {
+            throw new ScheduleConflictException(
+                "Ce créneau chevauche un engagement que vous avez déjà pris.", conflicts);
+        }
+
         SlotParticipation participation = new SlotParticipation();
         participation.setSchedule(slot);
         participation.setUser(userRepository.getReferenceById(userId));
@@ -131,12 +154,12 @@ public class SlotService {
             ));
         }
 
-        notificationService.notify(host.getId(), NotificationType.SLOT_JOINED, Map.of(
-            "scheduleId", scheduleId.toString(),
-            "programTitle", slot.getProgram().getTitle(),
-            "participantName", userRepository.findById(userId)
-                .map(User::getDisplayName).orElse("Quelqu'un")
-        ));
+        notificationService.notify(host.getId(), NotificationType.SLOT_JOINED,
+            NotificationPayload.ofSchedule(slot)
+                .with("participantId", userId)
+                .with("participantName", userRepository.findById(userId)
+                    .map(User::getDisplayName).orElse("Quelqu'un"))
+                .build());
 
         return toFeedItem(slot, null, null, userId);
     }
@@ -224,7 +247,9 @@ public class SlotService {
             slot.getId(),
             program.getId(),
             program.getTitle(),
+            activity.getId(),
             activity.getName(),
+            category != null ? category.getId() : null,
             category != null ? category.getColorRamp() : null,
             userActivity.getLevel() != null ? userActivity.getLevel().name() : null,
             userActivity.getFormat() != null ? userActivity.getFormat().name() : null,
@@ -236,11 +261,31 @@ public class SlotService {
             distanceMeters,
             slot.getStartsAt(),
             slot.getEndsAt(),
+            slot.getRecurrenceRule(),
+            sessionDurationMinutes(slot, program),
+            slot.getCreatedAt(),
             slot.getMaxParticipants(),
             slot.getParticipantCount(),
             slot.getIsOpenToPartners(),
             slot.getWelcomeNote(),
             myParticipationStatus
         );
+    }
+
+    /**
+     * Durée d'une séance, mesurée si possible, déclarée sinon, jamais devinée.
+     *
+     * <p>{@code endsAt} est nullable en base ; quand il manque, la durée déclarée
+     * sur le programme est une meilleure réponse que rien. Quand les deux manquent,
+     * on rend {@code null} plutôt qu'une convention : c'est à l'appelant de savoir
+     * qu'il ne sait pas. La convention, elle, n'existe qu'à l'endroit où il faut
+     * bien trancher — {@link ScheduleConflictDetector}.
+     */
+    private Integer sessionDurationMinutes(Schedule slot, Program program) {
+        if (slot.getStartsAt() != null && slot.getEndsAt() != null
+                && slot.getEndsAt().isAfter(slot.getStartsAt())) {
+            return (int) Duration.between(slot.getStartsAt(), slot.getEndsAt()).toMinutes();
+        }
+        return program != null ? program.getSessionDurationMinutes() : null;
     }
 }

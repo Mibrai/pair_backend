@@ -56,6 +56,16 @@ public class ProgramController {
         return programService.getMyPrograms(principal.getId());
     }
 
+    @PostMapping("/{programId}/duplicate")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ProgramDto duplicateProgram(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID programId,
+            @Valid @RequestBody(required = false) DuplicateProgramRequest request) {
+        String title = request != null ? request.title() : null;
+        return programService.duplicateProgram(principal.getId(), programId, title);
+    }
+
     @GetMapping("/new")
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public void getNewProgram() {

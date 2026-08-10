@@ -7,6 +7,8 @@ import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
 import org.program.pair.domain.activity.UserActivity;
 import org.program.pair.domain.alert.ActivityAlertService;
+import org.program.pair.domain.media.ProgramImageDuplicator;
+import org.program.pair.domain.notification.NotificationPayload;
 import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.program.dto.*;
@@ -42,6 +44,7 @@ public class ProgramService {
     private final SubscriptionService subscriptionService;
     private final HtmlSanitizer sanitizer;
     private final RecurrenceExpander recurrenceExpander;
+    private final ProgramImageDuplicator imageDuplicator;
     private final GeometryFactory geometryFactory = new GeometryFactory(
         new PrecisionModel(), 4326);
 
@@ -98,6 +101,98 @@ public class ProgramService {
         program.setStatus(ProgramStatus.ARCHIVED);
         program.setArchivedAt(Instant.now());
         programRepository.save(program);
+    }
+
+    /**
+     * Duplique un programme de l'auteur : métadonnées, créneaux et image, en une
+     * transaction.
+     *
+     * <p>Sans cet endpoint, le client enchaînait {@code GET} + {@code POST} +
+     * N × {@code POST /schedules} + re-téléversement de l'image — une transaction
+     * distribuée sans rollback, qui laissait un programme à moitié copié au
+     * premier échec. Ici, tout aboutit ou rien n'est créé.
+     *
+     * <p>La copie naît en <b>brouillon non public</b>, et surtout <b>sans passer
+     * par {@code createProgram}</b> : celui-ci notifie les abonnés de l'auteur
+     * ({@code AUTHOR_NEW_PROGRAM}), et une duplication qui notifie est une
+     * duplication qui spamme.
+     *
+     * <p>L'image est copiée <b>physiquement</b>, pas par référence : deux
+     * programmes pointant le même fichier, la suppression de l'image de l'un
+     * casserait celle de l'autre. Les médias additionnels ({@code ProgramMedia})
+     * ne sont pas copiés — la demande porte sur l'image du programme, et copier
+     * une galerie entière mérite sa propre décision.
+     *
+     * <p>Chaque créneau copié repart à zéro : aucun participant, statut
+     * {@code OPEN}. Les inscriptions appartiennent au créneau d'origine, pas à sa
+     * copie.
+     */
+    public ProgramDto duplicateProgram(UUID userId, UUID programId, String requestedTitle) {
+        Program original = findProgramOwnedBy(programId, userId);
+
+        Program copy = new Program();
+        copy.setUserActivity(original.getUserActivity());
+        copy.setTitle(duplicateTitle(original.getTitle(), requestedTitle));
+        copy.setDescription(original.getDescription());
+        copy.setStatus(ProgramStatus.DRAFT);
+        copy.setIsPublic(false);
+        copy.setOrganizerName(original.getOrganizerName());
+        copy.setOrganizerAvatarUrl(original.getOrganizerAvatarUrl());
+        copy.setDurationWeeks(original.getDurationWeeks());
+        copy.setSessionsPerWeek(original.getSessionsPerWeek());
+        copy.setSessionDurationMinutes(original.getSessionDurationMinutes());
+        copy.setPreferredDays(original.getPreferredDays() != null
+            ? original.getPreferredDays().clone() : null);
+        copy.setPreferredTime(original.getPreferredTime());
+        copy.setMaxParticipants(original.getMaxParticipants());
+        copy.setPrivacy(original.getPrivacy());
+        copy.setGoals(original.getGoals());
+        copy.setPrerequisites(original.getPrerequisites());
+        copy.setLocationType(original.getLocationType());
+
+        Program saved = programRepository.save(copy);
+
+        for (Schedule schedule : scheduleRepository.findByProgramId(programId)) {
+            Schedule scheduleCopy = new Schedule();
+            scheduleCopy.setProgram(saved);
+            scheduleCopy.setPlaceName(schedule.getPlaceName());
+            scheduleCopy.setPlaceType(schedule.getPlaceType());
+            scheduleCopy.setLocation(schedule.getLocation() != null
+                ? geometryFactory.createPoint(schedule.getLocation().getCoordinate()) : null);
+            scheduleCopy.setAddressPublic(schedule.getAddressPublic());
+            scheduleCopy.setShowExactAddress(schedule.getShowExactAddress());
+            scheduleCopy.setStartsAt(schedule.getStartsAt());
+            scheduleCopy.setEndsAt(schedule.getEndsAt());
+            scheduleCopy.setRecurrenceRule(schedule.getRecurrenceRule());
+            scheduleCopy.setMaxParticipants(schedule.getMaxParticipants());
+            scheduleCopy.setIsOpenToPartners(schedule.getIsOpenToPartners());
+            scheduleCopy.setStatus(SlotStatus.OPEN);
+            scheduleCopy.setParticipantCount(0);
+            scheduleCopy.setWelcomeNote(schedule.getWelcomeNote());
+            scheduleRepository.save(scheduleCopy);
+        }
+
+        saved.setImageUrl(imageDuplicator.duplicate(original.getImageUrl(), saved.getId()));
+        saved = programRepository.save(saved);
+
+        refreshNextSessionAt(saved);
+        return toDto(saved, userId);
+    }
+
+    /**
+     * Titre du duplicata : celui demandé s'il est utilisable, sinon l'original
+     * suffixé — tronqué pour que le suffixe tienne toujours dans les
+     * 150 caractères de la colonne.
+     */
+    private String duplicateTitle(String originalTitle, String requestedTitle) {
+        if (requestedTitle != null && !requestedTitle.isBlank()) {
+            return sanitizer.sanitize(requestedTitle).strip();
+        }
+        String suffix = " (copie)";
+        int maxBase = 150 - suffix.length();
+        String base = originalTitle.length() > maxBase
+            ? originalTitle.substring(0, maxBase) : originalTitle;
+        return base + suffix;
     }
 
     public ProgramDto updateProgramImage(UUID userId, UUID programId, String imageUrl) {
@@ -297,11 +392,8 @@ public class ProgramService {
             java.util.stream.Stream.concat(slotParticipantIds.stream(), programParticipantIds.stream())
                 .distinct()
                 .forEach(participantId -> notificationService.notify(participantId,
-                    NotificationType.SLOT_CANCELLED, Map.of(
-                        "scheduleId", scheduleId.toString(),
-                        "programTitle", prog.getTitle(),
-                        "placeName", schedule.getPlaceName()
-                    )));
+                    NotificationType.SLOT_CANCELLED,
+                    NotificationPayload.ofSchedule(schedule).build()));
         }
 
         refreshNextSessionAt(prog);

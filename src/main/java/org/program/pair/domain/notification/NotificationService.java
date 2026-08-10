@@ -47,6 +47,10 @@ public class NotificationService {
         // 2. Notification in-app (toujours)
         saveInAppNotification(userId, type, payload);
 
+        // Compté après l'enregistrement, donc celle qui part est comprise dedans :
+        // c'est la valeur que le badge d'icône doit afficher à la réception.
+        long unreadCount = notificationRepository.countByUserIdAndIsReadFalse(userId);
+
         // 3. Email selon préférence
         if (Boolean.TRUE.equals(pref.getEmailEnabled())) {
             if (pref.getFrequency() == NotificationFrequency.IMMEDIATE) {
@@ -62,7 +66,7 @@ public class NotificationService {
         // 4. Push selon préférence
         if (Boolean.TRUE.equals(pref.getPushEnabled())) {
             try {
-                pushService.sendPush(userId, type, payload);
+                pushService.sendPush(userId, type, payload, unreadCount);
             } catch (Exception e) {
                 log.error("Failed to send push notification: {}", e.getMessage());
             }

@@ -22,16 +22,27 @@ import java.util.UUID;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Schema(description = "Il n'y a volontairement pas de title/message : le libellé affiché "
-    + "est dérivé de `type` côté client. Les identifiants métier utiles au deep-link "
-    + "(scheduleId, programId, ...) sont dans `payload`.")
+@Schema(description = "Il n'y a volontairement pas de title/message : le libellé affiché est "
+    + "composé par le client depuis `type` + `payload`. C'est un choix, pas un manque — un "
+    + "texte traduit à l'émission fige la langue de l'utilisateur au moment de l'envoi, et "
+    + "un texte déjà en base ne peut plus être retraduit. En échange, le serveur garantit "
+    + "que `payload` porte de quoi écrire la phrase (`programTitle`, `activityName`) en plus "
+    + "des identifiants de deep-link.")
 public class NotificationDto {
 
-    // Types pour lesquels le payload peut porter l'instant d'une séance à venir.
-    // Aucun code applicatif ne crée encore ces notifications (V12/V13/V27 seed
-    // uniquement) ; la clé "sessionAt" est la convention déjà utilisée par ce seed.
-    private static final Set<NotificationType> SCHEDULE_RELATED_TYPES =
-        EnumSet.of(NotificationType.PROGRAM_REMINDER, NotificationType.PROGRESSION_REMINDER);
+    // Types dont le payload porte l'instant d'une séance *à venir* — c'est ce que
+    // le client met en avant (teinte, compte à rebours, remontée en tête de liste).
+    // La clé lue est "sessionAt", convention du seed V12/V13/V27 et désormais
+    // produite par NotificationPayload.ofSchedule.
+    //
+    // SLOT_CANCELLED et ATTENDANCE_PROMPT portent aussi un sessionAt mais n'entrent
+    // pas ici : l'un désigne une séance annulée, l'autre une séance passée. Faire
+    // un compte à rebours vers l'une ou l'autre serait faux.
+    private static final Set<NotificationType> SCHEDULE_RELATED_TYPES = EnumSet.of(
+        NotificationType.PROGRAM_REMINDER,
+        NotificationType.PROGRESSION_REMINDER,
+        NotificationType.SLOT_JOINED,
+        NotificationType.ACTIVITY_ALERT_MATCH);
 
     private UUID id;
     private NotificationType type;
@@ -42,8 +53,14 @@ public class NotificationDto {
     // un arbre JSON, produisant un dump de ses accesseurs internes
     // (isArray/isBigDecimal/...) plutôt que le contenu réel. Une Map se
     // sérialise toujours comme un objet JSON standard, sans ambiguïté.
-    @Schema(description = "Identifiants métier pour le deep-link (ex. scheduleId, "
-        + "programId), dépendant de `type`. Peut être absent.")
+    @Schema(description = "Contexte métier de la notification, dépendant de `type`. "
+        + "Toute notification portant sur une séance ou un programme porte `programId`, "
+        + "`programTitle`, `activityId`, `activityName`, `categoryId` et "
+        + "`categoryColorRamp` ; celles portant sur une séance y ajoutent `scheduleId`, "
+        + "`placeName` et `sessionAt`. `categoryColorRamp` est la même valeur que celle "
+        + "servie par les DTO de la carte : teinter une notification et son pin depuis "
+        + "ce champ donne la même couleur par construction. Une clé dont la valeur serait "
+        + "nulle est absente, jamais présente à null. Voir NotificationPayload.")
     private Map<String, Object> payload;
     @Schema(description = "Nom de propriété réel : `isRead` (pas `read`).")
     private Boolean isRead;
@@ -55,14 +72,17 @@ public class NotificationDto {
     private Instant scheduledAt;
 
     private static final TypeReference<Map<String, Object>> PAYLOAD_TYPE = new TypeReference<>() {};
+    // Une seule instance : ObjectMapper est thread-safe une fois configuré, et en
+    // construire un par notification faisait payer l'introspection Jackson à
+    // chaque ligne d'une page de cinquante.
+    private static final ObjectMapper PAYLOAD_MAPPER = new ObjectMapper();
 
     public static NotificationDto fromEntity(Notification notification) {
-        ObjectMapper mapper = new ObjectMapper();
         Map<String, Object> payloadMap = null;
 
         if (notification.getPayload() != null) {
             try {
-                payloadMap = mapper.readValue(notification.getPayload(), PAYLOAD_TYPE);
+                payloadMap = PAYLOAD_MAPPER.readValue(notification.getPayload(), PAYLOAD_TYPE);
             } catch (Exception e) {
                 // Ignore parse errors
             }

@@ -2,6 +2,13 @@ package org.program.pair.domain.map.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Collectors;
+
 /**
  * Paramètres de {@code GET /api/map/activities}.
  *
@@ -54,6 +61,13 @@ public record MapActivitiesRequest(
         + "totalInBounds donne le total réel.", minimum = "1", maximum = "1000")
     Integer limit,
 
+    @Schema(description = "Filtre de catégorie, plusieurs valeurs. Répétable "
+        + "(?categoryIds=a&categoryIds=b) ou séparé par des virgules. Un marqueur est "
+        + "retenu si la catégorie de son activité figure dans la liste. Appliqué en base, "
+        + "comme sur GET /api/map/bounds : les deux requêtes de la famille /map se "
+        + "comportent désormais pareil. Absent ou vide, aucun filtre de catégorie.")
+    List<UUID> categoryIds,
+
     @Schema(description = "Niveau de zoom de la carte (1-20). Quand il est fourni, les "
         + "marqueurs proches sont agrégés en clusters : une cellule de grille portant "
         + "au moins deux marqueurs devient un cluster, une cellule seule reste un "
@@ -70,5 +84,15 @@ public record MapActivitiesRequest(
 
     public boolean hasBounds() {
         return north != null || south != null || east != null || west != null;
+    }
+
+    /** Catégories effectivement demandées, dédoublonnées ; vide si aucun filtre. */
+    public Set<UUID> effectiveCategoryIds() {
+        if (categoryIds == null) {
+            return Set.of();
+        }
+        return categoryIds.stream()
+            .filter(Objects::nonNull)
+            .collect(Collectors.toCollection(LinkedHashSet::new));
     }
 }

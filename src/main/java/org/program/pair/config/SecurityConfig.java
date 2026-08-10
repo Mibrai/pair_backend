@@ -129,6 +129,9 @@ public class SecurityConfig {
             "Accept",
             "Origin",
             "X-Requested-With",
+            // Corrélation client <-> serveur (RequestIdFilter) : sans cette entrée,
+            // le preflight refuse l'en-tête et le client web perd sa clé de trace.
+            "X-Request-Id",
             "Access-Control-Request-Method",
             "Access-Control-Request-Headers"
         ));
@@ -136,7 +139,10 @@ public class SecurityConfig {
         // Headers exposés au client
         configuration.setExposedHeaders(Arrays.asList(
             "Authorization",
-            "Content-Disposition"
+            "Content-Disposition",
+            // L'écho de l'identifiant de requête doit être lisible par le client,
+            // qui le consigne dans son journal ; exposé, sinon fetch() le masque.
+            "X-Request-Id"
         ));
 
         // Autoriser les credentials (cookies, Authorization header)
