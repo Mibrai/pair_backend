@@ -37,6 +37,12 @@ public class DeviceToken {
     @Column(name = "device_name", length = 100)
     private String deviceName;
 
+    // Langue des textes push envoyés à CET appareil ("fr", "en", "de").
+    // Nulle pour un appareil enregistré sans langue connue : repli français,
+    // comme un Accept-Language absent. Voir V49 pour la justification.
+    @Column(length = 10)
+    private String locale;
+
     @Column(name = "created_at", nullable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();

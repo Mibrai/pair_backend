@@ -157,12 +157,41 @@ base dans une langue de l'instant d'émission, et le rendu suit vos tokens. En
 échange, le serveur s'engage sur le contenu du `payload` ci-dessus — c'est le
 contrat qui rend l'option 2 tenable.
 
-Nuance à connaître : les **push** (APNs/FCM), eux, portent un texte — il faut
-bien afficher quelque chose sur un téléphone verrouillé — et ce texte est
-aujourd'hui français en dur (`PushNotificationService.buildTitle/buildBody`).
-C'est un chantier séparé (traduire selon la langue du **destinataire**, pas de
-l'appelant — il n'y a pas d'`Accept-Language` sur un push), qu'on propose de
-traiter dans un lot dédié si vous le priorisez.
+Nuance : les **push** (APNs/FCM), eux, portent un texte — il faut bien afficher
+quelque chose sur un téléphone verrouillé. Ce texte était français en dur ; il
+est désormais traduit selon la langue du **destinataire** — voir la section
+« Textes push » ci-dessous.
+
+## Textes push — traduits, langue par appareil
+
+*(Livré à la suite du lot, en complément de B10.)*
+
+Le texte d'une push ne peut pas suivre `Accept-Language` : il n'y a pas de
+requête du destinataire au moment d'envoyer — la push part de la requête de
+quelqu'un d'autre, ou d'un job planifié. La langue est donc une propriété de
+l'**appareil**, posée à l'enregistrement du token :
+
+```http
+POST /api/notifications/devices
+{ "token": "…", "platform": "IOS", "deviceName": "…", "locale": "de" }
+```
+
+- `locale` : étiquette BCP 47, ramenée à la langue servie la plus proche
+  (`fr`/`en`/`de` ; hors des trois → `en`, même règle que l'en-tête). La valeur
+  **retenue** est renvoyée dans le `DeviceTokenDto`.
+- **Absente**, l'`Accept-Language` de la requête d'enregistrement fait foi —
+  c'est l'appareil lui-même qui appelle. Sans l'un ni l'autre : français.
+- **À faire côté client** : ré-enregistrer le token quand l'utilisateur change
+  la langue de l'app — un ré-enregistrement sans `locale` ne touche pas à celle
+  déjà posée.
+- Par appareil, pas par compte : un iPad en anglais et un téléphone en allemand
+  reçoivent chacun leur langue — un envoi FCM par groupe de langue.
+- Au passage, les types meetDo (`SLOT_JOINED`, `SLOT_CANCELLED`,
+  `ATTENDANCE_PROMPT`, `ACTIVITY_ALERT_MATCH`) ont enfin des textes push dédiés
+  — ils tombaient sur « Nouvelle notification » générique.
+
+Les appareils enregistrés avant cette colonne restent en français jusqu'à leur
+prochain ré-enregistrement.
 
 ## B4 — `POST /api/programs/{id}/duplicate`
 
@@ -282,8 +311,10 @@ activités.
 
 ## Suite
 
-Trois chantiers identifiés en faisant ce lot, non traités, par taille
-croissante : la traduction des textes push selon la langue du destinataire
-(cf. B10), le `AUTHOR_NEW_PROGRAM` émis sur les brouillons (cf. B4), et les
-notifications de modification/suppression de programme si le produit les
-confirme (questions 2 et 3).
+Trois chantiers avaient été identifiés en faisant ce lot. Le premier — la
+traduction des textes push selon la langue du destinataire — est livré (voir
+« Textes push » ; action côté client : envoyer `locale` sur
+`POST /notifications/devices` et ré-enregistrer au changement de langue).
+Restent, si le produit les confirme : le `AUTHOR_NEW_PROGRAM` émis sur les
+brouillons (cf. B4), et les notifications de modification/suppression de
+programme (questions 2 et 3).

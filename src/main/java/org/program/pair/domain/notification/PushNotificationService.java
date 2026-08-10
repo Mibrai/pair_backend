@@ -2,15 +2,36 @@ package org.program.pair.domain.notification;
 
 import com.google.firebase.messaging.*;
 import lombok.extern.slf4j.Slf4j;
+import org.program.pair.config.LocaleConfig;
 import org.program.pair.repository.DeviceTokenRepository;
+import org.program.pair.shared.i18n.Messages;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Envoi des notifications push (FCM), dans la langue de chaque appareil.
+ *
+ * <p><b>Pourquoi le texte est ici.</b> L'API n'envoie ni {@code title} ni
+ * {@code message} sur les notifications in-app — le client compose (décision
+ * B10). Une push, elle, s'affiche sur un téléphone verrouillé, avant tout code
+ * client : le texte doit voyager dans la charge, et c'est le seul endroit où le
+ * serveur rédige encore.
+ *
+ * <p><b>Pourquoi la langue vient de l'appareil.</b> {@code Accept-Language} dit
+ * la langue de la requête <i>en cours</i> — or une push est émise par la requête
+ * de quelqu'un d'autre (rejoindre votre créneau), ou par un job planifié qui n'a
+ * aucune requête. La langue est donc lue sur {@code device_tokens.locale},
+ * posée à l'enregistrement du token, appareil par appareil. Les tokens sont
+ * groupés par langue et un message part par groupe.
+ */
 @Service
 @ConditionalOnProperty(name = "firebase.enabled", havingValue = "true")
 @Slf4j
@@ -18,11 +39,14 @@ public class PushNotificationService implements PushNotificationServiceInterface
 
     private final FirebaseMessaging firebaseMessaging;
     private final DeviceTokenRepository deviceTokenRepository;
+    private final Messages messages;
 
     public PushNotificationService(FirebaseMessaging firebaseMessaging,
-                                    DeviceTokenRepository deviceTokenRepository) {
+                                    DeviceTokenRepository deviceTokenRepository,
+                                    Messages messages) {
         this.firebaseMessaging = firebaseMessaging;
         this.deviceTokenRepository = deviceTokenRepository;
+        this.messages = messages;
     }
 
     /**
@@ -30,17 +54,46 @@ public class PushNotificationService implements PushNotificationServiceInterface
      */
     @Override
     public void sendPush(UUID userId, NotificationType type, Map<String, Object> payload, long unreadCount) {
-        List<String> tokens = deviceTokenRepository.findTokensByUserId(userId);
+        List<DeviceToken> devices = deviceTokenRepository.findByUserId(userId);
 
-        if (tokens.isEmpty()) {
+        if (devices.isEmpty()) {
             log.debug("No device tokens found for user {}", userId);
             return;
         }
 
-        String title = buildTitle(type, payload);
-        String body = buildBody(type, payload);
         int badge = badgeValue(unreadCount);
 
+        // Un même utilisateur peut avoir des appareils en des langues différentes :
+        // un envoi par langue, chacun avec son texte. LinkedHashMap pour un ordre
+        // d'envoi déterministe.
+        Map<Locale, List<String>> tokensByLocale = devices.stream()
+            .collect(Collectors.groupingBy(
+                PushNotificationService::deviceLocale,
+                LinkedHashMap::new,
+                Collectors.mapping(DeviceToken::getToken, Collectors.toList())));
+
+        for (Map.Entry<Locale, List<String>> group : tokensByLocale.entrySet()) {
+            Locale locale = group.getKey();
+            List<String> tokens = group.getValue();
+            sendToTokens(userId, tokens,
+                buildTitle(locale, type, payload),
+                buildBody(locale, type, payload),
+                payload, badge);
+        }
+    }
+
+    /**
+     * Langue d'un appareil : celle qu'il a déclarée, sinon le français — même
+     * repli qu'un {@code Accept-Language} absent, et le comportement des tokens
+     * enregistrés avant l'existence de la colonne.
+     */
+    private static Locale deviceLocale(DeviceToken device) {
+        Locale declared = LocaleConfig.closestSupported(device.getLocale());
+        return declared != null ? declared : LocaleConfig.FRENCH;
+    }
+
+    private void sendToTokens(UUID userId, List<String> tokens, String title, String body,
+                              Map<String, Object> payload, int badge) {
         MulticastMessage message = MulticastMessage.builder()
             .addAllTokens(tokens)
             .setNotification(com.google.firebase.messaging.Notification.builder()
@@ -52,11 +105,9 @@ public class PushNotificationService implements PushNotificationServiceInterface
                     Map.Entry::getKey,
                     e -> String.valueOf(e.getValue())
                 )))
-            // Le badge valait 1 en dur : l'icône affichait « 1 » quel que soit le
-            // nombre réel de notifications en attente, et n'était juste que dans le
-            // cas d'une seule. C'est le compteur du destinataire, celle qui part
-            // comprise, qui doit voyager avec la charge — application fermée, aucun
-            // code client ne s'exécute pour aller le chercher.
+            // Le badge porte le compteur réel de non-lues du destinataire, celle
+            // qui part comprise — application fermée, aucun code client ne
+            // s'exécute pour aller le chercher.
             .setApnsConfig(ApnsConfig.builder()
                 .setAps(Aps.builder()
                     .setBadge(badge)
@@ -120,58 +171,89 @@ public class PushNotificationService implements PushNotificationServiceInterface
     }
 
     /**
-     * Construire le titre de la notification
+     * Titre de la notification, dans la langue de l'appareil. Les clés vivent
+     * dans {@code messages*.properties} ({@code push.<TYPE>.title}) — c'était du
+     * français en dur ici même, illisible pour un appareil réglé en allemand.
      */
-    private String buildTitle(NotificationType type, Map<String, Object> payload) {
+    String buildTitle(Locale locale, NotificationType type, Map<String, Object> payload) {
         return switch (type) {
-            case NEW_MESSAGE -> "Nouveau message de " + payload.get("senderName");
-            case NEW_MATCH -> "Quelqu'un partage votre passion !";
-            case BADGE_EARNED -> "Nouveau badge obtenu 🎉";
-            case PROGRAM_REVIEW -> "Nouvel avis sur votre programme";
-            case PEER_RECOMMENDATION -> payload.get("fromName") + " vous recommande";
-            case PROGRAM_REMINDER -> "Rappel : " + payload.get("programTitle");
-            case PROGRESSION_REMINDER -> "N'oubliez pas votre progression !";
-            case NEW_FOLLOWER -> payload.get("followerName") + " vous suit";
-            case NEARBY_PROGRAM -> "Nouveau programme près de vous";
-            case ACCOUNT_VERIFICATION -> "Vérification de compte";
-            case PASSWORD_RESET -> "Réinitialisation de mot de passe";
-            case MODERATION_ACTION -> "Action de modération";
-            case AUTHOR_NEW_ACTIVITY -> payload.get("authorName") + " a créé une nouvelle activité";
-            case AUTHOR_NEW_PROGRAM -> payload.get("authorName") + " a créé un nouveau programme";
-            case ACTIVITY_UPDATED -> "Une activité que vous suivez a changé";
-            case ACTIVITY_NEW_PROGRAM -> "Nouveau programme sur une activité que vous suivez";
-            case CATEGORY_NEW_ACTIVITY -> "Nouvelle activité dans une catégorie suivie";
+            case NEW_MESSAGE -> msg(locale, "push.NEW_MESSAGE.title", arg(payload, "senderName"));
+            case NEW_MATCH -> msg(locale, "push.NEW_MATCH.title");
+            case BADGE_EARNED -> msg(locale, "push.BADGE_EARNED.title");
+            case PROGRAM_REVIEW -> msg(locale, "push.PROGRAM_REVIEW.title");
+            case PEER_RECOMMENDATION -> msg(locale, "push.PEER_RECOMMENDATION.title", arg(payload, "fromName"));
+            case PROGRAM_REMINDER -> msg(locale, "push.PROGRAM_REMINDER.title", arg(payload, "programTitle"));
+            case PROGRESSION_REMINDER -> msg(locale, "push.PROGRESSION_REMINDER.title");
+            case NEW_FOLLOWER -> msg(locale, "push.NEW_FOLLOWER.title", arg(payload, "followerName"));
+            case NEARBY_PROGRAM -> msg(locale, "push.NEARBY_PROGRAM.title");
+            case ACCOUNT_VERIFICATION -> msg(locale, "push.ACCOUNT_VERIFICATION.title");
+            case PASSWORD_RESET -> msg(locale, "push.PASSWORD_RESET.title");
+            case MODERATION_ACTION -> msg(locale, "push.MODERATION_ACTION.title");
+            case AUTHOR_NEW_ACTIVITY -> msg(locale, "push.AUTHOR_NEW_ACTIVITY.title", arg(payload, "authorName"));
+            case AUTHOR_NEW_PROGRAM -> msg(locale, "push.AUTHOR_NEW_PROGRAM.title", arg(payload, "authorName"));
+            case ACTIVITY_UPDATED -> msg(locale, "push.ACTIVITY_UPDATED.title");
+            case ACTIVITY_NEW_PROGRAM -> msg(locale, "push.ACTIVITY_NEW_PROGRAM.title");
+            case CATEGORY_NEW_ACTIVITY -> msg(locale, "push.CATEGORY_NEW_ACTIVITY.title");
+            // meetDo — auparavant relégués au titre générique alors que notify()
+            // les émet réellement.
+            case SLOT_JOINED -> msg(locale, "push.SLOT_JOINED.title", arg(payload, "participantName"));
+            case SLOT_CANCELLED -> msg(locale, "push.SLOT_CANCELLED.title", arg(payload, "programTitle"));
+            case ATTENDANCE_PROMPT -> msg(locale, "push.ATTENDANCE_PROMPT.title");
+            case ACTIVITY_ALERT_MATCH -> msg(locale, "push.ACTIVITY_ALERT_MATCH.title", arg(payload, "activityName"));
             // Valeurs legacy utilisées uniquement par les données de seed (V12/V13/V27) —
             // jamais émises par notify(), donc pas de titre push dédié.
-            default -> "Nouvelle notification";
+            default -> msg(locale, "push.generic.title");
         };
     }
 
     /**
-     * Construire le corps de la notification
+     * Corps de la notification. Certains corps sont une donnée brute du payload
+     * (aperçu de message, titre de programme) : elle est affichée telle quelle,
+     * la traduction ne portant que sur le repli quand elle manque.
      */
-    private String buildBody(NotificationType type, Map<String, Object> payload) {
+    String buildBody(Locale locale, NotificationType type, Map<String, Object> payload) {
         return switch (type) {
-            case NEW_MESSAGE -> (String) payload.getOrDefault("messagePreview", "Vous avez un nouveau message");
-            case NEW_MATCH -> "Découvrez votre nouveau match sur Pair !";
-            case BADGE_EARNED -> "Vous avez gagné le badge : " + payload.get("badgeName");
-            case PROGRAM_REVIEW -> "Quelqu'un a évalué votre programme";
-            case PEER_RECOMMENDATION -> "Vous avez reçu une recommandation";
-            case PROGRAM_REMINDER -> "Votre session commence dans " + payload.get("timeUntil");
-            case PROGRESSION_REMINDER -> "Continuez votre série de " + payload.get("streak") + " jours !";
-            case NEW_FOLLOWER -> "Vous avez un nouvel abonné";
-            case NEARBY_PROGRAM -> (String) payload.getOrDefault("programTitle", "Un nouveau programme est disponible");
-            case ACCOUNT_VERIFICATION -> "Vérifiez votre compte pour débloquer toutes les fonctionnalités";
-            case PASSWORD_RESET -> "Cliquez pour réinitialiser votre mot de passe";
-            case MODERATION_ACTION -> (String) payload.getOrDefault("message", "Une action a été prise sur votre contenu");
-            case AUTHOR_NEW_ACTIVITY -> String.valueOf(payload.get("activityName"));
-            case AUTHOR_NEW_PROGRAM -> String.valueOf(payload.get("programTitle"));
-            case ACTIVITY_UPDATED -> String.valueOf(payload.get("activityName"));
-            case ACTIVITY_NEW_PROGRAM -> String.valueOf(payload.get("programTitle"));
-            case CATEGORY_NEW_ACTIVITY -> String.valueOf(payload.get("activityName"));
-            // Valeurs legacy utilisées uniquement par les données de seed (V12/V13/V27) —
-            // jamais émises par notify(), donc pas de corps push dédié.
-            default -> "Vous avez une nouvelle notification";
+            case NEW_MESSAGE -> rawOr(payload, "messagePreview", locale, "push.NEW_MESSAGE.body");
+            case NEW_MATCH -> msg(locale, "push.NEW_MATCH.body");
+            case BADGE_EARNED -> msg(locale, "push.BADGE_EARNED.body", arg(payload, "badgeName"));
+            case PROGRAM_REVIEW -> msg(locale, "push.PROGRAM_REVIEW.body");
+            case PEER_RECOMMENDATION -> msg(locale, "push.PEER_RECOMMENDATION.body");
+            case PROGRAM_REMINDER -> msg(locale, "push.PROGRAM_REMINDER.body", arg(payload, "timeUntil"));
+            case PROGRESSION_REMINDER -> msg(locale, "push.PROGRESSION_REMINDER.body", arg(payload, "streak"));
+            case NEW_FOLLOWER -> msg(locale, "push.NEW_FOLLOWER.body");
+            case NEARBY_PROGRAM -> rawOr(payload, "programTitle", locale, "push.NEARBY_PROGRAM.body");
+            case ACCOUNT_VERIFICATION -> msg(locale, "push.ACCOUNT_VERIFICATION.body");
+            case PASSWORD_RESET -> msg(locale, "push.PASSWORD_RESET.body");
+            case MODERATION_ACTION -> rawOr(payload, "message", locale, "push.MODERATION_ACTION.body");
+            case AUTHOR_NEW_ACTIVITY, CATEGORY_NEW_ACTIVITY, ACTIVITY_UPDATED ->
+                rawOr(payload, "activityName", locale, "push.generic.body");
+            case AUTHOR_NEW_PROGRAM, ACTIVITY_NEW_PROGRAM ->
+                rawOr(payload, "programTitle", locale, "push.generic.body");
+            case SLOT_JOINED -> rawOr(payload, "programTitle", locale, "push.generic.body");
+            case SLOT_CANCELLED -> msg(locale, "push.SLOT_CANCELLED.body", arg(payload, "placeName"));
+            case ATTENDANCE_PROMPT -> msg(locale, "push.ATTENDANCE_PROMPT.body", arg(payload, "programTitle"));
+            case ACTIVITY_ALERT_MATCH -> msg(locale, "push.ACTIVITY_ALERT_MATCH.body",
+                arg(payload, "activityName"), arg(payload, "placeName"));
+            default -> msg(locale, "push.generic.body");
         };
+    }
+
+    private String msg(Locale locale, String key, Object... args) {
+        return messages.getIn(locale, key, args);
+    }
+
+    /** Valeur du payload telle quelle, ou le texte de repli traduit si absente. */
+    private String rawOr(Map<String, Object> payload, String key, Locale locale, String fallbackKey) {
+        Object value = payload.get(key);
+        String text = value != null ? String.valueOf(value) : null;
+        return text != null && !text.isBlank() && !"null".equals(text)
+            ? text
+            : msg(locale, fallbackKey);
+    }
+
+    /** Argument de MessageFormat : jamais nul, pour ne pas imprimer « null ». */
+    private static String arg(Map<String, Object> payload, String key) {
+        Object value = payload.get(key);
+        return value == null ? "" : Objects.toString(value);
     }
 }
