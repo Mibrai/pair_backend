@@ -4,6 +4,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.shared.dto.ErrorResponse;
+import org.program.pair.shared.dto.ScheduleConflictResponse;
 import org.program.pair.shared.i18n.Messages;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -125,6 +126,22 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ErrorResponse handleValidation(ValidationException ex) {
         return errorFor(ex, ErrorCode.VALIDATION_ERROR);
+    }
+
+    /**
+     * Chevauchement d'agenda : un {@code 409} qui dit aussi <b>contre quoi</b>.
+     *
+     * <p>Le corps est un {@link org.program.pair.shared.dto.ScheduleConflictResponse}
+     * et non un {@link ErrorResponse} : le client construit une feuille listant les
+     * conflits, avec un bouton « quitter » par ligne, ce qu'un message de refus ne
+     * permet pas. Les trois champs communs gardent la même sémantique qu'ailleurs.
+     */
+    @ExceptionHandler(ScheduleConflictException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ScheduleConflictResponse handleScheduleConflict(ScheduleConflictException ex) {
+        String code = ErrorCode.SCHEDULE_CONFLICT.name();
+        return new ScheduleConflictResponse(
+            code, messageOf(ex, code), ex.getConflicts(), Instant.now());
     }
 
     @ExceptionHandler(BusinessException.class)

@@ -3,6 +3,7 @@ package org.program.pair.domain.map.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Agrégat de marqueurs proches, pour une carte qui n'a pas à tous les dessiner.
@@ -33,7 +34,15 @@ public record MapCluster(
 
     @Schema(description = "Icône de la catégorie dominante parmi les membres, quand "
         + "elle a un sens. Nulle pour un cluster d'utilisateurs.")
-    String categoryIcon
+    String categoryIcon,
+
+    @Schema(description = "Identifiants des activités agrégées, dédoublonnés, dans l'ordre "
+        + "où elles apparaissent. Nul pour un cluster d'utilisateurs, qui n'agrège pas des "
+        + "activités. Au zoom maximal la maille vaut encore ~1 km : deux activités plus "
+        + "proches restent groupées, et sans cette liste taper la pastille ne pouvait rien "
+        + "produire. La taille de la liste peut être inférieure à count — un même "
+        + "activityId apparaît autant de fois qu'elle a de lieux dans la cellule.")
+    List<UUID> activityIds
 ) {
 
     /**
@@ -43,6 +52,16 @@ public record MapCluster(
      * @param latLngs couples {@code {lat, lng}}, au moins un
      */
     public static MapCluster of(List<double[]> latLngs, String type, String categoryIcon) {
+        return of(latLngs, type, categoryIcon, null);
+    }
+
+    /**
+     * Même chose, en emportant les identifiants des membres — ce qui permet au
+     * client d'ouvrir le contenu du groupe sans un aller-retour de rattrapage
+     * autour de son centre.
+     */
+    public static MapCluster of(List<double[]> latLngs, String type, String categoryIcon,
+                                List<UUID> activityIds) {
         double avgLat = latLngs.stream().mapToDouble(p -> p[0]).average().orElse(0.0);
         double avgLng = latLngs.stream().mapToDouble(p -> p[1]).average().orElse(0.0);
 
@@ -52,7 +71,8 @@ public record MapCluster(
             round(latLngs.stream().mapToDouble(p -> p[0]).max().orElse(avgLat)),
             round(latLngs.stream().mapToDouble(p -> p[1]).min().orElse(avgLng)),
             round(latLngs.stream().mapToDouble(p -> p[1]).max().orElse(avgLng)),
-            categoryIcon
+            categoryIcon,
+            activityIds == null ? null : List.copyOf(activityIds)
         );
     }
 

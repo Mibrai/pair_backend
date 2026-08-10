@@ -227,8 +227,11 @@ public class SemanticSearchService {
 
         TimeHintParser.Window window = TimeHintParser.resolveWindow(intent.timeHint(), Instant.now());
 
+        // La recherche cible une activité précise, donc jamais une catégorie, et ne
+        // filtre pas sur la date de publication : les deux paramètres sont neutres.
         List<Schedule> slots = scheduleRepository.findOpenSlotsInRadius(
-            request.lat(), request.lng(), radius, window.from(), window.to(), activityId, null, MAX_SLOT_RESULTS);
+            request.lat(), request.lng(), radius, window.from(), window.to(), activityId,
+            false, ScheduleRepository.NO_CATEGORY_FILTER, null, MAX_SLOT_RESULTS);
 
         return slots.stream()
             .filter(s -> !s.getProgram().getUserActivity().getUser().getId().equals(requesterId))

@@ -3,6 +3,7 @@ package org.program.pair.domain.subscription;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.activity.Category;
 import org.program.pair.domain.activity.UserActivity;
+import org.program.pair.domain.notification.NotificationPayload;
 import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.program.Program;
@@ -56,10 +57,11 @@ public class SubscriptionService {
 
         subscription = subscriptionRepository.save(subscription);
 
-        notificationService.notify(authorId, NotificationType.NEW_FOLLOWER, Map.of(
-            "subscriberId", subscriberId,
-            "followerName", subscriber.getDisplayName()
-        ));
+        notificationService.notify(authorId, NotificationType.NEW_FOLLOWER,
+            NotificationPayload.empty()
+                .with("subscriberId", subscriberId)
+                .with("followerName", subscriber.getDisplayName())
+                .build());
 
         return toDto(subscription);
     }
@@ -134,51 +136,45 @@ public class SubscriptionService {
 
     public void notifySubscribersOfNewUserActivity(UserActivity userActivity) {
         UUID authorId = userActivity.getUser().getId();
-        String activityName = userActivity.getActivity().getName();
 
+        Map<String, Object> authorPayload = NotificationPayload.ofUserActivity(userActivity)
+            .with("authorId", authorId)
+            .with("authorName", userActivity.getUser().getDisplayName())
+            .build();
         subscriptionRepository.findByTargetAuthorId(authorId).forEach(sub ->
-            notificationService.notify(sub.getSubscriber().getId(), NotificationType.AUTHOR_NEW_ACTIVITY, Map.of(
-                "authorId", authorId,
-                "authorName", userActivity.getUser().getDisplayName(),
-                "userActivityId", userActivity.getId(),
-                "activityName", activityName
-            )));
+            notificationService.notify(sub.getSubscriber().getId(),
+                NotificationType.AUTHOR_NEW_ACTIVITY, authorPayload));
 
         UUID categoryId = userActivity.getActivity().getCategory().getId();
+        Map<String, Object> categoryPayload = NotificationPayload.ofUserActivity(userActivity).build();
         subscriptionRepository.findByTargetCategoryId(categoryId).forEach(sub ->
-            notificationService.notify(sub.getSubscriber().getId(), NotificationType.CATEGORY_NEW_ACTIVITY, Map.of(
-                "categoryId", categoryId,
-                "userActivityId", userActivity.getId(),
-                "activityName", activityName
-            )));
+            notificationService.notify(sub.getSubscriber().getId(),
+                NotificationType.CATEGORY_NEW_ACTIVITY, categoryPayload));
     }
 
     public void notifySubscribersOfUserActivityUpdate(UserActivity userActivity) {
+        Map<String, Object> payload = NotificationPayload.ofUserActivity(userActivity).build();
         subscriptionRepository.findByTargetUserActivityId(userActivity.getId()).forEach(sub ->
-            notificationService.notify(sub.getSubscriber().getId(), NotificationType.ACTIVITY_UPDATED, Map.of(
-                "userActivityId", userActivity.getId(),
-                "activityName", userActivity.getActivity().getName()
-            )));
+            notificationService.notify(sub.getSubscriber().getId(),
+                NotificationType.ACTIVITY_UPDATED, payload));
     }
 
     public void notifySubscribersOfNewProgram(Program program) {
         UserActivity userActivity = program.getUserActivity();
         UUID authorId = userActivity.getUser().getId();
 
+        Map<String, Object> authorPayload = NotificationPayload.ofProgram(program)
+            .with("authorId", authorId)
+            .with("authorName", userActivity.getUser().getDisplayName())
+            .build();
         subscriptionRepository.findByTargetAuthorId(authorId).forEach(sub ->
-            notificationService.notify(sub.getSubscriber().getId(), NotificationType.AUTHOR_NEW_PROGRAM, Map.of(
-                "authorId", authorId,
-                "authorName", userActivity.getUser().getDisplayName(),
-                "programId", program.getId(),
-                "programTitle", program.getTitle()
-            )));
+            notificationService.notify(sub.getSubscriber().getId(),
+                NotificationType.AUTHOR_NEW_PROGRAM, authorPayload));
 
+        Map<String, Object> activityPayload = NotificationPayload.ofProgram(program).build();
         subscriptionRepository.findByTargetUserActivityId(userActivity.getId()).forEach(sub ->
-            notificationService.notify(sub.getSubscriber().getId(), NotificationType.ACTIVITY_NEW_PROGRAM, Map.of(
-                "userActivityId", userActivity.getId(),
-                "programId", program.getId(),
-                "programTitle", program.getTitle()
-            )));
+            notificationService.notify(sub.getSubscriber().getId(),
+                NotificationType.ACTIVITY_NEW_PROGRAM, activityPayload));
     }
 
     private SubscriptionDto toDto(Subscription s) {

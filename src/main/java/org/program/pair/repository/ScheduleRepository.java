@@ -13,10 +13,19 @@ import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Repository
 public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
+
+    /**
+     * À passer en {@code categoryIds} à {@link #findOpenSlotsInRadius} quand
+     * {@code filterByCategory} est faux. Hibernate refuse de lier une liste vide
+     * dans un {@code IN} ; il faut donc une liste non vide dont la requête ne fait
+     * rien. L'UUID nul n'identifie aucune catégorie.
+     */
+    Set<UUID> NO_CATEGORY_FILTER = Set.of(new UUID(0L, 0L));
 
     List<Schedule> findByStartsAtBetween(Instant from, Instant to);
 
@@ -43,6 +52,11 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
      * permet de demander un rayon seul, une bbox seule, ou l'intersection des
      * deux. L'opérateur {@code &&} (intersection de bbox) est indexable par le
      * GiST sur {@code location} ; pour un point il équivaut à l'inclusion.
+     *
+     * <p>Le filtre de catégorie suit la même convention que
+     * {@link #findOpenSlotsInRadius} : {@code filterByCategory} dit s'il
+     * s'applique, {@code categoryIds} doit être non vide dans tous les cas
+     * ({@link #NO_CATEGORY_FILTER}).
      */
     @Query(value = """
         SELECT s.id FROM schedules s
@@ -54,6 +68,11 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
                     :radiusMeters))
           AND (CAST(:south AS double precision) IS NULL
                OR s.location && ST_MakeEnvelope(:west, :south, :east, :north, 4326))
+          AND (CAST(:filterByCategory AS boolean) = FALSE OR EXISTS (
+                SELECT 1 FROM programs p
+                JOIN user_activities ua ON p.user_activity_id = ua.id
+                JOIN activities a       ON ua.activity_id = a.id
+                WHERE p.id = s.program_id AND a.category_id IN (:categoryIds)))
         """, nativeQuery = true)
     List<UUID> findLocatedScheduleIdsWithin(@Param("lat") Double lat,
                                              @Param("lng") Double lng,
@@ -61,7 +80,9 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
                                              @Param("north") Double north,
                                              @Param("south") Double south,
                                              @Param("east") Double east,
-                                             @Param("west") Double west);
+                                             @Param("west") Double west,
+                                             @Param("filterByCategory") boolean filterByCategory,
+                                             @Param("categoryIds") Collection<UUID> categoryIds);
 
     @Query("SELECT s FROM Schedule s " +
            "LEFT JOIN FETCH s.program p " +
@@ -131,6 +152,19 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
      * rayon demandé. Ne retourne jamais un créneau dont l'hôte est inactif, ni
      * dont l'activité est masquée de la carte (mêmes filtres de visibilité que
      * ProgramRepository.findVisibleNearScheduleOrOrganizer).
+     *
+     * <p><b>Catégories multiples.</b> Le filtre porte sur une liste, pas sur une
+     * valeur : la carte laisse cocher plusieurs catégories, et une requête par
+     * catégorie fusionnée côté client plafonnerait l'affichage et multiplierait
+     * les allers-retours. {@code filterByCategory} porte l'information « y a-t-il
+     * un filtre » séparément de la liste, parce qu'Hibernate ne sait pas lier une
+     * liste vide dans un {@code IN} — quand il est faux, {@code categoryIds} n'est
+     * pas regardé, mais doit tout de même contenir au moins un élément.
+     *
+     * <p><b>{@code createdSince}</b> répond à « qu'y a-t-il de neuf ? », que la
+     * fenêtre {@code fromTs}/{@code toTs} — qui porte sur le <i>début</i> des
+     * séances — ne sait pas exprimer. Filtré en base pour ne pas transporter puis
+     * jeter les créneaux hors fenêtre.
      */
     @Query(value = """
         SELECT s.* FROM schedules s
@@ -145,9 +179,10 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
           AND u.is_active = TRUE
           AND ua.visible_on_map = TRUE
           AND (CAST(:activityId AS uuid) IS NULL OR ua.activity_id = :activityId)
-          AND (CAST(:categoryId AS uuid) IS NULL OR EXISTS (
+          AND (CAST(:filterByCategory AS boolean) = FALSE OR EXISTS (
                 SELECT 1 FROM activities a
-                WHERE a.id = ua.activity_id AND a.category_id = :categoryId))
+                WHERE a.id = ua.activity_id AND a.category_id IN (:categoryIds)))
+          AND (CAST(:createdSince AS timestamptz) IS NULL OR s.created_at >= :createdSince)
           AND ST_DWithin(
                 s.location::geography,
                 ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
@@ -164,7 +199,9 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
         @Param("fromTs") Instant from,
         @Param("toTs") Instant to,
         @Param("activityId") UUID activityId,
-        @Param("categoryId") UUID categoryId,
+        @Param("filterByCategory") boolean filterByCategory,
+        @Param("categoryIds") Collection<UUID> categoryIds,
+        @Param("createdSince") Instant createdSince,
         @Param("limit") int limit
     );
 }
