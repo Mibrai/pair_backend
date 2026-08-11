@@ -7,7 +7,7 @@ import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
 import org.program.pair.domain.activity.UserActivity;
 import org.program.pair.domain.alert.ActivityAlertService;
-import org.program.pair.domain.media.ProgramImageDuplicator;
+import org.program.pair.domain.media.StoredImageResolver;
 import org.program.pair.domain.notification.NotificationPayload;
 import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.notification.NotificationType;
@@ -44,7 +44,7 @@ public class ProgramService {
     private final SubscriptionService subscriptionService;
     private final HtmlSanitizer sanitizer;
     private final RecurrenceExpander recurrenceExpander;
-    private final ProgramImageDuplicator imageDuplicator;
+    private final StoredImageResolver storedImageResolver;
     private final GeometryFactory geometryFactory = new GeometryFactory(
         new PrecisionModel(), 4326);
 
@@ -104,24 +104,37 @@ public class ProgramService {
     }
 
     /**
-     * Duplique un programme de l'auteur : métadonnées, créneaux et image, en une
+     * Duplique un programme de l'auteur : métadonnées et créneaux, en une
      * transaction.
      *
      * <p>Sans cet endpoint, le client enchaînait {@code GET} + {@code POST} +
-     * N × {@code POST /schedules} + re-téléversement de l'image — une transaction
-     * distribuée sans rollback, qui laissait un programme à moitié copié au
-     * premier échec. Ici, tout aboutit ou rien n'est créé.
+     * N × {@code POST /schedules} — une transaction distribuée sans rollback, qui
+     * laissait un programme à moitié copié au premier échec. Ici, tout aboutit ou
+     * rien n'est créé.
      *
      * <p>La copie naît en <b>brouillon non public</b>, et surtout <b>sans passer
      * par {@code createProgram}</b> : celui-ci notifie les abonnés de l'auteur
      * ({@code AUTHOR_NEW_PROGRAM}), et une duplication qui notifie est une
      * duplication qui spamme.
      *
-     * <p>L'image est copiée <b>physiquement</b>, pas par référence : deux
-     * programmes pointant le même fichier, la suppression de l'image de l'un
-     * casserait celle de l'autre. Les médias additionnels ({@code ProgramMedia})
-     * ne sont pas copiés — la demande porte sur l'image du programme, et copier
-     * une galerie entière mérite sa propre décision.
+     * <p><b>La copie naît sans couverture</b> ({@code imageUrl == null}), et
+     * aucun octet n'est écrit sur le stockage pour elle. C'est un revirement
+     * assumé du contrat B4 (lot 7), qui copiait le fichier physiquement dans
+     * cette transaction. Deux raisons, dans cet ordre :
+     * <ul>
+     *   <li><b>le coût de stockage</b> (arbitrage produit du 2026-08-11) :
+     *       dupliquer trois fois faisait payer quatre fois les mêmes octets,
+     *       pour une couverture que personne n'avait choisie. Le client
+     *       l'effaçait d'ailleurs déjà par un {@code DELETE /programs/{id}/image}
+     *       juste après — des octets écrits pour être supprimés trois requêtes
+     *       plus tard ;</li>
+     *   <li><b>la robustesse</b> : la copie du fichier échouait quand la source
+     *       avait disparu du stockage, et la transaction étant tout-ou-rien,
+     *       <i>aucune</i> copie n'était créée. Un fichier manquant empêchait donc
+     *       de copier des métadonnées et des créneaux qui, eux, allaient
+     *       parfaitement bien.</li>
+     * </ul>
+     * Les médias additionnels ({@code ProgramMedia}) ne sont pas copiés non plus.
      *
      * <p>Chaque créneau copié repart à zéro : aucun participant, statut
      * {@code OPEN}. Les inscriptions appartiennent au créneau d'origine, pas à sa
@@ -171,9 +184,6 @@ public class ProgramService {
             scheduleCopy.setWelcomeNote(schedule.getWelcomeNote());
             scheduleRepository.save(scheduleCopy);
         }
-
-        saved.setImageUrl(imageDuplicator.duplicate(original.getImageUrl(), saved.getId()));
-        saved = programRepository.save(saved);
 
         refreshNextSessionAt(saved);
         return toDto(saved, userId);
@@ -500,7 +510,10 @@ public class ProgramService {
             user.getId(),
             organizerName,
             organizerAvatarUrl,
-            p.getImageUrl(),
+            // Vérifiée sur le stockage : une couverture dont le fichier a disparu
+            // se résout en image nulle plutôt qu'en URL qui répondra 404 à chaque
+            // affichage. Voir StoredImageResolver.
+            storedImageResolver.resolveOrNull(p.getImageUrl()),
             ua.getId(),
             activity.getName(),
             activity.getIcon(),

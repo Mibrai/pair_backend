@@ -1,5 +1,6 @@
 package org.program.pair.domain.program;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -66,8 +67,22 @@ class ProgramServiceTest {
     @Mock
     SubscriptionService subscriptionService;
 
+    @Mock
+    org.program.pair.domain.media.StoredImageResolver storedImageResolver;
+
     @InjectMocks
     ProgramService programService;
+
+    /**
+     * Le résolveur laisse passer l'URL telle quelle : ces tests ne portent pas
+     * sur les références orphelines, et un stockage réel n'est pas de leur
+     * ressort. {@code lenient()} parce que tous n'appellent pas {@code toDto}.
+     */
+    @BeforeEach
+    void stubStoredImageResolver() {
+        lenient().when(storedImageResolver.resolveOrNull(any()))
+            .thenAnswer(invocation -> invocation.getArgument(0));
+    }
 
     @Test
     void createProgram_doitNotifierLesAbonnesDeLAuteurEtDeLActivite() {

@@ -87,6 +87,12 @@ class MediaFileServingIntegrationTest extends AbstractIntegrationTest {
             .expectStatus().isUnauthorized();
     }
 
+    /**
+     * Le 404 ne suffit pas : il lui faut un <b>code</b>. Sans lui, le refus ne
+     * portait qu'un {@code message} anglais (« File not found »), que le client
+     * — qui traduit par code — n'avait d'autre choix que d'afficher tel quel à
+     * un utilisateur francophone.
+     */
     @Test
     void lectureFichierInexistant_devraitRetourner404EtPas500() {
         String token = registerAndLogin("media-missing@pair.app");
@@ -95,7 +101,25 @@ class MediaFileServingIntegrationTest extends AbstractIntegrationTest {
             .uri("/api/media/files/user_avatar/" + UUID.randomUUID() + ".png")
             .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
             .exchange()
-            .expectStatus().isNotFound();
+            .expectStatus().isNotFound()
+            .expectBody()
+            .jsonPath("$.code").isEqualTo("MEDIA_FILE_NOT_FOUND")
+            .jsonPath("$.message").isEqualTo("Ce fichier n'est plus disponible.");
+    }
+
+    @Test
+    void lectureFichierInexistant_devraitTraduireLeMessage_selonAcceptLanguage() {
+        String token = registerAndLogin("media-missing-en@pair.app");
+
+        webTestClient.get()
+            .uri("/api/media/files/user_avatar/" + UUID.randomUUID() + ".png")
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+            .header(HttpHeaders.ACCEPT_LANGUAGE, "en")
+            .exchange()
+            .expectStatus().isNotFound()
+            .expectBody()
+            .jsonPath("$.code").isEqualTo("MEDIA_FILE_NOT_FOUND")
+            .jsonPath("$.message").isEqualTo("This file is no longer available.");
     }
 
     private MultipartBodyBuilder pngUploadBody() throws IOException {
