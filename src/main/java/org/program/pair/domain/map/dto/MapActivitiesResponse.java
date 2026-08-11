@@ -30,11 +30,9 @@ public record MapActivitiesResponse(
         + "activities : les deux listes sont disjointes.")
     List<MapCluster> clusters
 ) {
-    /** Réponse non tronquée et non agrégée — totalInBounds se déduit de la liste. */
-    public static MapActivitiesResponse untruncated(List<MapActivityMarkerDto> activities,
-                                                     DefaultMapCenter defaultCenter) {
-        return new MapActivitiesResponse(activities, defaultCenter, false, activities.size(), List.of());
-    }
+    // Une fabrique untruncated(...) vivait ici. Son unique appelant était le
+    // repli qui rendait une carte vide en 200 sur défaillance, supprimé avec
+    // lui : une fabrique sans appelant suggère un usage qui n'existe pas.
 
     public record DefaultMapCenter(
         double lat,
