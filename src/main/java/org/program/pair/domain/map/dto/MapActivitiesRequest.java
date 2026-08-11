@@ -74,8 +74,31 @@ public record MapActivitiesRequest(
         + "marqueur d'activité. Plus le zoom est élevé, plus la maille est fine, donc "
         + "moins il y a de clusters. Absent, aucune agrégation n'a lieu et le champ "
         + "clusters de la réponse est vide.", minimum = "1", maximum = "20")
-    Integer zoom
+    Integer zoom,
+
+    @Schema(description = "Sortie de secours : rétablit la population d'avant le filtrage "
+        + "par séance à venir. Par défaut (absent ou false), la route ne renvoie que les "
+        + "activités ayant au moins une séance à venir — marqueurs isolés ET membres des "
+        + "clusters, sur la même définition, de sorte que le count d'une pastille soit le "
+        + "nombre de marqueurs réellement affichables. Mettre true redonne les activités "
+        + "expirées, y compris dans les clusters et dans totalInBounds.",
+        defaultValue = "false")
+    Boolean includeExpired
 ) {
+
+    /**
+     * Le filtre « séance à venir » s'applique-t-il ?
+     *
+     * <p>Il est le <b>défaut</b> : aucun écran de l'app ne veut d'une activité
+     * sans séance à venir, et un paramètre que le client poserait sur tous ses
+     * appels ne serait qu'un défaut écrit deux fois. Comme la route est publique
+     * ({@code permitAll}), un consommateur que nous ne connaissons pas peut
+     * dépendre de l'ancienne population : {@code includeExpired=true} la lui
+     * rend, sans que nous ayons à redéployer quoi que ce soit.
+     */
+    public boolean filterToUpcoming() {
+        return !Boolean.TRUE.equals(includeExpired);
+    }
 
     /** Vrai si un filtre géographique quelconque a été demandé. */
     public boolean hasGeoFilter() {

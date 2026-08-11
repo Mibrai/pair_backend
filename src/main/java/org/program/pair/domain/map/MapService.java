@@ -554,9 +554,14 @@ public class MapService {
      * Marqueurs d'activité de la carte, éventuellement bornés par un rayon et/ou
      * une bbox.
      *
-     * <p>Sans aucun paramètre de bornage, le comportement est celui d'avant :
-     * tous les créneaux localisés, aucune limite. C'est ce que font les clients
-     * déployés, et cela ne doit pas changer.
+     * <p>Sans aucun paramètre de bornage, aucun filtre géographique n'est
+     * appliqué et aucune limite ne l'est non plus.
+     *
+     * <p><b>Une seule population, filtrée par défaut</b> : seules les activités
+     * ayant une séance à venir sont renvoyées, marqueurs isolés comme membres
+     * des clusters (voir {@link #keepUpcoming}). C'est un changement de
+     * comportement observable, assumé, dont {@code includeExpired=true} est la
+     * sortie de secours.
      *
      * <p>Avec bornage, le filtre géographique est appliqué <b>en SQL</b>
      * (PostGIS), pas après coup sur une liste déjà chargée : c'était le point
@@ -691,7 +696,14 @@ public class MapService {
             // marqueurs arbitraires et deux appels identiques pourraient différer.
             markers.sort(markerOrder(userLat, userLng));
 
-            // 6. Agrégation optionnelle. totalInBounds est figé avant, pour que la
+            // 6. Filtre « séance à venir », avant toute agrégation. Voir
+            // keepUpcoming : c'est ce qui fait qu'un count de cluster compte des
+            // marqueurs réellement affichables.
+            if (request.filterToUpcoming()) {
+                markers = keepUpcoming(markers);
+            }
+
+            // 7. Agrégation optionnelle. totalInBounds est figé avant, pour que la
             // somme des count des clusters et de la liste restante lui soit égale.
             int totalInBounds = markers.size();
             List<MapCluster> clusters = List.of();
@@ -701,7 +713,7 @@ public class MapService {
                 markers = clustered.loose();
             }
 
-            // 7. Troncature explicite, jamais silencieuse. Elle ne porte que sur les
+            // 8. Troncature explicite, jamais silencieuse. Elle ne porte que sur les
             // marqueurs non agrégés : un cluster est déjà une réduction de volume.
             int effectiveLimit = effectiveLimit(request);
             boolean truncated = markers.size() > effectiveLimit;
@@ -709,7 +721,7 @@ public class MapService {
                 markers = new ArrayList<>(markers.subList(0, effectiveLimit));
             }
 
-            // 8. Calculate default center (area with most activities)
+            // 9. Calculate default center (area with most activities)
             MapActivitiesResponse.DefaultMapCenter defaultCenter = calculateDefaultCenter(markers);
 
             return new MapActivitiesResponse(markers, defaultCenter, truncated, totalInBounds, clusters);
@@ -761,6 +773,43 @@ public class MapService {
             .thenComparing(m -> m.activityId().toString())
             .thenComparingDouble(MapActivityMarkerDto::lat)
             .thenComparingDouble(MapActivityMarkerDto::lng);
+    }
+
+    /**
+     * Ne garde que les marqueurs ayant une séance à venir — <b>avant</b> que
+     * l'agrégation ne les compte.
+     *
+     * <p>La règle produit est « la carte ne montre que les activités qui ont un
+     * programme et au moins une séance à venir ». Le client la tenait seul, sur
+     * les seuls marqueurs isolés : un cluster ne porte que {@code count}, jamais
+     * les champs à tester. D'où une pastille annonçant 12 qui se défaisait en 7
+     * au zoom — la même carte avec deux règles, dont une seule applicable.
+     *
+     * <p><b>Le test porte sur {@code nextSessionAt}, le champ que le DTO expose
+     * déjà</b>, et non sur une expiration recalculée ici. C'est délibéré : le
+     * {@code count} d'un cluster devient ainsi, par construction, « ce que le
+     * client aurait gardé ». Recalculer, même mieux, ferait vivre une troisième
+     * définition de l'expiration — exactement ce que la demande cherche à
+     * supprimer.
+     *
+     * <p>La seconde condition, « a au moins un programme », n'est pas testée :
+     * elle est structurellement vraie sur cette route. Un marqueur naît d'un
+     * créneau localisé rattaché à un programme, et {@code programCount} compte
+     * les programmes distincts de ces créneaux — il vaut donc toujours au moins
+     * un. Un test l'affirme, pour que cette invariance cesse d'être tacite.
+     *
+     * <p>Limite héritée, non introduite ici : {@code nextSessionAt} se lit sur
+     * {@code starts_at} sans dérouler la règle de récurrence. C'est
+     * {@link org.program.pair.domain.program.jobs.RecurringSlotRolloverJob} qui
+     * maintient {@code starts_at} sur la prochaine occurrence réelle, à dix
+     * minutes près. Pendant cette fenêtre, une activité récurrente vivante paraît
+     * expirée — elle disparaissait déjà de l'app avant ce filtre, puisque le
+     * client écartait le marqueur ; elle disparaît désormais de la réponse.
+     */
+    private List<MapActivityMarkerDto> keepUpcoming(List<MapActivityMarkerDto> markers) {
+        return markers.stream()
+            .filter(m -> m.nextSessionAt() != null)
+            .collect(Collectors.toCollection(ArrayList::new));
     }
 
     /** Résultat d'une agrégation : les clusters, et les marqueurs restés seuls. */
