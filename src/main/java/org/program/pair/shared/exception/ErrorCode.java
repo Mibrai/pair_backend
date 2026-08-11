@@ -65,6 +65,9 @@ public enum ErrorCode {
     // — historique de recherche (SearchHistoryService) —
     SEARCH_HISTORY_ENTRY_NOT_FOUND,
 
+    // — médias (StorageService) —
+    MEDIA_FILE_NOT_FOUND,
+
     // — bornage de la carte (MapService) —
     MAP_RADIUS_REQUIRES_USER_LOCATION,
     MAP_RADIUS_OUT_OF_RANGE,
