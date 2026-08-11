@@ -99,10 +99,13 @@ public class MapController {
      *
      * <p>Le bornage est optionnel et additif : {@code radiusMeters} (avec la
      * position de l'utilisateur), une bbox {@code north}/{@code south}/{@code east}/{@code west},
-     * et un {@code limit}. Sans aucun de ces paramètres, la réponse est celle
-     * d'avant leur introduction — les clients déployés ne voient aucune
-     * différence. Voir {@link MapActivitiesRequest} pour les bornes et les codes
-     * d'erreur.
+     * et un {@code limit}. Voir {@link MapActivitiesRequest} pour les bornes et
+     * les codes d'erreur.
+     *
+     * <p><b>Seules les activités ayant une séance à venir sont renvoyées</b>, et
+     * la même règle vaut pour les membres des clusters : le {@code count} d'une
+     * pastille est donc le nombre de marqueurs réellement affichables.
+     * {@code includeExpired=true} rétablit la population d'avant ce filtre.
      *
      * @return marqueurs, centre par défaut, et l'état de troncature
      *         ({@code truncated}, {@code totalInBounds})
