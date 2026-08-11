@@ -570,15 +570,36 @@ public class MapService {
      * pour que la troncature garde les marqueurs les plus proches et que deux
      * appels identiques renvoient la même chose.
      *
+     * <p><b>Cette méthode laisse sortir ses erreurs, et il ne faut pas le
+     * défaire.</b> Elle a porté cinq semaines un {@code catch (Exception)} qui
+     * renvoyait une carte vide en {@code 200} — posé le 2026-07-04 comme
+     * échafaudage de débogage pour une {@code LazyInitializationException}, que
+     * le commit suivant a corrigée à la source par un {@code JOIN FETCH}. La
+     * cause était morte, le masque est resté.
+     *
+     * <p>Ce qu'il coûtait : une panne de la route la plus visible de l'app
+     * devenait indiscernable d'une zone sans activité — côté serveur comme côté
+     * client, qui n'avait plus même le statut HTTP pour trancher. C'est la forme
+     * exacte de l'incident média du 2026-08-11, où un défaut d'infrastructure
+     * s'est présenté trois semaines durant comme un contenu absent.
+     *
+     * <p>Une défaillance produit donc un {@code 500 INTERNAL_ERROR}, journalisé
+     * par {@code GlobalExceptionHandler} avec le {@code rid:} du MDC — donc
+     * corrélable avec le {@code X-Request-Id} que le client consigne. Il n'y a
+     * volontairement aucun {@code log} ici : il ferait doublon.
+     *
+     * <p>Une zone réellement vide reste, elle, un {@code 200} avec une liste
+     * vide. C'est le chemin normal, et c'est toute la frontière : vide n'est pas
+     * en panne.
+     *
      * @return marqueurs, centre par défaut, et de quoi savoir si la carte est
      *         partielle ({@code truncated}, {@code totalInBounds})
      */
     public MapActivitiesResponse getAllActivitiesForMap(MapActivitiesRequest request) {
         validate(request);
 
-        try {
-            // 1. Créneaux localisés, bornés en base si un filtre est demandé.
-            List<Schedule> allSchedules = loadSchedules(request);
+        // 1. Créneaux localisés, bornés en base si un filtre est demandé.
+        List<Schedule> allSchedules = loadSchedules(request);
 
         // 3. Build a map of activity -> list of schedule locations
         Map<UUID, List<Schedule>> activityScheduleMap = new LinkedHashMap<>();
@@ -692,49 +713,39 @@ public class MapService {
             }
         }
 
-            // 5. Ordre total déterministe : sans lui, une troncature garderait des
-            // marqueurs arbitraires et deux appels identiques pourraient différer.
-            markers.sort(markerOrder(userLat, userLng));
+        // 5. Ordre total déterministe : sans lui, une troncature garderait des
+        // marqueurs arbitraires et deux appels identiques pourraient différer.
+        markers.sort(markerOrder(userLat, userLng));
 
-            // 6. Filtre « séance à venir », avant toute agrégation. Voir
-            // keepUpcoming : c'est ce qui fait qu'un count de cluster compte des
-            // marqueurs réellement affichables.
-            if (request.filterToUpcoming()) {
-                markers = keepUpcoming(markers);
-            }
-
-            // 7. Agrégation optionnelle. totalInBounds est figé avant, pour que la
-            // somme des count des clusters et de la liste restante lui soit égale.
-            int totalInBounds = markers.size();
-            List<MapCluster> clusters = List.of();
-            if (request.zoom() != null) {
-                ClusteredMarkers clustered = clusterMarkers(markers, request.zoom());
-                clusters = clustered.clusters();
-                markers = clustered.loose();
-            }
-
-            // 8. Troncature explicite, jamais silencieuse. Elle ne porte que sur les
-            // marqueurs non agrégés : un cluster est déjà une réduction de volume.
-            int effectiveLimit = effectiveLimit(request);
-            boolean truncated = markers.size() > effectiveLimit;
-            if (truncated) {
-                markers = new ArrayList<>(markers.subList(0, effectiveLimit));
-            }
-
-            // 9. Calculate default center (area with most activities)
-            MapActivitiesResponse.DefaultMapCenter defaultCenter = calculateDefaultCenter(markers);
-
-            return new MapActivitiesResponse(markers, defaultCenter, truncated, totalInBounds, clusters);
-        } catch (Exception e) {
-            // Log error and return empty response with default center
-            System.err.println("Error in getAllActivitiesForMap: " + e.getMessage());
-            e.printStackTrace();
-
-            // Return empty response with default Paris center
-            MapActivitiesResponse.DefaultMapCenter defaultCenter =
-                new MapActivitiesResponse.DefaultMapCenter(48.8566, 2.3522, 12);
-            return MapActivitiesResponse.untruncated(new ArrayList<>(), defaultCenter);
+        // 6. Filtre « séance à venir », avant toute agrégation. Voir
+        // keepUpcoming : c'est ce qui fait qu'un count de cluster compte des
+        // marqueurs réellement affichables.
+        if (request.filterToUpcoming()) {
+            markers = keepUpcoming(markers);
         }
+
+        // 7. Agrégation optionnelle. totalInBounds est figé avant, pour que la
+        // somme des count des clusters et de la liste restante lui soit égale.
+        int totalInBounds = markers.size();
+        List<MapCluster> clusters = List.of();
+        if (request.zoom() != null) {
+            ClusteredMarkers clustered = clusterMarkers(markers, request.zoom());
+            clusters = clustered.clusters();
+            markers = clustered.loose();
+        }
+
+        // 8. Troncature explicite, jamais silencieuse. Elle ne porte que sur les
+        // marqueurs non agrégés : un cluster est déjà une réduction de volume.
+        int effectiveLimit = effectiveLimit(request);
+        boolean truncated = markers.size() > effectiveLimit;
+        if (truncated) {
+            markers = new ArrayList<>(markers.subList(0, effectiveLimit));
+        }
+
+        // 9. Calculate default center (area with most activities)
+        MapActivitiesResponse.DefaultMapCenter defaultCenter = calculateDefaultCenter(markers);
+
+        return new MapActivitiesResponse(markers, defaultCenter, truncated, totalInBounds, clusters);
     }
 
     /**
