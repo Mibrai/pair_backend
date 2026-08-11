@@ -3,6 +3,8 @@ package org.program.pair.domain.media;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.media.dto.MediaUploadResponse;
+import org.program.pair.shared.exception.ErrorCode;
+import org.program.pair.shared.exception.ResourceNotFoundException;
 import org.program.pair.shared.security.UserPrincipal;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
@@ -108,7 +110,8 @@ public class MediaController {
 
         } catch (IOException e) {
             log.error("Error serving file: {}", filename, e);
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "File not found");
+            throw new ResourceNotFoundException(
+                ErrorCode.MEDIA_FILE_NOT_FOUND, "Fichier introuvable : " + filename);
         }
     }
 

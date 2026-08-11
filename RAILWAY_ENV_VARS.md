@@ -12,6 +12,36 @@ Configure these variables in your Railway project settings.
 ## Server
 - `PORT` - 8080 (default)
 
+## Media storage (REQUIRES a persistent volume)
+- `STORAGE_PATH` - absolute path where uploaded media is written. Set to
+  `/data/uploads` by the Dockerfile; override only if the volume is mounted
+  elsewhere.
+
+**A volume is mandatory, not optional.** Uploaded files (avatars, program
+covers) are written to the filesystem, while only their URL is stored in the
+database. Without a volume, that filesystem is the container's ephemeral write
+layer: every redeploy wipes the bytes and leaves the database pointing at files
+that no longer exist. This is exactly what happened on 2026-08-11 — every single
+`GET /api/media/files/**` failed in production, and program duplication failed
+with it.
+
+Setup, in the Railway dashboard:
+1. Service > Settings > Volumes > **New Volume**
+2. Mount path: `/data`
+3. Redeploy.
+
+Verify it worked — the startup logs say so explicitly:
+- `Storage persisted across restarts (initialized on ...)` → the volume is
+  mounted and survived. This is what you want to see on **every** redeploy.
+- `Storage contains no persistence marker` → first boot, **or** a wiped volume.
+  Seeing it twice in a row means media is not being persisted.
+- `Storage path 'uploads' is relative` → `STORAGE_PATH` is unset; files are going
+  to the ephemeral layer.
+
+Migrating to object storage (S3/R2/GCS) removes the need for a volume:
+`StorageService` is an interface and `LocalStorageService` its only
+implementation, so a second implementation requires no change to any caller.
+
 ## Mail Configuration
 
 ### Resend (Recommended for Railway)
