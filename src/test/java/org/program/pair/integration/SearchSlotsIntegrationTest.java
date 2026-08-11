@@ -31,6 +31,8 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,6 +61,9 @@ class SearchSlotsIntegrationTest extends AbstractIntegrationTest {
     @Autowired UserActivityRepository userActivityRepository;
     @Autowired ProgramRepository programRepository;
     @Autowired ScheduleRepository scheduleRepository;
+
+    /** La même zone que TimeHintParser : c'est lui qui décide de ce qu'est « demain ». */
+    private static final ZoneId SEARCH_ZONE = ZoneId.of("Europe/Paris");
 
     private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
     private static final double LAT = 48.8566;
@@ -156,8 +161,19 @@ class SearchSlotsIntegrationTest extends AbstractIntegrationTest {
         when(embeddingService.generateEmbedding(any())).thenReturn(new float[384]);
     }
 
+    /**
+     * Demain 19 h <b>à Paris</b>, et non « dans 24 h arrondi en UTC ».
+     *
+     * <p>La version précédente enchaînait {@code plus(1, DAYS)} et
+     * {@code truncatedTo(DAYS)}, qui tronque en UTC, alors que
+     * {@link org.program.pair.domain.search.TimeHintParser} résout « demain »
+     * dans {@code Europe/Paris}. Les deux notions divergent d'un jour entre
+     * minuit et 2 h du matin, heure d'été : le test posait son créneau le 12
+     * quand le serveur cherchait le 13, et échouait deux heures par nuit sans
+     * qu'aucun code de production ne soit en cause.
+     */
     private Instant tomorrowEvening() {
-        return Instant.now().plus(1, ChronoUnit.DAYS).truncatedTo(ChronoUnit.DAYS).plus(19, ChronoUnit.HOURS);
+        return LocalDate.now(SEARCH_ZONE).plusDays(1).atTime(19, 0).atZone(SEARCH_ZONE).toInstant();
     }
 
     private SearchResultDto firstSlot(SearchResponse response, String expectedTitle) {
