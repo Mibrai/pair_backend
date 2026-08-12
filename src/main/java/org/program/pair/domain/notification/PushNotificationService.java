@@ -335,7 +335,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
      */
     String buildTitle(Locale locale, NotificationType type, Map<String, Object> payload) {
         return switch (type) {
-            case NEW_MESSAGE -> msg(locale, "push.NEW_MESSAGE.title", arg(payload, "senderName"));
+            case NEW_MESSAGE -> msg(locale, "push.NEW_MESSAGE.title", arg(payload, "messageAuthorName"));
             case NEW_MATCH -> msg(locale, "push.NEW_MATCH.title");
             case BADGE_EARNED -> msg(locale, "push.BADGE_EARNED.title");
             case PROGRAM_REVIEW -> msg(locale, "push.PROGRAM_REVIEW.title");
@@ -371,7 +371,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
      */
     String buildBody(Locale locale, NotificationType type, Map<String, Object> payload) {
         return switch (type) {
-            case NEW_MESSAGE -> rawOr(payload, "messagePreview", locale, "push.NEW_MESSAGE.body");
+            case NEW_MESSAGE -> rawOr(payload, "messageBody", locale, "push.NEW_MESSAGE.body");
             case NEW_MATCH -> msg(locale, "push.NEW_MATCH.body");
             case BADGE_EARNED -> msg(locale, "push.BADGE_EARNED.body", arg(payload, "badgeName"));
             case PROGRAM_REVIEW -> msg(locale, "push.PROGRAM_REVIEW.body");

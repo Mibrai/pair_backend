@@ -42,8 +42,15 @@ public class ChatPushListener {
                     .with("conversationId", event.conversationId())
                     .with("messageId", event.messageId())
                     .with("senderId", event.senderId())
-                    .with("senderName", event.senderName())
-                    .with("messagePreview", event.preview())
+                    // messageAuthorName/messageBody, et non senderName/
+                    // messagePreview : ce sont les noms qu'attend le template de
+                    // notification du client, qui range l'auteur du message dans
+                    // une zone distincte de l'auteur de la séance. Le renommage
+                    // est sûr sans repli — ce payload est construit et consommé
+                    // dans le même processus (notifyPushOnly est @Async, pas
+                    // distribué), donc aucune version n'en lit d'une autre.
+                    .with("messageAuthorName", event.senderName())
+                    .with("messageBody", event.preview())
                     .build());
         } catch (Exception e) {
             // Le message est écrit et diffusé : une push perdue ne doit pas
