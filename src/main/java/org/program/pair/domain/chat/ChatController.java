@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.security.Principal;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Controller
@@ -39,6 +40,22 @@ public class ChatController {
     public List<ConversationSummaryDto> getMyConversations(
             @AuthenticationPrincipal UserPrincipal principal) {
         return chatService.getMyConversations(principal.getId());
+    }
+
+    /**
+     * Nombre de <b>messages</b> non lus, tous fils confondus — pendant exact de
+     * {@code GET /api/notifications/unread-count}, même forme de réponse.
+     *
+     * <p>Sans lui, connaître un seul entier coûte le chargement de toute la liste
+     * des conversations, au démarrage et à chaque retour au premier plan. C'est
+     * aussi la valeur que {@code aps.badge} additionne : l'exposer rend les deux
+     * calculs vérifiables l'un par l'autre.
+     */
+    @GetMapping("/api/conversations/unread-count")
+    @ResponseBody
+    public Map<String, Long> getUnreadCount(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return Map.of("unreadCount", chatService.getUnreadCount(principal.getId()));
     }
 
     @PostMapping("/api/conversations/{conversationId}/messages")

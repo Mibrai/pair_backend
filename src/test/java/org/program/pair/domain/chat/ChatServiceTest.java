@@ -14,6 +14,7 @@ import org.program.pair.repository.MessageRepository;
 import org.program.pair.repository.UserRepository;
 import org.program.pair.shared.exception.ForbiddenException;
 import org.program.pair.shared.sanitizer.HtmlSanitizer;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 
 import java.util.List;
@@ -46,6 +47,9 @@ class ChatServiceTest {
 
     @Mock
     org.program.pair.repository.ConversationMemberRepository conversationMemberRepository;
+
+    @Mock
+    ApplicationEventPublisher eventPublisher;
 
     @InjectMocks
     ChatService chatService;
@@ -116,6 +120,71 @@ class ChatServiceTest {
         assertThatThrownBy(() -> chatService.sendMessage(senderId,
             new SendMessageRequest(UUID.randomUUID(), "test")))
             .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void sendMessage_doitDemanderUnePush_pourChaqueDestinataire_jamaisPourLExpediteur() {
+        // Le WebSocket ne porte que jusqu'à une app ouverte. Sans cette push,
+        // un message reçu app fermée ne pose aucun aps.badge — et iOS garde alors
+        // la valeur précédente, ce qui fige le badge sur l'icône.
+        UUID senderId = UUID.randomUUID();
+        UUID recipientId = UUID.randomUUID();
+        Conversation conv = buildConversationWithMember(senderId);
+
+        when(conversationRepository.findByIdAndMemberId(any(), eq(senderId)))
+            .thenReturn(Optional.of(conv));
+        when(sanitizer.sanitize("Salut")).thenReturn("Salut");
+
+        User sender = new User();
+        sender.setId(senderId);
+        sender.setDisplayName("Alice");
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+        when(messageRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(conversationMemberRepository.findUserIdsByConversationId(any()))
+            .thenReturn(List.of(senderId, recipientId));
+
+        chatService.sendMessage(senderId, new SendMessageRequest(conv.getId(), "Salut"));
+
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+
+        assertThat(captor.getValue()).isInstanceOf(MessageSentEvent.class);
+        MessageSentEvent event = (MessageSentEvent) captor.getValue();
+        assertThat(event.recipientId()).isEqualTo(recipientId);
+        assertThat(event.senderId()).isEqualTo(senderId);
+        assertThat(event.senderName()).isEqualTo("Alice");
+        assertThat(event.preview()).isEqualTo("Salut");
+    }
+
+    @Test
+    void sendMessage_apercu_doitEtreTronque_pourTenirDansUneCharge() {
+        // content monte à 4000 caractères, la charge APNs est plafonnée à 4 Ko,
+        // et un écran verrouillé n'en montre qu'une poignée.
+        UUID senderId = UUID.randomUUID();
+        UUID recipientId = UUID.randomUUID();
+        Conversation conv = buildConversationWithMember(senderId);
+
+        String longContent = "a".repeat(500);
+        when(conversationRepository.findByIdAndMemberId(any(), eq(senderId)))
+            .thenReturn(Optional.of(conv));
+        when(sanitizer.sanitize(longContent)).thenReturn(longContent);
+
+        User sender = new User();
+        sender.setId(senderId);
+        sender.setDisplayName("Alice");
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+        when(messageRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(conversationMemberRepository.findUserIdsByConversationId(any()))
+            .thenReturn(List.of(senderId, recipientId));
+
+        chatService.sendMessage(senderId, new SendMessageRequest(conv.getId(), longContent));
+
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+
+        assertThat(((MessageSentEvent) captor.getValue()).preview())
+            .hasSize(121)
+            .endsWith("…");
     }
 
     private Conversation buildConversationWithMember(UUID userId) {

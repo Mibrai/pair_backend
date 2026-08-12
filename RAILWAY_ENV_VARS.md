@@ -67,6 +67,37 @@ FRONTEND_URL=https://your-frontend-domain.com
 - Add DNS records provided by Resend to Hostinger
 - See RESEND_SETUP.md for detailed guide
 
+## Push notifications (Firebase Cloud Messaging)
+
+```
+FIREBASE_ENABLED=true
+FIREBASE_CREDENTIALS_PATH=/app/config/firebase-service-account.json
+```
+
+Both are required together. `FIREBASE_ENABLED` defaults to `false`, and while it
+is false **no push is ever sent** — `NoOpPushNotificationService` is wired in
+place of the real one. Nothing else in the app changes, which is precisely what
+made this easy to miss: notifications and messages keep being stored, the API
+keeps answering, and only the phone stays silent.
+
+Since `aps.badge` is what keeps the icon badge accurate while the app is closed,
+a missing variable here shows up as *"the badge is stuck on its last value"*,
+not as an error.
+
+**Checking a deployment.** The startup log settles it in one line:
+
+- `Firebase initialized successfully (push notifications enabled)` → push is on;
+- no such line → `FIREBASE_ENABLED` is not `true`, and push is off.
+
+With `FIREBASE_ENABLED=true`, an unreadable or missing credentials file now
+**fails startup** instead of downgrading to silence — a broken push setup is
+visible at deploy time.
+
+**Getting the credentials file:** Firebase console > Project settings > Service
+accounts > Generate new private key. The JSON must be mounted on the persistent
+volume (or baked into the image); `classpath:firebase-service-account.json` also
+works if it ships inside the jar.
+
 ## Redis (Optional)
 ```
 REDIS_ENABLED=false

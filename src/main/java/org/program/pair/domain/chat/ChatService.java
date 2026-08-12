@@ -2,6 +2,7 @@ package org.program.pair.domain.chat;
 
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.chat.dto.*;
+import org.program.pair.domain.notification.UnreadChangedEvent;
 import org.program.pair.domain.user.User;
 import org.program.pair.domain.user.dto.UserPublicDto;
 import org.program.pair.repository.*;
@@ -9,6 +10,7 @@ import org.program.pair.shared.exception.ForbiddenException;
 import org.program.pair.shared.exception.ResourceNotFoundException;
 import org.program.pair.shared.exception.ValidationException;
 import org.program.pair.shared.sanitizer.HtmlSanitizer;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +33,10 @@ public class ChatService {
     private final UserRepository userRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final HtmlSanitizer sanitizer;
+    private final ApplicationEventPublisher eventPublisher;
+
+    /** Longueur de l'aperçu de message porté par la push. */
+    private static final int PREVIEW_MAX_LENGTH = 120;
 
     public ConversationSummaryDto createConversation(UUID initiatorId,
                                                       CreateConversationRequest request) {
@@ -96,7 +102,33 @@ public class ChatService {
             );
         }
 
+        // 5. Push aux destinataires — le WebSocket ci-dessus ne porte que jusqu'à
+        // une app ouverte, or le badge sert précisément quand elle est fermée.
+        // L'expéditeur est exclu : il vient d'écrire, il n'a rien à lire.
+        for (UUID memberId : memberIds) {
+            if (!memberId.equals(senderId)) {
+                eventPublisher.publishEvent(new MessageSentEvent(
+                    memberId,
+                    senderId,
+                    conv.getId(),
+                    message.getId(),
+                    sender.getDisplayName(),
+                    preview(cleanContent)));
+            }
+        }
+
         return dto;
+    }
+
+    /**
+     * Aperçu affiché sur l'écran verrouillé. Tronqué : {@code content} monte à
+     * 4000 caractères, une notification n'en montre qu'une poignée, et la charge
+     * push est plafonnée à 4 Ko par APNs.
+     */
+    private static String preview(String content) {
+        return content.length() <= PREVIEW_MAX_LENGTH
+            ? content
+            : content.substring(0, PREVIEW_MAX_LENGTH) + "…";
     }
 
     @Transactional(readOnly = true)
@@ -120,6 +152,19 @@ public class ChatService {
             .collect(Collectors.toList());
     }
 
+    /**
+     * Nombre de messages non lus, tous fils confondus.
+     *
+     * <p>Sert {@code GET /api/conversations/unread-count}, et c'est la moitié
+     * « messagerie » du badge d'icône : la même requête alimente les deux, de
+     * sorte que la somme du client et le nombre porté par la push ne peuvent pas
+     * diverger.
+     */
+    @Transactional(readOnly = true)
+    public long getUnreadCount(UUID userId) {
+        return messageRepository.countUnreadByUserId(userId);
+    }
+
     public void markAsRead(UUID userId, UUID conversationId) {
         ConversationMember member = conversationMemberRepository
             .findByConversationIdAndUserId(conversationId, userId)
@@ -127,6 +172,10 @@ public class ChatService {
 
         member.setLastReadAt(Instant.now());
         conversationMemberRepository.save(member);
+
+        // Lire ici fait baisser le badge des autres appareils du compte, qui
+        // eux ne reçoivent aucune push sur une lecture.
+        eventPublisher.publishEvent(new UnreadChangedEvent(userId));
     }
 
     private void addMember(UUID conversationId, UUID userId) {
@@ -180,18 +229,11 @@ public class ChatService {
             .findFirstByConversationIdOrderBySentAtDesc(conv.getId())
             .orElse(null);
 
-        // Calculate unread count
-        ConversationMember member = conversationMemberRepository
-            .findByConversationIdAndUserId(conv.getId(), currentUserId)
-            .orElse(null);
-
-        int unreadCount = 0;
-        if (member != null && member.getLastReadAt() != null) {
-            unreadCount = messageRepository
-                .countByConversationIdAndSentAtAfter(conv.getId(), member.getLastReadAt());
-        } else if (member != null) {
-            unreadCount = messageRepository.countByConversationId(conv.getId());
-        }
+        // Non lus du fil : les messages des autres, arrivés depuis la dernière
+        // lecture. Ses propres messages et ceux qui ont été supprimés n'en sont
+        // pas — c'est le décompte qu'un client somme pour obtenir son badge.
+        int unreadCount = messageRepository
+            .countUnreadByUserIdAndConversationId(currentUserId, conv.getId());
 
         return new ConversationSummaryDto(
             conv.getId(),
@@ -342,6 +384,8 @@ public class ChatService {
 
         member.setLastReadAt(Instant.now());
         conversationMemberRepository.save(member);
+
+        eventPublisher.publishEvent(new UnreadChangedEvent(userId));
     }
 
     public String uploadImage(UUID userId, UUID conversationId, String imageUrl) {

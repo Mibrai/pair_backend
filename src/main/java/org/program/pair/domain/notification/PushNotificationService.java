@@ -53,7 +53,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
      * Envoyer une notification push à un utilisateur
      */
     @Override
-    public void sendPush(UUID userId, NotificationType type, Map<String, Object> payload, long unreadCount) {
+    public void sendPush(UUID userId, NotificationType type, Map<String, Object> payload, long badgeCount) {
         List<DeviceToken> devices = deviceTokenRepository.findByUserId(userId);
 
         if (devices.isEmpty()) {
@@ -61,7 +61,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
             return;
         }
 
-        int badge = badgeValue(unreadCount);
+        int badge = badgeValue(badgeCount);
 
         // Un même utilisateur peut avoir des appareils en des langues différentes :
         // un envoi par langue, chacun avec son texte. LinkedHashMap pour un ordre
@@ -105,9 +105,10 @@ public class PushNotificationService implements PushNotificationServiceInterface
                     Map.Entry::getKey,
                     e -> String.valueOf(e.getValue())
                 )))
-            // Le badge porte le compteur réel de non-lues du destinataire, celle
-            // qui part comprise — application fermée, aucun code client ne
-            // s'exécute pour aller le chercher.
+            // Le badge porte le total réel du destinataire — notifications ET
+            // messages non lus, ce qui part compris. Application fermée, aucun
+            // code client ne s'exécute pour aller le chercher, et un champ absent
+            // n'est pas neutre : iOS conserve alors la valeur précédente.
             .setApnsConfig(ApnsConfig.builder()
                 .setAps(Aps.builder()
                     .setBadge(badge)
@@ -124,6 +125,56 @@ public class PushNotificationService implements PushNotificationServiceInterface
                 .build())
             .build();
 
+        dispatch(userId, tokens, message);
+    }
+
+    /**
+     * Push silencieux : corrige le badge sans rien afficher.
+     *
+     * <p>Trois choses en font une push « de fond » et non une notification muette :
+     * l'absence de {@code alert} (donc rien à afficher), {@code content-available}
+     * (qui réveille l'app), et l'en-tête {@code apns-push-type: background} —
+     * exigé par APNs depuis iOS 13, faute de quoi la push est <b>rejetée</b>.
+     * {@code apns-priority: 5} est l'autre exigence de ce type : une push de fond
+     * en priorité 10 est refusée elle aussi.
+     *
+     * <p>Aucun groupement par langue ici : sans texte, il n'y a pas de langue.
+     *
+     * <p>Côté Android, la charge est une charge de données pure — {@code badge}
+     * y voyage comme donnée, à l'application de la poser. {@code notification_count}
+     * n'existe que sur une notification affichée, ce que précisément on ne veut pas.
+     */
+    @Override
+    public void sendBadgeUpdate(UUID userId, long badgeCount) {
+        List<String> tokens = deviceTokenRepository.findTokensByUserId(userId);
+
+        if (tokens.isEmpty()) {
+            log.debug("No device tokens found for user {}", userId);
+            return;
+        }
+
+        int badge = badgeValue(badgeCount);
+
+        MulticastMessage message = MulticastMessage.builder()
+            .addAllTokens(tokens)
+            .putData("badge", String.valueOf(badge))
+            .setApnsConfig(ApnsConfig.builder()
+                .putHeader("apns-push-type", "background")
+                .putHeader("apns-priority", "5")
+                .setAps(Aps.builder()
+                    .setContentAvailable(true)
+                    .setBadge(badge)
+                    .build())
+                .build())
+            .setAndroidConfig(AndroidConfig.builder()
+                .setPriority(AndroidConfig.Priority.NORMAL)
+                .build())
+            .build();
+
+        dispatch(userId, tokens, message);
+    }
+
+    private void dispatch(UUID userId, List<String> tokens, MulticastMessage message) {
         try {
             BatchResponse response = firebaseMessaging.sendEachForMulticast(message);
             log.info("Successfully sent {} push notifications to user {}",
@@ -144,8 +195,8 @@ public class PushNotificationService implements PushNotificationServiceInterface
      * {@code int} ferait échouer l'envoi entier. Zéro est une valeur utile et non
      * un cas dégradé — c'est ainsi qu'on efface le badge.
      */
-    private int badgeValue(long unreadCount) {
-        return (int) Math.max(0, Math.min(unreadCount, Integer.MAX_VALUE));
+    private int badgeValue(long badgeCount) {
+        return (int) Math.max(0, Math.min(badgeCount, Integer.MAX_VALUE));
     }
 
     /**
