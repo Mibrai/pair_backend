@@ -8,6 +8,7 @@ import org.program.pair.repository.NotificationPrefRepository;
 import org.program.pair.repository.NotificationRepository;
 import org.program.pair.repository.UserRepository;
 import org.program.pair.shared.email.EmailService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.scheduling.annotation.Async;
@@ -31,6 +32,8 @@ public class NotificationService {
     private final EmailService emailService;
     private final PushNotificationServiceInterface pushService;
     private final ObjectMapper objectMapper;
+    private final UnreadCounter unreadCounter;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * Point d'entrée unique pour toutes les notifications
@@ -49,7 +52,8 @@ public class NotificationService {
 
         // Compté après l'enregistrement, donc celle qui part est comprise dedans :
         // c'est la valeur que le badge d'icône doit afficher à la réception.
-        long unreadCount = notificationRepository.countByUserIdAndIsReadFalse(userId);
+        // Messages compris — il n'y a qu'un badge par app (voir UnreadCounter).
+        long badgeCount = unreadCounter.badge(userId);
 
         // 3. Email selon préférence
         if (Boolean.TRUE.equals(pref.getEmailEnabled())) {
@@ -66,10 +70,39 @@ public class NotificationService {
         // 4. Push selon préférence
         if (Boolean.TRUE.equals(pref.getPushEnabled())) {
             try {
-                pushService.sendPush(userId, type, payload, unreadCount);
+                pushService.sendPush(userId, type, payload, badgeCount);
             } catch (Exception e) {
                 log.error("Failed to send push notification: {}", e.getMessage());
             }
+        }
+    }
+
+    /**
+     * Envoyer une push <b>sans</b> créer de notification in-app.
+     *
+     * <p>Chemin de la messagerie. Un message a déjà son écran, son fil et son
+     * compteur : le doubler d'une notification in-app le ferait compter deux fois
+     * dans le badge — une fois comme message, une fois comme notification — et
+     * remplirait le centre de notifications d'entrées que personne n'a demandées.
+     *
+     * <p>Ce qui reste de {@link #notify} : la préférence {@code pushEnabled} du
+     * destinataire, qui continue de faire foi, et le badge, qui porte le total
+     * relu après écriture du message.
+     */
+    @Async
+    public void notifyPushOnly(UUID userId, NotificationType type, Map<String, Object> payload) {
+        NotificationPref pref = prefRepository
+            .findByUserIdAndNotificationType(userId, type)
+            .orElse(defaultPref(userId, type));
+
+        if (!Boolean.TRUE.equals(pref.getPushEnabled())) {
+            return;
+        }
+
+        try {
+            pushService.sendPush(userId, type, payload, unreadCounter.badge(userId));
+        } catch (Exception e) {
+            log.error("Failed to send push notification: {}", e.getMessage());
         }
     }
 
@@ -132,12 +165,17 @@ public class NotificationService {
                 notif.setIsRead(true);
                 notif.setReadAt(Instant.now());
                 notificationRepository.save(notif);
+                eventPublisher.publishEvent(new UnreadChangedEvent(userId));
             }
         });
     }
 
     /**
      * Marquer toutes les notifications comme lues
+     *
+     * <p>Publie {@link UnreadChangedEvent} : c'est le cas typique de la lecture
+     * « ailleurs » — sur le web ou un second appareil —, après laquelle le
+     * téléphone resté fermé annoncerait du non-lu qui n'existe plus.
      */
     public int markAllAsRead(UUID userId) {
         List<Notification> unread = notificationRepository.findByUserIdAndIsReadFalse(userId);
@@ -146,6 +184,10 @@ public class NotificationService {
             notif.setReadAt(Instant.now());
         });
         notificationRepository.saveAll(unread);
+
+        if (!unread.isEmpty()) {
+            eventPublisher.publishEvent(new UnreadChangedEvent(userId));
+        }
         return unread.size();
     }
 
