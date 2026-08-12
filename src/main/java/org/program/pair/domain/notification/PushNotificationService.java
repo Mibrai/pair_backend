@@ -9,6 +9,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -373,7 +376,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
             case BADGE_EARNED -> msg(locale, "push.BADGE_EARNED.body", arg(payload, "badgeName"));
             case PROGRAM_REVIEW -> msg(locale, "push.PROGRAM_REVIEW.body");
             case PEER_RECOMMENDATION -> msg(locale, "push.PEER_RECOMMENDATION.body");
-            case PROGRAM_REMINDER -> msg(locale, "push.PROGRAM_REMINDER.body", arg(payload, "timeUntil"));
+            case PROGRAM_REMINDER -> msg(locale, "push.PROGRAM_REMINDER.body", timeUntil(payload));
             case PROGRESSION_REMINDER -> msg(locale, "push.PROGRESSION_REMINDER.body", arg(payload, "streak"));
             case NEW_FOLLOWER -> msg(locale, "push.NEW_FOLLOWER.body");
             case NEARBY_PROGRAM -> rawOr(payload, "programTitle", locale, "push.NEARBY_PROGRAM.body");
@@ -404,6 +407,44 @@ public class PushNotificationService implements PushNotificationServiceInterface
         return text != null && !text.isBlank() && !"null".equals(text)
             ? text
             : msg(locale, fallbackKey);
+    }
+
+    /**
+     * Temps restant avant la séance, pour le corps d'un rappel.
+     *
+     * <p>Aucun émetteur ne posait {@code timeUntil} : le corps traduit
+     * « Votre session commence dans {0} » sortait donc amputé de son argument. La
+     * valeur est dérivée de {@code sessionAt}, la clé que le payload porte déjà.
+     *
+     * <p><b>Calculée à l'émission, et elle vieillit.</b> Le texte d'une push est
+     * figé dans la charge : aucun code client ne repassera le corriger, à la
+     * différence de la carte in-app qui recalcule son compte à rebours à chaque
+     * rendu. Une push restée deux heures dans le centre de notifications affiche
+     * donc une valeur périmée. C'est le point que nous avons soulevé en N3 et qui
+     * reste à trancher — une formulation absolue (« à 20:00 ») ne vieillirait pas.
+     *
+     * <p>{@code h} et {@code min} s'écrivent de la même façon dans les trois
+     * langues servies : la valeur reste hors des fichiers de traduction tant que
+     * c'est vrai.
+     */
+    private static String timeUntil(Map<String, Object> payload) {
+        Object explicit = payload.get("timeUntil");
+        if (explicit != null) {
+            return String.valueOf(explicit);
+        }
+        if (!(payload.get("sessionAt") instanceof String text)) {
+            return "";
+        }
+        try {
+            Duration left = Duration.between(Instant.now(), Instant.parse(text));
+            if (left.isNegative()) {
+                return "";
+            }
+            long minutes = left.toMinutes();
+            return minutes >= 60 ? (minutes / 60) + " h" : minutes + " min";
+        } catch (DateTimeParseException e) {
+            return "";
+        }
     }
 
     /** Argument de MessageFormat : jamais nul, pour ne pas imprimer « null ». */
