@@ -187,6 +187,48 @@ class ChatServiceTest {
             .endsWith("…");
     }
 
+    @Test
+    void sendMessage_apercu_doitCouperSurUneFrontiereDeMot() {
+        // Couper au caractère près donne « … devant le cou… », qu'un lecteur
+        // pressé lit comme un mot entier. La coupe recule jusqu'au dernier espace.
+        UUID senderId = UUID.randomUUID();
+        UUID recipientId = UUID.randomUUID();
+        Conversation conv = buildConversationWithMember(senderId);
+
+        String longContent = "On se retrouve devant le court numéro trois vers dix-huit heures "
+            + "trente, juste après le cours de yoga du soir qui finit un peu avant.";
+        stubSend(senderId, recipientId, conv, longContent);
+
+        chatService.sendMessage(senderId, new SendMessageRequest(conv.getId(), longContent));
+
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(eventPublisher).publishEvent(captor.capture());
+        String preview = ((MessageSentEvent) captor.getValue()).preview();
+
+        assertThat(preview).endsWith("…");
+        // Jamais plus long que la fenêtre : c'est ce qui protège la charge APNs.
+        assertThat(preview.length()).isLessThanOrEqualTo(121);
+        // Et le dernier mot conservé est entier — pas de moitié de mot suivie
+        // d'une ellipse.
+        String withoutEllipsis = preview.substring(0, preview.length() - 1);
+        assertThat(longContent).startsWith(withoutEllipsis);
+        assertThat(longContent.charAt(withoutEllipsis.length())).isEqualTo(' ');
+    }
+
+    private void stubSend(UUID senderId, UUID recipientId, Conversation conv, String content) {
+        when(conversationRepository.findByIdAndMemberId(any(), eq(senderId)))
+            .thenReturn(Optional.of(conv));
+        when(sanitizer.sanitize(content)).thenReturn(content);
+
+        User sender = new User();
+        sender.setId(senderId);
+        sender.setDisplayName("Alice");
+        when(userRepository.findById(senderId)).thenReturn(Optional.of(sender));
+        when(messageRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(conversationMemberRepository.findUserIdsByConversationId(any()))
+            .thenReturn(List.of(senderId, recipientId));
+    }
+
     private Conversation buildConversationWithMember(UUID userId) {
         Conversation conv = new Conversation();
         conv.setId(UUID.randomUUID());
