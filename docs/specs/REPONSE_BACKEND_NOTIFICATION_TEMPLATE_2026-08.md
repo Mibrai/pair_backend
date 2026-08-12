@@ -474,20 +474,24 @@ Suite complète avant et après, sur la même machine :
 | | Tests | Échecs | Erreurs |
 |---|---|---|---|
 | Avant (`master`) | 319 | 7 | 2 |
-| Après | 333 | 7 | 2 |
+| Après | 348 | 7 | 2 |
 
-**+14 tests, et exactement les mêmes six classes rouges qu'avant** —
+**+29 tests, et exactement les mêmes six classes rouges qu'avant** —
 `SecurityInjectionIntegrationTest`, `WebSocketChatIntegrationTest`,
 `ChatFlowIntegrationTest`, `AuthServiceTest`, `BusinessErrorCodeIntegrationTest`,
 `MapActivitiesIntegrationTest`. Elles échouaient déjà avant ce lot, pour des
 causes qui lui sont étrangères (inscriptions en 409, un timeout WebSocket, un
 stub Mockito inutile). Aucune régression.
 
-Les 14 tests ajoutés couvrent : les six clés de N1, le repli `organizerName`, un
+Les 29 tests ajoutés couvrent : les six clés de N1, le repli `organizerName`, un
 créneau sans `endsAt`, un programme sans auteur chargé, **les quatre cas de
 visibilité de l'adresse** (public / privé partagé / privé non partagé / en
-ligne), la coupe sur frontière de mot, l'ordre de sacrifice de la charge, et la
-présence — comme l'absence — des deux clés APNs.
+ligne), la coupe sur frontière de mot, l'ordre de sacrifice de la charge, la
+présence — comme l'absence — des deux clés APNs, les clés renommées du message et
+le fait que les anciennes ne sortent plus, et pour N6 : l'audience du rappel, le
+marquage, un destinataire supprimé, plus **le balayage exécuté contre une vraie
+base** (créneau annulé écarté, créneau déplacé redevenu éligible, séance
+commencée ignorée).
 
 ---
 
