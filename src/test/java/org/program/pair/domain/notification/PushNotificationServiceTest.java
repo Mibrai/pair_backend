@@ -22,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -109,6 +110,37 @@ class PushNotificationServiceTest {
 
         // fr et legacy partagent le groupe français, de a le sien : deux envois.
         verify(firebaseMessaging, times(2)).sendEachForMulticast(any(MulticastMessage.class));
+    }
+
+    @Test
+    void badgeSilencieux_doitPartirEnUnSeulEnvoi_quelleQueSoitLaLangue() throws FirebaseMessagingException {
+        // Un push silencieux ne porte aucun texte : il n'y a donc pas de langue à
+        // départager, et grouper par locale n'aurait aucun sens. Un seul envoi,
+        // même pour des appareils en trois langues.
+        PushNotificationService service = service();
+        UUID userId = UUID.randomUUID();
+
+        when(deviceTokenRepository.findTokensByUserId(userId))
+            .thenReturn(List.of("token-fr", "token-de", "token-en"));
+        when(firebaseMessaging.sendEachForMulticast(any(MulticastMessage.class)))
+            .thenReturn(batchResponse);
+        when(batchResponse.getResponses()).thenReturn(List.of());
+
+        service.sendBadgeUpdate(userId, 0);
+
+        verify(firebaseMessaging, times(1)).sendEachForMulticast(any(MulticastMessage.class));
+    }
+
+    @Test
+    void badgeSilencieux_sansAucunAppareil_neDoitRienEnvoyer() {
+        PushNotificationService service = service();
+        UUID userId = UUID.randomUUID();
+
+        when(deviceTokenRepository.findTokensByUserId(userId)).thenReturn(List.of());
+
+        service.sendBadgeUpdate(userId, 3);
+
+        verifyNoInteractions(firebaseMessaging);
     }
 
     private static DeviceToken device(String token, String locale) {
