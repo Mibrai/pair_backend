@@ -2,6 +2,7 @@ package org.program.pair;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
+import org.program.pair.shared.security.RateLimiter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
@@ -51,6 +52,18 @@ public abstract class AbstractIntegrationTest {
     // @SpringBootTest(webEnvironment = RANDOM_PORT) : on le construit nous-mêmes.
     protected WebTestClient webTestClient;
     @Autowired protected ObjectMapper objectMapper;
+    @Autowired private RateLimiter rateLimiter;
+
+    /**
+     * Le limiteur est un singleton du contexte, et ses compteurs d'inscription
+     * ne se vident jamais : sans cette remise à zéro, une classe de test n'a
+     * droit qu'à cinq inscriptions au total, et ce sont les méthodes tirées en
+     * dernier par JUnit qui reçoivent les 429 (voir {@link RateLimiter#reset()}).
+     */
+    @BeforeEach
+    void resetRateLimiter() {
+        rateLimiter.reset();
+    }
 
     @BeforeEach
     void initWebTestClient() {
