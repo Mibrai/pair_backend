@@ -200,9 +200,31 @@ public class MapService {
         };
     }
 
-    // Random blur within a circle of radius blur_radius_m
-    // Simplified geodesic displacement formula
-    private double[] applyBlur(double lat, double lng, int radiusMeters) {
+    /** Pas de la quatrième décimale, sur laquelle les positions sont arrondies (~11 m). */
+    private static final double COORDINATE_GRID = 0.0001;
+
+    /**
+     * Déplacement aléatoire dans un disque de rayon {@code blur_radius_m},
+     * <b>qui ne retombe jamais sur la position exacte</b>.
+     *
+     * <p>Cette dernière garantie manquait, et elle n'est pas cosmétique : le
+     * tirage étant continu puis arrondi à la quatrième décimale, la position
+     * affichée valait la position réelle environ <b>6 % du temps</b> pour un
+     * rayon de 500 m. Une position exacte rendue une fois sur seize n'est pas
+     * un flou — et c'est la promesse que le produit fait à l'utilisateur qui
+     * règle son rayon.
+     *
+     * <p>C'était aussi ce qui rendait
+     * {@code MapVisibilityIntegrationTest.positionAffichee_doitEtreFlouttee_pasExacte}
+     * intermittent : le test disait vrai, l'implémentation ne tenait pas ce
+     * qu'il vérifiait.
+     *
+     * <p>Quand l'arrondi ramène sur la position d'origine, le point est poussé
+     * d'un pas de grille (~11 m) <b>dans le sens du tirage</b> — jamais vers la
+     * position réelle. Le point peut alors dépasser le rayon demandé de ce pas,
+     * ce qui est sans conséquence : s'éloigner ne dévoile rien.
+     */
+    double[] applyBlur(double lat, double lng, int radiusMeters) {
         double radiusDeg = radiusMeters / 111320.0;
         double angle = random.nextDouble() * 2 * Math.PI;
         double distance = random.nextDouble() * radiusDeg;
@@ -210,9 +232,31 @@ public class MapService {
         double blurredLng = lng + distance * Math.sin(angle)
             / Math.cos(Math.toRadians(lat));
         return new double[]{
-            Math.round(blurredLat * 10000.0) / 10000.0,
-            Math.round(blurredLng * 10000.0) / 10000.0
+            displacedFrom(lat, blurredLat),
+            displacedFrom(lng, blurredLng)
         };
+    }
+
+    /**
+     * Arrondi à la quatrième décimale, en garantissant de ne pas rendre la
+     * coordonnée d'origine.
+     *
+     * <p>Le cas ne peut se produire que si l'origine est elle-même sur la
+     * grille : une coordonnée plus précise ne peut pas être égale à un arrondi.
+     * La poussée est donc rare, et n'intervient jamais quand elle serait
+     * inutile.
+     */
+    private static double displacedFrom(double original, double blurred) {
+        double rounded = round4(blurred);
+        if (rounded != original) {
+            return rounded;
+        }
+        double away = blurred >= original ? COORDINATE_GRID : -COORDINATE_GRID;
+        return round4(rounded + away);
+    }
+
+    private static double round4(double value) {
+        return Math.round(value * 10000.0) / 10000.0;
     }
 
     public List<MapUserDto> getUsersInBounds(MapBoundsRequest request, UUID requesterId) {
