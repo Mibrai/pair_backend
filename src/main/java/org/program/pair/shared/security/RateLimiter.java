@@ -44,6 +44,31 @@ public class RateLimiter {
         }
     }
 
+    /**
+     * Remet tous les compteurs à zéro.
+     *
+     * <p>Réservé aux tests. Les compteurs d'inscription n'ont pas de fenêtre
+     * glissante : ils s'accumulent pour la durée de vie du composant. Or ce
+     * composant est un singleton du contexte Spring, partagé par toutes les
+     * méthodes d'une classe de test d'intégration — la sixième inscription de la
+     * classe échoue donc en 429, quelle que soit la méthode qui la demande.
+     *
+     * <p>Cela rendait les tests intermittents pour une raison sans rapport avec
+     * ce qu'ils vérifient : {@code MapVisibilityIntegrationTest} inscrit huit
+     * utilisateurs, et c'est l'ordre d'exécution de JUnit — arbitraire, mais
+     * stable pour un classpath donné — qui décidait lesquels de ses tests
+     * tombaient dans les trois inscriptions refusées.
+     *
+     * <p>{@code AbstractIntegrationTest} appelle donc cette méthode avant chaque
+     * test : chaque méthode part du même budget, et l'ordre n'influe plus.
+     */
+    public void reset() {
+        loginAttempts.clear();
+        lockouts.clear();
+        registerAttempts.clear();
+        passwordResetAttempts.clear();
+    }
+
     private boolean isLockedOut(String ip, Map<String, Instant> lockoutMap) {
         Instant lockUntil = lockoutMap.get(ip);
         if (lockUntil == null) return false;

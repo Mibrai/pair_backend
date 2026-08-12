@@ -14,22 +14,24 @@ FROM eclipse-temurin:21-jre-jammy
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
 
-# Stockage des médias — chemin ABSOLU, hors de /app, et destiné à recevoir un
-# volume persistant.
+# Stockage des médias — chemin ABSOLU, aligné sur le point de montage du volume
+# Railway, qui est /app/uploads.
 #
-# Le défaut de application.properties est "uploads", un chemin relatif : dans un
-# conteneur il se résout en /app/uploads, c'est-à-dire dans la couche d'écriture
-# éphémère. Les téléversements réussissent, la base garde l'URL, et le redeploy
-# suivant efface les octets — c'est l'incident du 2026-08-11, où plus aucun média
-# n'était lisible en production.
+# Le chemin est écrit en toutes lettres alors que le défaut relatif de
+# application.properties ("uploads", résolu depuis WORKDIR) désignerait le même
+# répertoire. C'est délibéré : un chemin relatif dépend du répertoire de travail,
+# donc du jour où quelqu'un changera le WORKDIR ou lancera le jar autrement, et
+# il rendrait la coïncidence avec le point de montage invisible. Écrit ici, le
+# lien entre les deux est vérifiable.
 #
-# Ce mkdir ne rend rien persistant à lui seul : il garantit seulement que le
-# chemin existe. La persistance vient du volume monté sur /data côté Railway
-# (Service > Settings > Volumes, mount path = /data). Sans ce volume, la ligne
-# d'avertissement au démarrage — "Storage contains no persistence marker" — se
-# répétera à chaque redeploy.
-ENV STORAGE_PATH=/data/uploads
-RUN mkdir -p /data/uploads
+# Ce mkdir ne rend rien persistant à lui seul : le volume monté par Railway
+# recouvre ce répertoire au démarrage. Il garantit seulement que le chemin existe
+# si le volume venait à manquer. La ligne "Storage contains no persistence
+# marker" au démarrage, répétée à chaque redeploy, signalerait précisément ce
+# cas — c'est-à-dire l'incident du 2026-08-11, où plus aucun média n'était
+# lisible en production.
+ENV STORAGE_PATH=/app/uploads
+RUN mkdir -p /app/uploads
 
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
