@@ -42,4 +42,23 @@ public final class SlotAddressVisibility {
 
         return new Resolved(slot.getLocation().getY(), slot.getLocation().getX(), slot.getAddressPublic());
     }
+
+    /**
+     * Adresse diffusable <b>sans connaître le demandeur</b> : {@code null} dès
+     * qu'il faut savoir qui regarde pour trancher.
+     *
+     * <p>Écrite pour le payload des notifications. Une notification est composée
+     * une fois puis envoyée à N destinataires — {@code SLOT_CANCELLED} en prévient
+     * tous les inscrits d'un seul payload — et son texte s'affiche sur un écran
+     * verrouillé. Il n'y a donc ni demandeur unique à qui appliquer
+     * {@link #resolve}, ni écran de garde derrière lequel se rattraper.
+     *
+     * <p>C'est {@link #resolve} amputé de sa seule branche qui dépend de
+     * l'appelant (la participation {@code CONFIRMED}) : ce que cette méthode
+     * renvoie, {@code resolve} le renverrait pour n'importe qui. Elle ne peut donc
+     * pas élargir ce qui est déjà visible, seulement le restreindre.
+     */
+    public static String broadcastableAddress(Schedule slot) {
+        return resolve(slot, null, null).displayAddress();
+    }
 }

@@ -5,6 +5,8 @@ import org.program.pair.domain.activity.Category;
 import org.program.pair.domain.activity.UserActivity;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.Schedule;
+import org.program.pair.domain.program.SlotAddressVisibility;
+import org.program.pair.domain.user.User;
 
 import java.time.Instant;
 import java.util.Collections;
@@ -67,8 +69,14 @@ public final class NotificationPayload {
         NotificationPayload payload = new NotificationPayload()
             .with("scheduleId", slot.getId())
             .with("placeName", slot.getPlaceName())
+            // Jamais slot.getAddressPublic() en direct : la colonne porte
+            // l'adresse, pas le droit de la montrer. Voir SlotAddressVisibility.
+            .with("addressPublic", SlotAddressVisibility.broadcastableAddress(slot))
             .with("sessionAt", slot.getStartsAt())
-            .with("startsAt", slot.getStartsAt());
+            .with("startsAt", slot.getStartsAt())
+            // Facultative en base : un créneau sans fin déclarée n'expose pas de
+            // plage, et le client affiche l'heure de début seule.
+            .with("endsAt", slot.getEndsAt());
 
         return program == null ? payload : payload.merge(ofProgram(program));
     }
@@ -80,7 +88,26 @@ public final class NotificationPayload {
             .with("programTitle", program.getTitle());
 
         UserActivity userActivity = program.getUserActivity();
-        return userActivity == null ? payload : payload.merge(ofUserActivity(userActivity));
+        if (userActivity == null) {
+            return payload;
+        }
+        payload.merge(ofUserActivity(userActivity));
+
+        // Même repli qu'à l'affichage d'un programme (ProgramService.toDto) et
+        // que sur la carte (MapService) : le programme peut nommer son
+        // organisateur, sinon c'est l'auteur de l'activité. Trois surfaces qui
+        // divergeraient sur le nom afficheraient trois auteurs pour une séance.
+        User author = userActivity.getUser();
+        if (author != null) {
+            payload.with("authorId", author.getId())
+                .with("authorName", program.getOrganizerName() != null
+                    ? program.getOrganizerName()
+                    : author.getDisplayName())
+                .with("authorAvatarUrl", program.getOrganizerAvatarUrl() != null
+                    ? program.getOrganizerAvatarUrl()
+                    : author.getAvatarUrl());
+        }
+        return payload;
     }
 
     /** Contexte d'une activité déclarée par un utilisateur. */
@@ -98,7 +125,11 @@ public final class NotificationPayload {
         Category category = activity.getCategory();
         if (category != null) {
             payload.with("categoryId", category.getId())
-                .with("categoryColorRamp", category.getColorRamp());
+                .with("categoryColorRamp", category.getColorRamp())
+                // Nom d'icône, pas une image : le client le résout dans son
+                // propre jeu, comme il résout déjà categoryColorRamp dans sa
+                // palette. Même raison — la ressource appartient au client.
+                .with("categoryIcon", category.getIcon());
         }
         return payload;
     }

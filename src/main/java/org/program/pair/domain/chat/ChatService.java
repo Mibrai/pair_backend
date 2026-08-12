@@ -124,11 +124,23 @@ public class ChatService {
      * Aperçu affiché sur l'écran verrouillé. Tronqué : {@code content} monte à
      * 4000 caractères, une notification n'en montre qu'une poignée, et la charge
      * push est plafonnée à 4 Ko par APNs.
+     *
+     * <p>La coupe tombe sur une <b>frontière de mot</b> quand il y en a une dans
+     * la fenêtre : couper au caractère près donne « … devant le cou… », qu'un
+     * lecteur pressé lit comme un mot entier. Un texte de plus de 120 caractères
+     * sans le moindre espace — une URL, un collage — n'en a pas : il est alors
+     * coupé net, la seule règle qui tienne étant de ne pas dépasser.
      */
     private static String preview(String content) {
-        return content.length() <= PREVIEW_MAX_LENGTH
-            ? content
-            : content.substring(0, PREVIEW_MAX_LENGTH) + "…";
+        if (content.length() <= PREVIEW_MAX_LENGTH) {
+            return content;
+        }
+        String window = content.substring(0, PREVIEW_MAX_LENGTH);
+        int lastSpace = window.lastIndexOf(' ');
+        String cut = lastSpace > 0 ? window.substring(0, lastSpace) : window;
+        // stripTrailing : la ponctuation reste, mais « bonjour , » ne doit pas
+        // devenir « bonjour  … ».
+        return cut.stripTrailing() + "…";
     }
 
     @Transactional(readOnly = true)

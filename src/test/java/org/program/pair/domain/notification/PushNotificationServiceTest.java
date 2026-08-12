@@ -1,5 +1,6 @@
 package org.program.pair.domain.notification;
 
+import com.google.firebase.messaging.Aps;
 import com.google.firebase.messaging.BatchResponse;
 import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.messaging.FirebaseMessagingException;
@@ -13,7 +14,9 @@ import org.program.pair.repository.DeviceTokenRepository;
 import org.program.pair.shared.i18n.Messages;
 import org.springframework.context.support.ReloadableResourceBundleMessageSource;
 
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -141,6 +144,105 @@ class PushNotificationServiceTest {
         service.sendBadgeUpdate(userId, 3);
 
         verifyNoInteractions(firebaseMessaging);
+    }
+
+    // ─── N5 — les deux clés que réclame l'extension iOS ───────────────────────
+
+    @Test
+    void pushVisible_doitPorterMutableContentEtCategory() throws Exception {
+        // Sans ces deux clés, l'extension Notification Content ne se déclenche
+        // pas : elle serait du code mort le jour de sa livraison. Elles sont
+        // inertes tant qu'elle n'existe pas, d'où leur pose anticipée.
+        Map<String, Object> fields = apsFields(PushNotificationService.visibleAps(3));
+
+        assertThat(fields).containsEntry("category", "MEETDO_TEMPLATE");
+        assertThat(fields.get("mutable-content")).isIn(1, 1L, true);
+        assertThat(fields).containsEntry("badge", 3);
+    }
+
+    @Test
+    void pushSilencieuse_neDoitPorterNiMutableContentNiCategory() throws Exception {
+        // Une push de fond n'a pas d'alert : réveiller l'extension pour enrichir
+        // ce qui ne s'affiche pas n'a pas de sens.
+        Map<String, Object> fields = apsFields(PushNotificationService.silentAps(0));
+
+        assertThat(fields).doesNotContainKeys("mutable-content", "category");
+        assertThat(fields).containsEntry("content-available", 1);
+    }
+
+    /**
+     * {@code Aps.getFields()} n'est pas public : le SDK Firebase le réserve à sa
+     * propre sérialisation. C'est pourtant la seule lecture fidèle de ce qui
+     * partira réellement — réassembler la charge à la main dans le test ne
+     * testerait que le test.
+     */
+    private static Map<String, Object> apsFields(Aps aps) throws Exception {
+        Method getFields = Aps.class.getDeclaredMethod("getFields");
+        getFields.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Object> fields = (Map<String, Object>) getFields.invoke(aps);
+        return fields;
+    }
+
+    // ─── N4 — la charge de données ne doit pas faire rejeter l'envoi ──────────
+
+    @Test
+    void chargeSousLeBudget_doitPasserIntacte() {
+        Map<String, Object> payload = Map.of(
+            "programTitle", "Longueurs du soir",
+            "activityName", "Natation",
+            "addressPublic", "Piscine du Rhône, Lyon",
+            "authorAvatarUrl", "https://cdn/avatars/2a19.jpg");
+
+        Map<String, String> data = PushNotificationService.dataPayload(payload, "Titre", "Corps");
+
+        assertThat(data).containsOnlyKeys(
+            "programTitle", "activityName", "addressPublic", "authorAvatarUrl");
+    }
+
+    @Test
+    void chargeTropGrosse_doitSacrifierLeDecoratif_etGarderLIdentiteDeLaSeance() {
+        // APNs rejette au-delà de 4 Ko — l'utilisateur ne reçoit alors rien, et
+        // rien ne le signale. Mieux vaut une carte sans avatar qu'aucune carte.
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("programTitle", "Longueurs du soir · niveau confirmé");
+        payload.put("activityName", "Natation");
+        payload.put("scheduleId", UUID.randomUUID().toString());
+        payload.put("authorAvatarUrl", "https://cdn/avatars/" + "x".repeat(1_500) + ".jpg");
+        payload.put("addressPublic", "y".repeat(1_500));
+
+        Map<String, String> data = PushNotificationService.dataPayload(payload, "Titre", "Corps");
+
+        // Ce qui identifie la séance survit — programTitle est le seuil en
+        // dessous duquel le client n'affiche plus rien du tout.
+        assertThat(data).containsKeys("programTitle", "activityName", "scheduleId");
+        assertThat(data).doesNotContainKey("authorAvatarUrl");
+        assertThat(serializedSize(data)).isLessThanOrEqualTo(
+            PushNotificationService.DATA_PAYLOAD_BUDGET_BYTES);
+    }
+
+    @Test
+    void ordreDeSacrifice_doitCommencerParLAvatar() {
+        // L'avatar a le repli le moins coûteux côté client (initiales sur
+        // pastille) ; l'adresse, elle, fait disparaître une ligne entière.
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("programTitle", "Longueurs du soir");
+        // Assez gros à lui seul pour faire déborder le budget, et assez pour que
+        // son retrait suffise : l'adresse doit alors survivre.
+        payload.put("authorAvatarUrl", "https://cdn/avatars/" + "x".repeat(3_500) + ".jpg");
+        payload.put("addressPublic", "Piscine du Rhône, 8 quai Claude Bernard, Lyon");
+
+        Map<String, String> data = PushNotificationService.dataPayload(payload, "Titre", "Corps");
+
+        assertThat(data).doesNotContainKey("authorAvatarUrl");
+        assertThat(data).containsKey("addressPublic");
+    }
+
+    private static int serializedSize(Map<String, String> data) {
+        return data.entrySet().stream()
+            .mapToInt(e -> e.getKey().getBytes(StandardCharsets.UTF_8).length
+                + e.getValue().getBytes(StandardCharsets.UTF_8).length)
+            .sum();
     }
 
     private static DeviceToken device(String token, String locale) {
