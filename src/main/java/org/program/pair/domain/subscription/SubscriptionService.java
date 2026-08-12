@@ -163,10 +163,11 @@ public class SubscriptionService {
         UserActivity userActivity = program.getUserActivity();
         UUID authorId = userActivity.getUser().getId();
 
-        Map<String, Object> authorPayload = NotificationPayload.ofProgram(program)
-            .with("authorId", authorId)
-            .with("authorName", userActivity.getUser().getDisplayName())
-            .build();
+        // authorId/authorName/authorAvatarUrl viennent d'ofProgram, qui applique
+        // le repli organizerName → displayName. Les reposer ici écraserait ce
+        // repli et ferait diverger le nom de l'auteur d'avec celui de la fiche
+        // du programme.
+        Map<String, Object> authorPayload = NotificationPayload.ofProgram(program).build();
         subscriptionRepository.findByTargetAuthorId(authorId).forEach(sub ->
             notificationService.notify(sub.getSubscriber().getId(),
                 NotificationType.AUTHOR_NEW_PROGRAM, authorPayload));

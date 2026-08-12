@@ -8,6 +8,7 @@ import org.program.pair.shared.i18n.Messages;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -36,6 +37,32 @@ import java.util.stream.Collectors;
 @ConditionalOnProperty(name = "firebase.enabled", havingValue = "true")
 @Slf4j
 public class PushNotificationService implements PushNotificationServiceInterface {
+
+    /**
+     * Catégorie APNs que l'extension Notification Content d'iOS déclare gérer.
+     * Contractuelle avec le client : la changer ici sans la changer là-bas rend
+     * l'extension muette.
+     */
+    static final String APNS_TEMPLATE_CATEGORY = "MEETDO_TEMPLATE";
+
+    /**
+     * Budget de la charge de données, en octets. Sous les 4 Ko d'APNs : le reste
+     * couvre l'enveloppe FCM, le bloc {@code aps} et les en-têtes, qu'on ne
+     * mesure pas ici. Une marge large coûte une clé décorative ; une marge trop
+     * juste coûte la notification entière.
+     */
+    static final int DATA_PAYLOAD_BUDGET_BYTES = 3_000;
+
+    /**
+     * Ordre de sacrifice quand la charge déborde — du plus décoratif au moins.
+     * {@code programTitle} n'y est pas et ne doit pas y entrer : c'est le seuil
+     * en dessous duquel le client n'affiche plus de carte du tout.
+     */
+    static final List<String> EVICTABLE_KEYS = List.of(
+        "authorAvatarUrl",   // repli client : initiales sur pastille
+        "addressPublic",     // repli client : la ligne d'adresse disparaît
+        "welcomeNote",
+        "placeName");
 
     private final FirebaseMessaging firebaseMessaging;
     private final DeviceTokenRepository deviceTokenRepository;
@@ -100,20 +127,13 @@ public class PushNotificationService implements PushNotificationServiceInterface
                 .setTitle(title)
                 .setBody(body)
                 .build())
-            .putAllData(payload.entrySet().stream()
-                .collect(Collectors.toMap(
-                    Map.Entry::getKey,
-                    e -> String.valueOf(e.getValue())
-                )))
+            .putAllData(dataPayload(payload, title, body))
             // Le badge porte le total réel du destinataire — notifications ET
             // messages non lus, ce qui part compris. Application fermée, aucun
             // code client ne s'exécute pour aller le chercher, et un champ absent
             // n'est pas neutre : iOS conserve alors la valeur précédente.
             .setApnsConfig(ApnsConfig.builder()
-                .setAps(Aps.builder()
-                    .setBadge(badge)
-                    .setSound("default")
-                    .build())
+                .setAps(visibleAps(badge))
                 .build())
             .setAndroidConfig(AndroidConfig.builder()
                 .setPriority(AndroidConfig.Priority.HIGH)
@@ -143,6 +163,12 @@ public class PushNotificationService implements PushNotificationServiceInterface
      * <p>Côté Android, la charge est une charge de données pure — {@code badge}
      * y voyage comme donnée, à l'application de la poser. {@code notification_count}
      * n'existe que sur une notification affichée, ce que précisément on ne veut pas.
+     *
+     * <p><b>Ni {@code mutable-content} ni {@code category} ici</b>, contrairement
+     * à {@link #sendToTokens}. Les deux réveillent l'extension Notification
+     * Content d'iOS pour qu'elle enrichisse un {@code alert} — or il n'y en a pas :
+     * l'extension serait invoquée pour décorer une notification qui ne s'affiche
+     * pas. Ces deux clés appartiennent aux pushes visibles, et à elles seules.
      */
     @Override
     public void sendBadgeUpdate(UUID userId, long badgeCount) {
@@ -161,10 +187,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
             .setApnsConfig(ApnsConfig.builder()
                 .putHeader("apns-push-type", "background")
                 .putHeader("apns-priority", "5")
-                .setAps(Aps.builder()
-                    .setContentAvailable(true)
-                    .setBadge(badge)
-                    .build())
+                .setAps(silentAps(badge))
                 .build())
             .setAndroidConfig(AndroidConfig.builder()
                 .setPriority(AndroidConfig.Priority.NORMAL)
@@ -172,6 +195,87 @@ public class PushNotificationService implements PushNotificationServiceInterface
             .build();
 
         dispatch(userId, tokens, message);
+    }
+
+    /**
+     * Bloc {@code aps} d'une push <b>visible</b>.
+     *
+     * <p>{@code mutable-content} et {@code category} sont les deux clés sans
+     * lesquelles l'extension Notification Content d'iOS ne se déclenche pas. Elles
+     * sont posées avant que l'extension existe, et sont inertes d'ici là : l'ordre
+     * inverse ferait d'elle du code mort le jour de sa livraison.
+     */
+    static Aps visibleAps(int badge) {
+        return Aps.builder()
+            .setBadge(badge)
+            .setSound("default")
+            .setMutableContent(true)
+            .setCategory(APNS_TEMPLATE_CATEGORY)
+            .build();
+    }
+
+    /**
+     * Charge de données de la push, bornée pour ne pas faire rejeter l'envoi.
+     *
+     * <p>APNs plafonne la charge entière à 4 Ko et <b>rejette</b> ce qui dépasse :
+     * l'utilisateur ne reçoit alors rien, et rien ne le signale. Tronquer l'aperçu
+     * d'un message ne suffit pas à s'en prémunir — le payload métier voyage ici en
+     * entier, et il porte désormais une adresse (300 caractères en base) et une
+     * URL d'avatar. Le risque s'est déplacé du message vers son contexte.
+     *
+     * <p>Ce qui saute, saute dans l'ordre de {@link #EVICTABLE_KEYS} : le plus
+     * décoratif d'abord, et jamais de quoi identifier la séance. Le client a un
+     * repli documenté pour chacune de ces clés ; il n'en a aucun pour une
+     * notification qui n'arrive pas.
+     */
+    static Map<String, String> dataPayload(Map<String, Object> payload, String title, String body) {
+        Map<String, String> data = new LinkedHashMap<>();
+        payload.forEach((key, value) -> data.put(key, String.valueOf(value)));
+
+        // Le texte affiché voyage aussi dans la charge et compte dans le plafond.
+        int overhead = utf8Length(title) + utf8Length(body);
+
+        for (String key : EVICTABLE_KEYS) {
+            if (overhead + serializedSize(data) <= DATA_PAYLOAD_BUDGET_BYTES) {
+                break;
+            }
+            if (data.remove(key) != null) {
+                log.warn("Push payload over budget: dropped '{}' to fit the APNs 4 KB limit", key);
+            }
+        }
+
+        // Plus rien à sacrifier : on envoie quand même. Une push rejetée par APNs
+        // et une push amputée de son identité se valent côté utilisateur, mais la
+        // seconde laisse une trace exploitable.
+        if (overhead + serializedSize(data) > DATA_PAYLOAD_BUDGET_BYTES) {
+            log.error("Push payload still over budget after eviction ({} bytes) — APNs may reject it",
+                overhead + serializedSize(data));
+        }
+        return data;
+    }
+
+    /** Taille approchée de la charge : clés et valeurs, en octets UTF-8. */
+    private static int serializedSize(Map<String, String> data) {
+        return data.entrySet().stream()
+            .mapToInt(e -> utf8Length(e.getKey()) + utf8Length(e.getValue()))
+            .sum();
+    }
+
+    private static int utf8Length(String value) {
+        return value == null ? 0 : value.getBytes(StandardCharsets.UTF_8).length;
+    }
+
+    /**
+     * Bloc {@code aps} d'une push <b>silencieuse</b> : ni {@code mutable-content}
+     * ni {@code category}, à la différence de {@link #visibleAps}. Les deux
+     * réveillent l'extension d'iOS pour qu'elle enrichisse un {@code alert} — or
+     * il n'y en a pas ici, et il ne doit pas y en avoir.
+     */
+    static Aps silentAps(int badge) {
+        return Aps.builder()
+            .setContentAvailable(true)
+            .setBadge(badge)
+            .build();
     }
 
     private void dispatch(UUID userId, List<String> tokens, MulticastMessage message) {
