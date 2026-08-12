@@ -146,6 +146,35 @@ class PushNotificationServiceTest {
         verifyNoInteractions(firebaseMessaging);
     }
 
+    // ─── N2 (option A) — le texte d'un message lit les clés du template ───────
+
+    @Test
+    void messagePousse_doitLireMessageAuthorNameEtMessageBody() {
+        // Renommées depuis senderName/messagePreview pour suivre le template du
+        // client. Si buildTitle/buildBody étaient restés sur les anciens noms, le
+        // renommage aurait produit une bannière « Nouveau message de  » et un
+        // corps de repli — sans qu'aucune erreur ne soit levée.
+        PushNotificationService service = service();
+        Map<String, Object> payload = Map.of(
+            "messageAuthorName", "Sophie Martin",
+            "messageBody", "On se retrouve devant le court 3 ?");
+
+        assertThat(service.buildTitle(LocaleConfig.FRENCH, NotificationType.NEW_MESSAGE, payload))
+            .contains("Sophie Martin");
+        // Le corps est une donnée brute : affiché tel quel, quelle que soit la langue.
+        assertThat(service.buildBody(LocaleConfig.GERMAN, NotificationType.NEW_MESSAGE, payload))
+            .isEqualTo("On se retrouve devant le court 3 ?");
+    }
+
+    @Test
+    void messageSansCorps_doitRetomberSurLeRepliTraduit() {
+        PushNotificationService service = service();
+
+        assertThat(service.buildBody(LocaleConfig.GERMAN, NotificationType.NEW_MESSAGE, Map.of()))
+            .isNotBlank()
+            .isNotEqualTo("null");
+    }
+
     // ─── N5 — les deux clés que réclame l'extension iOS ───────────────────────
 
     @Test

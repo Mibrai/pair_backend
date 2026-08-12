@@ -1,8 +1,9 @@
 # Réponse backend — template de notification (août 2026)
 
-> Réponse à `PROMPT_BACKEND_NOTIFICATION_TEMPLATE_2026-08.md`. **N1, N4 et N5
-> sont livrés** — voir « Ce qui est livré » en fin de document. N2 attend une
-> décision produit, N3 et N6 attendent d'être planifiés.
+> Réponse à `PROMPT_BACKEND_NOTIFICATION_TEMPLATE_2026-08.md`. **Cinq demandes
+> sur six sont livrées** — N1, N2 (option A), N4, N5 et N6. Voir « Ce qui est
+> livré » en fin de document. Seule **N3** reste à faire : elle demande de
+> séparer iOS d'Android dans l'envoi, et un arbitrage de votre côté.
 >
 > Le document ouvre sur une correction, parce qu'elle déplace le point de départ : la
 > notification que vous avez mesurée n'est jamais passée par le code qui produit
@@ -64,8 +65,8 @@ contexte de `NotificationPayload` : `ofSchedule` (l. 65), `ofProgram` (l. 77),
 | `categoryIcon` | ❌ absent (la donnée existe) | `Category.icon`, l. 27 |
 | `endsAt` | ❌ absent (la donnée existe) | `Schedule.endsAt`, l. 59 |
 | `addressPublic` | ❌ absent (la donnée existe) | `Schedule.addressPublic`, l. 48 |
-| `messageAuthorName` | ⚠️ servi sous le nom `senderName` | `ChatPushListener:45` |
-| `messageBody` | ⚠️ servi sous le nom `messagePreview` | `ChatPushListener:46` |
+| `messageAuthorName` | ✅ **servi** (renommé, N2 option A) | `ChatPushListener` |
+| `messageBody` | ✅ **servi** (renommé, N2 option A) | `ChatPushListener` |
 | `conversationId` | ⚠️ servi, push uniquement | `ChatPushListener:42` |
 | `fromUserId` / `fromUserName` | ❌ **n'existent pas** hors seed | — |
 
@@ -169,6 +170,18 @@ Trois issues, à trancher côté produit avant que nous écrivions quoi que ce s
 Notre recommandation : **A maintenant, B si la carte « message » in-app devient
 un objectif**. A débloque votre template sur les trois autres variantes sans rien
 attendre.
+
+> **Tranché : c'est A, et c'est livré.** Le payload d'un `NEW_MESSAGE` porte
+> désormais `messageAuthorName` et `messageBody`, aux noms de votre template.
+> Les anciens noms `senderName`/`messagePreview` ne sont **plus servis du tout** —
+> servir les deux ferait vivre deux contrats pour une même donnée. Le renommage
+> n'a pas eu besoin de repli : ce payload est construit et consommé dans le même
+> processus, aucune version n'en lit d'une autre.
+>
+> Ce qui reste vrai après A, et qu'il faut avoir en tête : **un `NEW_MESSAGE` ne
+> crée toujours aucune notification in-app**. Ces deux clés ne voyagent que dans
+> la charge push. Si votre liste in-app doit un jour afficher une carte
+> « message », c'est l'option B, et c'est un lot à part.
 
 **Sur le fond de votre argument, en revanche, nous sommes entièrement d'accord :**
 ne jamais joindre par nom d'affichage. C'est déjà la règle — aucun payload émis
@@ -321,12 +334,12 @@ Vous avez posé N1 comme bloquante et le reste en aval. L'audit redistribue :
 
 | | Votre priorité | État réel | Reste à faire |
 |---|---|---|---|
-| **N1** | bloquant | **à moitié servi**, `programTitle` compris | 6 clés, 6 lignes + le filtre d'adresse |
-| **N2** | accompagne N1 | **la jointure proposée n'existe pas** | décision produit A/B/C |
+| **N1** | bloquant | **à moitié servi**, `programTitle` compris | ✅ livré — 6 clés + le filtre d'adresse |
+| **N2** | accompagne N1 | **la jointure proposée n'existe pas** | ✅ livré en option A (renommage) |
 | **N3** | haute | titre/corps traduits en place | grouper par plateforme, réécrire les formules |
-| **N4** | haute | **déjà livré à 120 caractères** | frontière de mot + garde-fou de taille |
-| **N5** | basse | absent | 2 lignes |
-| **N6** | à vérifier | **rien n'existe** | un job — le vrai chantier de ce lot |
+| **N4** | haute | **déjà livré à 120 caractères** | ✅ livré — frontière de mot + garde-fou de taille |
+| **N5** | basse | absent | ✅ livré — 2 lignes |
+| **N6** | à vérifier | **rien n'existe** | ✅ livré — le job, le vrai chantier de ce lot |
 
 Deux inversions à retenir. **N1 n'est pas le blocage** : votre seuil
 `programTitle` est franchi depuis longtemps, et sur les types qui comptent
@@ -342,10 +355,16 @@ balayage, une idempotence et des tests. Le reste est du remplissage de payload.
 
 ## Ce dont nous avons besoin pour livrer
 
-1. **N2, la décision A / B / C.** C'est le seul point qui nous bloque. A ne coûte
-   rien et débloque trois variantes du template sur quatre.
+1. ~~**N2, la décision A / B / C.**~~ **Tranché : A, livré.** Reste à savoir si
+   la carte « message » doit un jour vivre dans la liste in-app — auquel cas
+   l'option B devient un lot à part.
 2. **N3, le rebours dans une push.** Relatif et vieillissant, ou absolu et
-   stable ? Nous partons sur relatif sauf avis contraire.
+   stable ? Nous sommes partis sur relatif, et **c'est déjà en production** : le
+   corps d'un `PROGRAM_REMINDER` calcule le temps restant depuis `sessionAt` à
+   l'émission (voir N6). Une push restée deux heures dans le centre affiche donc
+   une valeur périmée — exactement ce que votre point de contrat n°1 interdit
+   pour la carte in-app, et qu'une push ne peut pas éviter. Si cela ne vous va
+   pas, la bascule vers « à 20:00 » est d'une ligne.
 3. **Une confirmation sur l'adresse.** Une notification dont le créneau n'est pas
    diffusable arrive **sans** `addressPublic`, y compris pour un participant
    confirmé (voir la restriction en N1, point 3). Confirmez que votre repli « la
@@ -354,14 +373,13 @@ balayage, une idempotence et des tests. Le reste est du remplissage de payload.
    participants confirmés, c'est un lot à part : il faut composer un payload par
    destinataire.
 
-N1, N4 et N5 n'attendaient pas ces réponses : ils sont livrés. Voir ci-dessous.
+Tout le reste est livré. Voir ci-dessous.
 
 ---
 
 ## Ce qui est livré
 
-**N1, N4 et N5 sont dans le code.** N2 attend votre décision, N3 et N6 attendent
-d'être planifiés.
+**N1, N2 (option A), N4, N5 et N6 sont dans le code.** Seule N3 reste à faire.
 
 ### N1 — les six clés manquantes
 
@@ -399,6 +417,45 @@ puis `placeName`. **Chaque éviction laisse un `WARN` en log**, et un dépasseme
 résiduel un `ERROR` : c'était le point de votre demande, une notification qui
 disparaît sans trace. `programTitle` n'est pas évictable et ne doit pas le
 devenir — c'est votre seuil.
+
+### N2 — option A, le renommage
+
+`messageAuthorName` et `messageBody` remplacent `senderName` et
+`messagePreview`, aux noms de votre template. Les anciens ne sont plus servis :
+deux noms pour une même donnée, c'est deux contrats à tenir.
+
+Le renommage touche aussi le texte composé serveur — `buildTitle` et `buildBody`
+lisaient les anciens noms. Sans cela, une bannière serait partie en « Nouveau
+message de  », suivie du texte de repli, **sans qu'aucune erreur ne soit levée**.
+C'est le genre de renommage qui casse en silence ; deux tests le verrouillent
+désormais, là où ce chemin n'avait aucune couverture.
+
+Ce qui n'a **pas** changé, et qu'il faut avoir en tête : un `NEW_MESSAGE` ne crée
+toujours aucune notification in-app. Ces deux clés ne voyagent que dans la charge
+push.
+
+### N6 — le rappel T-2h
+
+Le job existe. Il balaie au lieu de planifier : le `WHERE` de
+`findDueForReminder` porte les trois propriétés, sans état planifié à maintenir.
+
+| Clause | Ce qu'elle garantit |
+|---|---|
+| `status IN ('OPEN','FULL')` | un créneau annulé sort du balayage — annulation sans annuler |
+| `startsAt > :now` | pas de salve rétroactive après un arrêt du service |
+| `reminderSentFor <> startsAt` | un créneau déplacé redevient éligible — replanification sans replanifier |
+
+D'où une colonne qui mémorise **pour quel `starts_at`** le rappel est parti, et
+non un booléen : aucun chemin de déplacement n'a à penser à la remettre à zéro.
+
+Vos trois questions : **tous les inscrits** (hôte, participations `CONFIRMED`,
+suiveurs du programme sur ce créneau) ; **oui** pour le déplacement et
+l'annulation ; **`scheduledAt` porte bien le début du créneau**, jamais l'heure
+d'envoi.
+
+**Cadence de cinq minutes.** Le rappel part peu après T-2h, jamais avant, avec un
+retard borné — votre seuil d'imminence est donc franchi du bon côté. Une cadence
+horaire aurait fait d'un « rappel deux heures avant » un rappel une heure avant.
 
 ### N5 — les deux clés APNs
 
