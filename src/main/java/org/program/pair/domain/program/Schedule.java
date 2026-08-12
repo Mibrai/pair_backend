@@ -83,6 +83,17 @@ public class Schedule {
     @Column(name = "welcome_note", length = 300)
     private String welcomeNote;
 
+    /**
+     * {@code startsAt} pour lequel le rappel T-2h a été émis — pas un booléen.
+     *
+     * <p>C'est ce qui rend la replanification implicite : un créneau déplacé voit
+     * son {@code startsAt} changer, la comparaison cesse de coïncider, et le
+     * balayage le reprend sans que le chemin de déplacement ait eu à le savoir.
+     * Voir {@code ProgramReminderJob}.
+     */
+    @Column(name = "reminder_sent_for")
+    private Instant reminderSentFor;
+
     @OneToMany(mappedBy = "schedule", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<SlotParticipation> participations = new ArrayList<>();

@@ -5,14 +5,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.notification.NotificationPayload;
 import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.notification.NotificationType;
-import org.program.pair.domain.program.ParticipationStatus;
 import org.program.pair.domain.program.Schedule;
+import org.program.pair.domain.program.SlotAudience;
 import org.program.pair.domain.program.SlotStatus;
-import org.program.pair.domain.program.UserProgramStatus;
 import org.program.pair.repository.AttendanceRepository;
 import org.program.pair.repository.ScheduleRepository;
-import org.program.pair.repository.SlotParticipationRepository;
-import org.program.pair.repository.UserProgramRepository;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,8 +31,7 @@ public class AttendancePromptJob {
 
     private final ScheduleRepository scheduleRepository;
     private final AttendanceRepository attendanceRepository;
-    private final SlotParticipationRepository participationRepository;
-    private final UserProgramRepository userProgramRepository;
+    private final SlotAudience slotAudience;
     private final NotificationService notificationService;
 
     @Scheduled(cron = "0 0 * * * *") // Toutes les heures, à l'heure pile
@@ -95,21 +91,15 @@ public class AttendancePromptJob {
         }
     }
 
+    /**
+     * Les inscrits du créneau, moins ceux qui ont déjà répondu. La liste de base
+     * vient de {@link SlotAudience} — partagée avec le rappel T-2h, pour que
+     * « les inscrits » ne finisse pas par vouloir dire deux choses différentes
+     * selon le job qui pose la question. Le filtre de présence, lui, n'appartient
+     * qu'ici : il est le sens même de cette relance.
+     */
     private List<UUID> unconfirmedParticipantIds(Schedule slot) {
-        UUID hostId = slot.getProgram().getUserActivity().getUser().getId();
-
-        return java.util.stream.Stream.of(
-                java.util.stream.Stream.of(hostId),
-                participationRepository.findByScheduleId(slot.getId()).stream()
-                    .filter(p -> p.getStatus() == ParticipationStatus.CONFIRMED)
-                    .map(p -> p.getUser().getId()),
-                userProgramRepository.findByProgramIdAndStatus(slot.getProgram().getId(), UserProgramStatus.ACTIVE)
-                    .stream()
-                    .filter(up -> up.getSchedule() != null && up.getSchedule().getId().equals(slot.getId()))
-                    .map(up -> up.getUser().getId())
-            )
-            .flatMap(s -> s)
-            .distinct()
+        return slotAudience.participantIds(slot).stream()
             .filter(userId -> !attendanceRepository.existsByScheduleIdAndUserId(slot.getId(), userId))
             .toList();
     }

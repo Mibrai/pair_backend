@@ -137,6 +137,28 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
     List<Schedule> findOpenOrFullStartedBefore(@Param("cutoff") Instant cutoff);
 
     /**
+     * Créneaux dont le rappel T-2h est dû : à venir, à moins de {@code horizon},
+     * et pas encore rappelés <b>pour cet instant de début</b>.
+     *
+     * <p>Trois propriétés du rappel tiennent dans ce {@code WHERE}, sans aucune
+     * planification par créneau :
+     *
+     * <ul>
+     *   <li>{@code status IN ('OPEN','FULL')} — un créneau annulé sort du
+     *       balayage, donc son rappel est annulé sans qu'on ait à l'annuler ;</li>
+     *   <li>{@code startsAt > :now} — une séance déjà commencée n'est plus
+     *       rappelée, y compris après un arrêt prolongé du service ;</li>
+     *   <li>{@code reminderSentFor <> startsAt} — un créneau déplacé redevient
+     *       éligible, donc son rappel est replanifié sans qu'on ait à le
+     *       replanifier.</li>
+     * </ul>
+     */
+    @Query("SELECT s FROM Schedule s WHERE s.status IN ('OPEN', 'FULL') "
+        + "AND s.startsAt > :now AND s.startsAt <= :horizon "
+        + "AND (s.reminderSentFor IS NULL OR s.reminderSentFor <> s.startsAt)")
+    List<Schedule> findDueForReminder(@Param("now") Instant now, @Param("horizon") Instant horizon);
+
+    /**
      * Un schedule "récurrent" (recurrence_rule non nul, ex. "FREQ=WEEKLY;...")
      * n'a qu'une seule occurrence bookable (starts_at/ends_at) dans ce modèle
      * de données — rien n'expanse automatiquement les occurrences suivantes.
