@@ -14,8 +14,10 @@ Configure these variables in your Railway project settings.
 
 ## Media storage (REQUIRES a persistent volume)
 - `STORAGE_PATH` - absolute path where uploaded media is written. Set to
-  `/data/uploads` by the Dockerfile; override only if the volume is mounted
-  elsewhere.
+  `/app/uploads` by the Dockerfile, matching the volume mount path. **If you ever
+  move the volume, change this variable in the same breath** — the app writing to
+  a path the volume does not cover is indistinguishable, at runtime, from having
+  no volume at all.
 
 **A volume is mandatory, not optional.** Uploaded files (avatars, program
 covers) are written to the filesystem, while only their URL is stored in the
@@ -27,7 +29,7 @@ with it.
 
 Setup, in the Railway dashboard:
 1. Service > Settings > Volumes > **New Volume**
-2. Mount path: `/data`
+2. Mount path: **`/app/uploads`** — it must match `STORAGE_PATH` exactly.
 3. Redeploy.
 
 Verify it worked — the startup logs say so explicitly:
