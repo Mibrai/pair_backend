@@ -73,32 +73,63 @@ FRONTEND_URL=https://your-frontend-domain.com
 
 ```
 FIREBASE_ENABLED=true
-FIREBASE_CREDENTIALS_PATH=/app/config/firebase-service-account.json
+FIREBASE_CREDENTIALS_BASE64=<the service account JSON, base64-encoded>
 ```
 
-Both are required together. `FIREBASE_ENABLED` defaults to `false`, and while it
-is false **no push is ever sent** — `NoOpPushNotificationService` is wired in
-place of the real one. Nothing else in the app changes, which is precisely what
-made this easy to miss: notifications and messages keep being stored, the API
-keeps answering, and only the phone stays silent.
+`FIREBASE_ENABLED` defaults to `false`, and while it is false **no push is ever
+sent** — `NoOpPushNotificationService` is wired in place of the real one.
+Nothing else in the app changes, which is precisely what makes this easy to
+miss: notifications and messages keep being stored, the API keeps answering, and
+only the phone stays silent.
 
 Since `aps.badge` is what keeps the icon badge accurate while the app is closed,
 a missing variable here shows up as *"the badge is stuck on its last value"*,
 not as an error.
 
+**Why base64 and not a file path.** The service account JSON holds a private
+key. On Railway it can come neither from a file — the container disk is rebuilt
+on every deploy — nor from the classpath, which would mean committing a secret
+to a public repository. So it travels base64-encoded in an environment
+variable. `FIREBASE_CREDENTIALS_PATH` still works and is the local-development
+route, where dropping a file costs nothing; it takes effect only when
+`FIREBASE_CREDENTIALS_BASE64` is empty.
+
+**Setting it, in this order.** Encode first, flip the switch last — with
+`FIREBASE_ENABLED=true` and no usable credentials, startup fails on purpose, and
+there is no reason to spend a red deploy on it:
+
+```bash
+base64 -i ~/Downloads/service-account.json | tr -d '\n' | pbcopy
+
+railway service                       # select pair_backend_service
+railway variables --set "FIREBASE_CREDENTIALS_BASE64=<paste>"
+railway variables --set "FIREBASE_ENABLED=true"
+```
+
+The `tr -d '\n'` matters: a pasted value that carries a trailing newline is the
+most common failure here. The app trims it anyway, and names the variable in the
+error if the value still fails to decode.
+
 **Checking a deployment.** The startup log settles it in one line:
 
-- `Firebase initialized successfully (push notifications enabled)` → push is on;
+- `Firebase initialized successfully (push notifications enabled, source: base64)`
+  → push is on, credentials came from the environment variable;
+- `... source: /some/path` → it fell back to the file route, which on Railway
+  means the base64 variable is missing or empty;
 - no such line → `FIREBASE_ENABLED` is not `true`, and push is off.
 
-With `FIREBASE_ENABLED=true`, an unreadable or missing credentials file now
-**fails startup** instead of downgrading to silence — a broken push setup is
-visible at deploy time.
+With `FIREBASE_ENABLED=true`, missing or unreadable credentials **fail startup**
+instead of downgrading to silence — a broken push setup is visible at deploy
+time.
 
 **Getting the credentials file:** Firebase console > Project settings > Service
-accounts > Generate new private key. The JSON must be mounted on the persistent
-volume (or baked into the image); `classpath:firebase-service-account.json` also
-works if it ships inside the jar.
+accounts > Generate new private key. Never commit it; encode it as above.
+
+**iOS also needs an APNs key, and its absence is silent.** Without it, pushes
+reach Android and not iOS, **with no error on the backend side** — the same kind
+of silence that made the icon-badge bug take weeks to pin down. Firebase console
+> Project settings > Cloud Messaging > Apple app configuration: the APNs key
+must be listed there with its Key ID.
 
 ## Redis (Optional)
 ```
