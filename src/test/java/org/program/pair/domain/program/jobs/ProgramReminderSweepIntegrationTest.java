@@ -1,9 +1,14 @@
 package org.program.pair.domain.program.jobs;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.locationtech.jts.geom.Coordinate;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.geom.PrecisionModel;
 import org.program.pair.AbstractIntegrationTest;
 import org.program.pair.domain.activity.Activity;
 import org.program.pair.domain.activity.UserActivity;
+import org.program.pair.domain.program.PlaceType;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.ProgramStatus;
 import org.program.pair.domain.program.Schedule;
@@ -106,24 +111,44 @@ class ProgramReminderSweepIntegrationTest extends AbstractIntegrationTest {
             .stream().map(Schedule::getId).toList();
     }
 
-    private Schedule persistSlot(Instant startsAt, SlotStatus status) {
+    /**
+     * Un seul programme pour toute la classe. Ces tests d'intégration ne sont pas
+     * transactionnels : ce qu'une méthode écrit reste visible des suivantes, et
+     * {@code uq_user_activity} interdit de recréer le même couple
+     * (utilisateur, activité) à chaque appel. Les assertions portent sur des
+     * identifiants précis, donc la persistance entre méthodes est sans effet.
+     */
+    private Program program;
+
+    private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
+
+    @BeforeEach
+    void prepareProgram() {
         User host = userRepository.findById(
             UUID.fromString("00000000-0000-0000-0000-000000000001")).orElseThrow();
         Activity yoga = activityRepository.findBySlug("yoga").orElseThrow();
 
-        UserActivity userActivity = userActivityRepository.save(
-            UserActivity.builder().user(host).activity(yoga).build());
+        UserActivity userActivity = userActivityRepository
+            .findByUserIdAndActivityId(host.getId(), yoga.getId())
+            .orElseGet(() -> userActivityRepository.save(
+                UserActivity.builder().user(host).activity(yoga).build()));
 
-        Program program = programRepository.save(Program.builder()
+        program = programRepository.save(Program.builder()
             .userActivity(userActivity)
             .title("Programme test rappel T-2h")
             .status(ProgramStatus.ACTIVE)
             .isPublic(true)
             .build());
+    }
 
+    private Schedule persistSlot(Instant startsAt, SlotStatus status) {
         return scheduleRepository.saveAndFlush(Schedule.builder()
             .program(program)
             .placeName("Studio test")
+            // placeType et location sont NOT NULL en base : un créneau a toujours
+            // un type de lieu et une position.
+            .placeType(PlaceType.PUBLIC)
+            .location(geometryFactory.createPoint(new Coordinate(4.84, 45.75)))
             .startsAt(startsAt)
             .status(status)
             .build());
