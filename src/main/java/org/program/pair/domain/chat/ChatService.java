@@ -18,6 +18,7 @@ import org.springframework.util.StringUtils;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -31,6 +32,7 @@ public class ChatService {
     private final ConversationMemberRepository conversationMemberRepository;
     private final MessageEditHistoryRepository messageEditHistoryRepository;
     private final UserRepository userRepository;
+    private final ActivityRepository activityRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final HtmlSanitizer sanitizer;
     private final ApplicationEventPublisher eventPublisher;
@@ -40,6 +42,23 @@ public class ChatService {
 
     public ConversationSummaryDto createConversation(UUID initiatorId,
                                                       CreateConversationRequest request) {
+        return createConversation(initiatorId, request, null, null);
+    }
+
+    /**
+     * Ouvre — ou retrouve — la conversation directe entre deux personnes, en y
+     * inscrivant le contexte qui les lie.
+     *
+     * <p>{@code programId} et {@code scheduleId} ne viennent pas du client : ils
+     * sont dérivés du créneau par l'appelant qui le connaît ({@code SlotService}
+     * au moment de rejoindre). Le corps de {@code POST /api/conversations} reste
+     * inchangé, et une conversation ouverte depuis un profil naît sans contexte —
+     * ce qui est le cas nominal, pas une dégradation.
+     */
+    public ConversationSummaryDto createConversation(UUID initiatorId,
+                                                      CreateConversationRequest request,
+                                                      UUID programId,
+                                                      UUID scheduleId) {
         // 1. Check if target accepts messages
         User target = userRepository.findById(request.targetUserId())
             .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable."));
@@ -51,18 +70,47 @@ public class ChatService {
         // 2. Check if DIRECT conversation already exists
         return conversationRepository
             .findDirectBetween(initiatorId, request.targetUserId())
-            .map(conv -> toSummaryDto(conv, initiatorId))
+            .map(conv -> {
+                // Le contexte d'une conversation qui existe déjà est rafraîchi,
+                // pas conservé : c'est la séance qu'on vient de rejoindre
+                // ensemble qui lie les deux personnes maintenant, et c'est sa
+                // date que le client compare pour griser le fil. Garder la
+                // première fixerait l'en-tête sur un créneau passé alors qu'un
+                // autre est à venir.
+                applyContext(conv, request.activityContextId(), programId, scheduleId);
+                return toSummaryDto(conversationRepository.save(conv), initiatorId);
+            })
             .orElseGet(() -> {
                 Conversation conv = new Conversation();
                 conv.setType(ConversationType.DIRECT);
-                conv = conversationRepository.save(conv);
+                applyContext(conv, request.activityContextId(), programId, scheduleId);
+                Conversation saved = conversationRepository.save(conv);
 
                 // Add both members
-                addMember(conv.getId(), initiatorId);
-                addMember(conv.getId(), request.targetUserId());
+                addMember(saved.getId(), initiatorId);
+                addMember(saved.getId(), request.targetUserId());
 
-                return toSummaryDto(conv, initiatorId);
+                return toSummaryDto(saved, initiatorId);
             });
+    }
+
+    /**
+     * Écrit le contexte sur la conversation, sans l'effacer quand rien n'est
+     * fourni : une conversation rouverte depuis un profil ne doit pas perdre le
+     * programme et la séance qu'un passage par un créneau lui avait donnés.
+     */
+    private void applyContext(Conversation conv, UUID activityContextId,
+                              UUID programId, UUID scheduleId) {
+        if (activityContextId != null) {
+            conv.setActivityContext(activityRepository.findById(activityContextId)
+                .orElseThrow(() -> new ResourceNotFoundException("Activité introuvable.")));
+        }
+        if (programId != null) {
+            conv.setProgramId(programId);
+        }
+        if (scheduleId != null) {
+            conv.setScheduleId(scheduleId);
+        }
     }
 
     public MessageDto sendMessage(UUID senderId, SendMessageRequest request) {
@@ -145,9 +193,31 @@ public class ChatService {
 
     @Transactional(readOnly = true)
     public List<ConversationSummaryDto> getMyConversations(UUID userId) {
-        return conversationRepository.findByMemberId(userId).stream()
-            .map(conv -> toSummaryDto(conv, userId))
+        List<Conversation> conversations = conversationRepository.findByMemberId(userId);
+
+        // Contextes chargés en une fois pour toute la liste, plutôt qu'un aller
+        // par fil : l'écran de messagerie les demande tous, à chaque ouverture.
+        Map<UUID, ConversationContextDto> contexts = contextsOf(
+            conversations.stream().map(Conversation::getId).toList());
+
+        return conversations.stream()
+            .map(conv -> toSummaryDto(conv, userId,
+                contexts.getOrDefault(conv.getId(), ConversationContextDto.empty(conv.getId()))))
             .collect(Collectors.toList());
+    }
+
+    private Map<UUID, ConversationContextDto> contextsOf(List<UUID> conversationIds) {
+        if (conversationIds.isEmpty()) {
+            return Map.of();
+        }
+        return conversationRepository.findContextsByIds(conversationIds).stream()
+            .collect(Collectors.toMap(ConversationContextDto::conversationId, ctx -> ctx));
+    }
+
+    private ConversationContextDto contextOf(UUID conversationId) {
+        return conversationRepository.findContextsByIds(List.of(conversationId)).stream()
+            .findFirst()
+            .orElseGet(() -> ConversationContextDto.empty(conversationId));
     }
 
     @Transactional(readOnly = true)
@@ -209,6 +279,11 @@ public class ChatService {
     }
 
     private ConversationSummaryDto toSummaryDto(Conversation conv, UUID currentUserId) {
+        return toSummaryDto(conv, currentUserId, contextOf(conv.getId()));
+    }
+
+    private ConversationSummaryDto toSummaryDto(Conversation conv, UUID currentUserId,
+                                                ConversationContextDto context) {
         // Get other user for DIRECT conversation
         UserPublicDto otherUser = null;
         if (conv.getType() == ConversationType.DIRECT) {
@@ -251,7 +326,13 @@ public class ChatService {
             conv.getId(),
             conv.getType().name(),
             otherUser,
-            null, // activityContextName - TODO Phase 2
+            context.activityName(),
+            context.programId(),
+            context.programTitle(),
+            context.activityName(),
+            context.scheduleId(),
+            context.scheduleStartsAt(),
+            context.scheduleEndsAt(),
             lastMsg != null ? lastMsg.getContent() : null,
             lastMsg != null ? lastMsg.getSentAt() : conv.getCreatedAt(),
             unreadCount
@@ -287,11 +368,19 @@ public class ChatService {
             ))
             .collect(Collectors.toList());
 
+        ConversationContextDto context = contextOf(conversationId);
+
         return new ConversationDetailDto(
             conv.getId(),
             conv.getType().name(),
             members,
-            null, // activityContextName - TODO Phase 2
+            context.activityName(),
+            context.programId(),
+            context.programTitle(),
+            context.activityName(),
+            context.scheduleId(),
+            context.scheduleStartsAt(),
+            context.scheduleEndsAt(),
             conv.getCreatedAt()
         );
     }
