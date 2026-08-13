@@ -106,7 +106,7 @@ class ConversationProgramContextIntegrationTest extends AbstractIntegrationTest 
         User a = register("ctx-plain-a@pair.app");
         User b = register("ctx-plain-b@pair.app");
 
-        chatService.createConversation(a.getId(), new CreateConversationRequest(b.getId(), null));
+        chatService.createConversation(a.getId(), new CreateConversationRequest(b.getId(), null, null));
 
         ConversationSummaryDto summary = chatService.getMyConversations(a.getId()).get(0);
 

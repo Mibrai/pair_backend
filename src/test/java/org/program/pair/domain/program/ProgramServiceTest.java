@@ -114,7 +114,7 @@ class ProgramServiceTest {
         when(userProgramRepository.countActiveParticipantsByProgramId(any())).thenReturn(0L);
 
         CreateProgramRequest request = new CreateProgramRequest(
-            ua.getId(), "Yoga du matin", "Description", true,
+            ua.getId(), "Yoga du matin", "Description", true, null,
             null, null, null, null, null, null, null, null, null, null
         );
 
@@ -254,7 +254,7 @@ class ProgramServiceTest {
         programService.updateProgram(
             program.getUserActivity().getUser().getId(),
             program.getId(),
-            new UpdateProgramRequest(null, null, ProgramStatus.ARCHIVED, null,
+            new UpdateProgramRequest(null, null, ProgramStatus.ARCHIVED, null, null,
                 null, null, null, null, null, null, null, null, null, null)
         );
 

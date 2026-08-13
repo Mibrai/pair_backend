@@ -34,7 +34,7 @@ class ChatFlowIntegrationTest extends AbstractIntegrationTest {
         UUID targetUserId = getUserId(tokenB);
 
         // UserA tente de créer une conversation avec userB
-        CreateConversationRequest request = new CreateConversationRequest(targetUserId, null);
+        CreateConversationRequest request = new CreateConversationRequest(targetUserId, null, null);
 
         webTestClient.post()
             .uri("/api/conversations")
@@ -147,7 +147,7 @@ class ChatFlowIntegrationTest extends AbstractIntegrationTest {
     }
 
     private UUID createConversation(String token, UUID targetUserId) {
-        CreateConversationRequest request = new CreateConversationRequest(targetUserId, null);
+        CreateConversationRequest request = new CreateConversationRequest(targetUserId, null, null);
         ConversationSummaryDto conversation = webTestClient.post()
             .uri("/api/conversations")
             .headers(headers -> headers.setBearerAuth(token))

@@ -61,6 +61,11 @@ public enum ErrorCode {
     ENROLLMENT_PROGRESS_OUT_OF_RANGE,
     ACTIVITY_ALREADY_COMPLETED,
     ACTIVITY_ALREADY_SKIPPED,
+    // L'auteur du programme n'accepte pas les messages de ses participants.
+    // Nommé plutôt que rendu par un FORBIDDEN générique : le client en tire un
+    // texte propre et masque le composeur, là où un message serveur brut
+    // laisserait l'utilisateur croire à une panne.
+    PROGRAM_MESSAGES_DISABLED,
 
     // — historique de recherche (SearchHistoryService) —
     SEARCH_HISTORY_ENTRY_NOT_FOUND,

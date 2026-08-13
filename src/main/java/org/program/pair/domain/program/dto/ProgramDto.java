@@ -10,6 +10,8 @@ public record ProgramDto(
     String description,
     String status,
     Boolean isPublic,
+    // L'auteur accepte-t-il les messages de ses participants ? Défaut : true.
+    Boolean allowParticipantMessages,
     // organisateur
     UUID organizerId,
     String organizerName,

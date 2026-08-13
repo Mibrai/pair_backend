@@ -58,6 +58,21 @@ public class Program {
     @Builder.Default
     private Boolean isPublic = true;
 
+    /**
+     * L'auteur accepte-t-il de recevoir des messages de ses participants ?
+     *
+     * <p>Vrai par défaut : le produit met des gens en relation, un programme
+     * muet par défaut prendrait tout le monde à contre-pied. L'auteur restreint,
+     * il n'ouvre pas.
+     *
+     * <p>Le refus s'applique côté serveur — voir {@code ChatService} — et pas
+     * seulement à l'affichage : un drapeau que seul le client respecte ne
+     * protège personne.
+     */
+    @Column(name = "allow_participant_messages", nullable = false)
+    @Builder.Default
+    private Boolean allowParticipantMessages = true;
+
     @Column(name = "archived_at")
     private Instant archivedAt;
 

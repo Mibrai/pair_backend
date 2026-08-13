@@ -166,7 +166,7 @@ class ConversationUnreadCountIntegrationTest extends AbstractIntegrationTest {
             .uri("/api/conversations")
             .headers(headers -> headers.setBearerAuth(token))
             .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(new CreateConversationRequest(targetUserId, null))
+            .bodyValue(new CreateConversationRequest(targetUserId, null, null))
             .exchange()
             .expectStatus().isCreated()
             .expectBody(ConversationSummaryDto.class)

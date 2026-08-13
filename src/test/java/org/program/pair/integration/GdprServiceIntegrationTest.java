@@ -199,7 +199,7 @@ class GdprServiceIntegrationTest extends AbstractIntegrationTest {
      * @return L'UUID de la conversation créée
      */
     private UUID createConversation(String token, UUID targetUserId) {
-        CreateConversationRequest request = new CreateConversationRequest(targetUserId, null);
+        CreateConversationRequest request = new CreateConversationRequest(targetUserId, null, null);
         ConversationSummaryDto conversation = webTestClient.post()
             .uri("/api/conversations")
             .headers(headers -> headers.setBearerAuth(token))

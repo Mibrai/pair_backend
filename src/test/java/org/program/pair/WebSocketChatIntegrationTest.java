@@ -168,7 +168,7 @@ class WebSocketChatIntegrationTest extends AbstractIntegrationTest {
     }
 
     private UUID createConversation(String token, UUID targetUserId) {
-        CreateConversationRequest request = new CreateConversationRequest(targetUserId, null);
+        CreateConversationRequest request = new CreateConversationRequest(targetUserId, null, null);
         ConversationSummaryDto conversation = webTestClient.post()
             .uri("/api/conversations")
             .headers(headers -> headers.setBearerAuth(token))

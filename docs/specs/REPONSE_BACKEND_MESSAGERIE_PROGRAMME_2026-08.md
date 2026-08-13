@@ -1,14 +1,17 @@
 # Réponse backend — messagerie de programme (août 2026)
 
-> Réponse à `PROMPT_BACKEND_MESSAGERIE_PROGRAMME_2026-08.md`. **§3 est livré** —
-> le programme, l'activité et les dates du créneau arrivent sur les deux DTO de
-> conversation. §2 et §1 ne le sont pas, et le document ouvre sur une correction
-> qui les concerne tous les deux.
+> Réponse à `PROMPT_BACKEND_MESSAGERIE_PROGRAMME_2026-08.md`. **§3 et §2 sont
+> livrés.** §1 ne l'est pas, et le document dit pourquoi il coûte plus cher que
+> vous ne l'avez chiffré.
 >
 > Le point de départ change : **§3 n'était pas « partiel », il était vide**.
-> L'activité que vous pensiez disponible ne l'a jamais été. En échange, §2 tel
-> que vous le spécifiez ne peut pas être appliqué côté serveur sans une décision
-> de votre côté, et §1 se heurte à deux obstacles que le document n'a pas vus.
+> L'activité que vous pensiez disponible ne l'a jamais été.
+>
+> §2 est livré avec **une extension de contrat** — `programId` dans le corps de
+> `POST /api/conversations` — sans laquelle le refus que vous décrivez n'était pas
+> calculable, et avec **un refus de plus que les trois demandés**, sans lequel le
+> réglage n'aurait été qu'un drapeau d'affichage. Les deux points sont détaillés
+> au §2.
 
 ---
 
@@ -113,39 +116,78 @@ Le contexte de toute la liste est chargé en une requête, pas une par fil.
 
 ---
 
-## §2 — Non livré : la garde que vous décrivez n'est pas calculable
+## §2 — Livré, avec une extension de contrat
 
-Le champ lui-même ne pose aucun problème : `allowParticipantMessages`, défaut
-`true`, sur les trois DTO. Le précédent existe (`User.receiveMessages`, refusé
-dans `ChatService`), et le code d'erreur dédié `PROGRAM_MESSAGES_DISABLED`
-s'ajoute proprement à l'énumération `ErrorCode` déjà en place.
+`allowParticipantMessages`, défaut `true`, sur `ProgramDto`,
+`CreateProgramRequest` et `UpdateProgramRequest`. Défaut à `true` pour la raison
+que vous donnez, et la colonne est `NOT NULL DEFAULT TRUE` : les programmes
+existants héritent de `true`, personne ne perd une conversation en place.
 
-Le blocage est sur le premier des trois refus que vous demandez :
+Une duplication de programme hérite du réglage, contrairement à `isPublic` que la
+copie remet à faux : la copie naît en brouillon, mais le choix d'accepter ou non
+les messages appartient à l'auteur et n'a pas de raison d'être réinitialisé.
+
+### Ce qu'il a fallu ajouter : `programId` dans le corps
+
+Le premier refus que vous demandez n'était pas calculable :
 
 > `POST /api/conversations` avec un `activityContextId` rattaché à un programme
 > dont `allowParticipantMessages = false` → 403
 
-`activityContextId` est un identifiant d'**activité**, pas de programme. Une
-activité — « Yoga » — porte autant de programmes que d'auteurs. Rien dans la
-requête ne permet de savoir de quel programme il s'agit, donc rien ne permet de
-lire son réglage. La règle telle qu'écrite n'a pas d'objet à interroger.
+`activityContextId` est un identifiant d'**activité**. Une activité — « Yoga » —
+porte autant de programmes que d'auteurs, donc rien ne permettait de savoir quel
+réglage consulter.
 
-Deux sorties, et le choix vous revient parce qu'il vous coûte :
+`CreateConversationRequest` accepte donc un troisième champ, **facultatif** :
 
-1. **Ajouter `programId` au corps de `POST /api/conversations`.** La garde
-   devient directe. Changement de contrat, donc travail chez vous.
-2. **Ne garder que les refus dérivables** : l'envoi dans un fil de diffusion par
-   un non-auteur (§1), et la conversation ouverte automatiquement en rejoignant
-   un créneau — là, le serveur connaît le programme. Une conversation ouverte
-   depuis un profil échapperait au réglage.
+```
+{ "targetUserId": "…", "activityContextId": "…", "programId": "…" }
+```
 
-L'option 1 est la seule qui tienne la promesse produit « l'auteur refuse, les
-participants ne peuvent pas lui écrire ». Dites-nous laquelle vous voulez.
+À vous de le renseigner quand la conversation s'ouvre depuis un écran de
+programme. **Sans lui, aucun programme n'est en jeu et rien n'est refusé** — une
+conversation ouverte depuis un profil reste hors du réglage, et c'est la limite
+assumée du mécanisme. Le champ sert aussi de contexte §3 : une conversation
+ouverte depuis un programme porte désormais `programTitle` dans son en-tête.
 
-Un point à noter au passage : `PrivacySettings.allowMessages`
-(`EVERYONE` / `FRIENDS` / `NONE`) existe en base et **n'est vérifié nulle part**.
-`allowParticipantMessages` serait le troisième réglage de messagerie du produit,
-dont le deuxième est mort. À arbitrer avant d'en ajouter un.
+### Un refus de plus que les trois demandés
+
+Vos trois règles sont en place : ouverture refusée, auteur toujours autorisé dans
+les deux sens, et le cas du fil de diffusion viendra avec §1. Il en manquait une
+quatrième, sans laquelle les autres ne servent à rien :
+
+**l'envoi dans un fil déjà ouvert est refusé lui aussi.** Ne vérifier qu'à
+l'ouverture laisserait passer tout participant ayant déjà écrit une fois — et
+comme rejoindre un créneau ouvre automatiquement une conversation, c'est le cas
+de presque tous. Un auteur qui ferme sa messagerie aurait continué de recevoir
+des messages de tous ceux qui lui avaient déjà écrit. C'est exactement le
+« simple drapeau d'affichage » que votre demande écarte.
+
+Le refus est cadré : il ne s'applique qu'aux fils qui portent le programme
+concerné et dont l'auteur est membre — deux participants qui discutent entre eux
+ne sont pas concernés par un réglage qui porte sur ce que l'auteur reçoit. **La
+lecture n'est jamais touchée** : lecture seule veut dire lecture, historique
+compris.
+
+Si cette quatrième règle ne vous convient pas, elle s'enlève seule — dites-le.
+
+### Forme du refus
+
+`403` avec `code: "PROGRAM_MESSAGES_DISABLED"`, à traduire chez vous. Le code est
+stable et ne changera pas de nom.
+
+### Rejoindre un créneau reste possible
+
+Un créneau appartenant à un programme fermé se rejoint normalement : seule
+l'ouverture automatique du fil saute. Rejoindre et écrire sont deux choses, et
+fermer sa messagerie ne ferme pas ses créneaux.
+
+### Un réglage de trop, à arbitrer
+
+`PrivacySettings.allowMessages` (`EVERYONE` / `FRIENDS` / `NONE`) existe en base
+et **n'est vérifié nulle part**. Avec `User.receiveMessages` et maintenant
+`allowParticipantMessages`, le produit compte trois réglages de messagerie dont
+un mort. Ce n'est pas bloquant, mais ça mérite une décision plutôt qu'un oubli.
 
 ---
 
@@ -201,15 +243,26 @@ nullable et d'ajouter `title` + `memberCount`, comme vous le décrivez.
 | §3 — contexte programme, activité, dates | **Livré** | `ConversationSummaryDto`, `ConversationDetailDto`, `V51` |
 | §3 — activité enfin servie (`activityContextName`) | **Livré**, correctif | `ChatService` |
 | §3 — contexte écrit en rejoignant un créneau | **Livré** | `SlotService` |
-| §2 — `allowParticipantMessages` | Non livré | en attente de votre arbitrage sur `programId` |
+| §2 — `allowParticipantMessages` | **Livré** | `ProgramDto`, `CreateProgramRequest`, `UpdateProgramRequest`, `V52` |
+| §2 — refus à l'ouverture et à l'envoi | **Livré** | `ChatService`, code `PROGRAM_MESSAGES_DISABLED` |
 | §1 — diffusion de groupe | Non livré | chiffrage revu à la hausse, voir ci-dessus |
 
 Aucun champ existant n'a changé de type ni disparu. Les ajouts sont tous
-nullables. Ce qui était nul cesse de l'être.
+nullables ou facultatifs. Ce qui était nul cesse de l'être.
 
-Un seul changement de comportement à signaler : `activityContextId` étant
-désormais enregistré, un identifiant d'activité inconnu envoyé à
-`POST /api/conversations` répond **404** au lieu d'être ignoré en silence. Le
-champ reste facultatif — c'est l'envoyer et se tromper qui est signalé, pas
-l'omettre. Le silence d'avant est précisément ce qui a produit le défaut corrigé
-en tête de ce document.
+Trois changements de comportement à connaître :
+
+1. `activityContextId` étant désormais enregistré, un identifiant d'activité
+   inconnu envoyé à `POST /api/conversations` répond **404** au lieu d'être
+   ignoré en silence. Le champ reste facultatif — c'est l'envoyer et se tromper
+   qui est signalé, pas l'omettre. Ce silence est précisément ce qui a produit le
+   défaut corrigé en tête de ce document.
+2. `POST /api/conversations` et l'envoi de message peuvent maintenant répondre
+   **403 `PROGRAM_MESSAGES_DISABLED`**. Uniquement quand un programme est en jeu
+   et que son auteur a fermé sa messagerie.
+3. `POST /api/conversations/{conversationId}/messages` refuse en **400** un corps
+   dont le `conversationId` diffère de celui de l'URL. Le contrôleur ignorait sa
+   variable de chemin ; une autorisation écrite sur la ressource adressée aurait
+   porté sur une conversation pendant que l'écriture se faisait dans une autre.
+   Si vous envoyez les deux identiques — c'est le cas de tous les appelants que
+   nous connaissons — rien ne change pour vous.

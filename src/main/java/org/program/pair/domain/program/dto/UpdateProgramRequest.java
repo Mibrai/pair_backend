@@ -11,6 +11,7 @@ public record UpdateProgramRequest(
     @Size(max = 3000) String description,
     ProgramStatus status,
     Boolean isPublic,
+    Boolean allowParticipantMessages,
     @Min(1) @Max(52) Integer durationWeeks,
     @Min(1) @Max(7) Integer sessionsPerWeek,
     @Min(30) @Max(180) Integer sessionDurationMinutes,
