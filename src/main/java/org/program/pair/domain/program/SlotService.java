@@ -153,12 +153,20 @@ public class SlotService {
         // le client compare à maintenant pour griser le fil une fois passée.
         // L'activité seule ne désignerait pas la bonne séance dès que quelqu'un
         // suit deux programmes de la même activité.
-        if (Boolean.TRUE.equals(host.getReceiveMessages())) {
+        //
+        // Deux réglages, deux portées : receiveMessages est celui de la personne,
+        // allowParticipantMessages celui de ce programme-là. Un refus fait sauter
+        // l'ouverture du fil, jamais l'inscription au créneau — rejoindre et
+        // écrire sont deux choses, et fermer sa messagerie ne ferme pas ses
+        // créneaux.
+        if (Boolean.TRUE.equals(host.getReceiveMessages())
+                && Boolean.TRUE.equals(slot.getProgram().getAllowParticipantMessages())) {
             chatService.createConversation(
                 userId,
                 new CreateConversationRequest(
                     host.getId(),
-                    slot.getProgram().getUserActivity().getActivity().getId()),
+                    slot.getProgram().getUserActivity().getActivity().getId(),
+                    slot.getProgram().getId()),
                 slot.getProgram().getId(),
                 slot.getId());
         }

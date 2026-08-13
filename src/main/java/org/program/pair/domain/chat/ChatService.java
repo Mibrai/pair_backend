@@ -6,6 +6,7 @@ import org.program.pair.domain.notification.UnreadChangedEvent;
 import org.program.pair.domain.user.User;
 import org.program.pair.domain.user.dto.UserPublicDto;
 import org.program.pair.repository.*;
+import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.exception.ForbiddenException;
 import org.program.pair.shared.exception.ResourceNotFoundException;
 import org.program.pair.shared.exception.ValidationException;
@@ -19,6 +20,7 @@ import org.springframework.util.StringUtils;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -33,6 +35,7 @@ public class ChatService {
     private final MessageEditHistoryRepository messageEditHistoryRepository;
     private final UserRepository userRepository;
     private final ActivityRepository activityRepository;
+    private final ProgramRepository programRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final HtmlSanitizer sanitizer;
     private final ApplicationEventPublisher eventPublisher;
@@ -49,16 +52,15 @@ public class ChatService {
      * Ouvre — ou retrouve — la conversation directe entre deux personnes, en y
      * inscrivant le contexte qui les lie.
      *
-     * <p>{@code programId} et {@code scheduleId} ne viennent pas du client : ils
-     * sont dérivés du créneau par l'appelant qui le connaît ({@code SlotService}
-     * au moment de rejoindre). Le corps de {@code POST /api/conversations} reste
-     * inchangé, et une conversation ouverte depuis un profil naît sans contexte —
-     * ce qui est le cas nominal, pas une dégradation.
+     * <p>{@code derivedProgramId} et {@code derivedScheduleId} ne viennent pas du
+     * client : ils sont dérivés du créneau par l'appelant qui le connaît
+     * ({@code SlotService} au moment de rejoindre) et l'emportent sur le
+     * {@code programId} du corps, plus précis qu'un programme nommé de loin.
      */
     public ConversationSummaryDto createConversation(UUID initiatorId,
                                                       CreateConversationRequest request,
-                                                      UUID programId,
-                                                      UUID scheduleId) {
+                                                      UUID derivedProgramId,
+                                                      UUID derivedScheduleId) {
         // 1. Check if target accepts messages
         User target = userRepository.findById(request.targetUserId())
             .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable."));
@@ -67,7 +69,22 @@ public class ChatService {
             throw new ForbiddenException("Cet utilisateur n'accepte pas les messages.");
         }
 
-        // 2. Check if DIRECT conversation already exists
+        UUID programId = derivedProgramId != null ? derivedProgramId : request.programId();
+
+        // 2. L'auteur du programme peut refuser les messages de ses participants.
+        //    Vérifié avant toute écriture : un refus ne doit pas laisser derrière
+        //    lui une conversation vide.
+        if (programId != null) {
+            messagingPolicyOf(programId).ifPresent(policy -> {
+                if (policy.refuses(initiatorId, request.targetUserId())) {
+                    throw new ForbiddenException(ErrorCode.PROGRAM_MESSAGES_DISABLED,
+                        "L'auteur de ce programme n'accepte pas les messages de ses participants.");
+                }
+            });
+        }
+
+        // 3. Check if DIRECT conversation already exists
+        final UUID effectiveProgramId = programId;
         return conversationRepository
             .findDirectBetween(initiatorId, request.targetUserId())
             .map(conv -> {
@@ -77,13 +94,13 @@ public class ChatService {
                 // date que le client compare pour griser le fil. Garder la
                 // première fixerait l'en-tête sur un créneau passé alors qu'un
                 // autre est à venir.
-                applyContext(conv, request.activityContextId(), programId, scheduleId);
+                applyContext(conv, request.activityContextId(), effectiveProgramId, derivedScheduleId);
                 return toSummaryDto(conversationRepository.save(conv), initiatorId);
             })
             .orElseGet(() -> {
                 Conversation conv = new Conversation();
                 conv.setType(ConversationType.DIRECT);
-                applyContext(conv, request.activityContextId(), programId, scheduleId);
+                applyContext(conv, request.activityContextId(), effectiveProgramId, derivedScheduleId);
                 Conversation saved = conversationRepository.save(conv);
 
                 // Add both members
@@ -92,6 +109,43 @@ public class ChatService {
 
                 return toSummaryDto(saved, initiatorId);
             });
+    }
+
+    /**
+     * Réglage d'autorisation du programme, s'il existe encore.
+     *
+     * <p>Un programme introuvable ne refuse rien : il est traité comme une
+     * absence de contexte, pas comme un refus. Un programme supprimé entre-temps
+     * ne doit pas rendre une conversation impossible à ouvrir.
+     */
+    private Optional<ProgramMessagingPolicy> messagingPolicyOf(UUID programId) {
+        return programRepository.findMessagingPolicy(programId);
+    }
+
+    /**
+     * Refuse l'écriture d'un participant dans un fil rattaché à un programme dont
+     * l'auteur n'accepte pas les messages.
+     *
+     * <p>Le refus exige que l'auteur soit <b>membre du fil</b> : deux participants
+     * qui discutent entre eux au sujet d'un programme ne sont pas concernés par un
+     * réglage qui porte sur ce que l'auteur reçoit. L'auteur, lui, garde le droit
+     * d'écrire en toutes circonstances.
+     */
+    private void assertMayWriteInProgramThread(Conversation conv, UUID senderId) {
+        if (conv.getProgramId() == null) {
+            return;
+        }
+        messagingPolicyOf(conv.getProgramId()).ifPresent(policy -> {
+            if (senderId.equals(policy.authorId())
+                    || Boolean.TRUE.equals(policy.allowParticipantMessages())) {
+                return;
+            }
+            if (conversationMemberRepository
+                    .existsByConversationIdAndUserId(conv.getId(), policy.authorId())) {
+                throw new ForbiddenException(ErrorCode.PROGRAM_MESSAGES_DISABLED,
+                    "L'auteur de ce programme n'accepte pas les messages de ses participants.");
+            }
+        });
     }
 
     /**
@@ -118,6 +172,17 @@ public class ChatService {
         Conversation conv = conversationRepository
             .findByIdAndMemberId(request.conversationId(), senderId)
             .orElseThrow(() -> new ForbiddenException("Accès conversation refusé."));
+
+        // 1 bis. Le refus de l'auteur vaut aussi sur un fil déjà ouvert.
+        //
+        // Ne le vérifier qu'à la création laisserait passer tout participant
+        // ayant déjà écrit une fois — et la conversation ouverte
+        // automatiquement en rejoignant un créneau fait que c'est le cas de
+        // presque tous. Le réglage ne serait alors qu'un drapeau d'affichage,
+        // exactement ce que la demande écarte.
+        //
+        // La lecture n'est jamais touchée : lecture seule veut dire lecture.
+        assertMayWriteInProgramThread(conv, senderId);
 
         // 2. Sanitize content (anti-XSS required)
         String cleanContent = sanitizer.sanitize(request.content());

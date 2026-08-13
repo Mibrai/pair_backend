@@ -67,7 +67,7 @@ class ChatServiceTest {
         // When / Then
         assertThatThrownBy(() -> chatService.createConversation(
             UUID.randomUUID(),
-            new CreateConversationRequest(targetId, null)))
+            new CreateConversationRequest(targetId, null, null)))
             .isInstanceOf(ForbiddenException.class)
             .hasMessageContaining("n'accepte pas les messages");
     }

@@ -1,5 +1,6 @@
 package org.program.pair.repository;
 
+import org.program.pair.domain.chat.dto.ProgramMessagingPolicy;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.ProgramStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -9,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -16,6 +18,18 @@ public interface ProgramRepository extends JpaRepository<Program, UUID> {
 
     @Query("SELECT COUNT(p) FROM Program p WHERE p.userActivity.user.id = :userId")
     long countProgramsByUser(@Param("userId") UUID userId);
+
+    /**
+     * Auteur du programme et réglage d'autorisation des messages, en une requête.
+     *
+     * <p>Sert les refus de {@code ChatService}. Charger l'entité obligerait à
+     * traverser {@code userActivity} puis {@code user}, tous deux paresseux,
+     * pour n'en tirer qu'un identifiant et un booléen.
+     */
+    @Query("SELECT new org.program.pair.domain.chat.dto.ProgramMessagingPolicy(" +
+           "  p.id, p.userActivity.user.id, p.allowParticipantMessages) " +
+           "FROM Program p WHERE p.id = :programId")
+    Optional<ProgramMessagingPolicy> findMessagingPolicy(@Param("programId") UUID programId);
 
     /**
      * Programmes actifs et publics de plusieurs {@code UserActivity}, avec leur

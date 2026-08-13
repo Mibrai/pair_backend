@@ -110,7 +110,7 @@ class MultilingualSearchIntegrationTest extends AbstractIntegrationTest {
 
     private UUID createActiveProgram(String token, UUID userActivityId, String title) {
         CreateProgramRequest createReq = new CreateProgramRequest(
-            userActivityId, title, "Programme ouvert à tous.", true,
+            userActivityId, title, "Programme ouvert à tous.", true, null,
             null, null, null, null, null, null, null, null, null, null);
 
         ProgramDto created = webTestClient.post()
@@ -127,7 +127,7 @@ class MultilingualSearchIntegrationTest extends AbstractIntegrationTest {
         assertThat(created).isNotNull();
 
         UpdateProgramRequest activateReq = new UpdateProgramRequest(
-            null, null, ProgramStatus.ACTIVE, true,
+            null, null, ProgramStatus.ACTIVE, true, null,
             null, null, null, null, null, null, null, null, null, null);
 
         webTestClient.put()

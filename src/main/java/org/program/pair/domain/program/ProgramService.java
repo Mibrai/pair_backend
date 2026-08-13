@@ -59,6 +59,8 @@ public class ProgramService {
         program.setDescription(sanitizer.sanitize(request.description()));
         program.setStatus(ProgramStatus.DRAFT);
         program.setIsPublic(request.isPublic() != null ? request.isPublic() : true);
+        program.setAllowParticipantMessages(
+            request.allowParticipantMessages() != null ? request.allowParticipantMessages() : true);
         program.setOrganizerName(ua.getUser().getDisplayName());
         program.setOrganizerAvatarUrl(ua.getUser().getAvatarUrl());
 
@@ -87,6 +89,8 @@ public class ProgramService {
             }
         }
         if (request.isPublic() != null) program.setIsPublic(request.isPublic());
+        if (request.allowParticipantMessages() != null)
+            program.setAllowParticipantMessages(request.allowParticipantMessages());
 
         applyOptionalFields(program, request.durationWeeks(), request.sessionsPerWeek(),
             request.sessionDurationMinutes(), request.preferredDays(), request.preferredTime(),
@@ -149,6 +153,10 @@ public class ProgramService {
         copy.setDescription(original.getDescription());
         copy.setStatus(ProgramStatus.DRAFT);
         copy.setIsPublic(false);
+        // Hérité, contrairement à isPublic : la copie naît en brouillon, mais le
+        // choix d'accepter ou non les messages des participants appartient à
+        // l'auteur et n'a pas de raison d'être réinitialisé.
+        copy.setAllowParticipantMessages(original.getAllowParticipantMessages());
         copy.setOrganizerName(original.getOrganizerName());
         copy.setOrganizerAvatarUrl(original.getOrganizerAvatarUrl());
         copy.setDurationWeeks(original.getDurationWeeks());
@@ -507,6 +515,7 @@ public class ProgramService {
             p.getDescription(),
             p.getStatus().name(),
             p.getIsPublic(),
+            p.getAllowParticipantMessages(),
             user.getId(),
             organizerName,
             organizerAvatarUrl,
