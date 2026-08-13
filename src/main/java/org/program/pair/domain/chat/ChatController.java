@@ -3,6 +3,7 @@ package org.program.pair.domain.chat;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.chat.dto.*;
+import org.program.pair.shared.exception.ValidationException;
 import org.program.pair.shared.security.UserPrincipal;
 import org.springframework.http.HttpStatus;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -58,6 +59,18 @@ public class ChatController {
         return Map.of("unreadCount", chatService.getUnreadCount(principal.getId()));
     }
 
+    /**
+     * Envoi d'un message dans la conversation <b>désignée par l'URL</b>.
+     *
+     * <p>La conversation est nommée deux fois — dans le chemin et dans le corps —
+     * parce que {@code SendMessageRequest} sert aussi le canal WebSocket, qui n'a
+     * pas de chemin. Le chemin fait foi, et un corps qui en désigne une autre est
+     * refusé plutôt qu'arbitré : le contrôleur ignorait jusqu'ici sa variable de
+     * chemin et n'envoyait que sur celle du corps. Sans conséquence tant que les
+     * deux coïncident, mais toute autorisation écrite sur la ressource adressée —
+     * le refus d'écrire dans un fil de diffusion, par exemple — aurait porté sur
+     * une conversation et l'envoi sur une autre.
+     */
     @PostMapping("/api/conversations/{conversationId}/messages")
     @ResponseBody
     @ResponseStatus(HttpStatus.CREATED)
@@ -65,6 +78,10 @@ public class ChatController {
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID conversationId,
             @Valid @RequestBody SendMessageRequest request) {
+        if (!conversationId.equals(request.conversationId())) {
+            throw new ValidationException(
+                "La conversation du corps ne correspond pas à celle de l'URL.");
+        }
         return chatService.sendMessage(principal.getId(), request);
     }
 

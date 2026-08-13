@@ -36,6 +36,26 @@ public class Conversation {
     @JoinColumn(name = "activity_context_id")
     private Activity activityContext;
 
+    /**
+     * Programme dont la conversation tire son contexte, s'il y en a un.
+     *
+     * <p>Identifiant nu plutôt que {@code @ManyToOne} : le paquet {@code program}
+     * dépend déjà de {@code chat} ({@code SlotService} ouvre une conversation en
+     * rejoignant un créneau), et une relation le ferait dépendre en retour. Même
+     * choix que {@code PeerRecommendation.activityContext}. La lecture se fait
+     * par jointure explicite dans {@code ConversationRepository}.
+     */
+    @Column(name = "program_id")
+    private UUID programId;
+
+    /**
+     * Séance qui lie les membres — la date que le client compare à maintenant
+     * pour griser un fil dont le créneau est passé. Voir {@link #programId} pour
+     * l'absence de relation.
+     */
+    @Column(name = "schedule_id")
+    private UUID scheduleId;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

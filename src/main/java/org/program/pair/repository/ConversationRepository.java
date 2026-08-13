@@ -1,11 +1,13 @@
 package org.program.pair.repository;
 
 import org.program.pair.domain.chat.Conversation;
+import org.program.pair.domain.chat.dto.ConversationContextDto;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -63,4 +65,25 @@ public interface ConversationRepository extends JpaRepository<Conversation, UUID
            "  WHERE cm.id.conversationId = c.id AND cm.id.userId = :userId) " +
            "ORDER BY c.createdAt DESC")
     List<Conversation> findByMemberId(@Param("userId") UUID userId);
+
+    /**
+     * Contexte — programme, activité, créneau — des conversations demandées.
+     *
+     * <p>Une seule requête pour toute la liste : le contexte est réclamé par
+     * chaque ligne de la messagerie, et le résoudre conversation par conversation
+     * ajouterait trois allers par fil à un écran qui en compte déjà.
+     *
+     * <p>Jointures explicites sur {@code Program} et {@code Schedule} : la
+     * conversation ne porte que leurs identifiants, sans relation JPA (voir
+     * {@code Conversation.programId}). Toutes en {@code LEFT} — une conversation
+     * née hors programme reste dans le résultat, avec un contexte vide.
+     */
+    @Query("SELECT new org.program.pair.domain.chat.dto.ConversationContextDto(" +
+           "  c.id, p.id, p.title, a.name, s.id, s.startsAt, s.endsAt) " +
+           "FROM Conversation c " +
+           "LEFT JOIN c.activityContext a " +
+           "LEFT JOIN Program p ON p.id = c.programId " +
+           "LEFT JOIN Schedule s ON s.id = c.scheduleId " +
+           "WHERE c.id IN :ids")
+    List<ConversationContextDto> findContextsByIds(@Param("ids") Collection<UUID> ids);
 }
