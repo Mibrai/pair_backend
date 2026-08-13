@@ -98,7 +98,19 @@ class SlotServiceTest {
 
         slotService.joinSlot(joinerId, slot.getId(), new JoinSlotRequest("Je débute, ça vous va ?"));
 
-        verify(chatService).createConversation(eq(joinerId), any());
+        // Le programme et le créneau vont jusqu'à la conversation, pas seulement
+        // l'activité. Ce test passait déjà quand le contexte n'allait nulle part :
+        // ChatService recevait l'activité et la jetait, et l'en-tête du client
+        // restait vide. C'est la date du créneau qui lui permet de griser le fil
+        // une fois la séance passée — l'activité seule ne la désigne pas dès que
+        // quelqu'un suit deux programmes de la même activité.
+        verify(chatService).createConversation(
+            eq(joinerId),
+            argThat(request -> request.targetUserId().equals(hostId)
+                && slot.getProgram().getUserActivity().getActivity().getId()
+                    .equals(request.activityContextId())),
+            eq(slot.getProgram().getId()),
+            eq(slot.getId()));
     }
 
     @Test

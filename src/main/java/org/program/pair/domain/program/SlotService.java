@@ -146,12 +146,21 @@ public class SlotService {
         }
         scheduleRepository.save(slot);
 
-        // Ouvrir la conversation contextualisée (respecte receiveMessages de l'hôte)
+        // Ouvrir la conversation contextualisée (respecte receiveMessages de l'hôte).
+        //
+        // Le contexte est celui du créneau, pas seulement celui de l'activité :
+        // c'est cette séance-là qui lie les deux personnes, et c'est sa date que
+        // le client compare à maintenant pour griser le fil une fois passée.
+        // L'activité seule ne désignerait pas la bonne séance dès que quelqu'un
+        // suit deux programmes de la même activité.
         if (Boolean.TRUE.equals(host.getReceiveMessages())) {
-            chatService.createConversation(userId, new CreateConversationRequest(
-                host.getId(),
-                slot.getProgram().getUserActivity().getActivity().getId()
-            ));
+            chatService.createConversation(
+                userId,
+                new CreateConversationRequest(
+                    host.getId(),
+                    slot.getProgram().getUserActivity().getActivity().getId()),
+                slot.getProgram().getId(),
+                slot.getId());
         }
 
         notificationService.notify(host.getId(), NotificationType.SLOT_JOINED,
