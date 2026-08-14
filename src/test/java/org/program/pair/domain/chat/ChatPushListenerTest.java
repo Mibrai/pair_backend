@@ -48,7 +48,7 @@ class ChatPushListenerTest {
 
         listener.onMessageSent(new MessageSentEvent(
             recipient, sender, conversation, UUID.randomUUID(),
-            "Sophie Martin", "On se retrouve devant le court 3 ?"));
+            "Sophie Martin", "On se retrouve devant le court 3 ?", null, null));
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> payload = ArgumentCaptor.forClass(Map.class);
@@ -67,6 +67,27 @@ class ChatPushListenerTest {
     }
 
     @Test
+    void uneDiffusionDeProgramme_doitPartirSousSonPropreType() {
+        // Le tap doit ouvrir le fil du programme, pas une conversation à deux :
+        // c'est le type qui porte la route de navigation chez le client.
+        UUID recipient = UUID.randomUUID();
+        UUID program = UUID.randomUUID();
+
+        listener.onMessageSent(new MessageSentEvent(
+            recipient, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+            "Sophie Martin", "Séance déplacée à 19h", program, "Yoga du matin"));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, Object>> payload = ArgumentCaptor.forClass(Map.class);
+        verify(notificationService).notifyPushOnly(
+            eq(recipient), eq(NotificationType.PROGRAM_BROADCAST), payload.capture());
+
+        Map<String, Object> sent = payload.getValue();
+        assertThat(sent.get("programId")).isEqualTo(program.toString());
+        assertThat(sent.get("programTitle")).isEqualTo("Yoga du matin");
+    }
+
+    @Test
     void uneErreurDePush_neDoitPasRemonter() {
         // Le message est écrit et diffusé par WebSocket avant d'arriver ici : une
         // push perdue ne doit pas faire échouer ce qui a déjà eu lieu.
@@ -75,7 +96,7 @@ class ChatPushListenerTest {
 
         assertThatCode(() -> listener.onMessageSent(new MessageSentEvent(
             UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
-            "Sophie Martin", "Bonjour")))
+            "Sophie Martin", "Bonjour", null, null)))
             .doesNotThrowAnyException();
     }
 }

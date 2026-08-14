@@ -38,6 +38,12 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
      *
      * <p>{@code lastReadAt} nul signifie « fil jamais ouvert » : tout ce que les
      * autres y ont écrit est non lu.
+     *
+     * <p>Une quatrième exclusion vise les <b>fils de diffusion</b>, dont
+     * l'appartenance est dérivée des inscriptions actives : la ligne de membre y
+     * porte {@code lastReadAt} mais ne donne aucun droit. Sans cette clause, un
+     * participant parti garderait au badge les messages d'un fil qu'il ne peut
+     * plus ouvrir — un nombre qu'il lui serait impossible de faire retomber.
      */
     @Query("""
         SELECT COUNT(m) FROM Message m, ConversationMember cm
@@ -46,6 +52,14 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
           AND m.sender.id <> :userId
           AND m.deletedAt IS NULL
           AND (cm.lastReadAt IS NULL OR m.sentAt > cm.lastReadAt)
+          AND (cm.conversation.type <> org.program.pair.domain.chat.ConversationType.PROGRAM_BROADCAST
+               OR EXISTS (SELECT 1 FROM UserProgram up
+                          WHERE up.program.id = cm.conversation.programId
+                            AND up.user.id = :userId
+                            AND up.status = org.program.pair.domain.program.UserProgramStatus.ACTIVE)
+               OR EXISTS (SELECT 1 FROM Program p
+                          WHERE p.id = cm.conversation.programId
+                            AND p.userActivity.user.id = :userId))
         """)
     long countUnreadByUserId(@Param("userId") UUID userId);
 

@@ -32,5 +32,10 @@ public enum NotificationType {
     ATTENDANCE_PROMPT,       // "tu y étais ?" après un créneau
     ACTIVITY_ALERT_MATCH,    // quelqu'un pratique enfin cette activité près de moi
     STREAK_MILESTONE,        // série de N semaines atteinte
-    PARTNER_MILESTONE        // Nème partenaire différent
+    PARTNER_MILESTONE,       // Nème partenaire différent
+    // Diffusion de l'auteur d'un programme à ses participants. Distinct de
+    // NEW_MESSAGE : le tap doit ouvrir le fil du programme, pas une
+    // conversation à deux, et le client range les deux dans des rubriques
+    // différentes de son catalogue de préférences.
+    PROGRAM_BROADCAST
 }

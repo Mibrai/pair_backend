@@ -55,6 +55,17 @@ public interface UserProgramRepository extends JpaRepository<UserProgram, UUID> 
     List<UserProgram> findByProgramIdAndStatus(UUID programId, UserProgramStatus status);
 
     /**
+     * Identifiants des participants actifs d'un programme.
+     *
+     * <p>Destinataires d'une diffusion, et membres dérivés de son fil. Lue à
+     * chaque envoi plutôt que conservée : c'est la liste du moment de l'envoi
+     * qui doit être servie, pas celle d'une inscription passée.
+     */
+    @Query("SELECT up.user.id FROM UserProgram up " +
+           "WHERE up.program.id = :programId AND up.status = 'ACTIVE'")
+    List<UUID> findActiveParticipantIdsByProgramId(@Param("programId") UUID programId);
+
+    /**
      * Find user programs by user for GDPR export (includes all statuses)
      */
     @Query("SELECT up FROM UserProgram up WHERE up.user.id = :userId")
