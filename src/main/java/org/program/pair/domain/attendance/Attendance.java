@@ -46,4 +46,23 @@ public class Attendance {
     @Column(name = "confirmed_at", nullable = false)
     @Builder.Default
     private Instant confirmedAt = Instant.now();
+
+    /**
+     * Souvenir photo de cette personne pour ce créneau, servi par le chemin
+     * média existant ({@code /api/media/files/**}). Nul tant qu'elle n'en a
+     * pas partagé.
+     */
+    @Column(name = "memory_photo_url", length = 500)
+    private String memoryPhotoUrl;
+
+    /**
+     * La photo peut-elle figurer sur la carte-souvenir du créneau ?
+     *
+     * <p>Faux par défaut, et séparé du consentement à être nommé : partager
+     * une image du moment et accepter de figurer sur la carte sont deux
+     * décisions distinctes.
+     */
+    @Column(name = "memory_is_public", nullable = false)
+    @Builder.Default
+    private Boolean memoryIsPublic = false;
 }

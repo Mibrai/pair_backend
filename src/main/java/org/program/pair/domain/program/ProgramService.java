@@ -312,6 +312,10 @@ public class ProgramService {
             schedule.setShowExactAddress(true);
         }
 
+        if (request.city() != null) {
+            schedule.setCity(sanitizer.sanitize(request.city()).strip());
+        }
+
         schedule.setStartsAt(request.startsAt());
         schedule.setEndsAt(request.endsAt());
         schedule.setRecurrenceRule(request.recurrenceRule());
@@ -363,6 +367,7 @@ public class ProgramService {
         if (request.showExactAddress() != null)
             schedule.setShowExactAddress(request.showExactAddress());
 
+        if (request.city() != null)           schedule.setCity(sanitizer.sanitize(request.city()).strip());
         if (request.startsAt() != null)       schedule.setStartsAt(request.startsAt());
         if (request.endsAt() != null)         schedule.setEndsAt(request.endsAt());
         if (request.recurrenceRule() != null) schedule.setRecurrenceRule(request.recurrenceRule());

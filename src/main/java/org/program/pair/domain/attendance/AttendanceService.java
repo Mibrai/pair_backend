@@ -6,7 +6,9 @@ import org.program.pair.domain.attendance.dto.PendingAttendanceDto;
 import org.program.pair.domain.badge.BadgeService;
 import org.program.pair.domain.program.ParticipationStatus;
 import org.program.pair.domain.program.Schedule;
+import org.program.pair.domain.program.SlotTiming;
 import org.program.pair.domain.program.UserProgramStatus;
+import org.program.pair.domain.recap.SlotRecapService;
 import org.program.pair.domain.user.User;
 import org.program.pair.domain.user.dto.UserPublicDto;
 import org.program.pair.domain.user.UserService;
@@ -40,6 +42,7 @@ public class AttendanceService {
     private final UserService userService;
     private final PracticeStatsService practiceStatsService;
     private final BadgeService badgeService;
+    private final SlotRecapService recapService;
 
     /**
      * Confirmation en un tap. Uniquement possible si l'utilisateur était hôte
@@ -50,9 +53,7 @@ public class AttendanceService {
         Schedule slot = scheduleRepository.findById(scheduleId)
             .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
 
-        Instant slotEnd = slot.getEndsAt() != null
-            ? slot.getEndsAt()
-            : slot.getStartsAt().plus(2, ChronoUnit.HOURS);
+        Instant slotEnd = SlotTiming.endOf(slot);
 
         if (Instant.now().isBefore(slotEnd)) {
             throw new ValidationException("Ce créneau n'est pas encore terminé.");
@@ -83,6 +84,10 @@ public class AttendanceService {
         if (wasPresent) {
             practiceStatsService.recalculateFor(userId);
             badgeService.evaluateBadges(userId);
+            // La carte-souvenir compte les présents : sans ce réalignement,
+            // quelqu'un qui confirme après la dernière contribution ne serait
+            // jamais compté. Sans effet quand le créneau n'a pas de carte.
+            recapService.refreshAttendeeCount(scheduleId);
         }
 
         return toDto(attendance);
@@ -125,10 +130,7 @@ public class AttendanceService {
         return java.util.stream.Stream.of(hosted, slotJoined, programJoined)
             .flatMap(List::stream)
             .distinct()
-            .filter(s -> {
-                Instant end = s.getEndsAt() != null ? s.getEndsAt() : s.getStartsAt().plus(2, ChronoUnit.HOURS);
-                return end.isBefore(now);
-            })
+            .filter(s -> SlotTiming.hasEndedBy(s, now))
             .filter(s -> !attendanceRepository.existsByScheduleIdAndUserId(s.getId(), userId))
             .map(s -> new PendingAttendanceDto(
                 s.getId(),

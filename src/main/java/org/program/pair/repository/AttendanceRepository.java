@@ -19,6 +19,22 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
 
     boolean existsByScheduleIdAndUserIdAndWasPresentTrue(UUID scheduleId, UUID userId);
 
+    Optional<Attendance> findByScheduleIdAndUserId(UUID scheduleId, UUID userId);
+
+    /** Présents confirmés sur un créneau — un effectif, jamais un score. */
+    @Query("SELECT COUNT(a) FROM Attendance a WHERE a.schedule.id = :scheduleId AND a.wasPresent = true")
+    int countPresentByScheduleId(@Param("scheduleId") UUID scheduleId);
+
+    /**
+     * Y a-t-il, sur ce créneau, quelqu'un d'autre que l'hôte à avoir confirmé
+     * sa présence ? Garde-fou de publication d'une carte-souvenir : sans cela,
+     * un hôte pourrait publier une carte laissant croire qu'un créneau a
+     * rassemblé du monde alors qu'il y était seul.
+     */
+    boolean existsByScheduleIdAndWasPresentTrueAndUserIdNot(UUID scheduleId, UUID userId);
+
+    List<Attendance> findByScheduleIdAndWasPresentTrue(UUID scheduleId);
+
     @Query("SELECT COUNT(a) FROM Attendance a WHERE a.user.id = :userId AND a.wasPresent = true")
     int countPresentByUserId(@Param("userId") UUID userId);
 

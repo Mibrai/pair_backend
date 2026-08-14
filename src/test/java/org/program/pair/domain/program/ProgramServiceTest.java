@@ -140,6 +140,7 @@ class ProgramServiceTest {
             2.35,
             null, // adresse manquante
             false,
+            null, // ville
             Instant.now(),
             null,
             null,
@@ -175,6 +176,7 @@ class ProgramServiceTest {
             2.35,
             "12 rue de la Paix", // adresse fournie
             false, // mais PAS de consentement explicite
+            null, // ville
             Instant.now(),
             null,
             null,
@@ -219,6 +221,7 @@ class ProgramServiceTest {
             2.35,
             "12 rue de la Paix",
             true, // consentement explicite
+            null, // ville
             Instant.now(),
             null,
             null,
