@@ -1,8 +1,7 @@
 # Réponse backend — messagerie de programme (août 2026)
 
-> Réponse à `PROMPT_BACKEND_MESSAGERIE_PROGRAMME_2026-08.md`. **§3 et §2 sont
-> livrés.** §1 ne l'est pas, et le document dit pourquoi il coûte plus cher que
-> vous ne l'avez chiffré.
+> Réponse à `PROMPT_BACKEND_MESSAGERIE_PROGRAMME_2026-08.md`. **Les trois points
+> sont livrés**, dans l'ordre que vous suggériez.
 >
 > Le point de départ change : **§3 n'était pas « partiel », il était vide**.
 > L'activité que vous pensiez disponible ne l'a jamais été.
@@ -10,8 +9,14 @@
 > §2 est livré avec **une extension de contrat** — `programId` dans le corps de
 > `POST /api/conversations` — sans laquelle le refus que vous décrivez n'était pas
 > calculable, et avec **un refus de plus que les trois demandés**, sans lequel le
-> réglage n'aurait été qu'un drapeau d'affichage. Les deux points sont détaillés
-> au §2.
+> réglage n'aurait été qu'un drapeau d'affichage.
+>
+> §1 est livré avec **une seule route nouvelle** au lieu des deux proposées, votre
+> alternative ayant été retenue. Un point de conception qui n'était pas dans votre
+> demande y est tranché : l'appartenance dérivée aurait emporté le compteur de
+> non-lus, et ce qu'il a fallu faire pour l'en empêcher se voit du côté client.
+>
+> Chaque section détaille ces écarts.
 
 ---
 
@@ -191,48 +196,121 @@ un mort. Ce n'est pas bloquant, mais ça mérite une décision plutôt qu'un oub
 
 ---
 
-## §1 — Non livré : deux obstacles à connaître avant de le chiffrer
+## §1 — Livré
 
-Votre lecture du modèle est juste sur un point important : `ConversationType`
-porte **déjà** `DIRECT` et `GROUP`, et `conversation_members` existe. Le point
-d'extension est bien là. Deux choses vous manquent.
+Votre lecture du modèle était juste sur un point qui a beaucoup aidé :
+`ConversationType` portait **déjà** `DIRECT` et `GROUP`, et
+`conversation_members` existait. Le point d'extension était bien là. Deux choses
+manquaient à votre chiffrage, et une troisième s'est révélée en chemin.
 
-### `PROGRAM_BROADCAST` ne rentre pas dans la colonne
+### Une seule route nouvelle, pas deux
 
-`conversations.type` est un `VARCHAR(10)` (migration V6). `PROGRAM_BROADCAST`
-fait 17 caractères : sans migration d'élargissement, tout enregistrement échoue.
-Rien de grave, mais c'est une migration de plus, et le genre de détail qui fait
-échouer une mise en production plutôt qu'une revue.
+```
+POST /api/programs/{programId}/broadcasts
+     body : { "content": "…" }
+     201 → MessageDto
+     403 PROGRAM_BROADCAST_READ_ONLY si l'appelant n'est pas l'auteur
+     404 si le programme n'existe pas
+```
 
-### L'appartenance dérivée coûte le compteur de non-lus
+C'est tout. **La lecture passe par la messagerie que vous avez déjà** : le fil
+apparaît dans `GET /api/conversations` avec `type: "PROGRAM_BROADCAST"`, et ses
+messages se lisent par `GET /api/conversations/{id}/messages` comme n'importe
+quel autre fil. Votre alternative était la bonne, et pour la raison que vous
+donniez — vous n'avez pas de second modèle de messages à écrire.
+
+Il fallait tout de même un endroit pour déclencher la **première** diffusion,
+puisque le fil naît à ce moment-là et pas à la création du programme : d'où cette
+route, et pas la seconde (`GET …/broadcasts`) que vous proposiez, devenue inutile.
+
+Les diffusions suivantes passent indifféremment par cette route ou par
+`POST /api/conversations/{id}/messages`, qui refuse en `403
+PROGRAM_BROADCAST_READ_ONLY` tout expéditeur autre que l'auteur. Le composeur que
+vous masquez chez les participants est donc doublé côté serveur : un client
+modifié n'écrit pas dans un fil qui n'est pas le sien.
+
+### `otherUser`, `title`, `memberCount`
+
+Comme vous le demandiez. `otherUser` est **nul** sur un fil de diffusion — le
+remplir avec l'auteur aurait affiché « conversation avec X » pour un fil qui en
+compte trente, exactement le piège que vous signaliez. À la place, sur les deux
+DTO :
+
+```
+title       : string  (nullable)  // titre du programme
+memberCount : integer (nullable)  // auteur + participants actifs
+```
+
+Nuls tous les deux pour une conversation à deux, qui continue de s'annoncer par
+`otherUser`.
+
+Le détail du fil (`GET /api/conversations/{id}`) énumère les membres **dérivés**,
+pas les lignes de lecture : celles-ci diraient « trois personnes » sur un
+programme qui en compte trente dont deux seulement l'ont ouvert.
+
+### L'appartenance est dérivée, et le compteur de non-lus a survécu
+
+C'est le point dur du §1, et il n'était pas dans votre demande.
 
 Vous demandez, à raison, que l'appartenance soit dérivée des `UserProgram`
 `ACTIVE` plutôt que recopiée. Mais `conversation_members` ne porte pas que
 l'appartenance : il porte `last_read_at`, d'où sortent le nombre de non-lus par
-fil et le badge d'icône. Une appartenance purement dérivée supprimerait le suivi
-de lecture sur les fils de diffusion — le badge cesserait de compter les
-diffusions, et un fil de trente personnes n'aurait plus de « non lu ».
+fil et le badge d'icône. Une appartenance *purement* dérivée aurait supprimé le
+suivi de lecture des fils de diffusion — un fil de trente personnes sans « non
+lu », et le badge qui cesse de compter les diffusions.
 
-La sortie tient en une phrase : garder `conversation_members` comme **porteur de
-la lecture**, et ne dériver que l'**autorisation**. Un participant qui quitte le
-programme perd l'accès, y compris à l'historique, exactement comme vous le
-demandez ; sa ligne de lecture reste, sans lui donner de droit.
+Le partage retenu : `conversation_members` reste le **porteur de la lecture**,
+l'**autorisation** seule est dérivée. La ligne est créée à la première lecture et
+ne donne aucun droit ; l'accès se recalcule à chaque fois, à partir des
+inscriptions actives et de l'auteur.
 
-C'est faisable, et c'est le vrai contenu de §1 — pas le modèle de messages, qui
-lui existe déjà.
+Ce qui en découle, et qui est ce que vous vouliez :
+
+- un **nouvel inscrit** gagne le fil **et tout son historique**, y compris ce qui
+  a été diffusé avant son arrivée, sans qu'aucun traitement n'ait à passer
+  derrière lui ;
+- un **participant qui part** perd le fil et son historique le jour même, sa
+  ligne de lecture eût-elle subsisté.
+
+Un troisième effet ne se voyait pas depuis votre côté : sans précaution, le
+partant aurait **gardé au badge** les messages non lus d'un fil qu'il ne peut
+plus ouvrir — un nombre qu'il lui aurait été impossible de faire retomber. Le
+calcul des non-lus écarte donc les fils de diffusion auxquels on n'a plus droit.
+C'est vérifié par un test dédié.
+
+### Ce qui compte dans le badge
+
+Une diffusion est un message : elle compte dans
+`GET /api/conversations/unread-count` et dans le `unreadCount` du fil, comme
+n'importe quel autre. Elle ne crée **pas** de notification in-app en plus — la
+doubler ferait compter deux fois la même chose sur l'icône.
 
 ### Notifications
 
-`PROGRAM_BROADCAST` manque à `NotificationType`, sans contrainte en base : pas de
-migration. Il faut en revanche deux entrées dans `PushNotificationService` et les
-clés de traduction, faute de quoi la push part avec un libellé générique.
+Type dédié `PROGRAM_BROADCAST`, distinct de `NEW_MESSAGE` comme vous le
+demandiez, avec `programId` et `programTitle` au payload : de quoi router le tap
+vers le fil du programme plutôt que vers une conversation à deux. Textes de push
+fournis en français, anglais et allemand ; le titre nomme le **programme**, pas
+l'auteur — dans un fil de diffusion c'est le programme qu'on suit.
 
-### Sur la forme des routes
+À ajouter de votre côté dans `notification_pref_catalog.dart`.
 
-Votre alternative — pas de routes parallèles, le fil apparaît dans
-`GET /api/conversations` avec `type: "PROGRAM_BROADCAST"` — est la bonne, et pour
-la raison que vous donnez. Nous la prendrons. Cela suppose de rendre `otherUser`
-nullable et d'ajouter `title` + `memberCount`, comme vous le décrivez.
+### Deux détails de schéma
+
+`conversations.type` était un `VARCHAR(10)` depuis V6. `PROGRAM_BROADCAST` fait
+17 caractères : sans élargissement, tout enregistrement échouait. `V53` le porte
+à 30.
+
+L'unicité « un fil par programme » est un index **partiel**, restreint aux fils
+de diffusion : `program_id` sert aussi de contexte aux conversations directes
+(§3), où plusieurs conversations partagent légitimement le même programme.
+
+### Une limite à connaître
+
+Un fil de diffusion ne se masque pas : `DELETE /api/conversations/{id}` le refuse
+en 400. L'appartenance étant dérivée du programme, le fil reparaîtrait à la
+lecture suivante — le dire franchement vaut mieux qu'un masquage qui ne tient
+pas. On quitte le fil en quittant le programme.
 
 ---
 
@@ -245,12 +323,16 @@ nullable et d'ajouter `title` + `memberCount`, comme vous le décrivez.
 | §3 — contexte écrit en rejoignant un créneau | **Livré** | `SlotService` |
 | §2 — `allowParticipantMessages` | **Livré** | `ProgramDto`, `CreateProgramRequest`, `UpdateProgramRequest`, `V52` |
 | §2 — refus à l'ouverture et à l'envoi | **Livré** | `ChatService`, code `PROGRAM_MESSAGES_DISABLED` |
-| §1 — diffusion de groupe | Non livré | chiffrage revu à la hausse, voir ci-dessus |
+| §1 — fil de diffusion, une par programme | **Livré** | `POST /api/programs/{id}/broadcasts`, `V53` |
+| §1 — appartenance dérivée des inscriptions actives | **Livré** | `ChatService`, `ConversationRepository` |
+| §1 — `otherUser` nul, `title` + `memberCount` | **Livré** | `ConversationSummaryDto`, `ConversationDetailDto` |
+| §1 — lecture seule des participants | **Livré** | code `PROGRAM_BROADCAST_READ_ONLY` |
+| §1 — notification dédiée | **Livré** | `NotificationType.PROGRAM_BROADCAST`, textes fr/en/de |
 
 Aucun champ existant n'a changé de type ni disparu. Les ajouts sont tous
 nullables ou facultatifs. Ce qui était nul cesse de l'être.
 
-Trois changements de comportement à connaître :
+Cinq changements de comportement à connaître :
 
 1. `activityContextId` étant désormais enregistré, un identifiant d'activité
    inconnu envoyé à `POST /api/conversations` répond **404** au lieu d'être
@@ -266,3 +348,9 @@ Trois changements de comportement à connaître :
    porté sur une conversation pendant que l'écriture se faisait dans une autre.
    Si vous envoyez les deux identiques — c'est le cas de tous les appelants que
    nous connaissons — rien ne change pour vous.
+4. `GET /api/conversations` peut désormais renvoyer des entrées à
+   `type: "PROGRAM_BROADCAST"`, dont `otherUser` est **nul**. Une liste de
+   messagerie qui suppose cet objet présent plantera : c'est le seul point du
+   lot qui demande une adaptation de votre côté avant mise en service.
+5. `DELETE /api/conversations/{id}` refuse en **400** sur un fil de diffusion.
+   Voir « Une limite à connaître » au §1.
