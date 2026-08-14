@@ -8,6 +8,7 @@ import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotAudience;
 import org.program.pair.domain.program.SlotStatus;
+import org.program.pair.domain.program.SlotTiming;
 import org.program.pair.repository.AttendanceRepository;
 import org.program.pair.repository.ScheduleRepository;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -78,8 +79,7 @@ public class AttendancePromptJob {
 
             int closed = 0;
             for (Schedule slot : candidates) {
-                Instant end = slot.getEndsAt() != null ? slot.getEndsAt() : slot.getStartsAt().plus(2, ChronoUnit.HOURS);
-                if (end.isBefore(now)) {
+                if (SlotTiming.hasEndedBy(slot, now)) {
                     slot.setStatus(SlotStatus.PAST);
                     scheduleRepository.save(slot);
                     closed++;

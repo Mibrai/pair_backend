@@ -12,6 +12,10 @@ public record UpdateScheduleRequest(
     @DecimalMin("-180") @DecimalMax("180") Double lng,
     String addressPublic,
     Boolean showExactAddress,
+
+    // Voir CreateScheduleRequest.city : nulle laisse la valeur en place.
+    @Size(max = 120) String city,
+
     Instant startsAt,
     Instant endsAt,
     String recurrenceRule,

@@ -78,6 +78,20 @@ public enum ErrorCode {
     // — médias (StorageService) —
     MEDIA_FILE_NOT_FOUND,
 
+    // — cartes-souvenirs de créneau (SlotRecapService) —
+    // Publication refusée : personne d'autre que l'hôte n'a confirmé sa
+    // présence. Le client en fait une phrase d'attente, pas un bandeau
+    // d'erreur — c'est un « pas encore », pas un « non ».
+    RECAP_NEEDS_ATTENDEE,
+    // La fenêtre de sept jours après le créneau est refermée : la carte est figée.
+    RECAP_WINDOW_CLOSED,
+    // Contribuer suppose d'y avoir été (was_present = true).
+    RECAP_NOT_ATTENDEE,
+    // Le mot d'hôte et la visibilité n'appartiennent qu'à l'hôte.
+    RECAP_NOT_HOST,
+    // Plus de deux ambiances, ou une valeur hors du vocabulaire fermé SlotVibe.
+    RECAP_INVALID_VIBES,
+
     // — bornage de la carte (MapService) —
     MAP_RADIUS_REQUIRES_USER_LOCATION,
     MAP_RADIUS_OUT_OF_RANGE,

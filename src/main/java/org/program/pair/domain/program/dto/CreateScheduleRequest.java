@@ -12,6 +12,12 @@ public record CreateScheduleRequest(
     @NotNull @DecimalMin("-180") @DecimalMax("180") Double lng,
     String addressPublic,
     Boolean showExactAddress,
+
+    // Ville du créneau, facultative. Contrairement à addressPublic, elle est
+    // diffusable sans condition — c'est le grain de lieu que porte la
+    // carte-souvenir. Absente, elle reste nulle : rien ne la devine.
+    @Size(max = 120) String city,
+
     @NotNull Instant startsAt,
     Instant endsAt,
     String recurrenceRule,

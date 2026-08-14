@@ -43,6 +43,7 @@ class AttendanceServiceTest {
     @Mock UserService userService;
     @Mock PracticeStatsService practiceStatsService;
     @Mock BadgeService badgeService;
+    @Mock org.program.pair.domain.recap.SlotRecapService recapService;
 
     @InjectMocks
     AttendanceService attendanceService;

@@ -150,6 +150,17 @@ public class GlobalExceptionHandler {
         return errorFor(ex, ErrorCode.BUSINESS_RULE_VIOLATION);
     }
 
+    /**
+     * Refus lié à l'état de la ressource, avec un code nommé — ce que
+     * {@code IllegalStateException} ci-dessus rendait déjà en {@code 409},
+     * mais sans jamais pouvoir dire lequel.
+     */
+    @ExceptionHandler(ConflictException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ErrorResponse handleConflict(ConflictException ex) {
+        return errorFor(ex, ErrorCode.CONFLICT);
+    }
+
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ErrorResponse handleTypeMismatch(MethodArgumentTypeMismatchException ex) {

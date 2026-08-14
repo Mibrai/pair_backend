@@ -127,6 +127,19 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
     @Query("SELECT COUNT(s) FROM Schedule s WHERE s.program.userActivity.user.id = :userId")
     long countHostedByUserId(@Param("userId") UUID userId);
 
+    /**
+     * Prochaine séance ouverte d'un programme, la plus proche d'abord.
+     *
+     * <p>C'est ce qui transforme le lecteur d'une carte-souvenir en
+     * participant. {@code OPEN} et non {@code OPEN, FULL} : proposer un
+     * créneau complet est un cul-de-sac, et il vaut mieux rendre vide et
+     * laisser le client proposer l'abonnement au programme.
+     */
+    @Query("SELECT s FROM Schedule s WHERE s.program.id = :programId "
+         + "AND s.status = org.program.pair.domain.program.SlotStatus.OPEN "
+         + "AND s.startsAt > :after ORDER BY s.startsAt ASC LIMIT 1")
+    Optional<Schedule> findNextOpenSlot(@Param("programId") UUID programId, @Param("after") Instant after);
+
     @Query("SELECT s FROM Schedule s WHERE s.status IN ('OPEN', 'FULL') " +
            "AND ((s.endsAt IS NOT NULL AND s.endsAt BETWEEN :from AND :to) " +
            "OR (s.endsAt IS NULL AND s.startsAt BETWEEN :fromStart AND :toStart))")

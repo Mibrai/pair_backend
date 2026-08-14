@@ -48,6 +48,17 @@ public class Schedule {
     @Column(name = "address_public", length = 300)
     private String addressPublic;
 
+    /**
+     * Ville du créneau — le grain de lieu diffusable sans condition, là où
+     * {@code addressPublic} reste soumis à {@link SlotAddressVisibility}.
+     *
+     * <p>Nullable et jamais devinée : aucun service de géocodage réel n'est
+     * branché ({@code MapService.reverseGeocode} est un bouchon), et une ville
+     * inventée vaut moins qu'une ville absente.
+     */
+    @Column(name = "city", length = 120)
+    private String city;
+
     @Column(name = "show_exact_address", nullable = false)
     @Builder.Default
     private Boolean showExactAddress = false;
