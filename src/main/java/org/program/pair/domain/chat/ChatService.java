@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -36,6 +37,7 @@ public class ChatService {
     private final UserRepository userRepository;
     private final ActivityRepository activityRepository;
     private final ProgramRepository programRepository;
+    private final UserProgramRepository userProgramRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final HtmlSanitizer sanitizer;
     private final ApplicationEventPublisher eventPublisher;
@@ -118,8 +120,104 @@ public class ChatService {
      * absence de contexte, pas comme un refus. Un programme supprimé entre-temps
      * ne doit pas rendre une conversation impossible à ouvrir.
      */
+    private Conversation loadConversation(UUID conversationId) {
+        return conversationRepository.findById(conversationId)
+            .orElseThrow(() -> new ResourceNotFoundException("Conversation introuvable."));
+    }
+
     private Optional<ProgramMessagingPolicy> messagingPolicyOf(UUID programId) {
         return programRepository.findMessagingPolicy(programId);
+    }
+
+    /**
+     * Droit de <b>lire</b> une conversation.
+     *
+     * <p>Deux règles, selon la nature du fil. Une conversation directe s'ouvre à
+     * ses membres inscrits. Un fil de diffusion s'ouvre à l'auteur du programme
+     * et à ses participants actifs — dérivé à chaque accès, jamais lu dans
+     * {@code conversation_members} : c'est ce qui fait qu'un participant parti
+     * perd le fil <b>et son historique</b> à l'instant où il part, sans qu'aucun
+     * traitement n'ait eu à passer derrière lui.
+     */
+    private void assertMayRead(Conversation conv, UUID userId) {
+        if (conv.getType() == ConversationType.PROGRAM_BROADCAST) {
+            if (conv.getProgramId() == null
+                    || !broadcastMemberIds(conv.getProgramId()).contains(userId)) {
+                throw new ForbiddenException("Accès conversation refusé.");
+            }
+            return;
+        }
+        if (!conversationMemberRepository.existsByConversationIdAndUserId(conv.getId(), userId)) {
+            throw new ForbiddenException("Accès conversation refusé.");
+        }
+    }
+
+    /**
+     * Un fil de diffusion n'a qu'une plume.
+     *
+     * <p>Les participants y sont en lecture seule — le composeur disparaît chez
+     * eux, mais c'est ici que la règle tient : un client modifié ne doit pas
+     * pouvoir écrire dans un fil qui n'est pas le sien.
+     */
+    private void assertMayWriteInBroadcast(Conversation conv, UUID senderId) {
+        if (conv.getType() != ConversationType.PROGRAM_BROADCAST) {
+            return;
+        }
+        boolean isAuthor = conv.getProgramId() != null
+            && messagingPolicyOf(conv.getProgramId())
+                .map(policy -> senderId.equals(policy.authorId()))
+                .orElse(false);
+        if (!isAuthor) {
+            throw new ForbiddenException(ErrorCode.PROGRAM_BROADCAST_READ_ONLY,
+                "Seul l'auteur du programme peut écrire dans ce fil de diffusion.");
+        }
+    }
+
+    /**
+     * Diffuse un message à tous les participants d'un programme.
+     *
+     * <p>Le fil naît ici, à la première diffusion, plutôt qu'à la création du
+     * programme : inutile de peupler la base de fils vides que personne n'ouvrira.
+     * Les suivantes réutilisent le même — un seul fil par programme, garanti par
+     * un index unique partiel (V53) autant que par cette lecture.
+     */
+    public MessageDto broadcastToProgram(UUID authorId, UUID programId, String content) {
+        ProgramMessagingPolicy policy = messagingPolicyOf(programId)
+            .orElseThrow(() -> new ResourceNotFoundException("Programme introuvable."));
+
+        if (!authorId.equals(policy.authorId())) {
+            throw new ForbiddenException(ErrorCode.PROGRAM_BROADCAST_READ_ONLY,
+                "Seul l'auteur du programme peut diffuser un message.");
+        }
+
+        Conversation conv = conversationRepository.findBroadcastByProgramId(programId)
+            .orElseGet(() -> {
+                Conversation created = new Conversation();
+                created.setType(ConversationType.PROGRAM_BROADCAST);
+                created.setProgramId(programId);
+                return conversationRepository.save(created);
+            });
+
+        // Ligne de membre de l'auteur : elle ne lui donne aucun droit — il les
+        // tient du programme — mais lui ouvre un lastReadAt, sans quoi ses propres
+        // diffusions lui reviendraient comme non lues.
+        ensureMemberRow(conv.getId(), authorId);
+
+        return sendMessage(authorId, new SendMessageRequest(conv.getId(), content));
+    }
+
+    /**
+     * Garantit qu'une ligne de membre existe, pour porter {@code lastReadAt}.
+     *
+     * <p>Sur un fil de diffusion, cette ligne n'est <b>pas</b> un droit d'accès :
+     * elle est créée quand quelqu'un lit, et sa présence après un départ ne rouvre
+     * rien — {@link #assertMayRead} ne la consulte pas, et le compte de non-lus
+     * l'écarte à son tour.
+     */
+    private void ensureMemberRow(UUID conversationId, UUID userId) {
+        if (!conversationMemberRepository.existsByConversationIdAndUserId(conversationId, userId)) {
+            addMember(conversationId, userId);
+        }
     }
 
     /**
@@ -169,11 +267,14 @@ public class ChatService {
 
     public MessageDto sendMessage(UUID senderId, SendMessageRequest request) {
         // 1. Verify sender is member of conversation
-        Conversation conv = conversationRepository
-            .findByIdAndMemberId(request.conversationId(), senderId)
+        Conversation conv = conversationRepository.findById(request.conversationId())
             .orElseThrow(() -> new ForbiddenException("Accès conversation refusé."));
+        assertMayRead(conv, senderId);
 
-        // 1 bis. Le refus de l'auteur vaut aussi sur un fil déjà ouvert.
+        // 1 bis. Un fil de diffusion n'a qu'une plume : celle de l'auteur.
+        assertMayWriteInBroadcast(conv, senderId);
+
+        // 1 ter. Le refus de l'auteur vaut aussi sur un fil déjà ouvert.
         //
         // Ne le vérifier qu'à la création laisserait passer tout participant
         // ayant déjà écrit une fois — et la conversation ouverte
@@ -203,9 +304,10 @@ public class ChatService {
 
         MessageDto dto = toMessageDto(message);
 
-        // 4. Broadcast to all conversation members via WebSocket
-        List<UUID> memberIds = conversationMemberRepository
-            .findUserIdsByConversationId(conv.getId());
+        // 4. Destinataires. Pour un fil de diffusion, ils sont dérivés des
+        //    inscriptions actives au moment de l'envoi — pas d'une liste de
+        //    membres recopiée, qui aurait divergé dès la première inscription.
+        List<UUID> memberIds = recipientsOf(conv);
 
         for (UUID memberId : memberIds) {
             messagingTemplate.convertAndSendToUser(
@@ -218,6 +320,10 @@ public class ChatService {
         // 5. Push aux destinataires — le WebSocket ci-dessus ne porte que jusqu'à
         // une app ouverte, or le badge sert précisément quand elle est fermée.
         // L'expéditeur est exclu : il vient d'écrire, il n'a rien à lire.
+        String programTitle = conv.getType() == ConversationType.PROGRAM_BROADCAST
+            ? contextOf(conv.getId()).programTitle()
+            : null;
+
         for (UUID memberId : memberIds) {
             if (!memberId.equals(senderId)) {
                 eventPublisher.publishEvent(new MessageSentEvent(
@@ -226,11 +332,39 @@ public class ChatService {
                     conv.getId(),
                     message.getId(),
                     sender.getDisplayName(),
-                    preview(cleanContent)));
+                    preview(cleanContent),
+                    conv.getType() == ConversationType.PROGRAM_BROADCAST ? conv.getProgramId() : null,
+                    programTitle));
             }
         }
 
         return dto;
+    }
+
+    /**
+     * À qui ce message doit parvenir.
+     *
+     * <p>Un fil de diffusion sert ses participants <b>actifs du moment</b> et son
+     * auteur ; une conversation directe, ses membres. La liste des membres n'est
+     * jamais l'autorité pour un fil de diffusion : elle ne porte que la lecture.
+     */
+    private List<UUID> recipientsOf(Conversation conv) {
+        if (conv.getType() != ConversationType.PROGRAM_BROADCAST || conv.getProgramId() == null) {
+            return conversationMemberRepository.findUserIdsByConversationId(conv.getId());
+        }
+        return broadcastMemberIds(conv.getProgramId());
+    }
+
+    /** Auteur du programme et participants actifs, sans doublon, l'auteur d'abord. */
+    private List<UUID> broadcastMemberIds(UUID programId) {
+        List<UUID> members = new ArrayList<>();
+        messagingPolicyOf(programId).map(ProgramMessagingPolicy::authorId).ifPresent(members::add);
+        for (UUID participantId : userProgramRepository.findActiveParticipantIdsByProgramId(programId)) {
+            if (!members.contains(participantId)) {
+                members.add(participantId);
+            }
+        }
+        return members;
     }
 
     /**
@@ -258,7 +392,18 @@ public class ChatService {
 
     @Transactional(readOnly = true)
     public List<ConversationSummaryDto> getMyConversations(UUID userId) {
-        List<Conversation> conversations = conversationRepository.findByMemberId(userId);
+        // Deux sources, et c'est voulu. Les lignes de membre donnent les
+        // conversations directes ; les fils de diffusion, eux, se dérivent des
+        // inscriptions actives — un nouvel inscrit voit le fil sans qu'aucune
+        // ligne ait eu à être écrite pour lui, et un partant cesse de le voir
+        // même si la sienne subsiste.
+        List<Conversation> conversations = new ArrayList<>();
+        for (Conversation conv : conversationRepository.findByMemberId(userId)) {
+            if (conv.getType() != ConversationType.PROGRAM_BROADCAST) {
+                conversations.add(conv);
+            }
+        }
+        conversations.addAll(conversationRepository.findBroadcastsForMember(userId));
 
         // Contextes chargés en une fois pour toute la liste, plutôt qu'un aller
         // par fil : l'écran de messagerie les demande tous, à chaque ouverture.
@@ -287,10 +432,7 @@ public class ChatService {
 
     @Transactional(readOnly = true)
     public List<MessageDto> getMessages(UUID userId, UUID conversationId, int limit) {
-        // Verify user is member
-        if (!conversationMemberRepository.existsByConversationIdAndUserId(conversationId, userId)) {
-            throw new ForbiddenException("Accès conversation refusé.");
-        }
+        assertMayRead(loadConversation(conversationId), userId);
 
         return messageRepository
             .findByConversationIdOrderBySentAtDesc(conversationId, limit)
@@ -313,6 +455,12 @@ public class ChatService {
     }
 
     public void markAsRead(UUID userId, UUID conversationId) {
+        // Sur un fil de diffusion, la ligne de membre peut ne pas exister encore :
+        // l'accès vient du programme, pas d'elle. On la crée à la première
+        // lecture — c'est elle qui portera lastReadAt.
+        assertMayRead(loadConversation(conversationId), userId);
+        ensureMemberRow(conversationId, userId);
+
         ConversationMember member = conversationMemberRepository
             .findByConversationIdAndUserId(conversationId, userId)
             .orElseThrow(() -> new ForbiddenException("Membre introuvable."));
@@ -387,6 +535,8 @@ public class ChatService {
         int unreadCount = messageRepository
             .countUnreadByUserIdAndConversationId(currentUserId, conv.getId());
 
+        boolean broadcast = conv.getType() == ConversationType.PROGRAM_BROADCAST;
+
         return new ConversationSummaryDto(
             conv.getId(),
             conv.getType().name(),
@@ -398,6 +548,9 @@ public class ChatService {
             context.scheduleId(),
             context.scheduleStartsAt(),
             context.scheduleEndsAt(),
+            broadcast ? context.programTitle() : null,
+            broadcast && conv.getProgramId() != null
+                ? broadcastMemberIds(conv.getProgramId()).size() : null,
             lastMsg != null ? lastMsg.getContent() : null,
             lastMsg != null ? lastMsg.getSentAt() : conv.getCreatedAt(),
             unreadCount
@@ -406,17 +559,17 @@ public class ChatService {
 
     @Transactional(readOnly = true)
     public ConversationDetailDto getConversationDetail(UUID userId, UUID conversationId) {
-        // Verify user is member
-        if (!conversationMemberRepository.existsByConversationIdAndUserId(conversationId, userId)) {
-            throw new ForbiddenException("Accès conversation refusé.");
-        }
+        Conversation conv = loadConversation(conversationId);
+        assertMayRead(conv, userId);
 
-        Conversation conv = conversationRepository.findById(conversationId)
-            .orElseThrow(() -> new ResourceNotFoundException("Conversation introuvable."));
-
-        // Get all members
-        List<UUID> memberIds = conversationMemberRepository
-            .findUserIdsByConversationId(conversationId);
+        // Membres : dérivés pour un fil de diffusion — les lignes de
+        // conversation_members n'y sont qu'un support de lecture et diraient
+        // « trois personnes » sur un programme qui en compte trente dont deux
+        // seulement l'ont ouvert.
+        List<UUID> memberIds = conv.getType() == ConversationType.PROGRAM_BROADCAST
+                && conv.getProgramId() != null
+            ? broadcastMemberIds(conv.getProgramId())
+            : conversationMemberRepository.findUserIdsByConversationId(conversationId);
 
         List<UserPublicDto> members = memberIds.stream()
             .map(id -> userRepository.findById(id).orElse(null))
@@ -446,11 +599,22 @@ public class ChatService {
             context.scheduleId(),
             context.scheduleStartsAt(),
             context.scheduleEndsAt(),
+            conv.getType() == ConversationType.PROGRAM_BROADCAST ? context.programTitle() : null,
+            conv.getType() == ConversationType.PROGRAM_BROADCAST ? members.size() : null,
             conv.getCreatedAt()
         );
     }
 
     public void deleteConversation(UUID userId, UUID conversationId) {
+        // Un fil de diffusion ne se masque pas : l'appartenance en est dérivée du
+        // programme, donc il reparaîtrait à la première lecture. On quitte le
+        // programme, pas le fil — le dire franchement vaut mieux qu'un masquage
+        // qui ne tient pas.
+        if (loadConversation(conversationId).getType() == ConversationType.PROGRAM_BROADCAST) {
+            throw new ValidationException(
+                "Un fil de diffusion se quitte en quittant le programme.");
+        }
+
         // Verify user is member
         ConversationMember member = conversationMemberRepository
             .findByConversationIdAndUserId(conversationId, userId)
@@ -544,6 +708,9 @@ public class ChatService {
     }
 
     public void markAllAsRead(UUID userId, UUID conversationId) {
+        assertMayRead(loadConversation(conversationId), userId);
+        ensureMemberRow(conversationId, userId);
+
         ConversationMember member = conversationMemberRepository
             .findByConversationIdAndUserId(conversationId, userId)
             .orElseThrow(() -> new ForbiddenException("Membre introuvable."));
@@ -555,10 +722,7 @@ public class ChatService {
     }
 
     public String uploadImage(UUID userId, UUID conversationId, String imageUrl) {
-        // Verify user is member
-        if (!conversationMemberRepository.existsByConversationIdAndUserId(conversationId, userId)) {
-            throw new ForbiddenException("Accès conversation refusé.");
-        }
+        assertMayRead(loadConversation(conversationId), userId);
 
         // This method expects the image to be already uploaded to storage
         // and returns the URL. The actual file upload logic would be in the controller

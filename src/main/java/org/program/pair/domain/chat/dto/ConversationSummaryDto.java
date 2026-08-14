@@ -19,6 +19,12 @@ public record ConversationSummaryDto(
     UUID scheduleId,
     Instant scheduleStartsAt,
     Instant scheduleEndsAt,
+    // Fils de groupe : otherUser n'a aucun sens à trente personnes, et le
+    // remplir avec l'auteur ferait afficher « conversation avec X » pour un fil
+    // qui en compte trente. Il est nul, et title/memberCount prennent le relais.
+    // Nuls à leur tour pour une conversation à deux, qui s'annonce par otherUser.
+    String title,
+    Integer memberCount,
     String lastMessageContent,
     Instant lastMessageAt,
     int unreadCount

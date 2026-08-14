@@ -22,6 +22,15 @@ public record MessageSentEvent(
     UUID conversationId,
     UUID messageId,
     String senderName,
-    String preview
+    String preview,
+    /**
+     * Programme du fil de diffusion, {@code null} pour une conversation à deux.
+     *
+     * <p>C'est ce qui décide du type de notification chez l'écouteur, et donc de
+     * l'écran qu'ouvre le tap : le fil du programme plutôt qu'une conversation
+     * à deux.
+     */
+    UUID programId,
+    String programTitle
 ) {
 }

@@ -18,5 +18,9 @@ public record ConversationDetailDto(
     UUID scheduleId,
     Instant scheduleStartsAt,
     Instant scheduleEndsAt,
+    // Voir ConversationSummaryDto : nommer un fil de groupe demande un titre,
+    // pas un interlocuteur.
+    String title,
+    Integer memberCount,
     Instant createdAt
 ) {}

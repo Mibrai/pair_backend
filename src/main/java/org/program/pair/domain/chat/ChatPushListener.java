@@ -35,13 +35,21 @@ public class ChatPushListener {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onMessageSent(MessageSentEvent event) {
         try {
+            // Une diffusion de programme n'est pas un message à deux : elle a son
+            // type, donc sa route de navigation chez le client, et son titre
+            // nomme le programme. Le reste du payload est identique — c'est le
+            // même message, écrit au même endroit.
+            boolean broadcast = event.programId() != null;
+
             notificationService.notifyPushOnly(
                 event.recipientId(),
-                NotificationType.NEW_MESSAGE,
+                broadcast ? NotificationType.PROGRAM_BROADCAST : NotificationType.NEW_MESSAGE,
                 NotificationPayload.empty()
                     .with("conversationId", event.conversationId())
                     .with("messageId", event.messageId())
                     .with("senderId", event.senderId())
+                    .with("programId", event.programId())
+                    .with("programTitle", event.programTitle())
                     // messageAuthorName/messageBody, et non senderName/
                     // messagePreview : ce sont les noms qu'attend le template de
                     // notification du client, qui range l'auteur du message dans

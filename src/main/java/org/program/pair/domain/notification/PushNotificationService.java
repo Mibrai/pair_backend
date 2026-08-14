@@ -358,6 +358,10 @@ public class PushNotificationService implements PushNotificationServiceInterface
             case SLOT_CANCELLED -> msg(locale, "push.SLOT_CANCELLED.title", arg(payload, "programTitle"));
             case ATTENDANCE_PROMPT -> msg(locale, "push.ATTENDANCE_PROMPT.title");
             case ACTIVITY_ALERT_MATCH -> msg(locale, "push.ACTIVITY_ALERT_MATCH.title", arg(payload, "activityName"));
+            // Le programme, pas l'auteur : dans un fil de diffusion c'est le
+            // programme qu'on suit, et trente personnes n'ont pas toutes son
+            // auteur en tête.
+            case PROGRAM_BROADCAST -> msg(locale, "push.PROGRAM_BROADCAST.title", arg(payload, "programTitle"));
             // Valeurs legacy utilisées uniquement par les données de seed (V12/V13/V27) —
             // jamais émises par notify(), donc pas de titre push dédié.
             default -> msg(locale, "push.generic.title");
@@ -392,6 +396,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
             case ATTENDANCE_PROMPT -> msg(locale, "push.ATTENDANCE_PROMPT.body", arg(payload, "programTitle"));
             case ACTIVITY_ALERT_MATCH -> msg(locale, "push.ACTIVITY_ALERT_MATCH.body",
                 arg(payload, "activityName"), arg(payload, "placeName"));
+            case PROGRAM_BROADCAST -> rawOr(payload, "messageBody", locale, "push.PROGRAM_BROADCAST.body");
             default -> msg(locale, "push.generic.body");
         };
     }

@@ -66,6 +66,11 @@ public enum ErrorCode {
     // texte propre et masque le composeur, là où un message serveur brut
     // laisserait l'utilisateur croire à une panne.
     PROGRAM_MESSAGES_DISABLED,
+    // Écriture tentée par un non-auteur dans un fil de diffusion. Distinct de
+    // PROGRAM_MESSAGES_DISABLED : celui-ci dit « l'auteur a fermé sa
+    // messagerie », celui-là « ce fil n'est en écriture que pour l'auteur ».
+    // Deux refus, deux textes chez le client.
+    PROGRAM_BROADCAST_READ_ONLY,
 
     // — historique de recherche (SearchHistoryService) —
     SEARCH_HISTORY_ENTRY_NOT_FOUND,

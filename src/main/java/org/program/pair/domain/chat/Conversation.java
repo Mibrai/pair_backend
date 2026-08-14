@@ -27,8 +27,10 @@ public class Conversation {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
+    // length = 30 : PROGRAM_BROADCAST en fait 17, la colonne d'origine en
+    // acceptait 10. Voir V53.
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 10)
+    @Column(nullable = false, length = 30)
     @Builder.Default
     private ConversationType type = ConversationType.DIRECT;
 

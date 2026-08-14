@@ -66,6 +66,36 @@ public interface ConversationRepository extends JpaRepository<Conversation, UUID
            "ORDER BY c.createdAt DESC")
     List<Conversation> findByMemberId(@Param("userId") UUID userId);
 
+    /** Fil de diffusion d'un programme, s'il a déjà été ouvert. */
+    @Query("SELECT c FROM Conversation c " +
+           "WHERE c.type = org.program.pair.domain.chat.ConversationType.PROGRAM_BROADCAST " +
+           "  AND c.programId = :programId")
+    Optional<Conversation> findBroadcastByProgramId(@Param("programId") UUID programId);
+
+    /**
+     * Fils de diffusion auxquels {@code userId} a droit <b>en ce moment</b>.
+     *
+     * <p>Dérivé, jamais recopié : l'appartenance se lit sur les inscriptions
+     * actives et sur l'auteur du programme, pas sur {@code conversation_members}.
+     * C'est ce qui fait qu'un participant qui quitte le programme perd le fil et
+     * son historique le jour même, et qu'un nouvel inscrit le gagne sans qu'on
+     * ait rien à propager. Une liste recopiée à l'envoi divergerait de la
+     * première inscription.
+     *
+     * <p>{@code conversation_members} garde un rôle, mais un seul : porter
+     * {@code lastReadAt}, d'où sortent les non-lus.
+     */
+    @Query("SELECT c FROM Conversation c " +
+           "WHERE c.type = org.program.pair.domain.chat.ConversationType.PROGRAM_BROADCAST " +
+           "  AND (EXISTS (" +
+           "        SELECT 1 FROM UserProgram up " +
+           "        WHERE up.program.id = c.programId AND up.user.id = :userId " +
+           "          AND up.status = org.program.pair.domain.program.UserProgramStatus.ACTIVE)" +
+           "    OR EXISTS (" +
+           "        SELECT 1 FROM Program p " +
+           "        WHERE p.id = c.programId AND p.userActivity.user.id = :userId))")
+    List<Conversation> findBroadcastsForMember(@Param("userId") UUID userId);
+
     /**
      * Contexte — programme, activité, créneau — des conversations demandées.
      *
