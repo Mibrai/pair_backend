@@ -78,8 +78,9 @@ class ChatServiceTest {
         UUID senderId = UUID.randomUUID();
         Conversation conv = buildConversationWithMember(senderId);
 
-        when(conversationRepository.findByIdAndMemberId(any(), eq(senderId)))
-            .thenReturn(Optional.of(conv));
+        when(conversationRepository.findById(any())).thenReturn(Optional.of(conv));
+        when(conversationMemberRepository.existsByConversationIdAndUserId(any(), eq(senderId)))
+            .thenReturn(true);
 
         String malicious = "<img src=x onerror=alert(1)>Salut";
         String cleaned = "Salut";
@@ -113,8 +114,10 @@ class ChatServiceTest {
     void sendMessage_devraitRejeter_siExpediteurNonMembre() {
         // Given
         UUID senderId = UUID.randomUUID();
-        when(conversationRepository.findByIdAndMemberId(any(), eq(senderId)))
-            .thenReturn(Optional.empty());
+        // Non membre : la conversation existe, le droit de lecture n'y est pas.
+        when(conversationRepository.findById(any())).thenReturn(Optional.of(new Conversation()));
+        when(conversationMemberRepository.existsByConversationIdAndUserId(any(), eq(senderId)))
+            .thenReturn(false);
 
         // When / Then
         assertThatThrownBy(() -> chatService.sendMessage(senderId,
@@ -131,8 +134,9 @@ class ChatServiceTest {
         UUID recipientId = UUID.randomUUID();
         Conversation conv = buildConversationWithMember(senderId);
 
-        when(conversationRepository.findByIdAndMemberId(any(), eq(senderId)))
-            .thenReturn(Optional.of(conv));
+        when(conversationRepository.findById(any())).thenReturn(Optional.of(conv));
+        when(conversationMemberRepository.existsByConversationIdAndUserId(any(), eq(senderId)))
+            .thenReturn(true);
         when(sanitizer.sanitize("Salut")).thenReturn("Salut");
 
         User sender = new User();
@@ -165,8 +169,9 @@ class ChatServiceTest {
         Conversation conv = buildConversationWithMember(senderId);
 
         String longContent = "a".repeat(500);
-        when(conversationRepository.findByIdAndMemberId(any(), eq(senderId)))
-            .thenReturn(Optional.of(conv));
+        when(conversationRepository.findById(any())).thenReturn(Optional.of(conv));
+        when(conversationMemberRepository.existsByConversationIdAndUserId(any(), eq(senderId)))
+            .thenReturn(true);
         when(sanitizer.sanitize(longContent)).thenReturn(longContent);
 
         User sender = new User();
@@ -216,8 +221,9 @@ class ChatServiceTest {
     }
 
     private void stubSend(UUID senderId, UUID recipientId, Conversation conv, String content) {
-        when(conversationRepository.findByIdAndMemberId(any(), eq(senderId)))
-            .thenReturn(Optional.of(conv));
+        when(conversationRepository.findById(any())).thenReturn(Optional.of(conv));
+        when(conversationMemberRepository.existsByConversationIdAndUserId(any(), eq(senderId)))
+            .thenReturn(true);
         when(sanitizer.sanitize(content)).thenReturn(content);
 
         User sender = new User();
@@ -238,8 +244,8 @@ class ChatServiceTest {
         u.setId(userId);
         member.setUser(u);
 
-        // Note: Les membres ne sont pas mappés bidirectionnellement dans Conversation
-        // mais le repository findByIdAndMemberId le gère
+        // Note: Les membres ne sont pas mappés bidirectionnellement dans Conversation.
+        // L'appartenance se vérifie par ConversationMemberRepository, doublé ici.
 
         return conv;
     }
