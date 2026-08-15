@@ -183,19 +183,65 @@ public class MapService {
             .toList();
     }
 
-    private double calculateGridSize(int zoom) {
-        // Grid size in degrees (latitude/longitude)
-        // Higher zoom = smaller grid cells
+    /** Palier où la maille historique est reprise telle quelle, et sa valeur. */
+    private static final int GRID_ANCHOR_ZOOM = 12;
+    private static final double GRID_ANCHOR_SIZE = 0.1;
+    /** Palier maximal accepté par les deux routes qui agrègent. */
+    private static final int MAX_ZOOM = 20;
+
+    /**
+     * Côté d'une cellule de grille, en degrés, pour un palier de zoom donné.
+     *
+     * <p><b>Au-dessus du palier {@value #GRID_ANCHOR_ZOOM}, la maille est divisée
+     * par deux à chaque palier</b> — ce qui est la seule pente correcte, puisque
+     * c'est celle de la résolution de la carte elle-même. La table qui occupait
+     * cette place ne la divisait par deux que <i>tous les deux paliers</i>, si
+     * bien que la cellule doublait de taille apparente à chaque niveau gagné.
+     *
+     * <p>Ce n'était donc pas un réglage trop grossier en un point, mais une
+     * pente fausse sur toute la plage. Mesuré en projection Web Mercator à la
+     * latitude de Paris, le côté d'une cellule passait de 11 px au palier 1 à
+     * <b>11 332 px au palier 20</b> : au zoom maximal, l'agrégation regroupait
+     * des marqueurs distants de vingt-huit largeurs d'écran, que l'utilisateur
+     * ne pouvait de toute façon jamais voir ensemble. C'est ce qui rendait une
+     * pastille irrésolvable — zoomer ne la défaisait pas, faute d'une maille qui
+     * suive réellement le zoom.
+     *
+     * <p>Les paliers jusqu'à {@value #GRID_ANCHOR_ZOOM} gardent volontairement
+     * leurs valeurs historiques : la même dérive les rend au contraire <i>trop
+     * fines</i> (11 px au palier 1, soit quasiment aucune agrégation sur une
+     * carte monde), mais la corriger là changerait un comportement visible sans
+     * qu'aucune demande ne le réclame. Le défaut est réel et reste ouvert ; il
+     * ne se traite pas dans le même geste.
+     *
+     * <p>La maille s'applique en degrés aux deux axes, sans correction en
+     * {@code cos(lat)} : une cellule est donc un rectangle qui s'aplatit vers le
+     * nord (1 113 m × 733 m à Paris pour 0,01°). Corriger cela demande de
+     * projeter en Mercator plutôt que d'ajuster une taille, et n'est pas
+     * nécessaire pour que la maille suive le zoom.
+     *
+     * <p>Enfin, il s'agit d'une <b>grille fixe, pas d'un regroupement par
+     * proximité</b> : deux marqueurs distants de dix mètres de part et d'autre
+     * d'une frontière de cellule ne sont pas groupés. Affiner la maille resserre
+     * cet écart sans le supprimer — le client doit continuer de traiter les
+     * bornes d'un cluster comme l'étendue de ses membres, jamais comme le
+     * voisinage complet de son centre.
+     */
+    double calculateGridSize(int zoom) {
+        if (zoom > GRID_ANCHOR_ZOOM) {
+            // Le zoom est validé dans [1, 20] par les deux routes ; le plafond
+            // n'est là que pour qu'un appel non validé ne puisse pas produire un
+            // décalage aberrant.
+            int steps = Math.min(zoom, MAX_ZOOM) - GRID_ANCHOR_ZOOM;
+            return GRID_ANCHOR_SIZE / (1 << steps);
+        }
         return switch (zoom) {
-            case 1, 2, 3 -> 5.0;      // Very coarse: ~500km cells
-            case 4, 5 -> 2.0;          // Coarse: ~200km cells
-            case 6, 7 -> 1.0;          // Medium: ~100km cells
-            case 8, 9 -> 0.5;          // Medium-fine: ~50km cells
-            case 10, 11 -> 0.25;       // Fine: ~25km cells
-            case 12, 13 -> 0.1;        // Very fine: ~10km cells
-            case 14, 15 -> 0.05;       // Ultra fine: ~5km cells
-            case 16, 17 -> 0.02;       // Super fine: ~2km cells
-            case 18, 19, 20 -> 0.01;   // Minimal clustering: ~1km cells
+            case 1, 2, 3 -> 5.0;      // ~500 km
+            case 4, 5 -> 2.0;          // ~200 km
+            case 6, 7 -> 1.0;          // ~100 km
+            case 8, 9 -> 0.5;          // ~50 km
+            case 10, 11 -> 0.25;       // ~25 km
+            case 12 -> GRID_ANCHOR_SIZE; // ~11 km, ancre de la pente ci-dessus
             default -> 1.0;
         };
     }
@@ -880,10 +926,11 @@ public class MapService {
      * par le client.
      *
      * <p>Corollaire : plus le zoom est élevé, plus la maille est fine, moins il
-     * reste de cellules peuplées — au zoom maximal (~1 km), des activités
-     * distinctes tombent en pratique dans des cellules distinctes et il ne reste
-     * que des marqueurs. Ce n'est pas une garantie absolue : deux activités à
-     * moins d'un kilomètre resteront agrégées, ce qui est le comportement voulu.
+     * reste de cellules peuplées — au zoom maximal (~43 m, cf.
+     * {@link #calculateGridSize}), des activités distinctes tombent en pratique
+     * dans des cellules distinctes et il ne reste que des marqueurs. Ce n'est pas
+     * une garantie absolue : deux activités séparées par moins que la maille
+     * restent agrégées, ce qui est le comportement voulu.
      *
      * <p>L'ordre d'entrée est préservé dans {@code loose} et détermine l'ordre
      * des clusters (première apparition), donc l'agrégation ne réintroduit pas

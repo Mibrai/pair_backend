@@ -38,10 +38,11 @@ public record MapCluster(
 
     @Schema(description = "Identifiants des activités agrégées, dédoublonnés, dans l'ordre "
         + "où elles apparaissent. Nul pour un cluster d'utilisateurs, qui n'agrège pas des "
-        + "activités. Au zoom maximal la maille vaut encore ~1 km : deux activités plus "
-        + "proches restent groupées, et sans cette liste taper la pastille ne pouvait rien "
-        + "produire. La taille de la liste peut être inférieure à count — un même "
-        + "activityId apparaît autant de fois qu'elle a de lieux dans la cellule.")
+        + "activités. La maille suit désormais le zoom (~43 m au palier 20) : un cluster y "
+        + "devient rare, mais deux activités plus proches que la maille restent groupées, et "
+        + "cette liste est ce qui permet d'ouvrir la pastille sans aller-retour. La taille "
+        + "de la liste peut être inférieure à count — un même activityId apparaît autant de "
+        + "fois qu'elle a de lieux dans la cellule.")
     List<UUID> activityIds
 ) {
 
