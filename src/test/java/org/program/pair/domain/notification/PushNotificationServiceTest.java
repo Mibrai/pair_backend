@@ -7,6 +7,7 @@ import com.google.firebase.messaging.FirebaseMessagingException;
 import com.google.firebase.messaging.MulticastMessage;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.program.pair.config.LocaleConfig;
@@ -16,6 +17,9 @@ import org.springframework.context.support.ReloadableResourceBundleMessageSource
 
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,16 +46,35 @@ class PushNotificationServiceTest {
     @Mock DeviceTokenRepository deviceTokenRepository;
     @Mock BatchResponse batchResponse;
 
-    private PushNotificationService service() {
-        // Le vrai MessageSource de l'application (messages*.properties du
-        // classpath), pas un stub : le test vérifie aussi que les clés existent.
+    /**
+     * Le vrai {@code MessageSource} de l'application ({@code messages*.properties}
+     * du classpath), pas un stub : les tests vérifient aussi que les clés
+     * existent — dans les trois langues.
+     */
+    private static Messages messages() {
         ReloadableResourceBundleMessageSource source = new ReloadableResourceBundleMessageSource();
         source.setBasename("classpath:messages");
         source.setDefaultEncoding(StandardCharsets.UTF_8.name());
         source.setFallbackToSystemLocale(false);
         source.setDefaultLocale(LocaleConfig.FRENCH);
+        return new Messages(source);
+    }
+
+    /**
+     * Horloge et fuseau imposés : le texte Android porte des dates et un rebours,
+     * qui seraient sinon différents à chaque exécution.
+     */
+    private static AndroidPushText androidText() {
+        return new AndroidPushText(messages(), ZONE, Clock.fixed(NOW, ZONE));
+    }
+
+    private static final ZoneId ZONE = ZoneId.of("Europe/Paris");
+    /** 17/08/2026 à 17:00 UTC, soit 19:00 à Paris. */
+    private static final Instant NOW = Instant.parse("2026-08-17T15:00:00Z");
+
+    private PushNotificationService service() {
         return new PushNotificationService(firebaseMessaging, deviceTokenRepository,
-            new Messages(source));
+            messages(), androidText());
     }
 
     @Test
@@ -113,6 +136,118 @@ class PushNotificationServiceTest {
 
         // fr et legacy partagent le groupe français, de a le sien : deux envois.
         verify(firebaseMessaging, times(2)).sendEachForMulticast(any(MulticastMessage.class));
+    }
+
+    // ─── T5 — la formule Android, et le repli iOS ─────────────────────────────
+
+    /**
+     * Un Android et un iPhone dans la même langue ne reçoivent <b>pas</b> le même
+     * texte : Android suit la formule du template, iOS garde le texte traduit,
+     * devenu son repli depuis que son extension réécrit la bannière sur
+     * l'appareil. D'où deux envois là où une seule langue est en jeu.
+     */
+    @Test
+    void androidEtIos_memeLangue_doiventRecevoirDeuxTextesDifferents() throws FirebaseMessagingException {
+        PushNotificationService service = service();
+        UUID userId = UUID.randomUUID();
+
+        when(deviceTokenRepository.findByUserId(userId)).thenReturn(List.of(
+            device("token-android", "fr", DevicePlatform.ANDROID),
+            device("token-ios", "fr", DevicePlatform.IOS)));
+        when(firebaseMessaging.sendEachForMulticast(any(MulticastMessage.class)))
+            .thenReturn(batchResponse);
+        when(batchResponse.getResponses()).thenReturn(List.of());
+
+        service.sendPush(userId, NotificationType.PROGRAM_REMINDER, slotPayload(), 1);
+
+        ArgumentCaptor<MulticastMessage> captor = ArgumentCaptor.forClass(MulticastMessage.class);
+        verify(firebaseMessaging, times(2)).sendEachForMulticast(captor.capture());
+
+        List<String> bodies = captor.getAllValues().stream()
+            .map(PushNotificationServiceTest::bodyOf)
+            .toList();
+
+        // Android : la formule, composée ici, à l'horloge fixe du test.
+        assertThat(bodies).contains(
+            "dans 2 h · Aujourd'hui 19:00 – 20:00 · par Lena Müller\nPiscine du Rhône");
+
+        // iOS : le texte traduit d'origine, que son extension réécrira sur
+        // l'appareil. Assertion sur la forme et non sur la valeur du rebours :
+        // ce chemin-là calcule encore sur l'horloge réelle, et la valeur
+        // dépendrait du jour où le test tourne.
+        assertThat(bodies).anyMatch(body -> body.startsWith("Votre session commence dans "));
+        assertThat(bodies).hasSize(2);
+    }
+
+    /**
+     * Le web n'a pas plus d'extension qu'Android, mais le client n'a pas demandé
+     * la formule pour lui : il reste sur le texte traduit, et surtout il ne
+     * déclenche pas un envoi de plus quand un iPhone est déjà dans la même
+     * langue.
+     */
+    @Test
+    void webEtIos_memeLangue_doiventPartirEnUnSeulEnvoi() throws FirebaseMessagingException {
+        PushNotificationService service = service();
+        UUID userId = UUID.randomUUID();
+
+        when(deviceTokenRepository.findByUserId(userId)).thenReturn(List.of(
+            device("token-web", "fr", DevicePlatform.WEB),
+            device("token-ios", "fr", DevicePlatform.IOS)));
+        when(firebaseMessaging.sendEachForMulticast(any(MulticastMessage.class)))
+            .thenReturn(batchResponse);
+        when(batchResponse.getResponses()).thenReturn(List.of());
+
+        service.sendPush(userId, NotificationType.PROGRAM_REMINDER, slotPayload(), 1);
+
+        verify(firebaseMessaging, times(1)).sendEachForMulticast(any(MulticastMessage.class));
+    }
+
+    /**
+     * Un type hors du template garde son texte traduit, y compris sur Android :
+     * le branchement de la formule est additif, il ne vide rien.
+     */
+    @Test
+    void android_surUnTypeHorsDuTemplate_doitGarderLeTexteTraduit() throws FirebaseMessagingException {
+        PushNotificationService service = service();
+        UUID userId = UUID.randomUUID();
+
+        when(deviceTokenRepository.findByUserId(userId)).thenReturn(List.of(
+            device("token-android", "fr", DevicePlatform.ANDROID)));
+        when(firebaseMessaging.sendEachForMulticast(any(MulticastMessage.class)))
+            .thenReturn(batchResponse);
+        when(batchResponse.getResponses()).thenReturn(List.of());
+
+        service.sendPush(userId, NotificationType.BADGE_EARNED, Map.of("badgeName", "Régularité"), 1);
+
+        ArgumentCaptor<MulticastMessage> captor = ArgumentCaptor.forClass(MulticastMessage.class);
+        verify(firebaseMessaging).sendEachForMulticast(captor.capture());
+        assertThat(bodyOf(captor.getValue())).isEqualTo("Vous avez gagné le badge : Régularité");
+    }
+
+    /** Séance à 19:00 – 20:00 heure de Paris, deux heures après {@link #NOW}. */
+    private static Map<String, Object> slotPayload() {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("activityName", "Natation");
+        payload.put("programTitle", "Longueurs du soir");
+        payload.put("authorName", "Lena Müller");
+        payload.put("placeName", "Piscine du Rhône");
+        payload.put("sessionAt", "2026-08-17T17:00:00Z");
+        payload.put("endsAt", "2026-08-17T18:00:00Z");
+        return payload;
+    }
+
+    /** Le SDK ne rend pas la notification composée : on la relit par réflexion. */
+    private static String bodyOf(MulticastMessage message) {
+        try {
+            java.lang.reflect.Field notification = MulticastMessage.class.getDeclaredField("notification");
+            notification.setAccessible(true);
+            Object value = notification.get(message);
+            java.lang.reflect.Field body = value.getClass().getDeclaredField("body");
+            body.setAccessible(true);
+            return (String) body.get(value);
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("Impossible de relire le corps du message", e);
+        }
     }
 
     @Test
@@ -267,6 +402,50 @@ class PushNotificationServiceTest {
         assertThat(data).containsKey("addressPublic");
     }
 
+    /**
+     * Demande du client (réponse du 15/08, question 2) : le nom du lieu ne doit
+     * jamais sauter. Il fait une trentaine de caractères et le perdre vide une
+     * zone de la carte ; l'adresse en fait jusqu'à 300 et ne coûte qu'une
+     * précision. La charge ici est indéracinable — même après avoir tout évincé,
+     * elle déborde — et c'est justement le cas où la tentation de continuer à
+     * sacrifier existe.
+     */
+    @Test
+    void placeName_neDoitJamaisEtreSacrifie_memeSurUneChargeInderacinable() {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("programTitle", "z".repeat(4_000));
+        payload.put("placeName", "Piscine du Rhône");
+        payload.put("addressPublic", "8 quai Claude Bernard, Lyon");
+        payload.put("welcomeNote", "Bienvenue !");
+        payload.put("authorAvatarUrl", "https://cdn/avatars/2a19.jpg");
+
+        Map<String, String> data = PushNotificationService.dataPayload(payload, "Titre", "Corps");
+
+        assertThat(data).containsKey("placeName");
+        // Les trois évictables sont bien partis : ce n'est pas que rien n'a été
+        // tenté, c'est que placeName n'est pas dans la liste.
+        assertThat(data).doesNotContainKeys("authorAvatarUrl", "welcomeNote", "addressPublic");
+    }
+
+    /**
+     * L'adresse part <b>après</b> la note d'accueil : le client n'affiche
+     * welcomeNote nulle part, tandis que l'adresse précise encore la ligne de
+     * lieu.
+     */
+    @Test
+    void ordreDeSacrifice_laNoteDAccueilPartAvantLAdresse() {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("programTitle", "Longueurs du soir");
+        payload.put("placeName", "Piscine du Rhône");
+        payload.put("welcomeNote", "w".repeat(3_500));
+        payload.put("addressPublic", "8 quai Claude Bernard, Lyon");
+
+        Map<String, String> data = PushNotificationService.dataPayload(payload, "Titre", "Corps");
+
+        assertThat(data).doesNotContainKey("welcomeNote");
+        assertThat(data).containsKeys("addressPublic", "placeName");
+    }
+
     private static int serializedSize(Map<String, String> data) {
         return data.entrySet().stream()
             .mapToInt(e -> e.getKey().getBytes(StandardCharsets.UTF_8).length
@@ -275,10 +454,14 @@ class PushNotificationServiceTest {
     }
 
     private static DeviceToken device(String token, String locale) {
+        return device(token, locale, DevicePlatform.IOS);
+    }
+
+    private static DeviceToken device(String token, String locale, DevicePlatform platform) {
         return DeviceToken.builder()
             .id(UUID.randomUUID())
             .token(token)
-            .platform(DevicePlatform.IOS)
+            .platform(platform)
             .locale(locale)
             .build();
     }

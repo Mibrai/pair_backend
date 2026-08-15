@@ -58,25 +58,63 @@ public class PushNotificationService implements PushNotificationServiceInterface
 
     /**
      * Ordre de sacrifice quand la charge déborde — du plus décoratif au moins.
-     * {@code programTitle} n'y est pas et ne doit pas y entrer : c'est le seuil
-     * en dessous duquel le client n'affiche plus de carte du tout.
+     *
+     * <p><b>Ce que la liste ne contient pas est le vrai contenu de la règle.</b>
+     * {@code placeName} en est sorti à la demande du client (réponse du 15/08,
+     * question 2) : un nom de lieu fait une trentaine de caractères et le perdre
+     * <i>vide une zone</i> de la carte, tandis qu'{@code addressPublic} monte à
+     * 300 en base et le perdre ne coûte qu'une <i>précision</i>. Sacrifier le
+     * premier libérait presque rien pour le prix le plus élevé.
+     *
+     * <p>Ne doivent jamais y entrer, pour la même raison : {@code programTitle},
+     * {@code activityName} et {@code placeName}, qui vident chacun une zone ;
+     * {@code sessionAt}, qui emporte d'un coup la date, l'heure et le rebours ;
+     * {@code type} et les identifiants, qui cassent le routage du tap.
+     *
+     * <p>Plafond toujours dépassé après ces trois évictions : c'est une charge
+     * anormale, pas un cas à dégrader en silence — d'où l'{@code ERROR} de
+     * {@link #dataPayload}, et l'envoi tenté quand même.
      */
     static final List<String> EVICTABLE_KEYS = List.of(
         "authorAvatarUrl",   // repli client : initiales sur pastille
-        "addressPublic",     // repli client : la ligne d'adresse disparaît
-        "welcomeNote",
-        "placeName");
+        "welcomeNote",       // le client ne l'affiche nulle part
+        "addressPublic");    // repli client : la carte garde le nom du lieu
 
     private final FirebaseMessaging firebaseMessaging;
     private final DeviceTokenRepository deviceTokenRepository;
     private final Messages messages;
+    private final AndroidPushText androidText;
 
     public PushNotificationService(FirebaseMessaging firebaseMessaging,
                                     DeviceTokenRepository deviceTokenRepository,
-                                    Messages messages) {
+                                    Messages messages,
+                                    AndroidPushText androidText) {
         this.firebaseMessaging = firebaseMessaging;
         this.deviceTokenRepository = deviceTokenRepository;
         this.messages = messages;
+        this.androidText = androidText;
+    }
+
+    /**
+     * Ce qui distingue deux textes pour un même destinataire.
+     *
+     * <p>Le groupement portait sur la seule langue. Il porte désormais aussi sur
+     * la <b>variante de texte</b>, parce qu'Android suit la formule du template
+     * (T5) et qu'iOS garde le texte traduit — devenu son repli depuis que
+     * l'extension de service réécrit la bannière sur l'appareil.
+     *
+     * <p>La variante, et non la plateforme : iOS et le web reçoivent le même
+     * texte, et les grouper séparément coûterait un envoi FCM de plus pour un
+     * contenu identique.
+     */
+    private record TextGroup(Locale locale, TextVariant variant) {
+    }
+
+    private enum TextVariant {
+        /** Formule du template client, composée par {@link AndroidPushText}. */
+        ANDROID,
+        /** Texte traduit d'origine — iOS (repli de son extension) et web. */
+        DEFAULT
     }
 
     /**
@@ -93,23 +131,57 @@ public class PushNotificationService implements PushNotificationServiceInterface
 
         int badge = badgeValue(badgeCount);
 
-        // Un même utilisateur peut avoir des appareils en des langues différentes :
-        // un envoi par langue, chacun avec son texte. LinkedHashMap pour un ordre
+        // Un même utilisateur peut avoir des appareils en des langues différentes,
+        // et Android ne reçoit pas le même texte qu'iOS : un envoi par couple
+        // (langue, variante), chacun avec son texte. LinkedHashMap pour un ordre
         // d'envoi déterministe.
-        Map<Locale, List<String>> tokensByLocale = devices.stream()
+        Map<TextGroup, List<String>> tokensByGroup = devices.stream()
             .collect(Collectors.groupingBy(
-                PushNotificationService::deviceLocale,
+                PushNotificationService::textGroup,
                 LinkedHashMap::new,
                 Collectors.mapping(DeviceToken::getToken, Collectors.toList())));
 
-        for (Map.Entry<Locale, List<String>> group : tokensByLocale.entrySet()) {
-            Locale locale = group.getKey();
+        for (Map.Entry<TextGroup, List<String>> group : tokensByGroup.entrySet()) {
             List<String> tokens = group.getValue();
             sendToTokens(userId, tokens,
-                buildTitle(locale, type, payload),
-                buildBody(locale, type, payload),
+                title(group.getKey(), type, payload),
+                body(group.getKey(), type, payload),
                 payload, badge);
         }
+    }
+
+    private static TextGroup textGroup(DeviceToken device) {
+        TextVariant variant = device.getPlatform() == DevicePlatform.ANDROID
+            ? TextVariant.ANDROID
+            : TextVariant.DEFAULT;
+        return new TextGroup(deviceLocale(device), variant);
+    }
+
+    /**
+     * Titre du groupe. {@link AndroidPushText} rend {@code null} pour ce qui
+     * n'est pas dans le template du client — un badge gagné, un message direct
+     * sans programme —, et le texte traduit d'origine reprend la main. Aucune
+     * notification ne perd son titre parce qu'elle n'est pas dans la maquette.
+     */
+    private String title(TextGroup group, NotificationType type, Map<String, Object> payload) {
+        if (group.variant() == TextVariant.ANDROID) {
+            String composed = androidText.title(group.locale(), payload);
+            if (composed != null) {
+                return composed;
+            }
+        }
+        return buildTitle(group.locale(), type, payload);
+    }
+
+    /** Même repli que {@link #title} : hors du template, le texte traduit d'origine. */
+    private String body(TextGroup group, NotificationType type, Map<String, Object> payload) {
+        if (group.variant() == TextVariant.ANDROID) {
+            String composed = androidText.body(group.locale(), type, payload);
+            if (composed != null) {
+                return composed;
+            }
+        }
+        return buildBody(group.locale(), type, payload);
     }
 
     /**
