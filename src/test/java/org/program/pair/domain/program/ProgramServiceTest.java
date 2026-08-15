@@ -84,8 +84,14 @@ class ProgramServiceTest {
             .thenAnswer(invocation -> invocation.getArgument(0));
     }
 
+    /**
+     * L'annonce ne part plus de la création : un programme naît en brouillon et
+     * sans créneau — {@code CreateProgramRequest} n'en porte pas — donc sans date,
+     * sans lieu et sans rien à décompter. Annoncée là, elle arrivait chez
+     * l'abonné avec un titre, un auteur, et rien d'autre.
+     */
     @Test
-    void createProgram_doitNotifierLesAbonnesDeLAuteurEtDeLActivite() {
+    void createProgram_sansCreneau_neDoitRienAnnoncerAuxAbonnes() {
         // Given
         User owner = new User();
         owner.setId(UUID.randomUUID());
@@ -122,9 +128,81 @@ class ProgramServiceTest {
         programService.createProgram(owner.getId(), request);
 
         // Then
-        ArgumentCaptor<Program> captor = ArgumentCaptor.forClass(Program.class);
+        verify(subscriptionService, never()).notifySubscribersOfNewProgram(any());
+    }
+
+    /**
+     * T3 — les abonnés sont annoncés au premier créneau, et l'annonce porte le
+     * créneau lui-même : c'est {@code NotificationPayload.ofSchedule} qui sert
+     * {@code scheduleId}, {@code sessionAt} et {@code placeName}, que la variante
+     * A du template client attend et qu'{@code ofProgram} n'a jamais eus.
+     */
+    @Test
+    void addSchedule_premierCreneau_doitAnnoncerLeProgrammeSitueALaSeance() {
+        // Given
+        Program program = buildOwnedProgram();
+        UUID ownerId = program.getUserActivity().getUser().getId();
+        Instant startsAt = Instant.parse("2026-08-17T17:00:00Z");
+
+        when(programRepository.findById(any())).thenReturn(Optional.of(program));
+        when(scheduleRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(sanitizer.sanitize(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // When
+        programService.addSchedule(ownerId, program.getId(),
+            publicSlotRequest("Piscine municipale", startsAt));
+
+        // Then
+        ArgumentCaptor<Schedule> captor = ArgumentCaptor.forClass(Schedule.class);
         verify(subscriptionService).notifySubscribersOfNewProgram(captor.capture());
-        assertThat(captor.getValue().getUserActivity()).isEqualTo(ua);
+        assertThat(captor.getValue().getStartsAt()).isEqualTo(startsAt);
+        assertThat(captor.getValue().getPlaceName()).isEqualTo("Piscine municipale");
+        assertThat(captor.getValue().getProgram()).isSameAs(program);
+
+        // Et le programme est marqué : c'est ce qui rend l'annonce unique.
+        assertThat(program.getSubscribersNotifiedAt()).isNotNull();
+    }
+
+    /**
+     * Un programme déjà annoncé ne le sera pas une seconde fois. Le marqueur est
+     * une date sur le programme et non un décompte de ses créneaux : l'unique
+     * créneau supprimé puis reposé ferait sinon du suivant « le premier ».
+     */
+    @Test
+    void addSchedule_programmeDejaAnnonce_neDoitPasReannoncer() {
+        // Given
+        Program program = buildOwnedProgram();
+        program.setSubscribersNotifiedAt(Instant.parse("2026-08-14T09:00:00Z"));
+        UUID ownerId = program.getUserActivity().getUser().getId();
+
+        when(programRepository.findById(any())).thenReturn(Optional.of(program));
+        when(scheduleRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(sanitizer.sanitize(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        // When
+        programService.addSchedule(ownerId, program.getId(),
+            publicSlotRequest("Court n°3", Instant.parse("2026-08-20T17:00:00Z")));
+
+        // Then
+        verify(subscriptionService, never()).notifySubscribersOfNewProgram(any());
+    }
+
+    private static CreateScheduleRequest publicSlotRequest(String placeName, Instant startsAt) {
+        return new CreateScheduleRequest(
+            placeName,
+            PlaceType.PUBLIC,
+            48.85,
+            2.35,
+            "12 rue de la Paix",
+            false,
+            null, // ville
+            startsAt,
+            null,
+            null,
+            null,
+            null,
+            null
+        );
     }
 
     @Test

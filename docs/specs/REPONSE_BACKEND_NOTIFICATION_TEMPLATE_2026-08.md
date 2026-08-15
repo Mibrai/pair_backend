@@ -1,5 +1,10 @@
 # Réponse backend — template de notification (août 2026)
 
+> **Mise à jour du 15/08 :** un addendum en fin de document répond à
+> `TODO_BACKEND_PUSH_2026-08-15.md`. Quatre des six tâches de ce TODO étaient
+> déjà livrées quand il a été écrit, T1 comprise ; T3 l'est depuis. Voir
+> « Addendum du 15/08 ».
+
 > Réponse à `PROMPT_BACKEND_NOTIFICATION_TEMPLATE_2026-08.md`. **Cinq demandes
 > sur six sont livrées** — N1, N2 (option A), N4, N5 et N6. Voir « Ce qui est
 > livré » en fin de document. Seule **N3** reste à faire : elle demande de
@@ -510,3 +515,151 @@ commencée ignorée).
 | Champs disponibles non servis | `Schedule.java:48,59` · `Category.java:27` · `Program.java:73,76` |
 | La ligne mesurée par le client | `db/migration/V27__reset_and_seed_germany.sql:985` |
 | Jobs planifiés existants | `attendance/jobs/` · `gdpr/jobs/` · `program/jobs/` |
+
+---
+
+# Addendum du 15/08 — réponse à `TODO_BACKEND_PUSH_2026-08-15.md`
+
+> **Quatre de vos six tâches étaient déjà livrées** au moment où vous avez écrit
+> ce TODO, T1 comprise — celle que vous donnez pour bloquante. Une cinquième,
+> T3, l'est depuis aujourd'hui. Reste **T5**, qui attend toujours un arbitrage de
+> votre côté.
+>
+> Si les deux extensions ne s'exécutent toujours pas sur l'appareil, la cause
+> n'est pas `mutable-content` : elle est partie depuis le lot précédent. Voir
+> « Ce qu'il faut vérifier en premier » ci-dessous.
+
+## Où en est chacune de vos six tâches
+
+| # | Votre demande | État | Depuis |
+|---|---|---|---|
+| T1 | `aps.mutable-content: 1` | **déjà livrée** | lot précédent (N5) |
+| T2 | Six champs dans `data` | **déjà livrée** | lot précédent (N1, N2) |
+| T3 | `sessionAt`/`placeName`/`scheduleId` sur la variante A | **livrée ce jour** | ce lot |
+| T4 | Tronquer `messageBody` à 120 | **déjà livrée** | lot précédent (N4) |
+| T5 | Formule `title`/`subtitle`/`body` | **à faire** | bloquée, voir plus bas |
+| T6 | Planification du rappel T-2h | **déjà livrée** | lot précédent (N6) |
+
+## Ce qu'il faut vérifier en premier
+
+`mutable-content` et `category` partent sur toute push visible depuis le lot
+précédent (`PushNotificationService.visibleAps`), et deux tests verrouillent leur
+présence — comme leur absence sur les pushes de fond. Votre diagnostic « la clé
+manque » ne correspond donc pas au code.
+
+Avant de chercher plus loin, vérifiez `FIREBASE_ENABLED` dans l'environnement
+déployé. Le service d'envoi est conditionné à cette variable
+(`@ConditionalOnProperty(name = "firebase.enabled")`, défaut **`false`**) ;
+quand elle n'est pas à `true`, c'est `NoOpPushNotificationService` qui est câblé
+et **aucune push ne part du tout**. Le symptôme est alors indiscernable du vôtre
+côté appareil.
+
+Un second point, mineur : nous ne posons pas les en-têtes `apns-push-type: alert`
+ni `apns-priority: 10` sur les pushes visibles — FCM v1 les renseigne lui-même
+dès qu'un bloc `notification` est présent. Nous pouvons les poser explicitement
+si vous préférez lever l'ambiguïté ; dites-le.
+
+## T3 — livrée, mais le correctif n'était pas celui que vous décriviez
+
+Vous demandiez trois clés de plus dans le payload. Le problème était en amont :
+**l'annonce partait avant qu'il y ait quoi que ce soit à annoncer.**
+
+`AUTHOR_NEW_PROGRAM` et `ACTIVITY_NEW_PROGRAM` étaient émis par `createProgram`,
+qui sauve un programme **en brouillon et sans aucun créneau** — la requête de
+création n'en porte pas, les créneaux arrivent ensuite par `POST /schedules`. Au
+moment de l'émission, le programme n'avait donc ni date, ni lieu, ni séance vers
+laquelle décompter. Y ajouter trois clés n'aurait rien changé : elles seraient
+parties vides.
+
+**L'annonce part désormais du premier créneau posé.** Le payload est celui du
+créneau, et il porte :
+
+| Clé | Ce que vous en faites |
+|---|---|
+| `scheduleId` | la route du tap |
+| `sessionAt` | la date, l'heure, et le compte à rebours |
+| `placeName` | la ligne de lieu |
+| `endsAt` | « 19:00 – 20:00 » au lieu de « 19:00 » |
+| `addressPublic` | l'adresse, quand la visibilité du créneau l'autorise |
+
+Le contexte du programme reste servi comme avant (titre, activité, catégorie,
+couleur, icône, auteur avec le repli `organizerName` → `displayName`).
+
+**Deux conséquences à connaître de votre côté :**
+
+1. **Un programme sans créneau n'est plus annoncé du tout.** C'est le
+   comportement voulu : c'est exactement la notification « un titre, un auteur, et
+   rien d'autre » dont vous vous plaignez.
+2. **L'annonce reste unique par programme.** Une date posée sur le programme le
+   garantit — un créneau supprimé puis reposé ne rejoue pas l'annonce. Les
+   programmes existants sont marqués comme déjà annoncés par la migration, sans
+   quoi la livraison aurait déclenché une salve rétroactive sur toute la base.
+
+### `NEARBY_PROGRAM` — rien à corriger, parce que rien ne l'émet
+
+Vous le citez parmi les trois types de la variante A. Il existe dans l'enum et
+dans les trois fichiers de traduction, mais **aucun producteur ne l'émet** dans
+le backend. Il n'y a donc aucun payload à enrichir, et vous ne recevez
+aujourd'hui aucune notification de ce type. Lui donner un émetteur est une
+fonctionnalité à part entière — un fan-out de proximité, avec sa règle de
+déclenchement, son rayon et sa fréquence — et non un correctif de payload. Dites
+si vous la voulez, et sur quelle règle.
+
+## T5 — toujours bloquée sur la même question, posée en N3
+
+Nous vous avions demandé de trancher entre un rebours **relatif** (« dans
+45 min ») et une formulation **absolue** (« à 20:00 »). Le TODO redemande
+`{rebours}` sans y répondre — alors qu'il invoque lui-même le vieillissement du
+texte, dans sa section « ce qui n'est pas demandé », pour justifier que la vue
+déployée se compose sur l'appareil.
+
+**Ce que votre livraison du 15/08 change à la question.** L'extension de service
+réécrit la bannière **au moment de l'affichage** : sur iOS, le rebours y est donc
+recalculé et ne vieillit pas. Le problème ne subsiste que sur **Android**, qui
+n'a que le texte du serveur, et sur iOS quand l'extension échoue. Cela rend
+`{rebours}` défendable — mais c'est votre décision, pas la nôtre, et nous ne
+l'écrirons pas avant de l'avoir de vous.
+
+Le reste de T5 est un chantier que nous chiffrons ainsi :
+
+- grouper les jetons par **(langue, plateforme)** et non par langue seule — le
+  groupement existe, il gagne un niveau, et `DeviceToken.platform` est déjà en
+  base ;
+- servir le `subtitle` iOS, ce qui impose de passer de `Notification` à
+  `Aps.setAlert(ApsAlert…)` sur la branche iOS — le SDK ne l'expose pas
+  autrement ;
+- réécrire les clés `push.*.body` selon vos formules, avec des dates formatées
+  dans la locale de l'appareil.
+
+Votre règle « pas de compte à rebours vers une séance annulée ou passée » sera
+portée telle quelle. Aujourd'hui elle n'est enfreinte nulle part : le rebours
+n'est câblé que sur `PROGRAM_REMINDER`, et il rend vide pour une date passée.
+
+**Un point de vigilance sur votre formule.** Vous placez `placeName` en dernière
+ligne du corps. C'est aussi l'une des clés que nous sacrifions quand la charge
+dépasse 3 Ko (ordre : `authorAvatarUrl`, `addressPublic`, `welcomeNote`,
+`placeName`). Sur une charge lourde, cette ligne peut donc manquer. Prévoyez-le,
+ou dites-nous si vous préférez un autre ordre de sacrifice.
+
+## Vérification
+
+Suite complète après ce lot : **423 tests, 7 échecs, 2 erreurs**, sur les mêmes
+six classes déjà rouges avant — `SecurityInjectionIntegrationTest`,
+`WebSocketChatIntegrationTest`, `ChatFlowIntegrationTest`, `AuthServiceTest`,
+`BusinessErrorCodeIntegrationTest`, `MapActivitiesIntegrationTest`. Causes
+étrangères à ce lot (inscriptions en 409, authentification WebSocket). Aucune
+régression.
+
+Trois tests couvrent T3 : l'annonce **ne part pas** à la création d'un programme
+sans créneau, elle part au premier créneau **avec le créneau en payload**, et
+elle ne repart pas sur un programme déjà annoncé. La migration est exercée par
+les tests d'intégration, sur une vraie base.
+
+## Ce qui reste chez vous
+
+1. **Vérifier `FIREBASE_ENABLED`** dans l'environnement déployé avant tout autre
+   diagnostic sur les extensions.
+2. **Trancher le rebours** — relatif ou absolu. T5 ne démarre pas sans.
+3. Dire si vous voulez un émetteur pour **`NEARBY_PROGRAM`**, et sur quelle règle.
+4. Dire si vous voulez les en-têtes APNs explicites, et si l'ordre de sacrifice
+   de la charge vous convient avec `placeName` en dernière ligne de corps.

@@ -96,6 +96,18 @@ public class Program {
     @Column(name = "next_session_at")
     private Instant nextSessionAt;
 
+    /**
+     * Instant où les abonnés ont été notifiés de ce programme, {@code null} tant
+     * qu'ils ne l'ont pas été.
+     *
+     * <p>L'annonce part du <b>premier créneau posé</b> et non de la création :
+     * un programme sans créneau n'a ni date, ni lieu, ni compte à rebours à
+     * annoncer. Cette colonne est ce qui la rend unique — un créneau supprimé
+     * puis reposé ferait sinon du suivant « le premier » une seconde fois.
+     */
+    @Column(name = "subscribers_notified_at")
+    private Instant subscribersNotifiedAt;
+
     // Champs ajoutés par V26
     @Column(name = "duration_weeks")
     private Integer durationWeeks;
