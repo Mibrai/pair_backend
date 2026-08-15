@@ -31,9 +31,18 @@ vos « trois taps, aucun changement » mieux que le seul plafond à 1 km.
 
 ## Ce qui change
 
+La maille est désormais **divisée par deux à chaque palier**, sur toute la
+plage. Une cellule occupe donc toujours la même fraction de l'écran — la seule
+propriété que l'agrégation doive tenir : regrouper ce qui se chevauche à
+l'affichage, et rien d'autre.
+
 | zoom | maille avant | maille après |
 | --- | --- | --- |
-| 13 | 11 km | 5,6 km |
+| 1 | 5° (~11 px de cellule) | **204,8°** |
+| 3 | 5° | 51,2° |
+| 6 | 1° | 6,4° |
+| 9 | 0,5° | 0,8° |
+| 12 | 0,1° (~11 km) | 0,1° — **inchangé, c'est l'ancre** |
 | 14 | 5,6 km | 2,8 km |
 | 16 | 2,2 km | 696 m |
 | 18 | 1,1 km | 174 m |
@@ -44,14 +53,30 @@ coïncidence : votre ordre de grandeur est exactement ce qu'on obtient en gardan
 le comportement des paliers moyens et en rétablissant la pente. Votre chiffre
 était bon.
 
-Les paliers ≤ 12 sont **inchangés à l'octet près**. La même dérive les rend au
-contraire trop *fins* (11 px de cellule au palier 1 : quasiment aucune
-agrégation sur une carte monde), mais corriger cela change un comportement
-visible qu'aucune demande ne réclame. Le défaut est réel et reste ouvert —
-dites-nous s'il vous gêne.
+**Le bas de la plage change aussi**, et dans l'autre sens. La même dérive rendait
+les paliers bas trop *fins* : 11 px de cellule au palier 1, c'est-à-dire
+quasiment aucune agrégation là où elle est le plus nécessaire — des dizaines de
+pastilles superposées sur une carte monde. Elles se regroupent désormais. Si
+votre écran carte s'ouvre à un palier bas, c'est le changement que vous verrez en
+premier, et il est volontaire.
 
 Le correctif profite aux deux routes qui agrègent : `GET /map/activities?zoom=`
 et `GET /map/clusters`.
+
+### Une limite du bas de plage, à connaître
+
+La grille est un pavage à frontières fixes. Élargir la maille ne crée pas ces
+frontières, mais rend chacune plus lourde de conséquences : aux paliers les plus
+bas, les seules qui subsistent passent par **l'équateur et le méridien de
+Greenwich**.
+
+Cas concret pour vous : la France s'étend de -5° à +8° de longitude, donc à
+cheval sur Greenwich. Au palier 1, elle rendra **deux pastilles** au lieu d'une,
+séparées par une ligne invisible. Ce n'est pas une régression — cette frontière
+existait déjà à tous les paliers de l'ancienne table, qui y découpait la France
+en neuf cellules plutôt qu'en deux — mais c'est désormais l'artefact dominant à
+ce zoom, et mieux vaut le reconnaître que l'instruire en bug. Un test le
+constate explicitement plutôt que de le taire.
 
 ## Pourquoi livrer votre correctif quand même
 
@@ -140,8 +165,9 @@ ailleurs, sans qu'aucun test ne s'en aperçoive.
 | `auDessusDeLAncre_laMailleDoitEtreDiviseeParDeuxAChaquePalier` | la même chose sur la maille — un palier, une moitié |
 | `lAncreDoitResterALaValeurHistorique` | l'échelle absolue, que la pente seule ne détermine pas |
 | `auPalierMaximal_laMailleDoitEtreDeLOrdreDeLaCinquantaineDeMetres` | votre demande, en ordre de grandeur assumé plutôt qu'en valeur |
-| `enDessousDeLAncre_lesValeursHistoriquesDoiventEtreIntactes` | que les paliers bas n'ont pas bougé |
-| `unZoomHorsBornes_neDoitPasProduireDeMailleAberrante` | le plafond interne |
+| `auPalierMinimal_uneCelluleDoitCouvrirToutesLesLatitudes` | le bas de la plage, symétrique du précédent |
+| `uneZoneAChevalSurGreenwich_resteCoupeeEnDeux` | la limite décrite plus haut, constatée plutôt que tue |
+| `unZoomHorsBornes_doitEtreRameneALaPlageValide` | le bornage interne |
 
 Non-régression : `MapActivitiesBoundingIntegrationTest`, `MapUpcomingFilterIntegrationTest`
 et `MapActivitiesErrorPathIntegrationTest` passent **sans modification**. Aucune
@@ -156,15 +182,12 @@ avec la carte : vérifié en rejouant le test sur `master` sans le correctif.
 
 ## Ce qui reste ouvert
 
-Trois points, aucun bloquant, tous documentés dans le code plutôt que tus :
+Deux points, aucun bloquant, tous deux documentés dans le code plutôt que tus :
 
-1. **Les paliers bas sont trop fins** — même dérive, autre bout de la courbe.
-   Non traité parce qu'aucune demande ne le réclame et que c'est un changement
-   visible sur la carte monde.
-2. **Grille fixe, pas proximité** — le point 1 de la section « pourquoi livrer
-   quand même ». Le corriger demande un vrai clustering par proximité, donc un
-   autre travail.
-3. **La maille s'applique en degrés aux deux axes**, sans correction en
+1. **Grille fixe, pas proximité** — le point 1 de la section « pourquoi livrer
+   quand même », et la cause de la coupure sur Greenwich décrite plus haut. Le
+   corriger demande un vrai clustering par proximité, donc un autre travail.
+2. **La maille s'applique en degrés aux deux axes**, sans correction en
    `cos(lat)`. Une cellule est donc un rectangle qui s'aplatit vers le nord :
    0,01° vaut 1 113 m × 733 m à Paris, et l'écart croît avec la latitude. Sans
    effet sur vous — les `bounds` d'un cluster portent l'étendue réelle de ses
