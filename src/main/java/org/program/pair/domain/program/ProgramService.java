@@ -69,8 +69,11 @@ public class ProgramService {
             request.maxParticipants(), request.privacy(), request.goals(),
             request.prerequisites(), request.locationType());
 
+        // Aucune annonce aux abonnés ici : le programme naît en brouillon et sans
+        // créneau — CreateProgramRequest n'en porte pas — donc sans date, sans
+        // lieu et sans rien à décompter. L'annonce part du premier créneau posé,
+        // voir addSchedule.
         Program saved = programRepository.save(program);
-        subscriptionService.notifySubscribersOfNewProgram(saved);
         return toDto(saved, userId);
     }
 
@@ -330,8 +333,38 @@ public class ProgramService {
         Schedule saved = scheduleRepository.save(schedule);
         ScheduleDto dto = toScheduleDto(saved, userId);
         refreshNextSessionAt(program);
+        announceToSubscribersIfFirstSlot(program, saved);
         activityAlertService.evaluateAndNotify(saved);
         return dto;
+    }
+
+    /**
+     * Annonce le programme à ses abonnés au moment où il reçoit son premier
+     * créneau — et une seule fois.
+     *
+     * <p>L'annonce partait de {@link #createProgram}, où le programme n'a encore
+     * aucun créneau : {@code AUTHOR_NEW_PROGRAM} et {@code ACTIVITY_NEW_PROGRAM}
+     * arrivaient donc chez l'abonné avec un titre, un auteur, et rien d'autre —
+     * ni date, ni lieu, ni de quoi décompter. Ici, le créneau existe.
+     *
+     * <p>{@code subscribersNotifiedAt} porte l'unicité, et non un décompte des
+     * créneaux du programme : l'unique créneau supprimé puis reposé ferait du
+     * suivant « le premier » une seconde fois, et les abonnés recevraient deux
+     * annonces du même programme.
+     *
+     * <p>Pas de {@code try/catch} autour de l'annonce : {@code notify} est
+     * {@code @Async} et ne remonte donc rien ici. Ce qui peut encore échouer est
+     * la lecture des abonnements, en base et dans cette transaction — l'avaler
+     * marquerait la transaction {@code rollback-only} sans que rien ne le dise,
+     * et le créneau échouerait au commit avec une trace muette.
+     */
+    private void announceToSubscribersIfFirstSlot(Program program, Schedule firstSlot) {
+        if (program.getSubscribersNotifiedAt() != null) {
+            return;
+        }
+        subscriptionService.notifySubscribersOfNewProgram(firstSlot);
+        program.setSubscribersNotifiedAt(Instant.now());
+        programRepository.save(program);
     }
 
     public ScheduleDto updateSchedule(UUID userId, UUID scheduleId,

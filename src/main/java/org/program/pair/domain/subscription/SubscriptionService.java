@@ -7,6 +7,7 @@ import org.program.pair.domain.notification.NotificationPayload;
 import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.program.Program;
+import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.subscription.dto.SubscriptionDto;
 import org.program.pair.domain.user.User;
 import org.program.pair.repository.CategoryRepository;
@@ -159,23 +160,44 @@ public class SubscriptionService {
                 NotificationType.ACTIVITY_UPDATED, payload));
     }
 
-    public void notifySubscribersOfNewProgram(Program program) {
+    /**
+     * Annonce un nouveau programme à ses abonnés, <b>situé à son premier
+     * créneau</b>.
+     *
+     * <p>Le paramètre est le créneau, pas le programme : {@code AUTHOR_NEW_PROGRAM}
+     * et {@code ACTIVITY_NEW_PROGRAM} portent sur un programme mais doivent
+     * annoncer une séance — date, lieu, et de quoi décompter jusqu'à elle. C'est
+     * {@code ofSchedule} qui porte {@code scheduleId}, {@code sessionAt},
+     * {@code placeName} et {@code endsAt} ; {@code ofProgram} ne les a jamais eus,
+     * et l'annonce partait sans eux.
+     *
+     * <p>D'où l'appelant : {@code ProgramService.addSchedule} au premier créneau,
+     * et non {@code createProgram} — un programme naît en brouillon et sans
+     * créneau, il n'y avait donc rien à situer au moment où l'annonce partait.
+     *
+     * <p>{@code ofSchedule} rapatrie tout le contexte du programme (titre,
+     * activité, catégorie, auteur avec le repli {@code organizerName} →
+     * {@code displayName}) : rien à reposer ici, et le reposer ferait diverger le
+     * nom de l'auteur d'avec celui de la fiche du programme.
+     *
+     * <p>Un seul payload pour les deux types : il est identique, et
+     * {@code build()} rend une carte non modifiable — deux constructions
+     * donneraient deux copies du même contenu.
+     */
+    public void notifySubscribersOfNewProgram(Schedule firstSlot) {
+        Program program = firstSlot.getProgram();
         UserActivity userActivity = program.getUserActivity();
         UUID authorId = userActivity.getUser().getId();
 
-        // authorId/authorName/authorAvatarUrl viennent d'ofProgram, qui applique
-        // le repli organizerName → displayName. Les reposer ici écraserait ce
-        // repli et ferait diverger le nom de l'auteur d'avec celui de la fiche
-        // du programme.
-        Map<String, Object> authorPayload = NotificationPayload.ofProgram(program).build();
+        Map<String, Object> payload = NotificationPayload.ofSchedule(firstSlot).build();
+
         subscriptionRepository.findByTargetAuthorId(authorId).forEach(sub ->
             notificationService.notify(sub.getSubscriber().getId(),
-                NotificationType.AUTHOR_NEW_PROGRAM, authorPayload));
+                NotificationType.AUTHOR_NEW_PROGRAM, payload));
 
-        Map<String, Object> activityPayload = NotificationPayload.ofProgram(program).build();
         subscriptionRepository.findByTargetUserActivityId(userActivity.getId()).forEach(sub ->
             notificationService.notify(sub.getSubscriber().getId(),
-                NotificationType.ACTIVITY_NEW_PROGRAM, activityPayload));
+                NotificationType.ACTIVITY_NEW_PROGRAM, payload));
     }
 
     private SubscriptionDto toDto(Subscription s) {
