@@ -43,6 +43,12 @@ public class DeviceToken {
     @Column(length = 10)
     private String locale;
 
+    // Fuseau de CET appareil, étiquette IANA ("Europe/Paris"). Nul quand la
+    // plateforme ne sait pas répondre, ou pour un jeton enregistré avant la
+    // colonne : le formatage retombe alors sur pair.push.zone. Voir V56.
+    @Column(length = 64)
+    private String timezone;
+
     @Column(name = "created_at", nullable = false)
     @Builder.Default
     private Instant createdAt = Instant.now();

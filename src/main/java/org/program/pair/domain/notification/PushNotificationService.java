@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -101,13 +102,21 @@ public class PushNotificationService implements PushNotificationServiceInterface
      * <p>Le groupement portait sur la seule langue. Il porte désormais aussi sur
      * la <b>variante de texte</b>, parce qu'Android suit la formule du template
      * (T5) et qu'iOS garde le texte traduit — devenu son repli depuis que
-     * l'extension de service réécrit la bannière sur l'appareil.
+     * l'extension de service réécrit la bannière sur l'appareil ; et sur le
+     * <b>fuseau</b>, parce que la formule Android écrit une heure : deux
+     * appareils en français, l'un à Paris et l'autre à Londres, ne peuvent plus
+     * partager un envoi.
      *
      * <p>La variante, et non la plateforme : iOS et le web reçoivent le même
      * texte, et les grouper séparément coûterait un envoi FCM de plus pour un
      * contenu identique.
+     *
+     * <p>Le fuseau est <b>résolu</b> et non brut — deux appareils, l'un déclarant
+     * {@code Europe/Paris} et l'autre rien du tout, composent la même heure dès
+     * lors que la référence est Paris, et doivent donc rester dans le même
+     * envoi.
      */
-    private record TextGroup(Locale locale, TextVariant variant) {
+    private record TextGroup(Locale locale, TextVariant variant, ZoneId zone) {
     }
 
     private enum TextVariant {
@@ -132,12 +141,12 @@ public class PushNotificationService implements PushNotificationServiceInterface
         int badge = badgeValue(badgeCount);
 
         // Un même utilisateur peut avoir des appareils en des langues différentes,
-        // et Android ne reçoit pas le même texte qu'iOS : un envoi par couple
-        // (langue, variante), chacun avec son texte. LinkedHashMap pour un ordre
-        // d'envoi déterministe.
+        // dans des fuseaux différents, et Android ne reçoit pas le même texte
+        // qu'iOS : un envoi par triplet (langue, variante, fuseau), chacun avec
+        // son texte. LinkedHashMap pour un ordre d'envoi déterministe.
         Map<TextGroup, List<String>> tokensByGroup = devices.stream()
             .collect(Collectors.groupingBy(
-                PushNotificationService::textGroup,
+                this::textGroup,
                 LinkedHashMap::new,
                 Collectors.mapping(DeviceToken::getToken, Collectors.toList())));
 
@@ -150,11 +159,11 @@ public class PushNotificationService implements PushNotificationServiceInterface
         }
     }
 
-    private static TextGroup textGroup(DeviceToken device) {
+    private TextGroup textGroup(DeviceToken device) {
         TextVariant variant = device.getPlatform() == DevicePlatform.ANDROID
             ? TextVariant.ANDROID
             : TextVariant.DEFAULT;
-        return new TextGroup(deviceLocale(device), variant);
+        return new TextGroup(deviceLocale(device), variant, androidText.zoneOf(device.getTimezone()));
     }
 
     /**
@@ -176,7 +185,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
     /** Même repli que {@link #title} : hors du template, le texte traduit d'origine. */
     private String body(TextGroup group, NotificationType type, Map<String, Object> payload) {
         if (group.variant() == TextVariant.ANDROID) {
-            String composed = androidText.body(group.locale(), type, payload);
+            String composed = androidText.body(group.locale(), group.zone(), type, payload);
             if (composed != null) {
                 return composed;
             }

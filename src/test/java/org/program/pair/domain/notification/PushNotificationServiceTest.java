@@ -233,6 +233,60 @@ class PushNotificationServiceTest {
         assertThat(bodyOf(captor.getValue())).isEqualTo("Vous avez gagné le badge : Régularité");
     }
 
+    // ─── Le fuseau de l'appareil entre dans le groupement ─────────────────────
+
+    /**
+     * Deux Android, même langue, deux fuseaux : deux envois, et deux heures.
+     * Le groupement ne pouvait plus porter sur la seule langue dès lors que la
+     * formule Android écrit une heure.
+     */
+    @Test
+    void deuxFuseaux_memeLangue_doiventRecevoirDeuxHeures() throws FirebaseMessagingException {
+        PushNotificationService service = service();
+        UUID userId = UUID.randomUUID();
+
+        when(deviceTokenRepository.findByUserId(userId)).thenReturn(List.of(
+            device("token-paris", "fr", DevicePlatform.ANDROID, "Europe/Paris"),
+            device("token-londres", "fr", DevicePlatform.ANDROID, "Europe/London")));
+        when(firebaseMessaging.sendEachForMulticast(any(MulticastMessage.class)))
+            .thenReturn(batchResponse);
+        when(batchResponse.getResponses()).thenReturn(List.of());
+
+        service.sendPush(userId, NotificationType.PROGRAM_REMINDER, slotPayload(), 1);
+
+        ArgumentCaptor<MulticastMessage> captor = ArgumentCaptor.forClass(MulticastMessage.class);
+        verify(firebaseMessaging, times(2)).sendEachForMulticast(captor.capture());
+
+        assertThat(captor.getAllValues().stream().map(PushNotificationServiceTest::bodyOf).toList())
+            .containsExactlyInAnyOrder(
+                "dans 2 h · Aujourd'hui 19:00 – 20:00 · par Lena Müller\nPiscine du Rhône",
+                "dans 2 h · Aujourd'hui 18:00 – 19:00 · par Lena Müller\nPiscine du Rhône");
+    }
+
+    /**
+     * Un fuseau déclaré identique à la référence du serveur, et un fuseau absent,
+     * composent la même heure : ils doivent donc rester dans le même envoi. C'est
+     * pour cela que la clé de groupement porte le fuseau <b>résolu</b> et non
+     * l'étiquette brute.
+     */
+    @Test
+    void fuseauDeclareEgalALaReference_etFuseauAbsent_doiventPartirEnsemble()
+            throws FirebaseMessagingException {
+        PushNotificationService service = service();
+        UUID userId = UUID.randomUUID();
+
+        when(deviceTokenRepository.findByUserId(userId)).thenReturn(List.of(
+            device("token-declare", "fr", DevicePlatform.ANDROID, "Europe/Paris"),
+            device("token-muet", "fr", DevicePlatform.ANDROID, null)));
+        when(firebaseMessaging.sendEachForMulticast(any(MulticastMessage.class)))
+            .thenReturn(batchResponse);
+        when(batchResponse.getResponses()).thenReturn(List.of());
+
+        service.sendPush(userId, NotificationType.PROGRAM_REMINDER, slotPayload(), 1);
+
+        verify(firebaseMessaging, times(1)).sendEachForMulticast(any(MulticastMessage.class));
+    }
+
     // ─── L'envoi doit rendre compte de ce qui a échoué ────────────────────────
 
     /**
@@ -592,11 +646,17 @@ class PushNotificationServiceTest {
     }
 
     private static DeviceToken device(String token, String locale, DevicePlatform platform) {
+        return device(token, locale, platform, null);
+    }
+
+    private static DeviceToken device(String token, String locale, DevicePlatform platform,
+                                      String timezone) {
         return DeviceToken.builder()
             .id(UUID.randomUUID())
             .token(token)
             .platform(platform)
             .locale(locale)
+            .timezone(timezone)
             .build();
     }
 }

@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
+import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -41,15 +42,19 @@ import java.util.Set;
  * additif : aucune notification ne perd son texte parce qu'elle n'est pas dans
  * la maquette.
  *
- * <p><b>Le fuseau est une approximation assumée.</b> Composer « 19:00 » exige un
- * fuseau, et nous n'en avons aucun : {@code device_tokens} porte la langue de
- * l'appareil, pas son fuseau, et rien dans le créneau ne dit celui de son lieu.
- * On formate donc dans le fuseau de référence de l'application
- * ({@code pair.push.zone}, défaut {@code Europe/Paris}) — exact pour les deux
- * marchés servis, la France et l'Allemagne partageant le même décalage, faux
- * d'une heure pour un appareil réglé à Londres. iOS n'a pas ce défaut puisqu'il
- * reformate sur place. Le corriger demanderait au client d'envoyer son fuseau à
- * l'enregistrement du jeton ; ce n'est pas demandé à ce jour.
+ * <p><b>Le fuseau vient de l'appareil.</b> Composer « 19:00 » en exige un, et
+ * {@code device_tokens.timezone} le porte depuis V56 — étiquette IANA envoyée
+ * par le client à l'enregistrement du jeton, et relue à chaque
+ * ré-enregistrement, puisqu'un fuseau change quand on voyage. Sans lui — appareil
+ * dont la plateforme ne sait pas répondre, jeton antérieur à la colonne — on
+ * retombe sur le fuseau de référence de l'application ({@code pair.push.zone},
+ * défaut {@code Europe/Paris}), qui était le comportement de tout le monde
+ * jusqu'ici.
+ *
+ * <p>Une étiquette IANA et jamais un décalage : {@code +02:00} décrit un instant
+ * et non une règle, et un rappel émis fin octobre pour une séance de novembre
+ * serait décalé d'une heure. {@code Europe/Paris} porte le changement d'heure
+ * avec lui.
  */
 @Component
 @Slf4j
@@ -91,7 +96,7 @@ public class AndroidPushText {
     private static final String SEGMENT = " · ";
 
     private final Messages messages;
-    private final ZoneId zone;
+    private final ZoneId referenceZone;
     private final Clock clock;
 
     @Autowired
@@ -100,11 +105,34 @@ public class AndroidPushText {
         this(messages, ZoneId.of(zoneId), Clock.systemUTC());
     }
 
-    /** Pour les tests : fuseau et horloge imposés, donc un texte reproductible. */
-    AndroidPushText(Messages messages, ZoneId zone, Clock clock) {
+    /** Pour les tests : fuseau de référence et horloge imposés, donc un texte reproductible. */
+    AndroidPushText(Messages messages, ZoneId referenceZone, Clock clock) {
         this.messages = messages;
-        this.zone = zone;
+        this.referenceZone = referenceZone;
         this.clock = clock;
+    }
+
+    /**
+     * Fuseau dans lequel composer, pour un appareil donné.
+     *
+     * <p>L'étiquette est validée à l'enregistrement du jeton
+     * ({@code NotificationController.resolveDeviceTimezone}) : ce qui arrive ici
+     * est donc déjà lisible, ou nul. Le {@code catch} n'en reste pas moins là —
+     * une valeur peut avoir été posée avant cette validation, ou par un autre
+     * chemin, et une push qui échoue à se composer est une push qui n'arrive
+     * pas.
+     */
+    ZoneId zoneOf(String declaredTimezone) {
+        if (declaredTimezone == null || declaredTimezone.isBlank()) {
+            return referenceZone;
+        }
+        try {
+            return ZoneId.of(declaredTimezone.strip());
+        } catch (DateTimeException e) {
+            log.warn("Device carries an unreadable timezone '{}' — composing in {}",
+                declaredTimezone, referenceZone);
+            return referenceZone;
+        }
     }
 
     /**
@@ -130,22 +158,22 @@ public class AndroidPushText {
      * moins urgente, celle qui doit sauter quand la bannière se replie sur une
      * ligne.
      */
-    String body(Locale locale, NotificationType type, Map<String, Object> payload) {
+    String body(Locale locale, ZoneId zone, NotificationType type, Map<String, Object> payload) {
         String composed;
         if (REMINDER_SHAPE.contains(type)) {
             composed = joinLines(
-                joinSegments(countdown(locale, type, payload), when(locale, payload),
+                joinSegments(countdown(locale, type, payload), when(locale, zone, payload),
                     byAuthor(locale, payload)),
                 str(payload, "placeName"));
         } else if (PROGRAM_SHAPE.contains(type)) {
             composed = joinLines(
-                joinSegments(when(locale, payload), countdown(locale, type, payload),
+                joinSegments(when(locale, zone, payload), countdown(locale, type, payload),
                     byAuthor(locale, payload)),
                 str(payload, "placeName"));
         } else if (MESSAGE_SHAPE.contains(type)) {
             composed = joinLines(
                 bubble(payload),
-                joinSegments(when(locale, payload), str(payload, "placeName")));
+                joinSegments(when(locale, zone, payload), str(payload, "placeName")));
         } else {
             return null;
         }
@@ -167,7 +195,7 @@ public class AndroidPushText {
      * déclare une fin : {@code endsAt} est facultative en base, et « 19:00 »
      * seul est le rendu voulu quand elle manque.
      */
-    private String when(Locale locale, Map<String, Object> payload) {
+    private String when(Locale locale, ZoneId zone, Map<String, Object> payload) {
         Instant startsAt = instant(payload, "sessionAt");
         if (startsAt == null) {
             return "";
@@ -180,7 +208,7 @@ public class AndroidPushText {
             time = messages.getIn(locale, "push.tpl.timeRange",
                 time, endsAt.atZone(zone).format(pattern(locale, "push.tpl.timePattern")));
         }
-        return day(locale, start) + " " + time;
+        return day(locale, zone, start) + " " + time;
     }
 
     /**
@@ -188,7 +216,7 @@ public class AndroidPushText {
      * l'appareil — jamais un motif littéral, le motif lui-même est une
      * traduction.
      */
-    private String day(Locale locale, ZonedDateTime moment) {
+    private String day(Locale locale, ZoneId zone, ZonedDateTime moment) {
         LocalDate today = LocalDate.now(clock.withZone(zone));
         LocalDate date = moment.toLocalDate();
         if (date.equals(today)) {

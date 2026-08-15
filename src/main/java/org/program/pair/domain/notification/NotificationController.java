@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.notification.dto.DeviceTokenDto;
 import org.program.pair.domain.notification.dto.NotificationDto;
 import org.program.pair.domain.notification.dto.NotificationPrefDto;
@@ -18,7 +19,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.DateTimeException;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -29,6 +32,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Tag(name = "Notifications", description = "Système de notifications in-app, email et push")
 @SecurityRequirement(name = "bearerAuth")
+@Slf4j
 public class NotificationController {
 
     private final NotificationService notificationService;
@@ -118,7 +122,10 @@ public class NotificationController {
         description = "Le champ locale fixe la langue des textes push de cet appareil. "
             + "Absent, l'Accept-Language de cette requête fait foi — c'est l'appareil "
             + "lui-même qui appelle, son en-tête dit sa langue. Sans l'un ni l'autre, "
-            + "français.")
+            + "français. Le champ timezone (étiquette IANA) fixe le fuseau dans lequel "
+            + "les heures des textes push Android sont composées ; absent ou non reconnu, "
+            + "le fuseau de référence du serveur fait foi. La réponse renvoie les deux "
+            + "valeurs effectivement retenues, ce qui rend un repli visible.")
     public ResponseEntity<DeviceTokenDto> registerDevice(
             @AuthenticationPrincipal UserPrincipal currentUser,
             @RequestHeader(value = "Accept-Language", required = false) String acceptLanguage,
@@ -129,10 +136,39 @@ public class NotificationController {
             request.getToken(),
             request.getPlatform(),
             request.getDeviceName(),
-            resolveDeviceLocale(request.getLocale(), acceptLanguage)
+            resolveDeviceLocale(request.getLocale(), acceptLanguage),
+            resolveDeviceTimezone(request.getTimezone())
         );
 
         return ResponseEntity.ok(DeviceTokenDto.fromEntity(token));
+    }
+
+    /**
+     * Fuseau à persister pour l'appareil, ou {@code null}.
+     *
+     * <p><b>Une étiquette qu'on ne reconnaît pas n'est pas une erreur de
+     * requête.</b> Enregistrer un jeton est ce qui permet à un appareil de
+     * recevoir quoi que ce soit : refuser l'enregistrement entier pour un fuseau
+     * mal orthographié coûterait toutes les notifications de cet appareil, pour
+     * une heure d'affichage. On la laisse tomber, on la journalise, et le
+     * formatage retombe sur le fuseau de référence — le comportement d'avant ce
+     * champ.
+     *
+     * <p>La validation est faite ici et non à l'envoi : {@code ZoneId.of} lève
+     * sur une étiquette inconnue, et une valeur illisible en base ferait échouer
+     * la composition d'une push des mois plus tard, loin de sa cause.
+     */
+    private static String resolveDeviceTimezone(String declared) {
+        if (declared == null || declared.isBlank()) {
+            return null;
+        }
+        try {
+            return ZoneId.of(declared.strip()).getId();
+        } catch (DateTimeException e) {
+            log.warn("Device registered with an unrecognised timezone '{}' — falling back "
+                + "to the server reference zone", declared);
+            return null;
+        }
     }
 
     /**

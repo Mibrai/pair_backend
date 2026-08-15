@@ -22,6 +22,11 @@ public class DeviceTokenDto {
     // Langue effectivement retenue pour cet appareil ("fr", "en", "de"), après
     // normalisation — pas l'étiquette envoyée. Nulle = repli français.
     private String locale;
+    // Fuseau effectivement retenu, étiquette IANA — pas celle envoyée. Nul quand
+    // le client n'en a pas envoyé, ou que l'étiquette n'a pas été reconnue : le
+    // client compare son écho à ce qu'il a émis, et un écart lui signale le repli
+    // sur le fuseau de référence du serveur. Même contrat que `locale`.
+    private String timezone;
     private Instant createdAt;
     private Instant lastUsedAt;
 
@@ -32,6 +37,7 @@ public class DeviceTokenDto {
             .platform(deviceToken.getPlatform())
             .deviceName(deviceToken.getDeviceName())
             .locale(deviceToken.getLocale())
+            .timezone(deviceToken.getTimezone())
             .createdAt(deviceToken.getCreatedAt())
             .lastUsedAt(deviceToken.getLastUsedAt())
             .build();

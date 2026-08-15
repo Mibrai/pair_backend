@@ -81,13 +81,13 @@ class AndroidPushTextTest {
      */
     @Test
     void corpsDuRappel_rebourdPuisHeureAbsolue_lieuEnSecondeLigne() {
-        assertThat(text.body(LocaleConfig.FRENCH, NotificationType.PROGRAM_REMINDER, slotPayload()))
+        assertThat(text.body(LocaleConfig.FRENCH, ZONE, NotificationType.PROGRAM_REMINDER, slotPayload()))
             .isEqualTo("dans 2 h · Aujourd'hui 19:00 – 20:00 · par Lena Müller\nPiscine du Rhône");
     }
 
     @Test
     void corpsDuProgramme_doitOuvrirSurLaDate_pasSurLeRebours() {
-        assertThat(text.body(LocaleConfig.FRENCH, NotificationType.AUTHOR_NEW_PROGRAM, slotPayload()))
+        assertThat(text.body(LocaleConfig.FRENCH, ZONE, NotificationType.AUTHOR_NEW_PROGRAM, slotPayload()))
             .isEqualTo("Aujourd'hui 19:00 – 20:00 · dans 2 h · par Lena Müller\nPiscine du Rhône");
     }
 
@@ -97,7 +97,7 @@ class AndroidPushTextTest {
         payload.put("messageAuthorName", "Sophie Martin");
         payload.put("messageBody", "On se retrouve devant le court 3 ?");
 
-        assertThat(text.body(LocaleConfig.FRENCH, NotificationType.NEW_MESSAGE, payload))
+        assertThat(text.body(LocaleConfig.FRENCH, ZONE, NotificationType.NEW_MESSAGE, payload))
             .isEqualTo("Sophie Martin : On se retrouve devant le court 3 ?"
                 + "\nAujourd'hui 19:00 – 20:00 · Piscine du Rhône");
     }
@@ -116,7 +116,7 @@ class AndroidPushTextTest {
         Map<String, Object> payload = slotPayload();
         payload.put("sessionAt", "2026-08-17T14:00:00Z"); // une heure avant NOW
 
-        String body = text.body(LocaleConfig.FRENCH, NotificationType.AUTHOR_NEW_PROGRAM, payload);
+        String body = text.body(LocaleConfig.FRENCH, ZONE, NotificationType.AUTHOR_NEW_PROGRAM, payload);
 
         assertThat(body).doesNotContain("dans");
         assertThat(body).startsWith("Aujourd'hui 16:00");
@@ -128,7 +128,7 @@ class AndroidPushTextTest {
         payload.put("sessionAt", "2026-08-17T15:45:00Z"); // 45 min après NOW
         payload.remove("endsAt");
 
-        assertThat(text.body(LocaleConfig.FRENCH, NotificationType.PROGRAM_REMINDER, payload))
+        assertThat(text.body(LocaleConfig.FRENCH, ZONE, NotificationType.PROGRAM_REMINDER, payload))
             .startsWith("dans 45 min · Aujourd'hui 17:45");
     }
 
@@ -140,7 +140,7 @@ class AndroidPushTextTest {
         payload.put("sessionAt", "2026-08-18T17:00:00Z");
         payload.remove("endsAt");
 
-        assertThat(text.body(LocaleConfig.FRENCH, NotificationType.PROGRAM_REMINDER, payload))
+        assertThat(text.body(LocaleConfig.FRENCH, ZONE, NotificationType.PROGRAM_REMINDER, payload))
             .contains("Demain 19:00");
     }
 
@@ -150,20 +150,105 @@ class AndroidPushTextTest {
         payload.put("sessionAt", "2026-08-22T17:00:00Z"); // samedi
         payload.remove("endsAt");
 
-        assertThat(text.body(LocaleConfig.FRENCH, NotificationType.PROGRAM_REMINDER, payload))
+        assertThat(text.body(LocaleConfig.FRENCH, ZONE, NotificationType.PROGRAM_REMINDER, payload))
             .contains("sam. 22 août");
-        assertThat(text.body(LocaleConfig.ENGLISH, NotificationType.PROGRAM_REMINDER, payload))
+        assertThat(text.body(LocaleConfig.ENGLISH, ZONE, NotificationType.PROGRAM_REMINDER, payload))
             .contains("Sat 22 Aug");
-        assertThat(text.body(LocaleConfig.GERMAN, NotificationType.PROGRAM_REMINDER, payload))
+        assertThat(text.body(LocaleConfig.GERMAN, ZONE, NotificationType.PROGRAM_REMINDER, payload))
             .contains("Sa. 22. Aug");
     }
 
     @Test
     void lEnveloppeDuRebours_etLAuteur_doiventSuivreLaLangue() {
-        assertThat(text.body(LocaleConfig.ENGLISH, NotificationType.PROGRAM_REMINDER, slotPayload()))
+        assertThat(text.body(LocaleConfig.ENGLISH, ZONE, NotificationType.PROGRAM_REMINDER, slotPayload()))
             .isEqualTo("in 2 h · Today 19:00 – 20:00 · by Lena Müller\nPiscine du Rhône");
-        assertThat(text.body(LocaleConfig.GERMAN, NotificationType.PROGRAM_REMINDER, slotPayload()))
+        assertThat(text.body(LocaleConfig.GERMAN, ZONE, NotificationType.PROGRAM_REMINDER, slotPayload()))
             .isEqualTo("in 2 h · Heute 19:00 – 20:00 · von Lena Müller\nPiscine du Rhône");
+    }
+
+    // ─── Le fuseau de l'appareil ──────────────────────────────────────────────
+
+    /**
+     * Le point de tout le champ {@code timezone} : la même séance, à la même
+     * seconde, s'écrit à une heure différente selon où se trouve l'appareil.
+     * Londres est à une heure de Paris — c'était exactement l'écart que nous
+     * assumions avant que le client n'envoie son fuseau.
+     */
+    @Test
+    void memeSeance_doitSEcrireALHeureLocaleDeLAppareil() {
+        Map<String, Object> payload = slotPayload();
+        payload.remove("endsAt");
+
+        assertThat(text.body(LocaleConfig.FRENCH, ZoneId.of("Europe/Paris"),
+            NotificationType.PROGRAM_REMINDER, payload))
+            .contains("Aujourd'hui 19:00");
+        assertThat(text.body(LocaleConfig.ENGLISH, ZoneId.of("Europe/London"),
+            NotificationType.PROGRAM_REMINDER, payload))
+            .contains("Today 18:00");
+        assertThat(text.body(LocaleConfig.ENGLISH, ZoneId.of("America/New_York"),
+            NotificationType.PROGRAM_REMINDER, payload))
+            .contains("Today 13:00");
+    }
+
+    /**
+     * Le rebours, lui, ne dépend pas du fuseau : c'est une durée. Seule l'heure
+     * absolue se déplace — et c'est bien ce qui rend les deux segments
+     * complémentaires.
+     */
+    @Test
+    void leRebours_neDoitPasDependreDuFuseau() {
+        Map<String, Object> payload = slotPayload();
+
+        assertThat(text.body(LocaleConfig.ENGLISH, ZoneId.of("Asia/Tokyo"),
+            NotificationType.PROGRAM_REMINDER, payload))
+            .startsWith("in 2 h · ");
+    }
+
+    /**
+     * « Aujourd'hui » se juge dans le fuseau de l'appareil, pas dans celui du
+     * serveur — et les deux ne désignent pas toujours le même jour.
+     *
+     * <p>À l'instant du test, on est le 17 à Paris (17:00) mais déjà le 18 à
+     * Tokyo (00:00). La même séance est donc <b>demain</b> pour l'un et
+     * <b>aujourd'hui</b> pour l'autre. Juger le jour dans le fuseau du serveur
+     * aurait écrit « demain » sur un téléphone japonais pour une séance qui, chez
+     * lui, a lieu le jour même.
+     */
+    @Test
+    void leJour_doitSeJugerDansLeFuseauDeLAppareil() {
+        Map<String, Object> payload = slotPayload();
+        payload.remove("endsAt");
+        payload.put("sessionAt", "2026-08-18T10:00:00Z");
+
+        assertThat(text.body(LocaleConfig.FRENCH, ZoneId.of("Europe/Paris"),
+            NotificationType.PROGRAM_REMINDER, payload))
+            .contains("Demain 12:00");
+        assertThat(text.body(LocaleConfig.ENGLISH, ZoneId.of("Asia/Tokyo"),
+            NotificationType.PROGRAM_REMINDER, payload))
+            .contains("Today 19:00");
+    }
+
+    // ─── Résolution du fuseau déclaré ─────────────────────────────────────────
+
+    @Test
+    void fuseauDeclare_doitEtreRetenu() {
+        assertThat(text.zoneOf("Europe/London")).isEqualTo(ZoneId.of("Europe/London"));
+        assertThat(text.zoneOf("  Europe/Berlin  ")).isEqualTo(ZoneId.of("Europe/Berlin"));
+    }
+
+    /**
+     * Absent, vide ou illisible : le fuseau de référence, qui était le
+     * comportement de tout le monde avant ce champ. Une push qui échoue à se
+     * composer est une push qui n'arrive pas — l'étiquette douteuse ne doit rien
+     * emporter avec elle.
+     */
+    @Test
+    void fuseauAbsentOuIllisible_doitRetomberSurLaReference() {
+        assertThat(text.zoneOf(null)).isEqualTo(ZONE);
+        assertThat(text.zoneOf("")).isEqualTo(ZONE);
+        assertThat(text.zoneOf("   ")).isEqualTo(ZONE);
+        assertThat(text.zoneOf("Mars/Olympus_Mons")).isEqualTo(ZONE);
+        assertThat(text.zoneOf("+02:00 ou pas")).isEqualTo(ZONE);
     }
 
     // ─── Champs absents ───────────────────────────────────────────────────────
@@ -177,7 +262,7 @@ class AndroidPushTextTest {
         Map<String, Object> payload = slotPayload();
         payload.remove("endsAt");
 
-        assertThat(text.body(LocaleConfig.FRENCH, NotificationType.PROGRAM_REMINDER, payload))
+        assertThat(text.body(LocaleConfig.FRENCH, ZONE, NotificationType.PROGRAM_REMINDER, payload))
             .isEqualTo("dans 2 h · Aujourd'hui 19:00 · par Lena Müller\nPiscine du Rhône");
     }
 
@@ -186,7 +271,7 @@ class AndroidPushTextTest {
         Map<String, Object> payload = slotPayload();
         payload.remove("placeName");
 
-        assertThat(text.body(LocaleConfig.FRENCH, NotificationType.PROGRAM_REMINDER, payload))
+        assertThat(text.body(LocaleConfig.FRENCH, ZONE, NotificationType.PROGRAM_REMINDER, payload))
             .isEqualTo("dans 2 h · Aujourd'hui 19:00 – 20:00 · par Lena Müller");
     }
 
@@ -195,7 +280,7 @@ class AndroidPushTextTest {
         Map<String, Object> payload = slotPayload();
         payload.remove("authorName");
 
-        assertThat(text.body(LocaleConfig.FRENCH, NotificationType.PROGRAM_REMINDER, payload))
+        assertThat(text.body(LocaleConfig.FRENCH, ZONE, NotificationType.PROGRAM_REMINDER, payload))
             .isEqualTo("dans 2 h · Aujourd'hui 19:00 – 20:00\nPiscine du Rhône");
     }
 
@@ -208,7 +293,7 @@ class AndroidPushTextTest {
         Map<String, Object> payload = slotPayload();
         payload.put("sessionAt", "la semaine prochaine");
 
-        assertThat(text.body(LocaleConfig.FRENCH, NotificationType.PROGRAM_REMINDER, payload))
+        assertThat(text.body(LocaleConfig.FRENCH, ZONE, NotificationType.PROGRAM_REMINDER, payload))
             .isEqualTo("par Lena Müller\nPiscine du Rhône");
     }
 
@@ -220,9 +305,9 @@ class AndroidPushTextTest {
      */
     @Test
     void typeHorsDuTemplate_doitRendreNull_pourLaisserLeTexteTraduit() {
-        assertThat(text.body(LocaleConfig.FRENCH, NotificationType.BADGE_EARNED, slotPayload()))
+        assertThat(text.body(LocaleConfig.FRENCH, ZONE, NotificationType.BADGE_EARNED, slotPayload()))
             .isNull();
-        assertThat(text.body(LocaleConfig.FRENCH, NotificationType.NEW_FOLLOWER, slotPayload()))
+        assertThat(text.body(LocaleConfig.FRENCH, ZONE, NotificationType.NEW_FOLLOWER, slotPayload()))
             .isNull();
     }
 
