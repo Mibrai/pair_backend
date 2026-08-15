@@ -1,11 +1,19 @@
 package org.program.pair.domain.notification;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.google.firebase.messaging.Aps;
 import com.google.firebase.messaging.BatchResponse;
 import com.google.firebase.messaging.FirebaseMessaging;
+import com.google.firebase.messaging.FcmResponses;
 import com.google.firebase.messaging.FirebaseMessagingException;
+import com.google.firebase.messaging.MessagingErrorCode;
 import com.google.firebase.messaging.MulticastMessage;
+import com.google.firebase.messaging.SendResponse;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
@@ -27,6 +35,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -222,6 +231,131 @@ class PushNotificationServiceTest {
         ArgumentCaptor<MulticastMessage> captor = ArgumentCaptor.forClass(MulticastMessage.class);
         verify(firebaseMessaging).sendEachForMulticast(captor.capture());
         assertThat(bodyOf(captor.getValue())).isEqualTo("Vous avez gagné le badge : Régularité");
+    }
+
+    // ─── L'envoi doit rendre compte de ce qui a échoué ────────────────────────
+
+    /**
+     * Le point : un rejet par APNs ne laissait <b>aucune</b> trace. Seuls
+     * {@code UNREGISTERED} et {@code INVALID_ARGUMENT} étaient journalisés, et
+     * uniquement parce qu'ils suppriment le jeton ; les cinq autres codes
+     * passaient en silence derrière un {@code "Successfully sent 0"} en INFO.
+     *
+     * <p>{@code THIRD_PARTY_AUTH_ERROR} est précisément le cas qui compte : FCM
+     * accepte, APNs rejette parce que le projet n'a pas de clé d'authentification
+     * valide. Rien côté serveur ne le disait, et c'est une correction de console,
+     * pas de code.
+     */
+    @Test
+    void envoiRejeteParApns_doitNommerLeCodeDErreur_enWarn() throws FirebaseMessagingException {
+        Logger logger = (Logger) LoggerFactory.getLogger(PushNotificationService.class);
+        ListAppender<ILoggingEvent> captured = new ListAppender<>();
+        captured.start();
+        logger.addAppender(captured);
+
+        try {
+            PushNotificationService service = service();
+            UUID userId = UUID.randomUUID();
+
+            when(deviceTokenRepository.findByUserId(userId)).thenReturn(List.of(
+                device("token-ios-1", "fr"),
+                device("token-ios-2", "fr")));
+            when(firebaseMessaging.sendEachForMulticast(any(MulticastMessage.class)))
+                .thenReturn(batchResponse);
+            when(batchResponse.getSuccessCount()).thenReturn(0);
+            when(batchResponse.getFailureCount()).thenReturn(2);
+            when(batchResponse.getResponses()).thenReturn(List.of(
+                FcmResponses.failure(MessagingErrorCode.THIRD_PARTY_AUTH_ERROR),
+                FcmResponses.failure(MessagingErrorCode.THIRD_PARTY_AUTH_ERROR)));
+
+            service.sendPush(userId, NotificationType.PROGRAM_REMINDER, slotPayload(), 1);
+
+            assertThat(captured.list)
+                .filteredOn(event -> event.getLevel() == Level.WARN)
+                .extracting(ILoggingEvent::getFormattedMessage)
+                .anySatisfy(message -> assertThat(message)
+                    .contains("0 sent", "2 failed", "THIRD_PARTY_AUTH_ERROR=2"));
+
+            // Et surtout : plus aucune ligne ne se déclare réussie.
+            assertThat(captured.list)
+                .extracting(ILoggingEvent::getFormattedMessage)
+                .noneMatch(message -> message.contains("Successfully sent"));
+        } finally {
+            logger.detachAppender(captured);
+        }
+    }
+
+    /**
+     * Un jeton périmé et un projet mal configuré ne se corrigent pas au même
+     * endroit — l'un sur le téléphone, l'autre dans la console Firebase. La
+     * ventilation doit donc distinguer les deux dans le même envoi.
+     */
+    @Test
+    void echecsDeCodesDifferents_doiventEtreVentiles() throws FirebaseMessagingException {
+        Logger logger = (Logger) LoggerFactory.getLogger(PushNotificationService.class);
+        ListAppender<ILoggingEvent> captured = new ListAppender<>();
+        captured.start();
+        logger.addAppender(captured);
+
+        try {
+            PushNotificationService service = service();
+            UUID userId = UUID.randomUUID();
+
+            when(deviceTokenRepository.findByUserId(userId)).thenReturn(List.of(
+                device("token-perime", "fr"),
+                device("token-ok", "fr"),
+                device("token-apns", "fr")));
+            when(firebaseMessaging.sendEachForMulticast(any(MulticastMessage.class)))
+                .thenReturn(batchResponse);
+            when(batchResponse.getSuccessCount()).thenReturn(1);
+            when(batchResponse.getFailureCount()).thenReturn(2);
+            when(batchResponse.getResponses()).thenReturn(List.of(
+                FcmResponses.failure(MessagingErrorCode.UNREGISTERED),
+                FcmResponses.success("msg-id"),
+                FcmResponses.failure(MessagingErrorCode.THIRD_PARTY_AUTH_ERROR)));
+
+            service.sendPush(userId, NotificationType.PROGRAM_REMINDER, slotPayload(), 1);
+
+            assertThat(captured.list)
+                .filteredOn(event -> event.getLevel() == Level.WARN)
+                .extracting(ILoggingEvent::getFormattedMessage)
+                .anySatisfy(message -> assertThat(message)
+                    .contains("1 sent", "2 failed", "UNREGISTERED=1", "THIRD_PARTY_AUTH_ERROR=1"));
+
+            // Le jeton périmé est bien supprimé, celui qu'APNs rejette ne l'est
+            // pas : le projet est mal configuré, l'appareil n'y est pour rien.
+            verify(deviceTokenRepository).deleteByToken("token-perime");
+            verify(deviceTokenRepository, never()).deleteByToken("token-apns");
+        } finally {
+            logger.detachAppender(captured);
+        }
+    }
+
+    /** Un envoi sans échec reste en INFO : la ligne WARN doit rester rare pour être lue. */
+    @Test
+    void envoiSansEchec_neDoitPasAlerter() throws FirebaseMessagingException {
+        Logger logger = (Logger) LoggerFactory.getLogger(PushNotificationService.class);
+        ListAppender<ILoggingEvent> captured = new ListAppender<>();
+        captured.start();
+        logger.addAppender(captured);
+
+        try {
+            PushNotificationService service = service();
+            UUID userId = UUID.randomUUID();
+
+            when(deviceTokenRepository.findByUserId(userId)).thenReturn(List.of(device("token", "fr")));
+            when(firebaseMessaging.sendEachForMulticast(any(MulticastMessage.class)))
+                .thenReturn(batchResponse);
+            when(batchResponse.getSuccessCount()).thenReturn(1);
+            when(batchResponse.getFailureCount()).thenReturn(0);
+            when(batchResponse.getResponses()).thenReturn(List.of(FcmResponses.success("msg-id")));
+
+            service.sendPush(userId, NotificationType.PROGRAM_REMINDER, slotPayload(), 1);
+
+            assertThat(captured.list).noneMatch(event -> event.getLevel() == Level.WARN);
+        } finally {
+            logger.detachAppender(captured);
+        }
     }
 
     /** Séance à 19:00 – 20:00 heure de Paris, deux heures après {@link #NOW}. */
