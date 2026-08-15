@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.activity.Activity;
 import org.program.pair.domain.activity.Category;
 import org.program.pair.domain.activity.UserActivity;
+import org.program.pair.domain.program.LocationType;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotAddressVisibility;
@@ -171,13 +172,17 @@ public class SemanticSearchService {
         // 2. Couche de rappel : embeddings multilingues (ou full-text en fallback si
         // le modèle local n'a pas pu être chargé/n'a rien produit).
         float[] embedding = embeddingService.generateEmbedding(request.query());
-        List<SearchResultDto> recallResults = LocalEmbeddingService.isZeroVector(embedding)
-            ? fulltextFallback(intent, searchRequest)
-            : toSearchResultDtos(
+        List<SearchResultDto> recallResults;
+        if (LocalEmbeddingService.isZeroVector(embedding)) {
+            recallResults = fulltextFallback(intent, searchRequest);
+        } else {
+            List<org.program.pair.domain.program.Program> candidates =
                 programRepository.semanticSearchInRadius(
                     embeddingService.toVectorString(embedding),
-                    request.lat(), request.lng(), radius, 1 - minSimilarity, CANDIDATE_LIMIT),
-                request.lat(), request.lng());
+                    request.lat(), request.lng(), radius, 1 - minSimilarity, CANDIDATE_LIMIT);
+            recallResults = toSearchResultDtos(candidates,
+                resolveVenues(candidates, request.lat(), request.lng()));
+        }
 
         // 3. Fusion : les matchs taxonomiques (précision) priment, complétés par le
         // rappel sémantique/full-text, dédupliqués par programme.
@@ -335,28 +340,66 @@ public class SemanticSearchService {
         return results;
     }
 
+    /**
+     * Coordonnée de recherche de chaque programme, résolue en une seule requête.
+     *
+     * <p>Les programmes à distance sont écartés d'emblée : ils n'ont pas de lieu,
+     * et interroger la base pour eux ne rendrait rien. Ceux qui restent sans
+     * séance localisée n'auront pas d'entrée, ce que
+     * {@link #toSearchResultDtos} traduit en coordonnées nulles.
+     */
+    private Map<UUID, ProgramVenue> resolveVenues(
+            List<org.program.pair.domain.program.Program> programs, double lat, double lng) {
+
+        List<UUID> located = programs.stream()
+            .filter(p -> !isRemote(p))
+            .map(org.program.pair.domain.program.Program::getId)
+            .toList();
+        if (located.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<UUID, ProgramVenue> venues = new LinkedHashMap<>();
+        for (Object[] row : scheduleRepository.findNearestVenuesByProgramIds(located, lat, lng)) {
+            venues.put((UUID) row[0], new ProgramVenue(
+                ((Number) row[1]).doubleValue(),
+                ((Number) row[2]).doubleValue(),
+                ((Number) row[3]).doubleValue()));
+        }
+        return venues;
+    }
+
+    /**
+     * Un programme à distance n'a pas de lieu, donc pas de distance.
+     *
+     * <p>À ne pas confondre avec le champ {@code isOnline} de la réponse, qui
+     * dit tout autre chose — la présence récente de l'organisateur. La confusion
+     * des deux notions sous un même mot est signalée au client ; c'est
+     * {@code locationType} qui porte la modalité du programme.
+     */
+    private static boolean isRemote(org.program.pair.domain.program.Program program) {
+        LocationType type = program.getLocationType();
+        return type == LocationType.REMOTE || type == LocationType.ONLINE;
+    }
+
     // Package-private (au lieu de private) pour permettre un test unitaire ciblé
-    // de la priorité imageUrl / media[0] sans dépendances Spring/DB.
+    // du mapping — priorité imageUrl / media[0], et situation du programme — sans
+    // dépendances Spring/DB.
     List<SearchResultDto> toSearchResultDtos(
             List<org.program.pair.domain.program.Program> programs,
-            double lat, double lng) {
+            Map<UUID, ProgramVenue> venues) {
 
         return programs.stream().map(p -> {
             var ua    = p.getUserActivity();
             var owner = ua.getUser();
             var act   = ua.getActivity();
             var cat   = act.getCategory();
-            var ownerLoc = owner.getLocation();
 
-            double dist = 0;
-            if (ownerLoc != null) {
-                double dLat = Math.toRadians(ownerLoc.getY() - lat);
-                double dLng = Math.toRadians(ownerLoc.getX() - lng);
-                double a = Math.sin(dLat/2) * Math.sin(dLat/2)
-                    + Math.cos(Math.toRadians(lat)) * Math.cos(Math.toRadians(ownerLoc.getY()))
-                    * Math.sin(dLng/2) * Math.sin(dLng/2);
-                dist = 6371000 * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-            }
+            // Le programme est situé à sa séance, jamais au domicile de son
+            // organisateur : c'est tout l'objet de la correction. Absence de
+            // séance localisée ou programme à distance ⇒ null, pas de repli.
+            ProgramVenue venue = isRemote(p) ? null : venues.get(p.getId());
+
             boolean isOnline = owner.getLastActiveAt() != null
                 && owner.getLastActiveAt().isAfter(java.time.Instant.now().minusSeconds(300));
 
@@ -379,9 +422,10 @@ public class SemanticSearchService {
                     ? p.getDescription().substring(0, Math.min(200, p.getDescription().length()))
                     : null,
                 owner.getAvatarUrl(),
-                ownerLoc != null ? ownerLoc.getY() : null,
-                ownerLoc != null ? ownerLoc.getX() : null,
-                dist, 0f,
+                venue != null ? venue.lat() : null,
+                venue != null ? venue.lng() : null,
+                venue != null ? venue.distanceMeters() : null,
+                0f,
                 act.getName(),
                 ua.getLevel() != null ? ua.getLevel().name() : null,
                 ua.getFormat() != null ? ua.getFormat().name() : null,
