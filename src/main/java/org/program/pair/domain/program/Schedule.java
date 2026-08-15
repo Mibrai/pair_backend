@@ -105,6 +105,26 @@ public class Schedule {
     @Column(name = "reminder_sent_for")
     private Instant reminderSentFor;
 
+    /**
+     * Début de la dernière séance que {@code RecurringSlotRolloverJob} a
+     * retirée en avançant {@code startsAt}.
+     *
+     * <p>Sans elle, une séance passée d'un créneau récurrent devient
+     * irrécupérable dès le passage suivant du job : la RRULE ne permet pas de
+     * la retrouver, puisque le rollover a écrasé l'ancre dont elle se déduit.
+     * C'est donc au moment où il avance la ligne — le seul instant où le
+     * système sait encore de quel moment il parle — que le job l'inscrit ici.
+     *
+     * <p>Nulle pour un créneau non récurrent : sa ligne <i>est</i> son unique
+     * occurrence, rien ne l'a jamais déplacée. Voir {@link SlotOccurrence}.
+     */
+    @Column(name = "last_occurrence_start")
+    private Instant lastOccurrenceStart;
+
+    /** Fin de cette même séance, conservée telle qu'elle était vécue. */
+    @Column(name = "last_occurrence_end")
+    private Instant lastOccurrenceEnd;
+
     @OneToMany(mappedBy = "schedule", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<SlotParticipation> participations = new ArrayList<>();
