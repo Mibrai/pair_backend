@@ -78,7 +78,7 @@ class AttendanceServiceTest {
         UUID hostId = UUID.randomUUID();
         Schedule slot = buildSlot(hostId, Instant.now().minus(3, ChronoUnit.HOURS));
         when(scheduleRepository.findById(slot.getId())).thenReturn(Optional.of(slot));
-        when(attendanceRepository.existsByScheduleIdAndUserId(slot.getId(), hostId)).thenReturn(true);
+        when(attendanceRepository.existsByScheduleIdAndUserIdAndAttendedAt(slot.getId(), hostId, slot.getStartsAt())).thenReturn(true);
 
         assertThatThrownBy(() -> attendanceService.confirm(hostId, slot.getId(), true))
             .isInstanceOf(BusinessException.class)
@@ -90,7 +90,7 @@ class AttendanceServiceTest {
         UUID hostId = UUID.randomUUID();
         Schedule slot = buildSlot(hostId, Instant.now().minus(3, ChronoUnit.HOURS));
         when(scheduleRepository.findById(slot.getId())).thenReturn(Optional.of(slot));
-        when(attendanceRepository.existsByScheduleIdAndUserId(slot.getId(), hostId)).thenReturn(false);
+        when(attendanceRepository.existsByScheduleIdAndUserIdAndAttendedAt(slot.getId(), hostId, slot.getStartsAt())).thenReturn(false);
         when(attendanceRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(userRepository.getReferenceById(hostId)).thenReturn(slot.getProgram().getUserActivity().getUser());
 

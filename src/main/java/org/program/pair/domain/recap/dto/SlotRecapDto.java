@@ -22,6 +22,11 @@ public record SlotRecapDto(
     String activityName,
     String categoryName,
     String categoryColorRamp,
+
+    @Schema(description = "Début de la SÉANCE dont cette carte est la trace, et non de "
+        + "celle que porte aujourd'hui le créneau. Sur une série récurrente, la ligne de "
+        + "créneau est avancée à sa prochaine occurrence dès qu'une séance se termine : "
+        + "la lire aurait daté ce souvenir de la semaine à venir.")
     Instant slotStartedAt,
 
     String placeName,
@@ -62,6 +67,15 @@ public record SlotRecapDto(
     @Schema(description = "La fenêtre de sept jours est-elle encore ouverte pour moi, et "
         + "y étais-je ? Faux dès que l'une des deux conditions manque.")
     boolean canContribute,
+
+    @Schema(description = "Quand la carte se fige : sept jours après la fin de la séance. "
+        + "Nulle quand la fenêtre est déjà refermée. Le client ne pouvait pas la calculer "
+        + "— la fenêtre court depuis la FIN du créneau, que le contrat ne porte pas, et "
+        + "un compte à rebours approximatif sur une décision irréversible vaut moins que "
+        + "pas de compte à rebours. C'est une date, pas une durée : elle ne se périme pas "
+        + "en transit.",
+        example = "2026-08-19T20:00:00Z", nullable = true)
+    Instant recapWindowClosesAt,
 
     @Schema(description = "Les ambiances que j'ai déjà choisies, pour que le client les "
         + "repasse en surbrillance sans les redemander.")
