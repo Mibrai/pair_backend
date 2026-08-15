@@ -77,7 +77,7 @@ class SlotRecapServiceTest extends RecapTestFixtures {
         when(vibeVoteRepository.countByVibe(any())).thenReturn(List.of());
         when(vibeVoteRepository.findVibesByRecapIdAndUserId(any(), any())).thenReturn(List.of());
         when(consentRepository.findConsentingUserIds(any())).thenReturn(List.of());
-        when(attendanceRepository.findByScheduleIdAndWasPresentTrue(any())).thenReturn(List.of());
+        when(attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(any(), any())).thenReturn(List.of());
         when(slotAudience.participantIds(any())).thenReturn(List.of());
     }
 
@@ -203,7 +203,7 @@ class SlotRecapServiceTest extends RecapTestFixtures {
         Schedule slot = endedSlot(2);
         UUID host = hostIdOf(slot);
         existingRecap(slot);
-        when(attendanceRepository.existsByScheduleIdAndWasPresentTrueAndUserIdNot(slot.getId(), host))
+        when(attendanceRepository.existsByScheduleIdAndAttendedAtAndWasPresentTrueAndUserIdNot(slot.getId(), slot.getStartsAt(), host))
             .thenReturn(false);
 
         assertThatThrownBy(() -> service.setVisibility(host, slot.getId(), "PUBLIC"))
@@ -216,7 +216,7 @@ class SlotRecapServiceTest extends RecapTestFixtures {
         Schedule slot = endedSlot(2);
         UUID host = hostIdOf(slot);
         SlotRecap recap = existingRecap(slot);
-        when(attendanceRepository.existsByScheduleIdAndWasPresentTrueAndUserIdNot(slot.getId(), host))
+        when(attendanceRepository.existsByScheduleIdAndAttendedAtAndWasPresentTrueAndUserIdNot(slot.getId(), slot.getStartsAt(), host))
             .thenReturn(true);
 
         SlotRecapDto dto = service.setVisibility(host, slot.getId(), "PUBLIC");
@@ -231,8 +231,8 @@ class SlotRecapServiceTest extends RecapTestFixtures {
         UUID attendee = UUID.randomUUID();
         SlotRecap recap = existingRecap(slot);
         presenceIs(slot, attendee, true);
-        when(attendanceRepository.countPresentByScheduleId(slot.getId())).thenReturn(4);
-        when(attendanceRepository.findByScheduleIdAndWasPresentTrue(slot.getId()))
+        when(attendanceRepository.countPresentByOccurrence(slot.getId(), slot.getStartsAt())).thenReturn(4);
+        when(attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(slot.getId(), slot.getStartsAt()))
             .thenReturn(List.of(presentAttendance(slot, attendee)));
         // Aucun consentement enregistré.
         when(consentRepository.findConsentingUserIds(recap.getId())).thenReturn(List.of());
@@ -254,9 +254,9 @@ class SlotRecapServiceTest extends RecapTestFixtures {
 
         presenceIs(slot, attendee, true);
         Attendance attendance = presentAttendance(slot, attendee);
-        when(attendanceRepository.findByScheduleIdAndWasPresentTrue(slot.getId()))
+        when(attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(slot.getId(), slot.getStartsAt()))
             .thenReturn(List.of(attendance));
-        when(attendanceRepository.countPresentByScheduleId(slot.getId())).thenReturn(3);
+        when(attendanceRepository.countPresentByOccurrence(slot.getId(), slot.getStartsAt())).thenReturn(3);
 
         RecapParticipantConsent consent = new RecapParticipantConsent();
         consent.setRecapId(recap.getId());
@@ -284,7 +284,7 @@ class SlotRecapServiceTest extends RecapTestFixtures {
         SlotRecap recap = existingRecap(slot);
 
         presenceIs(slot, attendee, true);
-        when(attendanceRepository.findByScheduleIdAndWasPresentTrue(slot.getId()))
+        when(attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(slot.getId(), slot.getStartsAt()))
             .thenReturn(List.of(presentAttendance(slot, attendee)));
         when(consentRepository.findByRecapIdAndUserId(any(), any())).thenReturn(Optional.empty());
         when(consentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -310,17 +310,17 @@ class SlotRecapServiceTest extends RecapTestFixtures {
     // — décor —
 
     private void presenceIs(Schedule slot, UUID userId, boolean present) {
-        when(attendanceRepository.existsByScheduleIdAndUserIdAndWasPresentTrue(slot.getId(), userId))
+        when(attendanceRepository.existsByScheduleIdAndUserIdAndAttendedAtAndWasPresentTrue(slot.getId(), userId, slot.getStartsAt()))
             .thenReturn(present);
     }
 
     private void noRecapYet(Schedule slot) {
-        when(recapRepository.findByScheduleId(slot.getId())).thenReturn(Optional.empty());
+        when(recapRepository.findByScheduleIdAndOccurrenceStart(slot.getId(), slot.getStartsAt())).thenReturn(Optional.empty());
     }
 
     private SlotRecap existingRecap(Schedule slot) {
         SlotRecap recap = recapFor(slot);
-        when(recapRepository.findByScheduleId(slot.getId())).thenReturn(Optional.of(recap));
+        when(recapRepository.findByScheduleIdAndOccurrenceStart(slot.getId(), slot.getStartsAt())).thenReturn(Optional.of(recap));
         return recap;
     }
 
