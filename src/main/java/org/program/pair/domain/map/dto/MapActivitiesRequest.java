@@ -71,10 +71,11 @@ public record MapActivitiesRequest(
     @Schema(description = "Niveau de zoom de la carte (1-20). Quand il est fourni, les "
         + "marqueurs proches sont agrégés en clusters : une cellule de grille portant "
         + "au moins deux marqueurs devient un cluster, une cellule seule reste un "
-        + "marqueur d'activité. La maille est divisée par deux à chaque palier gagné "
-        + "au-dessus du palier 12 (~11 km), soit ~700 m au palier 16 et ~43 m au palier "
-        + "20 : monter en zoom défait donc réellement une pastille. Absent, aucune "
-        + "agrégation n'a lieu et le champ clusters de la réponse est vide.",
+        + "marqueur d'activité. La maille est divisée par deux à chaque palier gagné, "
+        + "de sorte qu'une cellule occupe toujours la même fraction de l'écran : ~11 km "
+        + "au palier 12, ~700 m au palier 16, ~43 m au palier 20. Monter en zoom défait "
+        + "donc réellement une pastille, et une carte monde n'en rend que quelques-unes. "
+        + "Absent, aucune agrégation n'a lieu et le champ clusters de la réponse est vide.",
         minimum = "1", maximum = "20")
     Integer zoom,
 

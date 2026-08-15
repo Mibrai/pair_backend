@@ -183,36 +183,49 @@ public class MapService {
             .toList();
     }
 
-    /** Palier où la maille historique est reprise telle quelle, et sa valeur. */
+    /**
+     * Ancre d'échelle : au palier {@value #GRID_ANCHOR_ZOOM}, une cellule vaut
+     * {@value #GRID_ANCHOR_SIZE}° (~11 km). La pente seule ne dit pas où passer,
+     * seulement comment descendre ; cette valeur fixe le reste.
+     */
     private static final int GRID_ANCHOR_ZOOM = 12;
     private static final double GRID_ANCHOR_SIZE = 0.1;
-    /** Palier maximal accepté par les deux routes qui agrègent. */
+    /** Bornes du zoom, validées par les deux routes qui agrègent. */
+    private static final int MIN_ZOOM = 1;
     private static final int MAX_ZOOM = 20;
 
     /**
      * Côté d'une cellule de grille, en degrés, pour un palier de zoom donné.
      *
-     * <p><b>Au-dessus du palier {@value #GRID_ANCHOR_ZOOM}, la maille est divisée
-     * par deux à chaque palier</b> — ce qui est la seule pente correcte, puisque
-     * c'est celle de la résolution de la carte elle-même. La table qui occupait
-     * cette place ne la divisait par deux que <i>tous les deux paliers</i>, si
-     * bien que la cellule doublait de taille apparente à chaque niveau gagné.
+     * <p><b>La maille est divisée par deux à chaque palier</b> — la seule pente
+     * correcte, puisque c'est celle de la résolution de la carte elle-même. Une
+     * cellule occupe donc toujours la même fraction de l'écran, ce qui est la
+     * seule propriété que l'agrégation doive tenir : regrouper ce qui se
+     * chevauche à l'affichage, et rien d'autre.
      *
-     * <p>Ce n'était donc pas un réglage trop grossier en un point, mais une
-     * pente fausse sur toute la plage. Mesuré en projection Web Mercator à la
-     * latitude de Paris, le côté d'une cellule passait de 11 px au palier 1 à
-     * <b>11 332 px au palier 20</b> : au zoom maximal, l'agrégation regroupait
-     * des marqueurs distants de vingt-huit largeurs d'écran, que l'utilisateur
-     * ne pouvait de toute façon jamais voir ensemble. C'est ce qui rendait une
-     * pastille irrésolvable — zoomer ne la défaisait pas, faute d'une maille qui
-     * suive réellement le zoom.
+     * <p>La table qui occupait cette place ne divisait la maille par deux que
+     * <i>tous les deux paliers</i>, si bien que la cellule doublait de taille
+     * apparente à chaque niveau gagné. Ce n'était pas un réglage trop grossier
+     * en un point mais une pente fausse sur toute la plage, et elle se trompait
+     * dans les deux sens à la fois. Mesuré en projection Web Mercator à la
+     * latitude de Paris, le côté d'une cellule passait de <b>11 px au palier
+     * 1</b> à <b>11 332 px au palier 20</b> :
      *
-     * <p>Les paliers jusqu'à {@value #GRID_ANCHOR_ZOOM} gardent volontairement
-     * leurs valeurs historiques : la même dérive les rend au contraire <i>trop
-     * fines</i> (11 px au palier 1, soit quasiment aucune agrégation sur une
-     * carte monde), mais la corriger là changerait un comportement visible sans
-     * qu'aucune demande ne le réclame. Le défaut est réel et reste ouvert ; il
-     * ne se traite pas dans le même geste.
+     * <ul>
+     *   <li>au zoom maximal, l'agrégation regroupait des marqueurs distants de
+     *       vingt-huit largeurs d'écran, que l'utilisateur ne pouvait de toute
+     *       façon jamais voir ensemble — d'où une pastille irrésolvable, que
+     *       zoomer ne défaisait pas ;</li>
+     *   <li>sur une carte monde, à l'inverse, elle ne regroupait presque rien :
+     *       une cellule de 11 px laissait des dizaines de pastilles se
+     *       superposer là où l'agrégation est le plus nécessaire.</li>
+     * </ul>
+     *
+     * <p>Corollaire assumé du bas de la plage : au palier 1 la cellule vaut
+     * 204,8°, soit davantage que l'étendue des latitudes — celles-ci cessent
+     * donc de fragmenter quoi que ce soit, et il ne subsiste que les frontières
+     * décrites en fin de javadoc. Une carte monde rend alors quelques disques
+     * portant de gros totaux, ce qui est ce qu'on veut y lire.
      *
      * <p>La maille s'applique en degrés aux deux axes, sans correction en
      * {@code cos(lat)} : une cellule est donc un rectangle qui s'aplatit vers le
@@ -222,28 +235,22 @@ public class MapService {
      *
      * <p>Enfin, il s'agit d'une <b>grille fixe, pas d'un regroupement par
      * proximité</b> : deux marqueurs distants de dix mètres de part et d'autre
-     * d'une frontière de cellule ne sont pas groupés. Affiner la maille resserre
-     * cet écart sans le supprimer — le client doit continuer de traiter les
+     * d'une frontière de cellule ne sont pas groupés. Élargir la maille ne crée
+     * pas ces frontières, mais rend chacune plus lourde de conséquences — aux
+     * paliers les plus bas, les seules qui subsistent passent par l'équateur et
+     * le méridien de Greenwich, de sorte qu'une zone à cheval sur l'un d'eux
+     * rend deux groupes au lieu d'un. Le client doit continuer de traiter les
      * bornes d'un cluster comme l'étendue de ses membres, jamais comme le
      * voisinage complet de son centre.
      */
     double calculateGridSize(int zoom) {
-        if (zoom > GRID_ANCHOR_ZOOM) {
-            // Le zoom est validé dans [1, 20] par les deux routes ; le plafond
-            // n'est là que pour qu'un appel non validé ne puisse pas produire un
-            // décalage aberrant.
-            int steps = Math.min(zoom, MAX_ZOOM) - GRID_ANCHOR_ZOOM;
-            return GRID_ANCHOR_SIZE / (1 << steps);
-        }
-        return switch (zoom) {
-            case 1, 2, 3 -> 5.0;      // ~500 km
-            case 4, 5 -> 2.0;          // ~200 km
-            case 6, 7 -> 1.0;          // ~100 km
-            case 8, 9 -> 0.5;          // ~50 km
-            case 10, 11 -> 0.25;       // ~25 km
-            case 12 -> GRID_ANCHOR_SIZE; // ~11 km, ancre de la pente ci-dessus
-            default -> 1.0;
-        };
+        // Le zoom est validé dans [1, 20] par les deux routes ; le bornage n'est
+        // là que pour qu'un appel non validé — un futur appelant, un test — ne
+        // puisse pas produire une maille aberrante.
+        int clamped = Math.min(Math.max(zoom, MIN_ZOOM), MAX_ZOOM);
+        // Mise à l'échelle par une puissance de deux : exacte en virgule
+        // flottante, donc gridSize(z) vaut très exactement gridSize(z-1) / 2.
+        return GRID_ANCHOR_SIZE * Math.pow(2, GRID_ANCHOR_ZOOM - clamped);
     }
 
     /** Pas de la quatrième décimale, sur laquelle les positions sont arrondies (~11 m). */
