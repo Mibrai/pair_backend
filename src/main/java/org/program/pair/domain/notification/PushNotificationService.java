@@ -353,17 +353,83 @@ public class PushNotificationService implements PushNotificationServiceInterface
             .build();
     }
 
+    /**
+     * Envoie, puis <b>rend compte de ce qui a échoué</b>.
+     *
+     * <p>Ce point journalisait {@code "Successfully sent {n} push notifications"}
+     * au niveau INFO, y compris quand {@code n} valait zéro : un rejet de la
+     * totalité des messages produisait une ligne qui se déclarait réussie. Et
+     * {@link #cleanInvalidTokens} ne parlait que des deux codes qui valent
+     * suppression du jeton — les cinq autres que le SDK peut rendre
+     * ({@code THIRD_PARTY_AUTH_ERROR}, {@code SENDER_ID_MISMATCH},
+     * {@code QUOTA_EXCEEDED}, {@code UNAVAILABLE}, {@code INTERNAL}) ne
+     * laissaient aucune trace.
+     *
+     * <p>{@code FirebaseMessagingException} ne couvre pas ce cas : elle n'est
+     * levée que si l'<i>appel</i> échoue, pas si chaque message est rejeté
+     * individuellement. Une configuration APNs absente côté projet Firebase —
+     * la clé {@code .p8} manquante ou visant le mauvais environnement — est
+     * exactement cela : FCM accepte, APNs rejette, et le serveur ne le disait
+     * pas.
+     *
+     * <p>D'où la ventilation par code d'erreur : c'est elle qui distingue un
+     * jeton périmé d'un projet mal configuré, et l'une se corrige sur le
+     * téléphone quand l'autre se corrige dans la console.
+     */
     private void dispatch(UUID userId, List<String> tokens, MulticastMessage message) {
         try {
             BatchResponse response = firebaseMessaging.sendEachForMulticast(message);
-            log.info("Successfully sent {} push notifications to user {}",
-                response.getSuccessCount(), userId);
+            int sent = response.getSuccessCount();
+            int failed = response.getFailureCount();
+
+            if (failed == 0) {
+                log.info("Sent {} push notifications to user {}", sent, userId);
+            } else {
+                // WARN et non INFO : c'est la ligne qu'on cherche quand un
+                // téléphone ne reçoit rien, et elle doit se distinguer du bruit.
+                log.warn("Push delivery to user {}: {} sent, {} failed — {}",
+                    userId, sent, failed, failureBreakdown(response));
+            }
 
             // Nettoyer les tokens invalides
             cleanInvalidTokens(tokens, response);
         } catch (FirebaseMessagingException e) {
             log.error("Error sending push notifications to user {}: {}", userId, e.getMessage());
         }
+    }
+
+    /**
+     * Les codes d'erreur rencontrés et leur nombre, par exemple
+     * {@code THIRD_PARTY_AUTH_ERROR=2}.
+     *
+     * <p>Le code, jamais le jeton : ces lignes partent dans les journaux d'un
+     * hébergeur, et un jeton d'appareil permet d'envoyer une notification à
+     * quelqu'un. {@link #cleanInvalidTokens} n'en imprime déjà que les dix
+     * premiers caractères, pour la même raison.
+     *
+     * <p>{@code UNKNOWN} recouvre un échec sans exception ou sans code —
+     * possible selon le SDK, et une catégorie visible vaut mieux qu'un total
+     * qui ne se recompose pas.
+     */
+    private static String failureBreakdown(BatchResponse response) {
+        Map<String, Integer> counts = new LinkedHashMap<>();
+        for (SendResponse sendResponse : response.getResponses()) {
+            if (sendResponse.isSuccessful()) {
+                continue;
+            }
+            counts.merge(errorCodeOf(sendResponse), 1, Integer::sum);
+        }
+        return counts.entrySet().stream()
+            .map(e -> e.getKey() + "=" + e.getValue())
+            .collect(Collectors.joining(", "));
+    }
+
+    private static String errorCodeOf(SendResponse sendResponse) {
+        FirebaseMessagingException exception = sendResponse.getException();
+        if (exception == null || exception.getMessagingErrorCode() == null) {
+            return "UNKNOWN";
+        }
+        return exception.getMessagingErrorCode().name();
     }
 
     /**

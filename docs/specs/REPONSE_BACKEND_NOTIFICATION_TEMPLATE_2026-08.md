@@ -4,6 +4,11 @@
 > `TODO_BACKEND_PUSH_2026-08-15.md`. Quatre des six tâches de ce TODO étaient
 > déjà livrées quand il a été écrit, T1 comprise ; T3 l'est depuis. Voir
 > « Addendum du 15/08 ».
+>
+> **La suite du dossier a son propre fichier :**
+> `REPONSE_BACKEND_PUSH_2026-08-15.md` répond à `REPONSE_CLIENT_PUSH_2026-08-15.md`
+> — ordre de sacrifice révisé, formules Android, et la ventilation des échecs
+> d'envoi qui doit trancher le diagnostic resté ouvert.
 
 > Réponse à `PROMPT_BACKEND_NOTIFICATION_TEMPLATE_2026-08.md`. **Cinq demandes
 > sur six sont livrées** — N1, N2 (option A), N4, N5 et N6. Voir « Ce qui est
