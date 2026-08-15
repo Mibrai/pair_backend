@@ -239,4 +239,45 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
         @Param("createdSince") Instant createdSince,
         @Param("limit") int limit
     );
+
+    /**
+     * Pour chacun des programmes donnés, la <b>séance localisée la plus proche</b>
+     * du point interrogé : sa latitude, sa longitude et sa distance en mètres.
+     *
+     * <p>C'est la coordonnée qu'un résultat de recherche de type {@code program}
+     * doit porter. Elle répond à « à quelle distance de moi ? », qui est la
+     * question que l'utilisateur lit — là où la prochaine occurrence répondrait
+     * à une autre question, et la position de l'organisateur à aucune.
+     *
+     * <p>Une seule requête pour toute la page de candidats : la résoudre
+     * programme par programme ferait deux cents allers-retours sur une recherche.
+     * {@code DISTINCT ON} retient la première ligne de chaque groupe, et le tri
+     * garantit que c'est la plus proche.
+     *
+     * <p>Un programme sans aucune séance localisée n'a pas de ligne : l'appelant
+     * en tire {@code lat}/{@code lng} nuls, jamais un repli. C'est délibéré —
+     * c'est le repli silencieux sur la position de l'organisateur qui a rendu le
+     * défaut invisible pendant si longtemps.
+     *
+     * @return lignes {@code [programId, lat, lng, distanceMeters]}
+     */
+    @Query(value = """
+        SELECT DISTINCT ON (s.program_id)
+               s.program_id AS program_id,
+               ST_Y(s.location) AS lat,
+               ST_X(s.location) AS lng,
+               ST_Distance(
+                   s.location::geography,
+                   ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
+               ) AS distance_meters
+          FROM schedules s
+         WHERE s.program_id IN (:programIds)
+           AND s.location IS NOT NULL
+         ORDER BY s.program_id, distance_meters
+        """, nativeQuery = true)
+    List<Object[]> findNearestVenuesByProgramIds(
+        @Param("programIds") Collection<UUID> programIds,
+        @Param("lat") double lat,
+        @Param("lng") double lng
+    );
 }

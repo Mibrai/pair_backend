@@ -13,13 +13,27 @@ public record SearchResultDto(
     String title,
     String description,
     String avatarUrl,
+
+    @Schema(description = "Latitude du résultat. Pour resultType=\"program\", celle de la "
+        + "séance localisée la plus proche du point interrogé — jamais celle du compte "
+        + "organisateur. Nulle quand le programme n'a aucune séance localisée, ou qu'il se "
+        + "tient à distance (locationType REMOTE ou ONLINE) : rien à afficher se dit par "
+        + "l'absence, jamais par un repli.")
     Double lat,
+    @Schema(description = "Longitude du résultat. Mêmes règles que lat.")
     Double lng,
+    @Schema(description = "Distance au point interrogé, en mètres. Nulle exactement quand "
+        + "lat/lng le sont : une distance sans lieu n'a pas de sens.")
     Double distanceMeters,
     Float relevanceScore,
     String activityName,
     String level,
     String format,
+
+    @Schema(description = "Présence récente de l'organisateur : actif dans les cinq "
+        + "dernières minutes. Ce champ ne dit PAS que le programme se tient à distance — "
+        + "cette notion-là est portée par locationType (REMOTE, ONLINE, IN_PERSON, HYBRID). "
+        + "Toujours false pour resultType=\"slot\".")
     boolean isOnline,
     String verificationStatus,
 

@@ -50,6 +50,31 @@ public interface ProgramRepository extends JpaRepository<Program, UUID> {
     List<Object[]> findActiveWithEnrolmentsByUserActivityIds(
         @Param("userActivityIds") List<UUID> userActivityIds);
 
+    /**
+     * Programmes sémantiquement proches de la requête, <b>bornés sur le lieu de
+     * leurs séances</b> et non sur le domicile de leur organisateur.
+     *
+     * <p>Le filtre portait sur {@code u.location}, la position du compte. Un
+     * programme dont les séances se tiennent à deux kilomètres de l'utilisateur
+     * était donc absent d'une recherche à cinq kilomètres dès que son
+     * organisateur habitait ailleurs — et l'absence, contrairement à une
+     * distance fausse, ne se voit pas. Un programme dont l'organisateur n'avait
+     * aucune position n'était jamais rendu.
+     *
+     * <p>Un programme entre désormais dans le rayon dès qu'<b>une</b> de ses
+     * séances localisées y est. Le corollaire est assumé : un programme à
+     * plusieurs lieux peut entrer par n'importe lequel, et
+     * {@code SemanticSearchService} le situera ensuite sur le plus proche du
+     * point interrogé.
+     *
+     * <p>Principe du filtre : <b>un rayon ne peut exclure que ce qu'on sait
+     * situer.</b> Un programme à distance ({@code REMOTE}, {@code ONLINE}), ou
+     * sans aucune séance localisée, y échappe donc plutôt que d'y échouer — il
+     * est rendu, et {@code SemanticSearchService} lui donnera des coordonnées
+     * nulles. Le borner sur la position de son organisateur serait revenir au
+     * défaut corrigé ici ; l'exclure reviendrait à le filtrer sur un critère
+     * qu'on est incapable d'évaluer pour lui.
+     */
     @Query(value = """
         SELECT p.* FROM programs p
         JOIN user_activities ua ON p.user_activity_id = ua.id
@@ -60,10 +85,23 @@ public interface ProgramRepository extends JpaRepository<Program, UUID> {
           AND ua.visible_on_map = true
           AND p.embedding IS NOT NULL
           AND (p.embedding <=> CAST(:queryEmbedding AS vector)) <= :maxDistance
-          AND ST_DWithin(
-              u.location::geography,
-              ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
-              :radiusMeters
+          AND (
+              p.location_type IN ('REMOTE', 'ONLINE')
+              OR NOT EXISTS (
+                  SELECT 1 FROM schedules s
+                   WHERE s.program_id = p.id
+                     AND s.location IS NOT NULL
+              )
+              OR EXISTS (
+                  SELECT 1 FROM schedules s
+                   WHERE s.program_id = p.id
+                     AND s.location IS NOT NULL
+                     AND ST_DWithin(
+                         s.location::geography,
+                         ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
+                         :radiusMeters
+                     )
+              )
           )
         ORDER BY p.embedding <=> CAST(:queryEmbedding AS vector)
         LIMIT :limit
