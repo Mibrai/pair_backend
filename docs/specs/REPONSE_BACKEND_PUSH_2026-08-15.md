@@ -1,5 +1,10 @@
 # Réponse backend — notifications poussées (15/08/2026, soir)
 
+> **Suite du dossier :** `REPONSE_BACKEND_PUSH_2026-08-15-SOIR.md` livre le
+> fuseau de l'appareil, que le client a choisi d'envoyer. Le **tableau de lecture
+> des journaux** reste ici, section 2 — c'est lui qui doit trancher le
+> diagnostic.
+
 > Réponse à `REPONSE_CLIENT_PUSH_2026-08-15.md`.
 >
 > **`FIREBASE_ENABLED` vaut `true` sur Railway.** Votre question 1 est donc

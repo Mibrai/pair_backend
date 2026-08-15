@@ -31,4 +31,15 @@ public class RegisterDeviceRequest {
         + "langue à jour — à faire quand l'utilisateur change la langue de l'app.")
     @Size(max = 35)
     private String locale;
+
+    @Schema(description = "Fuseau de cet appareil, étiquette IANA (ex. \"Europe/Paris\"). "
+        + "Jamais un décalage : \"+02:00\" décrit un instant et non une règle, et un rappel "
+        + "émis fin octobre pour une séance de novembre serait décalé d'une heure. Sert à "
+        + "composer les heures des textes push Android, qu'aucune extension ne réécrit sur "
+        + "l'appareil. Absente ou non reconnue, le fuseau de référence du serveur fait foi. "
+        + "Ré-enregistrer le jeton met le fuseau à jour — à faire quand l'appareil change de "
+        + "fuseau, donc quand on voyage.",
+        example = "Europe/Paris")
+    @Size(max = 64)
+    private String timezone;
 }
