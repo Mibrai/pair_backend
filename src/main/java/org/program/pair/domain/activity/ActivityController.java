@@ -47,13 +47,25 @@ public class ActivityController {
      */
     @GetMapping("/activities/browse")
     public Page<BrowsedActivityDto> browseActivities(
+            @AuthenticationPrincipal UserPrincipal principal,
             @Valid @ModelAttribute ActivityBrowseRequest request) {
-        return activityBrowseService.browse(request);
+        return activityBrowseService.browse(request, idOrNull(principal));
     }
 
+    /**
+     * Route <b>publique</b> : le principal est nul pour un appelant anonyme, et
+     * {@code subscribed} vaut alors {@code false} — faute d'identité, pas faute
+     * d'abonnement. Un client connecté ne doit pas s'en servir comme source de
+     * vérité s'il l'a appelée hors session.
+     */
     @GetMapping("/categories")
-    public List<CategoryDto> getCategories() {
-        return activityService.getAllCategories();
+    public List<CategoryDto> getCategories(
+            @AuthenticationPrincipal UserPrincipal principal) {
+        return activityService.getAllCategories(idOrNull(principal));
+    }
+
+    private static UUID idOrNull(UserPrincipal principal) {
+        return principal != null ? principal.getId() : null;
     }
 
     @PostMapping("/categories")

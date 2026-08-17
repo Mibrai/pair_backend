@@ -121,8 +121,8 @@ abstract class RecapTestFixtures {
 
     protected UserPublicDto publicProfile(UUID userId) {
         User user = user(userId);
-        return new UserPublicDto(user.getId(), user.getDisplayName(), null, null,
-            "UNVERIFIED", List.of(), List.of(), false);
+        return UserPublicDto.identity(user.getId(), user.getDisplayName(), null, null,
+            "UNVERIFIED");
     }
 
     protected Attendance presentAttendance(Schedule slot, UUID userId) {

@@ -84,6 +84,19 @@ public record BrowsedActivityDto(
         + "jamais expirée.")
     boolean isExpired,
 
+    @Schema(description = "Nombre d'abonnés de type USER_ACTIVITY à cette entrée. Compte "
+        + "cette entrée seule : il n'inclut pas les abonnés de son organisateur, qui "
+        + "seront pourtant notifiés eux aussi de ses nouveaux programmes. Un compteur par "
+        + "type, sans agrégation — deux nombres qui se recouvrent partiellement sont plus "
+        + "trompeurs qu'un seul, exact et étroit.")
+    long subscriberCount,
+
+    @Schema(description = "L'appelant suit-il cette entrée ? Reste vrai pour un abonnement "
+        + "en sourdine (MUTED). C'est ce champ qui rend la pagination de "
+        + "/users/me/subscriptions possible : sans lui, le client doit charger tous ses "
+        + "abonnements pour savoir ce qu'un bouton doit dire.")
+    boolean subscribed,
+
     @Schema(description = "Présent seulement si includePrograms=true, et borné aux 3 "
         + "prochains programmes par date de prochaine séance. Null sinon.")
     List<BrowsedProgramDto> programs

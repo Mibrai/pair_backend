@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -30,10 +32,31 @@ public class ActivityService {
     private final SubscriptionService subscriptionService;
     private final HtmlSanitizer sanitizer;
 
+    /**
+     * Le référentiel des catégories, avec compteur d'abonnés et état de
+     * l'appelant.
+     *
+     * <p>Deux requêtes pour tout le référentiel, pas deux par catégorie : il est
+     * court et rendu en entier, borner par une liste d'identifiants coûterait un
+     * paramètre sans rien économiser.
+     *
+     * @param requesterId appelant, ou {@code null} — la route est publique, et
+     *                    {@code subscribed} vaut alors {@code false} faute
+     *                    d'identité
+     */
     @Transactional(readOnly = true)
-    public List<CategoryDto> getAllCategories() {
+    public List<CategoryDto> getAllCategories(UUID requesterId) {
+        Map<UUID, Long> subscriberCounts = subscriptionService.countAllCategorySubscribers();
+        Set<UUID> subscribedTo = subscriptionService.subscribedCategoryIds(requesterId);
+
         return categoryRepository.findAll().stream()
-            .map(this::toCategoryDto)
+            .map(category -> new CategoryDto(
+                category.getId(),
+                category.getName(),
+                category.getIcon(),
+                category.getColorRamp(),
+                subscriberCounts.getOrDefault(category.getId(), 0L),
+                subscribedTo.contains(category.getId())))
             .collect(Collectors.toList());
     }
 
@@ -195,8 +218,15 @@ public class ActivityService {
         return toUserActivityDto(userActivity);
     }
 
+    /**
+     * Rendu <b>imbriqué</b> d'une catégorie : sans compteur ni état d'abonnement.
+     *
+     * <p>Les calculer ici coûterait deux requêtes par activité rendue, et aucun
+     * de ces appels ne connaît l'appelant. Voir {@link #getAllCategories(UUID)}
+     * pour le rendu complet.
+     */
     private CategoryDto toCategoryDto(Category category) {
-        return new CategoryDto(
+        return CategoryDto.nested(
             category.getId(),
             category.getName(),
             category.getIcon(),

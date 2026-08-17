@@ -710,6 +710,23 @@ public class MapService {
             Activity activity = userActivity.getActivity();
             if (activity == null) continue;
 
+            // ATTENTION : la clé est l'activité du RÉFÉRENTIEL, sans l'organisateur.
+            //
+            // Deux personnes proposant la même activité au même lieu (à 111 m près,
+            // cf. l'arrondi ci-dessous) se fondent donc en un seul marqueur, et
+            // l'organizerId rendu est celui d'un créneau « représentatif » choisi
+            // par sa date — pas forcément celui que l'utilisateur croit voir.
+            // S'abonner à « l'auteur » depuis ce marqueur peut donc abonner à
+            // quelqu'un d'autre.
+            //
+            // Connu et assumé au 2026-08-17 : le client Flutter n'alimente plus
+            // aucun rendu depuis /map/activities (ses puces d'abonnement lisent un
+            // ProgramDto via le pin de programme), donc le défaut n'atteint
+            // personne. Il n'a pas disparu pour autant. Tout nouveau consommateur
+            // de cette route en hérite : le corriger suppose de faire entrer
+            // userActivityId dans la clé, ce qui augmente la cardinalité des
+            // marqueurs et doit être annoncé aux clients avant, pas après.
+            // Voir docs/specs/REPONSE_BACKEND_ABONNEMENTS_2026-08.md §1.3.
             activityScheduleMap.computeIfAbsent(activity.getId(), k -> new ArrayList<>()).add(schedule);
         }
 

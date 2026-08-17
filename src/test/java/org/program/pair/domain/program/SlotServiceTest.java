@@ -139,8 +139,8 @@ class SlotServiceTest {
         joiner.setDisplayName("Joiner");
         when(userRepository.getReferenceById(joinerId)).thenReturn(joiner);
         when(userRepository.findById(joinerId)).thenReturn(Optional.of(joiner));
-        when(userService.getPublicProfile(any(), any())).thenReturn(new UserPublicDto(
-            UUID.randomUUID(), "Host", null, null, "UNVERIFIED", List.of(), List.of(), false));
+        when(userService.getPublicProfile(any(), any())).thenReturn(UserPublicDto.identity(
+            UUID.randomUUID(), "Host", null, null, "UNVERIFIED"));
         when(participationRepository.findByScheduleIdAndUserId(any(), any())).thenReturn(Optional.empty());
     }
 

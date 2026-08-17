@@ -13,8 +13,16 @@ import org.program.pair.repository.CategoryRepository;
 import org.program.pair.repository.SubscriptionRepository;
 import org.program.pair.repository.UserActivityRepository;
 import org.program.pair.repository.UserRepository;
+import org.program.pair.domain.subscription.dto.SubscriptionDto;
+import org.program.pair.domain.subscription.dto.SubscriptionScopeRequest;
+import org.program.pair.domain.subscription.dto.UpdateSubscriptionRequest;
+import org.program.pair.domain.user.PrivacySettings;
+import org.program.pair.domain.user.SubscriptionPermission;
+import org.program.pair.shared.exception.ConflictException;
+import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.exception.ForbiddenException;
 import org.program.pair.shared.exception.ResourceNotFoundException;
+import org.program.pair.shared.exception.ValidationException;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -65,7 +73,9 @@ class SubscriptionServiceTest {
             .thenReturn(true);
 
         assertThatThrownBy(() -> subscriptionService.subscribeToAuthor(subscriberId, authorId))
-            .isInstanceOf(IllegalStateException.class);
+            .isInstanceOf(ConflictException.class)
+            .extracting(ex -> ((ConflictException) ex).getErrorCode())
+            .isEqualTo(ErrorCode.ALREADY_SUBSCRIBED);
     }
 
     @Test
@@ -100,7 +110,7 @@ class SubscriptionServiceTest {
         when(userRepository.findById(subscriberId)).thenReturn(Optional.of(new User()));
         when(categoryRepository.findById(categoryId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> subscriptionService.subscribeToCategory(subscriberId, categoryId))
+        assertThatThrownBy(() -> subscriptionService.subscribeToCategory(subscriberId, categoryId, null))
             .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -117,9 +127,220 @@ class SubscriptionServiceTest {
         when(categoryRepository.findById(category.getId())).thenReturn(Optional.of(category));
         when(subscriptionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        var dto = subscriptionService.subscribeToCategory(subscriberId, category.getId());
+        var dto = subscriptionService.subscribeToCategory(subscriberId, category.getId(), null);
 
         assertThat(dto.type()).isEqualTo("CATEGORY");
         assertThat(dto.targetCategoryId()).isEqualTo(category.getId());
+    }
+
+    // --- Lot A : refus nommés, idempotence, niveau, portée ---
+
+    @Test
+    void subscribeToAuthor_profilFermeAuxAbonnements_doitEtreRefuse() {
+        UUID subscriberId = UUID.randomUUID();
+        UUID authorId = UUID.randomUUID();
+
+        User subscriber = new User();
+        subscriber.setId(subscriberId);
+        User author = new User();
+        author.setId(authorId);
+        author.setPrivacySettings(PrivacySettings.builder()
+            .allowSubscriptions(SubscriptionPermission.NOBODY)
+            .build());
+
+        when(subscriptionRepository.existsBySubscriberIdAndTargetAuthorId(subscriberId, authorId))
+            .thenReturn(false);
+        when(userRepository.findById(subscriberId)).thenReturn(Optional.of(subscriber));
+        when(userRepository.findById(authorId)).thenReturn(Optional.of(author));
+
+        assertThatThrownBy(() -> subscriptionService.subscribeToAuthor(subscriberId, authorId))
+            .isInstanceOf(ForbiddenException.class)
+            .extracting(ex -> ((ForbiddenException) ex).getErrorCode())
+            .isEqualTo(ErrorCode.SUBSCRIPTIONS_NOT_ALLOWED);
+
+        verify(subscriptionRepository, never()).save(any());
+        verifyNoInteractions(notificationService);
+    }
+
+    /**
+     * Le réglage ne vaut que pour l'avenir : il refuse les nouveaux abonnements,
+     * il ne supprime pas les existants et ne les fait pas taire.
+     */
+    @Test
+    void unsubscribeFromAuthor_profilFerme_resteToujoursPossible() {
+        UUID subscriberId = UUID.randomUUID();
+        UUID authorId = UUID.randomUUID();
+        Subscription existing = Subscription.builder().id(UUID.randomUUID()).build();
+
+        when(subscriptionRepository.findBySubscriberIdAndTargetAuthorId(subscriberId, authorId))
+            .thenReturn(Optional.of(existing));
+
+        subscriptionService.unsubscribeFromAuthor(subscriberId, authorId);
+
+        verify(subscriptionRepository).delete(existing);
+    }
+
+    /**
+     * Un retrait déjà effectué rend 204 et non 404 : le client fait un retrait
+     * optimiste, et une erreur le ferait revenir en arrière à tort.
+     */
+    @Test
+    void unsubscribe_sansAbonnement_doitResterSilencieux() {
+        UUID subscriberId = UUID.randomUUID();
+        UUID targetId = UUID.randomUUID();
+
+        when(subscriptionRepository.findBySubscriberIdAndTargetAuthorId(subscriberId, targetId))
+            .thenReturn(Optional.empty());
+        when(subscriptionRepository.findBySubscriberIdAndTargetUserActivityId(subscriberId, targetId))
+            .thenReturn(Optional.empty());
+        when(subscriptionRepository.findBySubscriberIdAndTargetCategoryId(subscriberId, targetId))
+            .thenReturn(Optional.empty());
+
+        subscriptionService.unsubscribeFromAuthor(subscriberId, targetId);
+        subscriptionService.unsubscribeFromUserActivity(subscriberId, targetId);
+        subscriptionService.unsubscribeFromCategory(subscriberId, targetId);
+
+        verify(subscriptionRepository, never()).delete(any());
+    }
+
+    @Test
+    void subscribeToCategory_avecPortee_doitLaPersisterEnMetres() {
+        UUID subscriberId = UUID.randomUUID();
+        User subscriber = new User();
+        subscriber.setId(subscriberId);
+        Category category = Category.builder().id(UUID.randomUUID()).name("Yoga").build();
+
+        when(subscriptionRepository.existsBySubscriberIdAndTargetCategoryId(subscriberId, category.getId()))
+            .thenReturn(false);
+        when(userRepository.findById(subscriberId)).thenReturn(Optional.of(subscriber));
+        when(categoryRepository.findById(category.getId())).thenReturn(Optional.of(category));
+        when(subscriptionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        SubscriptionDto dto = subscriptionService.subscribeToCategory(
+            subscriberId, category.getId(),
+            new SubscriptionScopeRequest(48.8566, 2.3522, 20_000));
+
+        assertThat(dto.lat()).isEqualTo(48.8566);
+        assertThat(dto.lng()).isEqualTo(2.3522);
+        assertThat(dto.radiusMeters()).isEqualTo(20_000);
+        assertThat(dto.level()).isEqualTo("ALL");
+    }
+
+    /** Un centre sans rayon ne décrit rien : les trois champs vont ensemble. */
+    @Test
+    void subscribeToCategory_porteeIncomplete_doitEchouer() {
+        UUID subscriberId = UUID.randomUUID();
+        UUID categoryId = UUID.randomUUID();
+
+        when(subscriptionRepository.existsBySubscriberIdAndTargetCategoryId(subscriberId, categoryId))
+            .thenReturn(false);
+        when(userRepository.findById(subscriberId)).thenReturn(Optional.of(new User()));
+        when(categoryRepository.findById(categoryId))
+            .thenReturn(Optional.of(Category.builder().id(categoryId).build()));
+
+        assertThatThrownBy(() -> subscriptionService.subscribeToCategory(
+            subscriberId, categoryId, new SubscriptionScopeRequest(48.85, null, 20_000)))
+            .isInstanceOf(ValidationException.class);
+
+        verify(subscriptionRepository, never()).save(any());
+    }
+
+    @Test
+    void updateCategorySubscription_doitChangerLeNiveauSansToucherLaPortee() {
+        UUID subscriberId = UUID.randomUUID();
+        UUID categoryId = UUID.randomUUID();
+        Subscription existing = categorySubscription(categoryId, 48.85, 2.35, 20_000);
+
+        when(subscriptionRepository.findBySubscriberIdAndTargetCategoryId(subscriberId, categoryId))
+            .thenReturn(Optional.of(existing));
+        when(subscriptionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        SubscriptionDto dto = subscriptionService.updateCategorySubscription(
+            subscriberId, categoryId,
+            new UpdateSubscriptionRequest("MUTED", null, null, null, null));
+
+        assertThat(dto.level()).isEqualTo("MUTED");
+        assertThat(dto.radiusMeters()).isEqualTo(20_000);
+    }
+
+    /**
+     * Le retrait de portée passe par {@code clearScope} et non par trois
+     * {@code null} : en JSON, un champ absent et un champ nul sont
+     * indiscernables, et un changement de niveau ne doit pas effacer un rayon.
+     */
+    @Test
+    void updateCategorySubscription_clearScope_doitRetirerLaPortee() {
+        UUID subscriberId = UUID.randomUUID();
+        UUID categoryId = UUID.randomUUID();
+        Subscription existing = categorySubscription(categoryId, 48.85, 2.35, 20_000);
+
+        when(subscriptionRepository.findBySubscriberIdAndTargetCategoryId(subscriberId, categoryId))
+            .thenReturn(Optional.of(existing));
+        when(subscriptionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        SubscriptionDto dto = subscriptionService.updateCategorySubscription(
+            subscriberId, categoryId,
+            new UpdateSubscriptionRequest(null, null, null, null, true));
+
+        assertThat(dto.lat()).isNull();
+        assertThat(dto.lng()).isNull();
+        assertThat(dto.radiusMeters()).isNull();
+    }
+
+    @Test
+    void updateCategorySubscription_clearScopeEtPortee_doitEchouer() {
+        UUID subscriberId = UUID.randomUUID();
+        UUID categoryId = UUID.randomUUID();
+
+        when(subscriptionRepository.findBySubscriberIdAndTargetCategoryId(subscriberId, categoryId))
+            .thenReturn(Optional.of(categorySubscription(categoryId, null, null, null)));
+
+        assertThatThrownBy(() -> subscriptionService.updateCategorySubscription(
+            subscriberId, categoryId,
+            new UpdateSubscriptionRequest(null, 48.85, 2.35, 20_000, true)))
+            .isInstanceOf(ValidationException.class);
+    }
+
+    /** Un rayon sur un abonnement AUTHOR n'aurait aucun effet : il est refusé. */
+    @Test
+    void updateAuthorSubscription_avecPortee_doitEchouer() {
+        UUID subscriberId = UUID.randomUUID();
+        UUID authorId = UUID.randomUUID();
+        Subscription existing = Subscription.builder()
+            .id(UUID.randomUUID())
+            .type(SubscriptionType.AUTHOR)
+            .build();
+
+        when(subscriptionRepository.findBySubscriberIdAndTargetAuthorId(subscriberId, authorId))
+            .thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> subscriptionService.updateAuthorSubscription(
+            subscriberId, authorId,
+            new UpdateSubscriptionRequest(null, 48.85, 2.35, 20_000, null)))
+            .isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    void updateSubscription_abonnementInexistant_doitEtreIntrouvable() {
+        UUID subscriberId = UUID.randomUUID();
+        UUID authorId = UUID.randomUUID();
+
+        when(subscriptionRepository.findBySubscriberIdAndTargetAuthorId(subscriberId, authorId))
+            .thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> subscriptionService.updateAuthorSubscription(
+            subscriberId, authorId, new UpdateSubscriptionRequest("MUTED", null, null, null, null)))
+            .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    private Subscription categorySubscription(UUID categoryId, Double lat, Double lng, Integer radius) {
+        return Subscription.builder()
+            .id(UUID.randomUUID())
+            .type(SubscriptionType.CATEGORY)
+            .targetCategory(Category.builder().id(categoryId).name("Yoga").build())
+            .lat(lat)
+            .lng(lng)
+            .radiusMeters(radius)
+            .build();
     }
 }

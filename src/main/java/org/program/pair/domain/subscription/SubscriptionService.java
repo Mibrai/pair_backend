@@ -9,19 +9,30 @@ import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.subscription.dto.SubscriptionDto;
+import org.program.pair.domain.subscription.dto.SubscriptionScopeRequest;
+import org.program.pair.domain.subscription.dto.UpdateSubscriptionRequest;
+import org.program.pair.domain.user.PrivacySettings;
+import org.program.pair.domain.user.SubscriptionPermission;
 import org.program.pair.domain.user.User;
 import org.program.pair.repository.CategoryRepository;
 import org.program.pair.repository.SubscriptionRepository;
 import org.program.pair.repository.UserActivityRepository;
 import org.program.pair.repository.UserRepository;
+import org.program.pair.shared.exception.ConflictException;
+import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.exception.ForbiddenException;
 import org.program.pair.shared.exception.ResourceNotFoundException;
+import org.program.pair.shared.exception.ValidationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
@@ -42,13 +53,15 @@ public class SubscriptionService {
             throw new ForbiddenException("Vous ne pouvez pas vous abonner à vous-même.");
         }
         if (subscriptionRepository.existsBySubscriberIdAndTargetAuthorId(subscriberId, authorId)) {
-            throw new IllegalStateException("Vous êtes déjà abonné à cet utilisateur.");
+            throw alreadySubscribed("Vous êtes déjà abonné à cet utilisateur.");
         }
 
         User subscriber = userRepository.findById(subscriberId)
             .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable."));
         User author = userRepository.findById(authorId)
             .orElseThrow(() -> new ResourceNotFoundException("Auteur introuvable."));
+
+        requireOpenToSubscriptions(author);
 
         Subscription subscription = Subscription.builder()
             .subscriber(subscriber)
@@ -68,15 +81,14 @@ public class SubscriptionService {
     }
 
     public void unsubscribeFromAuthor(UUID subscriberId, UUID authorId) {
-        Subscription subscription = subscriptionRepository
+        subscriptionRepository
             .findBySubscriberIdAndTargetAuthorId(subscriberId, authorId)
-            .orElseThrow(() -> new ResourceNotFoundException("Abonnement introuvable."));
-        subscriptionRepository.delete(subscription);
+            .ifPresent(subscriptionRepository::delete);
     }
 
     public SubscriptionDto subscribeToUserActivity(UUID subscriberId, UUID userActivityId) {
         if (subscriptionRepository.existsBySubscriberIdAndTargetUserActivityId(subscriberId, userActivityId)) {
-            throw new IllegalStateException("Vous êtes déjà abonné à cette activité.");
+            throw alreadySubscribed("Vous êtes déjà abonné à cette activité.");
         }
 
         User subscriber = userRepository.findById(subscriberId)
@@ -94,15 +106,23 @@ public class SubscriptionService {
     }
 
     public void unsubscribeFromUserActivity(UUID subscriberId, UUID userActivityId) {
-        Subscription subscription = subscriptionRepository
+        subscriptionRepository
             .findBySubscriberIdAndTargetUserActivityId(subscriberId, userActivityId)
-            .orElseThrow(() -> new ResourceNotFoundException("Abonnement introuvable."));
-        subscriptionRepository.delete(subscription);
+            .ifPresent(subscriptionRepository::delete);
     }
 
-    public SubscriptionDto subscribeToCategory(UUID subscriberId, UUID categoryId) {
+    /**
+     * Abonnement à une catégorie, avec une portée géographique facultative.
+     *
+     * <p>Les catégories sont un référentiel <b>mondial</b> : sans portée, un
+     * abonnement « yoga » notifie un Parisien d'une séance créée à Berlin. Le
+     * corps absent conserve ce comportement — c'est celui d'avant, et le retirer
+     * changerait le sens d'abonnements existants.
+     */
+    public SubscriptionDto subscribeToCategory(UUID subscriberId, UUID categoryId,
+                                               SubscriptionScopeRequest scope) {
         if (subscriptionRepository.existsBySubscriberIdAndTargetCategoryId(subscriberId, categoryId)) {
-            throw new IllegalStateException("Vous êtes déjà abonné à cette catégorie.");
+            throw alreadySubscribed("Vous êtes déjà abonné à cette catégorie.");
         }
 
         User subscriber = userRepository.findById(subscriberId)
@@ -110,20 +130,23 @@ public class SubscriptionService {
         Category category = categoryRepository.findById(categoryId)
             .orElseThrow(() -> new ResourceNotFoundException("Catégorie introuvable."));
 
-        Subscription subscription = Subscription.builder()
+        Subscription.SubscriptionBuilder builder = Subscription.builder()
             .subscriber(subscriber)
             .type(SubscriptionType.CATEGORY)
-            .targetCategory(category)
-            .build();
+            .targetCategory(category);
 
-        return toDto(subscriptionRepository.save(subscription));
+        if (scope != null && !scope.isEmpty()) {
+            requireCompleteScope(scope);
+            builder.lat(scope.lat()).lng(scope.lng()).radiusMeters(scope.radiusMeters());
+        }
+
+        return toDto(subscriptionRepository.save(builder.build()));
     }
 
     public void unsubscribeFromCategory(UUID subscriberId, UUID categoryId) {
-        Subscription subscription = subscriptionRepository
+        subscriptionRepository
             .findBySubscriberIdAndTargetCategoryId(subscriberId, categoryId)
-            .orElseThrow(() -> new ResourceNotFoundException("Abonnement introuvable."));
-        subscriptionRepository.delete(subscription);
+            .ifPresent(subscriptionRepository::delete);
     }
 
     @Transactional(readOnly = true)
@@ -131,6 +154,140 @@ public class SubscriptionService {
         return subscriptionRepository.findBySubscriberId(subscriberId).stream()
             .map(this::toDto)
             .collect(Collectors.toList());
+    }
+
+    // --- Réglage d'un abonnement existant ---
+
+    public SubscriptionDto updateAuthorSubscription(UUID subscriberId, UUID authorId,
+                                                    UpdateSubscriptionRequest request) {
+        return applyUpdate(subscriptionRepository
+            .findBySubscriberIdAndTargetAuthorId(subscriberId, authorId)
+            .orElseThrow(() -> noSubscription("cet utilisateur")), request);
+    }
+
+    public SubscriptionDto updateUserActivitySubscription(UUID subscriberId, UUID userActivityId,
+                                                          UpdateSubscriptionRequest request) {
+        return applyUpdate(subscriptionRepository
+            .findBySubscriberIdAndTargetUserActivityId(subscriberId, userActivityId)
+            .orElseThrow(() -> noSubscription("cette activité")), request);
+    }
+
+    public SubscriptionDto updateCategorySubscription(UUID subscriberId, UUID categoryId,
+                                                      UpdateSubscriptionRequest request) {
+        return applyUpdate(subscriptionRepository
+            .findBySubscriberIdAndTargetCategoryId(subscriberId, categoryId)
+            .orElseThrow(() -> noSubscription("cette catégorie")), request);
+    }
+
+    /**
+     * Modification partielle : seuls les champs présents sont appliqués.
+     *
+     * <p>La portée fait exception à la règle du « champ par champ » — elle
+     * s'applique en bloc, parce qu'un centre sans rayon ne décrit rien. Et son
+     * retrait passe par {@code clearScope} plutôt que par trois {@code null} :
+     * en JSON, un champ absent et un champ nul arrivent tous deux à
+     * {@code null}, et un {@code PATCH} qui remplacerait la portée en bloc à
+     * chaque appel ferait qu'un simple changement de niveau efface
+     * silencieusement un rayon réglé.
+     */
+    private SubscriptionDto applyUpdate(Subscription subscription, UpdateSubscriptionRequest request) {
+        if (request.clearsScope() && request.mentionsScope()) {
+            throw new ValidationException(
+                "clearScope et lat/lng/radiusMeters ne peuvent pas être demandés ensemble.");
+        }
+
+        if (request.level() != null) {
+            subscription.setLevel(SubscriptionLevel.valueOf(request.level()));
+        }
+
+        if (request.clearsScope()) {
+            subscription.setLat(null);
+            subscription.setLng(null);
+            subscription.setRadiusMeters(null);
+        } else if (request.mentionsScope()) {
+            requireCategoryScope(subscription);
+            if (!request.setsScope()) {
+                throw new ValidationException(
+                    "lat, lng et radiusMeters vont ensemble : les trois sont requis pour "
+                        + "poser une portée, ou clearScope pour la retirer.");
+            }
+            subscription.setLat(request.lat());
+            subscription.setLng(request.lng());
+            subscription.setRadiusMeters(request.radiusMeters());
+        }
+
+        return toDto(subscriptionRepository.save(subscription));
+    }
+
+    // --- Compteurs et état d'abonnement, pour les DTO de cible ---
+    //
+    // Deux requêtes bornées à la page, jamais une par entrée : le coût est
+    // constant quelle que soit la taille du catalogue.
+
+    @Transactional(readOnly = true)
+    public long countAuthorSubscribers(UUID authorId) {
+        return subscriptionRepository.countByTargetAuthorId(authorId);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isSubscribedToAuthor(UUID subscriberId, UUID authorId) {
+        return subscriberId != null
+            && subscriptionRepository.existsBySubscriberIdAndTargetAuthorId(subscriberId, authorId);
+    }
+
+    @Transactional(readOnly = true)
+    public Map<UUID, Long> countUserActivitySubscribers(Collection<UUID> userActivityIds) {
+        return toCountMap(userActivityIds, subscriptionRepository::countByTargetUserActivityIds);
+    }
+
+    @Transactional(readOnly = true)
+    public Set<UUID> subscribedUserActivityIds(UUID subscriberId, Collection<UUID> userActivityIds) {
+        if (subscriberId == null || userActivityIds == null || userActivityIds.isEmpty()) {
+            return Set.of();
+        }
+        return new HashSet<>(
+            subscriptionRepository.findSubscribedUserActivityIds(subscriberId, userActivityIds));
+    }
+
+    @Transactional(readOnly = true)
+    public Map<UUID, Long> countAuthorSubscribers(Collection<UUID> authorIds) {
+        return toCountMap(authorIds, subscriptionRepository::countByTargetAuthorIds);
+    }
+
+    @Transactional(readOnly = true)
+    public Set<UUID> subscribedAuthorIds(UUID subscriberId, Collection<UUID> authorIds) {
+        if (subscriberId == null || authorIds == null || authorIds.isEmpty()) {
+            return Set.of();
+        }
+        return new HashSet<>(subscriptionRepository.findSubscribedAuthorIds(subscriberId, authorIds));
+    }
+
+    /** Compteurs de toutes les catégories : le référentiel est court et rendu en entier. */
+    @Transactional(readOnly = true)
+    public Map<UUID, Long> countAllCategorySubscribers() {
+        return asCountMap(subscriptionRepository.countAllByTargetCategory());
+    }
+
+    @Transactional(readOnly = true)
+    public Set<UUID> subscribedCategoryIds(UUID subscriberId) {
+        if (subscriberId == null) {
+            return Set.of();
+        }
+        return new HashSet<>(subscriptionRepository.findSubscribedCategoryIds(subscriberId));
+    }
+
+    private Map<UUID, Long> toCountMap(Collection<UUID> ids,
+                                       Function<Collection<UUID>, List<Object[]>> query) {
+        if (ids == null || ids.isEmpty()) {
+            return Map.of();
+        }
+        return asCountMap(query.apply(ids));
+    }
+
+    private Map<UUID, Long> asCountMap(List<Object[]> rows) {
+        return rows.stream().collect(Collectors.toMap(
+            row -> (UUID) row[0],
+            row -> (Long) row[1]));
     }
 
     // --- Fan-out de notifications ---
@@ -200,6 +357,44 @@ public class SubscriptionService {
                 NotificationType.ACTIVITY_NEW_PROGRAM, payload));
     }
 
+    // --- Refus nommés ---
+
+    /**
+     * {@code 409 ALREADY_SUBSCRIBED} plutôt que le {@code CONFLICT} générique :
+     * le client le traite comme un succès — l'état voulu est en base — et
+     * stabilise l'affichage sur « Abonné » sans message d'erreur. Un code partagé
+     * avec tous les autres conflits de l'API ne permettait pas cette distinction.
+     */
+    private ConflictException alreadySubscribed(String message) {
+        return new ConflictException(ErrorCode.ALREADY_SUBSCRIBED, message);
+    }
+
+    private ResourceNotFoundException noSubscription(String target) {
+        return new ResourceNotFoundException("Vous n'êtes pas abonné à " + target + ".");
+    }
+
+    private void requireOpenToSubscriptions(User author) {
+        PrivacySettings settings = author.getPrivacySettings();
+        if (settings != null && settings.getAllowSubscriptions() == SubscriptionPermission.NOBODY) {
+            throw new ForbiddenException(ErrorCode.SUBSCRIPTIONS_NOT_ALLOWED,
+                "Cette personne n'accepte pas de nouveaux abonnés.");
+        }
+    }
+
+    private void requireCompleteScope(SubscriptionScopeRequest scope) {
+        if (!scope.isComplete()) {
+            throw new ValidationException(
+                "lat, lng et radiusMeters vont ensemble : les trois sont requis, ou aucun.");
+        }
+    }
+
+    private void requireCategoryScope(Subscription subscription) {
+        if (subscription.getType() != SubscriptionType.CATEGORY) {
+            throw new ValidationException(
+                "Une portée géographique ne s'applique qu'aux abonnements de type CATEGORY.");
+        }
+    }
+
     private SubscriptionDto toDto(Subscription s) {
         return new SubscriptionDto(
             s.getId(),
@@ -210,6 +405,10 @@ public class SubscriptionService {
             s.getTargetUserActivity() != null ? s.getTargetUserActivity().getActivity().getName() : null,
             s.getTargetCategory() != null ? s.getTargetCategory().getId() : null,
             s.getTargetCategory() != null ? s.getTargetCategory().getName() : null,
+            s.getLevel() != null ? s.getLevel().name() : SubscriptionLevel.ALL.name(),
+            s.getLat(),
+            s.getLng(),
+            s.getRadiusMeters(),
             s.getCreatedAt()
         );
     }

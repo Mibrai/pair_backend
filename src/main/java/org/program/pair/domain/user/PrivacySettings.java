@@ -39,4 +39,13 @@ public class PrivacySettings {
     @Column(name = "show_on_map")
     @Builder.Default
     private Boolean showOnMap = false;
+
+    /**
+     * Qui peut s'abonner à ce profil. Ne vaut que pour les abonnements à venir :
+     * voir {@link SubscriptionPermission}.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "allow_subscriptions", length = 20)
+    @Builder.Default
+    private SubscriptionPermission allowSubscriptions = SubscriptionPermission.OPEN;
 }

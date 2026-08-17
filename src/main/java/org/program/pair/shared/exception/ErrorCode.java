@@ -92,6 +92,17 @@ public enum ErrorCode {
     // Plus de deux ambiances, ou une valeur hors du vocabulaire fermé SlotVibe.
     RECAP_INVALID_VIBES,
 
+    // — abonnements (SubscriptionService) —
+    // Un abonnement existe déjà sur cette cible. Le client le traite comme un
+    // succès : l'état voulu est en base, l'affichage se stabilise sur « Abonné »
+    // sans message d'erreur. Nommé plutôt que rendu par le CONFLICT générique,
+    // qu'il partageait avec tous les autres 409 de l'API et sur lequel aucune
+    // logique ne pouvait donc brancher.
+    ALREADY_SUBSCRIBED,
+    // Le profil visé refuse les nouveaux abonnements (PrivacySettings
+    // allowSubscriptions = NOBODY). Ne concerne que le type AUTHOR.
+    SUBSCRIPTIONS_NOT_ALLOWED,
+
     // — bornage de la carte (MapService) —
     MAP_RADIUS_REQUIRES_USER_LOCATION,
     MAP_RADIUS_OUT_OF_RANGE,

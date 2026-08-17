@@ -69,7 +69,13 @@ public record MapActivityMarkerDto(
         + "Toujours supérieur ou égal à programCount.")
     int scheduleCount,
 
+    @Schema(description = "Organisateur d'un créneau REPRÉSENTATIF du groupe — le prochain "
+        + "à venir — et non l'unique organisateur du marqueur : la maille d'agrégation "
+        + "ci-dessus ne contient pas l'organisateur. Deux personnes proposant la même "
+        + "activité au même lieu donnent un seul marqueur, portant l'identité de l'une "
+        + "d'elles. Ne pas s'en servir pour proposer « suivre cet auteur » sans le savoir.")
     UUID organizerId,
+
     String organizerName,
     String organizerAvatarUrl,
     Instant nextSessionAt,
