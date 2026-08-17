@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.activity.dto.ActivityBrowseRequest;
 import org.program.pair.domain.activity.dto.BrowsedActivityDto;
 import org.program.pair.domain.program.Program;
+import org.program.pair.domain.subscription.SubscriptionService;
 import org.program.pair.repository.ActivityBrowseRow;
 import org.program.pair.repository.ProgramRepository;
 import org.program.pair.repository.UserActivityRepository;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -41,8 +43,13 @@ public class ActivityBrowseService {
 
     private final UserActivityRepository userActivityRepository;
     private final ProgramRepository programRepository;
+    private final SubscriptionService subscriptionService;
 
-    public Page<BrowsedActivityDto> browse(ActivityBrowseRequest request) {
+    /**
+     * @param requesterId appelant, ou {@code null} : {@code subscribed} vaut alors
+     *                    {@code false} faute d'identité, jamais faute d'abonnement
+     */
+    public Page<BrowsedActivityDto> browse(ActivityBrowseRequest request, UUID requesterId) {
         validate(request);
 
         Page<ActivityBrowseRow> rows = userActivityRepository.browse(
@@ -56,15 +63,31 @@ public class ActivityBrowseService {
             // laisser Spring en injecter un second le contredirait.
             PageRequest.of(request.effectivePage(), request.effectiveSize()));
 
-        Map<UUID, List<BrowsedActivityDto.BrowsedProgramDto>> programsByEntry =
-            request.effectiveIncludePrograms()
-                ? loadPrograms(rows.getContent().stream().map(ActivityBrowseRow::getUserActivityId).toList())
-                : Map.of();
+        List<UUID> entryIds = rows.getContent().stream()
+            .map(ActivityBrowseRow::getUserActivityId)
+            .toList();
 
-        return rows.map(row -> toDto(row, programsByEntry.get(row.getUserActivityId())));
+        Map<UUID, List<BrowsedActivityDto.BrowsedProgramDto>> programsByEntry =
+            request.effectiveIncludePrograms() ? loadPrograms(entryIds) : Map.of();
+
+        // Compteurs et état d'abonnement : deux requêtes bornées à la page, et
+        // non une modification de la requête native de browse(...). Celle-ci est
+        // déjà lourde, et son mapping par alias casse silencieusement quand on y
+        // touche — le coût de l'enrichissement est constant par page, celui d'un
+        // SQL natif remanié ne l'est pas.
+        Map<UUID, Long> subscriberCounts = subscriptionService.countUserActivitySubscribers(entryIds);
+        Set<UUID> subscribedTo = subscriptionService.subscribedUserActivityIds(requesterId, entryIds);
+
+        return rows.map(row -> toDto(
+            row,
+            subscriberCounts.getOrDefault(row.getUserActivityId(), 0L),
+            subscribedTo.contains(row.getUserActivityId()),
+            programsByEntry.get(row.getUserActivityId())));
     }
 
     private BrowsedActivityDto toDto(ActivityBrowseRow row,
+                                      long subscriberCount,
+                                      boolean subscribed,
                                       List<BrowsedActivityDto.BrowsedProgramDto> programs) {
         return new BrowsedActivityDto(
             row.getUserActivityId(),
@@ -88,6 +111,8 @@ public class ActivityBrowseService {
             row.getTotalParticipants(),
             row.getNextSessionAt(),
             row.getIsExpired(),
+            subscriberCount,
+            subscribed,
             programs
         );
     }

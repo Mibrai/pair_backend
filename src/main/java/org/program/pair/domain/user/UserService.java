@@ -6,6 +6,7 @@ import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
+import org.program.pair.domain.subscription.SubscriptionService;
 import org.program.pair.domain.user.dto.*;
 import org.program.pair.repository.BadgeAwardRepository;
 import org.program.pair.repository.UserRepository;
@@ -22,7 +23,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -33,6 +36,7 @@ public class UserService {
 
     private final UserRepository userRepository;
     private final BadgeAwardRepository badgeAwardRepository;
+    private final SubscriptionService subscriptionService;
     private final HtmlSanitizer sanitizer;
     private final PasswordEncoder passwordEncoder;
     private final GeometryFactory geometryFactory = new GeometryFactory(
@@ -137,7 +141,8 @@ public class UserService {
             settings.getShowLastActive(),
             settings.getShowLocation(),
             settings.getAllowMessages().name(),
-            settings.getShowOnMap()
+            settings.getShowOnMap(),
+            settings.getAllowSubscriptions().name()
         );
     }
 
@@ -162,6 +167,10 @@ public class UserService {
         }
         if (request.showOnMap() != null) {
             settings.setShowOnMap(request.showOnMap());
+        }
+        if (request.allowSubscriptions() != null) {
+            settings.setAllowSubscriptions(
+                SubscriptionPermission.valueOf(request.allowSubscriptions()));
         }
 
         userRepository.save(user);
@@ -201,9 +210,16 @@ public class UserService {
             radiusMeters
         );
 
-        // Convert to DTOs
+        // Compteurs et état d'abonnement en deux requêtes pour toute la page,
+        // et non deux par entrée.
+        List<UUID> pageUserIds = users.stream().map(User::getId).toList();
+        Map<UUID, Long> subscriberCounts = subscriptionService.countAuthorSubscribers(pageUserIds);
+        Set<UUID> subscribedTo = subscriptionService.subscribedAuthorIds(requesterId, pageUserIds);
+
         List<UserPublicDto> userDtos = users.stream()
-            .map(user -> toPublicDto(user, requesterId))
+            .map(user -> toPublicDto(user,
+                subscriberCounts.getOrDefault(user.getId(), 0L),
+                subscribedTo.contains(user.getId())))
             .toList();
 
         return new PageImpl<>(userDtos, PageRequest.of(page, size), total);
@@ -215,7 +231,20 @@ public class UserService {
             .orElseThrow(() -> new UserNotFoundException("Utilisateur introuvable."));
     }
 
+    /**
+     * Profil public d'une personne seule : deux requêtes d'abonnement, le
+     * compteur et l'état de l'appelant.
+     *
+     * <p>La liste paginée passe par la variante à valeurs précalculées : sur une
+     * page de résultats, deux requêtes par entrée en feraient deux fois vingt.
+     */
     private UserPublicDto toPublicDto(User user, UUID requesterId) {
+        return toPublicDto(user,
+            subscriptionService.countAuthorSubscribers(user.getId()),
+            subscriptionService.isSubscribedToAuthor(requesterId, user.getId()));
+    }
+
+    private UserPublicDto toPublicDto(User user, long subscriberCount, boolean subscribed) {
         boolean showOnline = Boolean.TRUE.equals(user.getOnlineStatusVisible())
             && user.getLastActiveAt() != null
             && user.getLastActiveAt().isAfter(Instant.now().minusSeconds(300)); // 5 min
@@ -243,7 +272,9 @@ public class UserService {
             user.getVerificationStatus().name(),
             badgeCodes,
             List.of(), // activities — rempli par ActivityService
-            showOnline
+            showOnline,
+            subscriberCount,
+            subscribed
         );
     }
 
@@ -271,7 +302,8 @@ public class UserService {
             user.getReceiveMessages(),
             user.getVerificationStatus().name(),
             user.getCreatedAt(),
-            List.of() // activities — rempli par ActivityService
+            List.of(), // activities — rempli par ActivityService
+            subscriptionService.countAuthorSubscribers(user.getId())
         );
     }
 }

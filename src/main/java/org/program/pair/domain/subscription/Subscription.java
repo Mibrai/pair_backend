@@ -50,6 +50,39 @@ public class Subscription {
     @JoinColumn(name = "target_category_id")
     private Category targetCategory;
 
+    /**
+     * Volume de cet abonnement. Jamais nul : {@code ALL} pour toute ligne
+     * antérieure à la V58, par défaut de colonne.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    @Builder.Default
+    private SubscriptionLevel level = SubscriptionLevel.ALL;
+
+    /**
+     * Portée géographique, sur les seuls abonnements {@code CATEGORY}.
+     *
+     * <p>Les trois champs valent ensemble ou pas du tout — la contrainte
+     * {@code chk_subscription_scope} l'impose en base. Absents : aucune
+     * contrainte géographique, comportement d'avant la V58.
+     *
+     * <p>Le rayon est en <b>mètres</b>, comme {@code /search} et
+     * {@code /slots/feed}.
+     */
+    @Column(name = "lat")
+    private Double lat;
+
+    @Column(name = "lng")
+    private Double lng;
+
+    @Column(name = "radius_meters")
+    private Integer radiusMeters;
+
+    /** Vrai quand cet abonnement porte une portée géographique exploitable. */
+    public boolean hasScope() {
+        return lat != null && lng != null && radiusMeters != null;
+    }
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

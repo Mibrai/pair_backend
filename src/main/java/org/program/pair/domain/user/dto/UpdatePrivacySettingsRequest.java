@@ -10,5 +10,8 @@ public record UpdatePrivacySettingsRequest(
     Boolean showLocation,
     @Pattern(regexp = "EVERYONE|FRIENDS|NONE", message = "Allow messages must be EVERYONE, FRIENDS, or NONE")
     String allowMessages,
-    Boolean showOnMap
+    Boolean showOnMap,
+
+    @Pattern(regexp = "OPEN|NOBODY", message = "Allow subscriptions must be OPEN or NOBODY")
+    String allowSubscriptions
 ) {}

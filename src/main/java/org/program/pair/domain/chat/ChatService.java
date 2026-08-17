@@ -510,15 +510,12 @@ public class ChatService {
             if (otherUserId != null) {
                 User other = userRepository.findById(otherUserId).orElse(null);
                 if (other != null) {
-                    otherUser = new UserPublicDto(
+                    otherUser = UserPublicDto.identity(
                         other.getId(),
                         other.getDisplayName(),
                         other.getBio(),
                         other.getAvatarUrl(),
-                        other.getVerificationStatus().name(),
-                        List.of(),
-                        List.of(),
-                        false
+                        other.getVerificationStatus().name()
                     );
                 }
             }
@@ -574,15 +571,12 @@ public class ChatService {
         List<UserPublicDto> members = memberIds.stream()
             .map(id -> userRepository.findById(id).orElse(null))
             .filter(user -> user != null)
-            .map(user -> new UserPublicDto(
+            .map(user -> UserPublicDto.identity(
                 user.getId(),
                 user.getDisplayName(),
                 user.getBio(),
                 user.getAvatarUrl(),
-                user.getVerificationStatus().name(),
-                List.of(),
-                List.of(),
-                false
+                user.getVerificationStatus().name()
             ))
             .collect(Collectors.toList());
 
