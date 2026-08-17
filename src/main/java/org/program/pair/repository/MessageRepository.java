@@ -39,27 +39,52 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
      * <p>{@code lastReadAt} nul signifie « fil jamais ouvert » : tout ce que les
      * autres y ont écrit est non lu.
      *
-     * <p>Une quatrième exclusion vise les <b>fils de diffusion</b>, dont
-     * l'appartenance est dérivée des inscriptions actives : la ligne de membre y
-     * porte {@code lastReadAt} mais ne donne aucun droit. Sans cette clause, un
-     * participant parti garderait au badge les messages d'un fil qu'il ne peut
-     * plus ouvrir — un nombre qu'il lui serait impossible de faire retomber.
+     * <p>Sur les <b>fils de diffusion</b>, l'appartenance est dérivée des
+     * inscriptions actives et de l'auteur du programme ; la ligne de membre n'y
+     * porte que {@code lastReadAt} et ne donne aucun droit. D'où les deux formes
+     * de la clause d'appartenance ci-dessous, et une jointure <b>externe</b> sur
+     * {@code ConversationMember}.
+     *
+     * <p><b>Pourquoi externe.</b> Une jointure interne exigeait la ligne de
+     * membre pour compter quoi que ce soit. Or sur un fil de diffusion cette
+     * ligne n'est écrite qu'à la <i>première lecture</i> : la première annonce
+     * arrivait donc chez des participants qui n'en avaient pas, et ne comptait
+     * pour personne — ni au badge, ni dans le fil. L'auteur croyait avoir
+     * prévenu son groupe, et le groupe ne voyait rien tant qu'il n'ouvrait pas
+     * la messagerie de lui-même. C'était aussi vrai d'un nouvel inscrit, à qui
+     * l'historique du fil est pourtant ouvert.
+     *
+     * <p>Ligne <b>absente</b> vaut donc « fil jamais ouvert », au même titre
+     * qu'un {@code lastReadAt} nul : c'est ce que la ligne aurait dit.
+     *
+     * <p>L'appartenance dérivée reste une condition à part entière : un
+     * participant parti ne garde pas au badge les messages d'un fil qu'il ne
+     * peut plus ouvrir, faute de quoi il resterait avec un nombre qu'il lui
+     * serait impossible de faire retomber.
      */
     @Query("""
-        SELECT COUNT(m) FROM Message m, ConversationMember cm
-        WHERE cm.conversation.id = m.conversation.id
-          AND cm.user.id = :userId
-          AND m.sender.id <> :userId
+        SELECT COUNT(m) FROM Message m
+          JOIN m.conversation c
+          LEFT JOIN ConversationMember cm
+               ON cm.id.conversationId = c.id AND cm.id.userId = :userId
+        WHERE m.sender.id <> :userId
           AND m.deletedAt IS NULL
           AND (cm.lastReadAt IS NULL OR m.sentAt > cm.lastReadAt)
-          AND (cm.conversation.type <> org.program.pair.domain.chat.ConversationType.PROGRAM_BROADCAST
-               OR EXISTS (SELECT 1 FROM UserProgram up
-                          WHERE up.program.id = cm.conversation.programId
+          AND (
+            (c.type <> org.program.pair.domain.chat.ConversationType.PROGRAM_BROADCAST
+             AND EXISTS (SELECT 1 FROM ConversationMember own
+                         WHERE own.id.conversationId = c.id
+                           AND own.id.userId = :userId))
+            OR
+            (c.type = org.program.pair.domain.chat.ConversationType.PROGRAM_BROADCAST
+             AND (EXISTS (SELECT 1 FROM UserProgram up
+                          WHERE up.program.id = c.programId
                             AND up.user.id = :userId
                             AND up.status = org.program.pair.domain.program.UserProgramStatus.ACTIVE)
-               OR EXISTS (SELECT 1 FROM Program p
-                          WHERE p.id = cm.conversation.programId
-                            AND p.userActivity.user.id = :userId))
+                  OR EXISTS (SELECT 1 FROM Program p
+                             WHERE p.id = c.programId
+                               AND p.userActivity.user.id = :userId)))
+          )
         """)
     long countUnreadByUserId(@Param("userId") UUID userId);
 
@@ -70,13 +95,29 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
      * diverger le badge selon la façon dont il est calculé.
      */
     @Query("""
-        SELECT COUNT(m) FROM Message m, ConversationMember cm
-        WHERE cm.conversation.id = m.conversation.id
-          AND cm.user.id = :userId
-          AND cm.conversation.id = :conversationId
+        SELECT COUNT(m) FROM Message m
+          JOIN m.conversation c
+          LEFT JOIN ConversationMember cm
+               ON cm.id.conversationId = c.id AND cm.id.userId = :userId
+        WHERE c.id = :conversationId
           AND m.sender.id <> :userId
           AND m.deletedAt IS NULL
           AND (cm.lastReadAt IS NULL OR m.sentAt > cm.lastReadAt)
+          AND (
+            (c.type <> org.program.pair.domain.chat.ConversationType.PROGRAM_BROADCAST
+             AND EXISTS (SELECT 1 FROM ConversationMember own
+                         WHERE own.id.conversationId = c.id
+                           AND own.id.userId = :userId))
+            OR
+            (c.type = org.program.pair.domain.chat.ConversationType.PROGRAM_BROADCAST
+             AND (EXISTS (SELECT 1 FROM UserProgram up
+                          WHERE up.program.id = c.programId
+                            AND up.user.id = :userId
+                            AND up.status = org.program.pair.domain.program.UserProgramStatus.ACTIVE)
+                  OR EXISTS (SELECT 1 FROM Program p
+                             WHERE p.id = c.programId
+                               AND p.userActivity.user.id = :userId)))
+          )
         """)
     int countUnreadByUserIdAndConversationId(@Param("userId") UUID userId,
                                              @Param("conversationId") UUID conversationId);
