@@ -58,6 +58,9 @@ public class UserActivity {
     private ActivityFormat format = ActivityFormat.ANY;
 
     @CreatedDate
+    @Column(name = "created_at", nullable = false, updatable = false)
+    private Instant createdAt;
+
     /**
      * Instant où les abonnés de la catégorie ont été prévenus de cette activité,
      * nul tant qu'ils ne l'ont pas été.
@@ -66,10 +69,10 @@ public class UserActivity {
      * premier créneau supprimé puis reposé ferait du suivant « le premier » une
      * seconde fois. Même forme que {@code Program.subscribersNotifiedAt}, pour
      * la même raison.
+     *
+     * <p>Renseigné à la main, sans annotation d'audit : c'est la date d'un
+     * <b>fait métier</b>, pas celle de la ligne.
      */
     @Column(name = "category_notified_at")
     private Instant categoryNotifiedAt;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
 }

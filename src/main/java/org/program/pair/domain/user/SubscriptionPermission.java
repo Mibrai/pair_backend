@@ -3,9 +3,18 @@ package org.program.pair.domain.user;
 /**
  * « Qui peut me suivre », réglage de confidentialité du profil.
  *
- * <p>Jumeau de {@link MessagePermission} : même écran, même geste. Il porte sur
- * les abonnements de type {@code AUTHOR} — suivre une activité ou une catégorie
- * ne passe pas par le profil d'une personne.
+ * <p>Jumeau de {@link MessagePermission} : même écran, même geste.
+ *
+ * <p><b>Il vaut pour les deux chemins qui mènent à une personne</b> : son profil
+ * ({@code AUTHOR}) et chacune de ses activités ({@code USER_ACTIVITY}). Réservé
+ * au seul profil, il se contournait par n'importe laquelle des activités de la
+ * personne — et l'abonné ainsi arrivé recevait bien ses nouveaux programmes, ce
+ * qui vidait le réglage de son sens tout en le laissant afficher « fermé ».
+ * Suivre ce que quelqu'un propose, c'est le suivre.
+ *
+ * <p>Les catégories échappent à la règle, et c'est délibéré : elles
+ * n'appartiennent à personne, et s'abonner à « Yoga » n'est pas suivre
+ * quelqu'un.
  *
  * <p><b>Le réglage ne vaut que pour l'avenir.</b> Passer à {@link #NOBODY}
  * refuse les nouveaux abonnements ; il ne supprime pas les lignes existantes et
