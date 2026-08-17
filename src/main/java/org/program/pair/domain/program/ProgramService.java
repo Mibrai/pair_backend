@@ -359,6 +359,14 @@ public class ProgramService {
      * et le créneau échouerait au commit avec une trace muette.
      */
     private void announceToSubscribersIfFirstSlot(Program program, Schedule firstSlot) {
+        // Les abonnés de la catégorie sont prévenus au premier créneau localisé
+        // de l'ACTIVITÉ, et non du programme : leur abonnement porte un rayon,
+        // et une activité n'est quelque part qu'à partir de son premier créneau.
+        // L'appel précède la garde du programme, parce que les deux unicités
+        // sont distinctes — une activité peut recevoir son second programme, et
+        // c'est peut-être le premier à être localisé.
+        subscriptionService.notifyCategorySubscribersIfFirstLocatedSlot(firstSlot);
+
         if (program.getSubscribersNotifiedAt() != null) {
             return;
         }

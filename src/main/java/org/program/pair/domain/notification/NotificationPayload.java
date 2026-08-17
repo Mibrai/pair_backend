@@ -49,6 +49,26 @@ public final class NotificationPayload {
     private NotificationPayload() {
     }
 
+    /**
+     * Repart d'un contexte <b>déjà construit</b> pour le spécialiser, sans le
+     * recalculer.
+     *
+     * <p>Sert quand un même fait s'annonce à plusieurs destinataires en ne
+     * variant que de quelques clés — la provenance de l'abonnement, par exemple,
+     * qui diffère par personne alors que le programme annoncé est le même.
+     * Reconstruire le contexte par destinataire relirait toute l'arborescence
+     * programme → activité → catégorie → auteur pour n'en changer que trois
+     * entrées.
+     *
+     * <p>Les valeurs reçues sortent de {@link #build()} : elles sont déjà
+     * normalisées, et sont reprises telles quelles.
+     */
+    public static NotificationPayload from(Map<String, Object> base) {
+        NotificationPayload payload = new NotificationPayload();
+        payload.values.putAll(base);
+        return payload;
+    }
+
     /** Payload sans contexte métier, à remplir clé par clé. */
     public static NotificationPayload empty() {
         return new NotificationPayload();

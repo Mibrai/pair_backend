@@ -1,11 +1,14 @@
 package org.program.pair.domain.subscription;
 
 import lombok.RequiredArgsConstructor;
+import org.locationtech.jts.geom.Point;
+import org.program.pair.domain.activity.Activity;
 import org.program.pair.domain.activity.Category;
 import org.program.pair.domain.activity.UserActivity;
 import org.program.pair.domain.notification.NotificationPayload;
 import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.notification.NotificationType;
+import org.program.pair.domain.program.LocationType;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.subscription.dto.SubscriberDto;
@@ -19,6 +22,7 @@ import org.program.pair.repository.CategoryRepository;
 import org.program.pair.repository.SubscriptionRepository;
 import org.program.pair.repository.UserActivityRepository;
 import org.program.pair.repository.UserRepository;
+import org.program.pair.shared.GeoUtils;
 import org.program.pair.shared.exception.ConflictException;
 import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.exception.ForbiddenException;
@@ -29,8 +33,11 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -377,30 +384,127 @@ public class SubscriptionService {
     }
 
     // --- Fan-out de notifications ---
+    //
+    // Un fait, une notification par destinataire. Trois règles s'appliquent
+    // dans cet ordre, et l'ordre est le fond du sujet :
+    //
+    //   1. le NIVEAU de chaque abonnement décide si un envoi existe ;
+    //   2. la PORTÉE géographique écarte ce qui est hors zone ;
+    //   3. la DÉDUPLICATION ne garde, par destinataire, que l'envoi le plus
+    //      délibéré.
+    //
+    // Filtrer avant de dédupliquer, jamais l'inverse : quelqu'un dont
+    // l'abonnement à l'auteur est en sourdine mais dont l'abonnement à
+    // l'activité est actif doit recevoir l'annonce par l'activité. Dédupliquer
+    // d'abord ferait gagner la branche prioritaire, qui se tairait ensuite — et
+    // la personne ne recevrait rien, alors qu'elle avait demandé à savoir.
 
+    /**
+     * Un envoi possible : qui le reçoit, par quel abonnement, et sous quel type.
+     *
+     * <p>{@code source} peut être nul : la proximité géographique n'est pas un
+     * abonnement, un candidat {@code NEARBY_PROGRAM} n'a donc aucune ligne à
+     * nommer. La provenance est alors simplement absente du payload.
+     */
+    private record Candidate(UUID recipientId, Subscription source, NotificationType type) {}
+
+    /**
+     * Qui gagne quand un même fait atteint deux fois la même personne.
+     *
+     * <p>Plus le lien est délibéré, plus il doit gagner : suivre une personne
+     * est un acte, suivre l'une de ses activités en est un autre, être
+     * géographiquement à proximité n'en est pas un. C'est la raison de cet
+     * ordre, et elle mérite d'être écrite : un lecteur futur l'inverserait par
+     * bon sens apparent — « le plus précis d'abord » — et personne ne verrait la
+     * régression, puisque le nombre de notifications ne changerait pas.
+     */
+    private static final List<NotificationType> EMISSION_PRIORITY = List.of(
+        NotificationType.AUTHOR_NEW_PROGRAM,
+        NotificationType.ACTIVITY_NEW_PROGRAM,
+        NotificationType.NEARBY_PROGRAM,
+        NotificationType.AUTHOR_NEW_ACTIVITY,
+        NotificationType.CATEGORY_NEW_ACTIVITY);
+
+    /**
+     * Annonce une activité fraîchement déclarée aux abonnés de son auteur.
+     *
+     * <p>Les abonnés de la <b>catégorie</b> ne sont pas prévenus ici : à sa
+     * création une activité n'a aucun créneau, donc aucune position, et leur
+     * rayon n'aurait rien à filtrer. Voir
+     * {@link #notifyCategorySubscribersIfFirstLocatedSlot(Schedule)}.
+     */
     public void notifySubscribersOfNewUserActivity(UserActivity userActivity) {
         UUID authorId = userActivity.getUser().getId();
 
-        Map<String, Object> authorPayload = NotificationPayload.ofUserActivity(userActivity)
-            .with("authorId", authorId)
-            .with("authorName", userActivity.getUser().getDisplayName())
-            .build();
-        subscriptionRepository.findByTargetAuthorId(authorId).forEach(sub ->
-            notificationService.notify(sub.getSubscriber().getId(),
-                NotificationType.AUTHOR_NEW_ACTIVITY, authorPayload));
+        List<Candidate> candidates = new ArrayList<>();
+        collect(candidates, subscriptionRepository.findByTargetAuthorId(authorId),
+            NotificationType.AUTHOR_NEW_ACTIVITY);
 
-        UUID categoryId = userActivity.getActivity().getCategory().getId();
-        Map<String, Object> categoryPayload = NotificationPayload.ofUserActivity(userActivity).build();
-        subscriptionRepository.findByTargetCategoryId(categoryId).forEach(sub ->
-            notificationService.notify(sub.getSubscriber().getId(),
-                NotificationType.CATEGORY_NEW_ACTIVITY, categoryPayload));
+        emit(candidates, activityContext(userActivity));
     }
 
+    /**
+     * Annonce l'activité aux abonnés de sa catégorie, au premier créneau
+     * localisé — le premier instant où elle est quelque part.
+     *
+     * <p>Une activité n'a pas de position propre : elle emprunte celle de ses
+     * créneaux. Annoncée à sa création, elle n'était nulle part, et le rayon des
+     * abonnements {@code CATEGORY} ne pouvait rien écarter — la règle « pas de
+     * coordonnée, on notifie toujours » aurait été vraie à chaque fois.
+     *
+     * <p>{@code categoryNotifiedAt} porte l'unicité, et non un décompte : le
+     * premier créneau supprimé puis reposé ferait du suivant « le premier » une
+     * seconde fois.
+     *
+     * <p>Conséquence assumée : une activité qui n'obtient jamais de programme
+     * n'atteint jamais les abonnés de sa catégorie. C'est cohérent avec ce
+     * qu'ils demandent — être prévenus de ce qui se passe près d'eux, et une
+     * activité sans séance n'est pas quelque chose à quoi se rendre.
+     */
+    public void notifyCategorySubscribersIfFirstLocatedSlot(Schedule firstSlot) {
+        Program program = firstSlot.getProgram();
+        if (program == null || program.getUserActivity() == null) {
+            return;
+        }
+        UserActivity userActivity = program.getUserActivity();
+        if (userActivity.getCategoryNotifiedAt() != null) {
+            return;
+        }
+        Activity activity = userActivity.getActivity();
+        if (activity == null || activity.getCategory() == null) {
+            return;
+        }
+
+        List<Candidate> candidates = new ArrayList<>();
+        for (Subscription sub : subscriptionRepository
+                .findByTargetCategoryId(activity.getCategory().getId())) {
+            if (allows(sub, NotificationType.CATEGORY_NEW_ACTIVITY)
+                    && withinScope(sub, program, firstSlot)) {
+                candidates.add(new Candidate(sub.getSubscriber().getId(), sub,
+                    NotificationType.CATEGORY_NEW_ACTIVITY));
+            }
+        }
+
+        emit(candidates, activityContext(userActivity));
+
+        userActivity.setCategoryNotifiedAt(Instant.now());
+        userActivityRepository.save(userActivity);
+    }
+
+    /**
+     * Annonce une modification d'activité à ses abonnés.
+     *
+     * <p>Seul type retenu par {@code NEW_ONLY} : c'est une mise à jour, pas une
+     * création. Aucune déduplication à faire — un seul abonnement peut le
+     * produire — mais l'envoi passe par le même chemin, pour que la provenance
+     * y soit posée de la même façon.
+     */
     public void notifySubscribersOfUserActivityUpdate(UserActivity userActivity) {
-        Map<String, Object> payload = NotificationPayload.ofUserActivity(userActivity).build();
-        subscriptionRepository.findByTargetUserActivityId(userActivity.getId()).forEach(sub ->
-            notificationService.notify(sub.getSubscriber().getId(),
-                NotificationType.ACTIVITY_UPDATED, payload));
+        List<Candidate> candidates = new ArrayList<>();
+        collect(candidates, subscriptionRepository.findByTargetUserActivityId(userActivity.getId()),
+            NotificationType.ACTIVITY_UPDATED);
+
+        emit(candidates, NotificationPayload.ofUserActivity(userActivity).build());
     }
 
     /**
@@ -423,24 +527,167 @@ public class SubscriptionService {
      * {@code displayName}) : rien à reposer ici, et le reposer ferait diverger le
      * nom de l'auteur d'avec celui de la fiche du programme.
      *
-     * <p>Un seul payload pour les deux types : il est identique, et
-     * {@code build()} rend une carte non modifiable — deux constructions
-     * donneraient deux copies du même contenu.
+     * <p>Un seul contexte pour les deux types : il est identique. Seule la
+     * provenance en diffère, et elle se pose par destinataire au dernier moment
+     * — voir {@link #withProvenance(Map, Subscription)}.
+     *
+     * <p>Un abonné à la fois de l'auteur et de l'activité ne reçoit qu'une
+     * annonce, celle de l'auteur : voir {@link #EMISSION_PRIORITY}.
      */
     public void notifySubscribersOfNewProgram(Schedule firstSlot) {
         Program program = firstSlot.getProgram();
         UserActivity userActivity = program.getUserActivity();
         UUID authorId = userActivity.getUser().getId();
 
-        Map<String, Object> payload = NotificationPayload.ofSchedule(firstSlot).build();
+        List<Candidate> candidates = new ArrayList<>();
+        collect(candidates, subscriptionRepository.findByTargetAuthorId(authorId),
+            NotificationType.AUTHOR_NEW_PROGRAM);
+        collect(candidates, subscriptionRepository.findByTargetUserActivityId(userActivity.getId()),
+            NotificationType.ACTIVITY_NEW_PROGRAM);
 
-        subscriptionRepository.findByTargetAuthorId(authorId).forEach(sub ->
-            notificationService.notify(sub.getSubscriber().getId(),
-                NotificationType.AUTHOR_NEW_PROGRAM, payload));
+        emit(candidates, NotificationPayload.ofSchedule(firstSlot).build());
+    }
 
-        subscriptionRepository.findByTargetUserActivityId(userActivity.getId()).forEach(sub ->
-            notificationService.notify(sub.getSubscriber().getId(),
-                NotificationType.ACTIVITY_NEW_PROGRAM, payload));
+    /** Contexte commun aux deux annonces d'activité, auteur compris. */
+    private Map<String, Object> activityContext(UserActivity userActivity) {
+        NotificationPayload payload = NotificationPayload.ofUserActivity(userActivity);
+        User author = userActivity.getUser();
+        if (author != null) {
+            payload.with("authorId", author.getId())
+                .with("authorName", author.getDisplayName());
+        }
+        return payload.build();
+    }
+
+    /** Retient les abonnements que leur niveau autorise, sous le type donné. */
+    private void collect(List<Candidate> candidates, List<Subscription> subscriptions,
+                         NotificationType type) {
+        for (Subscription sub : subscriptions) {
+            if (allows(sub, type)) {
+                candidates.add(new Candidate(sub.getSubscriber().getId(), sub, type));
+            }
+        }
+    }
+
+    /**
+     * Le niveau décide si l'envoi existe.
+     *
+     * <p>{@code MUTED} ne coupe que l'émission : la ligne reste, la cible reste
+     * dans « mes abonnements », et {@code subscribed} vaut toujours vrai. C'est
+     * la soupape qui évite le désabonnement.
+     *
+     * <p>Niveau nul traité comme {@code ALL} : la colonne est non nulle en base
+     * depuis la V58, mais un objet construit en mémoire peut ne pas l'être, et
+     * une notification tue par accident ne se remarque pas.
+     */
+    private boolean allows(Subscription subscription, NotificationType type) {
+        SubscriptionLevel level = subscription.getLevel();
+        if (level == SubscriptionLevel.MUTED) {
+            return false;
+        }
+        if (level == SubscriptionLevel.NEW_ONLY) {
+            return type != NotificationType.ACTIVITY_UPDATED;
+        }
+        return true;
+    }
+
+    /**
+     * La portée géographique écarte ce qui est hors zone — et rien d'autre.
+     *
+     * <p>Deux entrées passent toujours, quel que soit le rayon :
+     * <ul>
+     *   <li>l'abonnement <b>sans portée</b>, qui est le comportement d'avant et
+     *       celui de toutes les lignes antérieures à la V58 ;</li>
+     *   <li>l'activité <b>à distance</b> ({@code REMOTE}, {@code ONLINE}) ou sans
+     *       coordonnée. C'est déjà la règle de l'Explorer : ces entrées ne sont
+     *       pas filtrées par la distance, elles sont reléguées en fin de tri. Les
+     *       exclure ici serait incohérent avec ce que l'utilisateur voit
+     *       ailleurs — et un filtre qui écarte ce qui n'a pas de géographie
+     *       n'est pas un filtre, c'est une perte.</li>
+     * </ul>
+     *
+     * <p>La distance est évaluée <b>au moment de l'émission</b> et ne se rejoue
+     * pas si l'activité déménage ensuite : une notification est un fait daté, et
+     * la rejouer contre un état ultérieur produirait des annonces sans
+     * événement.
+     */
+    private boolean withinScope(Subscription subscription, Program program, Schedule slot) {
+        if (!subscription.hasScope()) {
+            return true;
+        }
+        LocationType locationType = program.getLocationType();
+        if (locationType == LocationType.REMOTE || locationType == LocationType.ONLINE) {
+            return true;
+        }
+        Point location = slot.getLocation();
+        if (location == null) {
+            return true;
+        }
+        double distance = GeoUtils.haversineMeters(
+            subscription.getLat(), subscription.getLng(),
+            location.getY(), location.getX());
+        return distance <= subscription.getRadiusMeters();
+    }
+
+    /**
+     * Déduplique par destinataire, puis émet.
+     *
+     * <p>La clé est le seul destinataire : les candidats d'un même appel
+     * décrivent tous <b>le même fait</b> — un programme, ou une activité — donc
+     * les réunir par personne suffit à n'en garder qu'un par fait.
+     */
+    private void emit(List<Candidate> candidates, Map<String, Object> context) {
+        Map<UUID, Candidate> retained = new LinkedHashMap<>();
+        for (Candidate candidate : candidates) {
+            retained.merge(candidate.recipientId(), candidate,
+                (kept, other) -> rank(kept.type()) <= rank(other.type()) ? kept : other);
+        }
+        retained.values().forEach(candidate ->
+            notificationService.notify(candidate.recipientId(), candidate.type(),
+                withProvenance(context, candidate.source())));
+    }
+
+    private static int rank(NotificationType type) {
+        int index = EMISSION_PRIORITY.indexOf(type);
+        return index < 0 ? Integer.MAX_VALUE : index;
+    }
+
+    /**
+     * Dit de quel abonnement vient cet envoi.
+     *
+     * <p>Sans ces trois clés, l'utilisateur ne peut ni comprendre ni couper la
+     * source : trois abonnements différents produisent le même texte. Le client
+     * en tire une ligne « Vous suivez Lena Müller » et un appui long qui met en
+     * sourdine — geste qui n'a de sens que parce que {@code subscriptionId}
+     * désigne <b>la ligne qui a gagné la déduplication</b>, c'est-à-dire celle
+     * qui est nommée à l'écran.
+     *
+     * <p>Le libellé est <b>copié</b>, jamais relu : une notification doit se
+     * rendre entière hors ligne, et doit dire ce qu'elle disait le jour où elle
+     * est partie. Une cible renommée laisse donc d'anciennes notifications au
+     * nom d'avant, et c'est voulu.
+     */
+    private Map<String, Object> withProvenance(Map<String, Object> context, Subscription source) {
+        if (source == null) {
+            return context;
+        }
+        return NotificationPayload.from(context)
+            .with("subscriptionId", source.getId())
+            .with("subscriptionType", source.getType())
+            .with("subscriptionLabel", labelOf(source))
+            .build();
+    }
+
+    private String labelOf(Subscription subscription) {
+        return switch (subscription.getType()) {
+            case AUTHOR -> subscription.getTargetAuthor() != null
+                ? subscription.getTargetAuthor().getDisplayName() : null;
+            case USER_ACTIVITY -> subscription.getTargetUserActivity() != null
+                    && subscription.getTargetUserActivity().getActivity() != null
+                ? subscription.getTargetUserActivity().getActivity().getName() : null;
+            case CATEGORY -> subscription.getTargetCategory() != null
+                ? subscription.getTargetCategory().getName() : null;
+        };
     }
 
     // --- Refus nommés ---
