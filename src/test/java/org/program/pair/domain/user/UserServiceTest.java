@@ -30,6 +30,15 @@ class UserServiceTest {
     @Mock
     HtmlSanitizer sanitizer;
 
+    /**
+     * Le profil porte désormais son compteur d'abonnés, que {@code toPrivateDto}
+     * et {@code toPublicDto} vont chercher ici. Sans cette doublure, toute
+     * méthode qui rend un profil casse sur un {@code NullPointerException} — y
+     * compris celles qui ne parlent que de bio ou de rayon de flou.
+     */
+    @Mock
+    org.program.pair.domain.subscription.SubscriptionService subscriptionService;
+
     @InjectMocks
     UserService userService;
 
