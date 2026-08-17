@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.program.RecurrenceExpander;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotStatus;
+import org.program.pair.domain.program.SlotTiming;
 import org.program.pair.repository.ScheduleRepository;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -57,7 +58,21 @@ public class RecurringSlotRolloverJob {
 
             int rolled = 0;
             int exhausted = 0;
+            int inProgress = 0;
             for (Schedule schedule : stale) {
+                // Commencé ne veut pas dire terminé. Le balayage retient tout
+                // ce dont starts_at est passé — un index sur une colonne, pas
+                // une expression — et c'est ici qu'on écarte les séances encore
+                // en cours. Sans ce filtre, un créneau de deux heures était
+                // avancé à la semaine suivante dix minutes après son début :
+                // il disparaissait des écrans pendant qu'on le vivait, et la
+                // confirmation de présence, qui exige une séance terminée,
+                // n'avait jamais lieu d'être proposée.
+                if (!SlotTiming.hasEndedBy(schedule, now)) {
+                    inProgress++;
+                    continue;
+                }
+
                 Instant next = recurrenceExpander.nextOccurrence(
                     schedule.getStartsAt(), schedule.getRecurrenceRule(), now);
 
@@ -76,6 +91,14 @@ public class RecurringSlotRolloverJob {
                     ? Duration.between(schedule.getStartsAt(), schedule.getEndsAt())
                     : null;
 
+                // La séance qu'on retire est inscrite avant d'être écrasée :
+                // c'est le dernier instant où le système sait quel moment vient
+                // de se terminer. Ce qui la décrit — présences, carte-souvenir
+                // — s'y rattache ensuite par sa date de début, et cesse d'être
+                // daté de la séance suivante. Voir SlotOccurrence.
+                schedule.setLastOccurrenceStart(schedule.getStartsAt());
+                schedule.setLastOccurrenceEnd(SlotTiming.endOf(schedule));
+
                 schedule.setStartsAt(next);
                 schedule.setEndsAt(duration != null ? next.plus(duration) : null);
                 schedule.setStatus(SlotStatus.OPEN);
@@ -83,9 +106,10 @@ public class RecurringSlotRolloverJob {
                 rolled++;
             }
 
-            if (rolled > 0 || exhausted > 0) {
+            if (rolled > 0 || exhausted > 0 || inProgress > 0) {
                 log.info("Recurring slot rollover: {} avancé(s) à leur prochaine occurrence, "
-                    + "{} série(s) close(s) laissée(s) en l'état", rolled, exhausted);
+                    + "{} série(s) close(s) laissée(s) en l'état, {} séance(s) encore en cours",
+                    rolled, exhausted, inProgress);
             }
         } catch (Exception e) {
             log.error("Recurring slot rollover job failed", e);

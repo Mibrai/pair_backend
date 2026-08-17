@@ -6,7 +6,9 @@ import org.program.pair.domain.activity.UserActivity;
 import org.program.pair.domain.attendance.Attendance;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.Schedule;
+import org.program.pair.domain.program.SlotOccurrence;
 import org.program.pair.domain.program.SlotStatus;
+import org.program.pair.domain.program.SlotTiming;
 import org.program.pair.domain.user.User;
 import org.program.pair.domain.user.dto.UserPublicDto;
 
@@ -125,24 +127,68 @@ abstract class RecapTestFixtures {
             "UNVERIFIED");
     }
 
+    /**
+     * Une présence confirmée sur la dernière séance terminée — pas sur la
+     * ligne. Sur un créneau récurrent déjà avancé, {@code startsAt} désigne la
+     * semaine prochaine : y rattacher une présence la rendrait invisible à la
+     * carte du moment qu'on vient de vivre.
+     */
     protected Attendance presentAttendance(Schedule slot, UUID userId) {
+        SlotOccurrence ended = SlotTiming.lastEndedOccurrence(slot, Instant.now());
+        return presentAttendance(slot, userId,
+            ended != null ? ended : SlotTiming.currentOccurrence(slot));
+    }
+
+    protected Attendance presentAttendance(Schedule slot, UUID userId, SlotOccurrence occurrence) {
         Attendance attendance = new Attendance();
         attendance.setId(UUID.randomUUID());
         attendance.setSchedule(slot);
         attendance.setUser(user(userId));
         attendance.setWasPresent(true);
-        attendance.setAttendedAt(slot.getStartsAt());
+        attendance.setAttendedAt(occurrence.startsAt());
         attendance.setMemoryIsPublic(false);
         return attendance;
     }
 
-    /** Une carte existante pour ce créneau, privée et vierge. */
+    /** Une carte existante pour la séance que porte ce créneau, privée et vierge. */
     protected SlotRecap recapFor(Schedule slot) {
+        return recapFor(slot, SlotTiming.currentOccurrence(slot));
+    }
+
+    /** Une carte existante pour une séance précise de ce créneau. */
+    protected SlotRecap recapFor(Schedule slot, SlotOccurrence occurrence) {
         SlotRecap recap = new SlotRecap();
         recap.setId(UUID.randomUUID());
         recap.setSchedule(slot);
+        recap.setOccurrenceStart(occurrence.startsAt());
+        recap.setOccurrenceEnd(occurrence.endsAt());
         recap.setVisibility(RecapVisibility.PRIVATE);
         recap.setAttendeeCount(0);
         return recap;
+    }
+
+    /**
+     * Un créneau hebdomadaire que le rollover a déjà avancé : sa ligne annonce
+     * la séance de la semaine prochaine, et la séance vécue n'existe plus que
+     * dans {@code lastOccurrence*}.
+     *
+     * <p>C'est le cas qui rendait tout le reste faux — date de carte, fenêtre
+     * de contribution, confirmation de présence — et qu'aucun décor ne montait
+     * jusqu'ici : les quatre programmes du compte de test n'exposaient que des
+     * séances futures, ce qui donnait à croire que les séances passées étaient
+     * filtrées alors qu'elles étaient écrasées.
+     */
+    protected Schedule rolledWeeklySlot(int hoursSinceLastSessionEnd) {
+        Schedule slot = endedSlot(hoursSinceLastSessionEnd);
+        slot.setRecurrenceRule("FREQ=WEEKLY");
+
+        slot.setLastOccurrenceStart(slot.getStartsAt());
+        slot.setLastOccurrenceEnd(slot.getEndsAt());
+
+        // Ce que fait le job : la ligne repart sur l'occurrence suivante.
+        slot.setStartsAt(slot.getStartsAt().plus(7, ChronoUnit.DAYS));
+        slot.setEndsAt(slot.getEndsAt().plus(7, ChronoUnit.DAYS));
+        slot.setStatus(SlotStatus.OPEN);
+        return slot;
     }
 }

@@ -65,7 +65,7 @@ class SlotRecapVisibilityTest extends RecapTestFixtures {
         when(vibeVoteRepository.countByVibe(any())).thenReturn(List.of());
         when(vibeVoteRepository.findVibesByRecapIdAndUserId(any(), any())).thenReturn(List.of());
         when(consentRepository.findConsentingUserIds(any())).thenReturn(List.of());
-        when(attendanceRepository.findByScheduleIdAndWasPresentTrue(any())).thenReturn(List.of());
+        when(attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(any(), any())).thenReturn(List.of());
         when(slotAudience.participantIds(any())).thenReturn(List.of());
     }
 
@@ -73,7 +73,7 @@ class SlotRecapVisibilityTest extends RecapTestFixtures {
     void getRecapPrivee_parUnNonParticipant_retourne404_pas403() {
         Schedule slot = endedSlot(2);
         SlotRecap recap = recapFor(slot);
-        when(recapRepository.findByScheduleId(slot.getId())).thenReturn(Optional.of(recap));
+        when(recapRepository.findByScheduleIdOrderByOccurrenceStartDesc(slot.getId())).thenReturn(List.of(recap));
 
         UUID stranger = UUID.randomUUID();
         when(attendanceRepository.existsByScheduleIdAndUserId(slot.getId(), stranger)).thenReturn(false);
@@ -86,7 +86,7 @@ class SlotRecapVisibilityTest extends RecapTestFixtures {
     void getRecapPrivee_parUnParticipant_estLisible() {
         Schedule slot = endedSlot(2);
         SlotRecap recap = recapFor(slot);
-        when(recapRepository.findByScheduleId(slot.getId())).thenReturn(Optional.of(recap));
+        when(recapRepository.findByScheduleIdOrderByOccurrenceStartDesc(slot.getId())).thenReturn(List.of(recap));
 
         UUID attendee = UUID.randomUUID();
         when(slotAudience.participantIds(slot)).thenReturn(List.of(attendee));
@@ -99,7 +99,7 @@ class SlotRecapVisibilityTest extends RecapTestFixtures {
         Schedule slot = endedSlot(2);
         SlotRecap recap = recapFor(slot);
         recap.setVisibility(RecapVisibility.PUBLIC);
-        when(recapRepository.findByScheduleId(slot.getId())).thenReturn(Optional.of(recap));
+        when(recapRepository.findByScheduleIdOrderByOccurrenceStartDesc(slot.getId())).thenReturn(List.of(recap));
 
         hostOf(slot).setIsActive(false);
 
@@ -119,7 +119,7 @@ class SlotRecapVisibilityTest extends RecapTestFixtures {
         Schedule slot = endedSlot(2);
         SlotRecap recap = recapFor(slot);
         recap.setVisibility(RecapVisibility.PUBLIC);
-        when(recapRepository.findByScheduleId(slot.getId())).thenReturn(Optional.of(recap));
+        when(recapRepository.findByScheduleIdOrderByOccurrenceStartDesc(slot.getId())).thenReturn(List.of(recap));
 
         slot.getProgram().setIsPublic(false);
 
@@ -133,7 +133,7 @@ class SlotRecapVisibilityTest extends RecapTestFixtures {
         slot.setAddressPublic("12 rue des Lilas, 69006 Lyon");
         SlotRecap recap = recapFor(slot);
         recap.setVisibility(RecapVisibility.PUBLIC);
-        when(recapRepository.findByScheduleId(slot.getId())).thenReturn(Optional.of(recap));
+        when(recapRepository.findByScheduleIdOrderByOccurrenceStartDesc(slot.getId())).thenReturn(List.of(recap));
 
         SlotRecapDto dto = service.get(slot.getId(), UUID.randomUUID());
 
@@ -162,7 +162,7 @@ class SlotRecapVisibilityTest extends RecapTestFixtures {
         Schedule slot = endedSlot(2);
         SlotRecap recap = recapFor(slot);
         recap.setVisibility(RecapVisibility.PUBLIC);
-        when(recapRepository.findByScheduleId(slot.getId())).thenReturn(Optional.of(recap));
+        when(recapRepository.findByScheduleIdOrderByOccurrenceStartDesc(slot.getId())).thenReturn(List.of(recap));
 
         Attendance prive = presentAttendance(slot, UUID.randomUUID());
         prive.setMemoryPhotoUrl("/api/media/files/prive.jpg");
@@ -172,7 +172,7 @@ class SlotRecapVisibilityTest extends RecapTestFixtures {
         partage.setMemoryPhotoUrl("/api/media/files/partage.jpg");
         partage.setMemoryIsPublic(true);
 
-        when(attendanceRepository.findByScheduleIdAndWasPresentTrue(slot.getId()))
+        when(attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(slot.getId(), slot.getStartsAt()))
             .thenReturn(List.of(prive, partage));
 
         SlotRecapDto dto = service.get(slot.getId(), UUID.randomUUID());
@@ -186,9 +186,9 @@ class SlotRecapVisibilityTest extends RecapTestFixtures {
         SlotRecap recap = recapFor(slot);
         recap.setVisibility(RecapVisibility.PUBLIC);
         recap.setAttendeeCount(5);
-        when(recapRepository.findByScheduleId(slot.getId())).thenReturn(Optional.of(recap));
+        when(recapRepository.findByScheduleIdOrderByOccurrenceStartDesc(slot.getId())).thenReturn(List.of(recap));
 
-        when(attendanceRepository.findByScheduleIdAndWasPresentTrue(slot.getId()))
+        when(attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(slot.getId(), slot.getStartsAt()))
             .thenReturn(List.of(presentAttendance(slot, UUID.randomUUID())));
         when(consentRepository.findConsentingUserIds(recap.getId())).thenReturn(List.of());
 
@@ -203,10 +203,10 @@ class SlotRecapVisibilityTest extends RecapTestFixtures {
         Schedule slot = endedSlot(2);
         SlotRecap recap = recapFor(slot);
         recap.setVisibility(RecapVisibility.PUBLIC);
-        when(recapRepository.findByScheduleId(slot.getId())).thenReturn(Optional.of(recap));
+        when(recapRepository.findByScheduleIdOrderByOccurrenceStartDesc(slot.getId())).thenReturn(List.of(recap));
 
         UUID hostId = hostIdOf(slot);
-        when(attendanceRepository.findByScheduleIdAndWasPresentTrue(slot.getId()))
+        when(attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(slot.getId(), slot.getStartsAt()))
             .thenReturn(List.of(presentAttendance(slot, hostId)));
         when(consentRepository.findConsentingUserIds(recap.getId())).thenReturn(List.of(hostId));
 
@@ -219,7 +219,7 @@ class SlotRecapVisibilityTest extends RecapTestFixtures {
     @Test
     void uneCarteInexistante_retourne404() {
         Schedule slot = endedSlot(2);
-        when(recapRepository.findByScheduleId(slot.getId())).thenReturn(Optional.empty());
+        when(recapRepository.findByScheduleIdOrderByOccurrenceStartDesc(slot.getId())).thenReturn(List.of());
 
         assertThatThrownBy(() -> service.get(slot.getId(), UUID.randomUUID()))
             .isInstanceOf(ResourceNotFoundException.class);
