@@ -8,6 +8,7 @@ import org.program.pair.domain.attendance.Attendance;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotAudience;
+import org.program.pair.domain.program.SlotOccurrence;
 import org.program.pair.domain.program.SlotTiming;
 import org.program.pair.domain.recap.dto.NextSlotDto;
 import org.program.pair.domain.recap.dto.RecapFeedRequest;
@@ -102,12 +103,13 @@ public class SlotRecapService {
      */
     public SlotRecapDto voteVibes(UUID userId, UUID scheduleId, List<String> rawVibes) {
         Schedule slot = loadSlot(scheduleId);
-        requirePresence(userId, scheduleId);
-        requireWindowOpen(slot);
+        SlotOccurrence occurrence = requireEndedOccurrence(slot);
+        requirePresence(userId, scheduleId, occurrence);
+        requireWindowOpen(occurrence);
 
         Set<SlotVibe> vibes = parseVibes(rawVibes);
 
-        SlotRecap recap = openRecap(slot);
+        SlotRecap recap = openRecap(slot, occurrence);
         vibeVoteRepository.deleteByRecapIdAndUserId(recap.getId(), userId);
 
         User voter = userRepository.getReferenceById(userId);
@@ -135,10 +137,11 @@ public class SlotRecapService {
      */
     public SlotRecapDto setConsent(UUID userId, UUID scheduleId, boolean showIdentity) {
         Schedule slot = loadSlot(scheduleId);
-        requirePresence(userId, scheduleId);
-        requireWindowOpen(slot);
+        SlotOccurrence occurrence = requireEndedOccurrence(slot);
+        requirePresence(userId, scheduleId, occurrence);
+        requireWindowOpen(occurrence);
 
-        SlotRecap recap = openRecap(slot);
+        SlotRecap recap = openRecap(slot, occurrence);
         RecapParticipantConsent consent = consentRepository
             .findByRecapIdAndUserId(recap.getId(), userId)
             .orElseGet(() -> {
@@ -162,10 +165,12 @@ public class SlotRecapService {
      */
     public SlotRecapDto setMemoryPhoto(UUID userId, UUID scheduleId, String photoUrl, boolean isPublic) {
         Schedule slot = loadSlot(scheduleId);
-        requirePresence(userId, scheduleId);
-        requireWindowOpen(slot);
+        SlotOccurrence occurrence = requireEndedOccurrence(slot);
+        requirePresence(userId, scheduleId, occurrence);
+        requireWindowOpen(occurrence);
 
-        Attendance attendance = attendanceRepository.findByScheduleIdAndUserId(scheduleId, userId)
+        Attendance attendance = attendanceRepository
+            .findByScheduleIdAndUserIdAndAttendedAt(scheduleId, userId, occurrence.startsAt())
             .orElseThrow(() -> new ForbiddenException(
                 ErrorCode.RECAP_NOT_ATTENDEE, "Vous n'avez pas confirmé votre présence à ce créneau."));
 
@@ -174,7 +179,7 @@ public class SlotRecapService {
         attendance.setMemoryIsPublic(attendance.getMemoryPhotoUrl() != null && isPublic);
         attendanceRepository.save(attendance);
 
-        return toDto(touch(openRecap(slot)), userId);
+        return toDto(touch(openRecap(slot, occurrence)), userId);
     }
 
     // ————————————————————————— hôte —————————————————————————
@@ -183,9 +188,10 @@ public class SlotRecapService {
     public SlotRecapDto setHostNote(UUID userId, UUID scheduleId, String note) {
         Schedule slot = loadSlot(scheduleId);
         requireHost(userId, slot);
-        requireWindowOpen(slot);
+        SlotOccurrence occurrence = requireEndedOccurrence(slot);
+        requireWindowOpen(occurrence);
 
-        SlotRecap recap = openRecap(slot);
+        SlotRecap recap = openRecap(slot, occurrence);
         recap.setHostNote(note == null || note.isBlank() ? null : sanitizer.sanitize(note).strip());
 
         return toDto(touch(recap), userId);
@@ -203,16 +209,18 @@ public class SlotRecapService {
     public SlotRecapDto setVisibility(UUID userId, UUID scheduleId, String rawVisibility) {
         Schedule slot = loadSlot(scheduleId);
         requireHost(userId, slot);
-        requireWindowOpen(slot);
+        SlotOccurrence occurrence = requireEndedOccurrence(slot);
+        requireWindowOpen(occurrence);
 
         RecapVisibility visibility = parseVisibility(rawVisibility);
         if (visibility.isPublic()
-                && !attendanceRepository.existsByScheduleIdAndWasPresentTrueAndUserIdNot(scheduleId, userId)) {
+                && !attendanceRepository.existsByScheduleIdAndAttendedAtAndWasPresentTrueAndUserIdNot(
+                        scheduleId, occurrence.startsAt(), userId)) {
             throw new ConflictException(ErrorCode.RECAP_NEEDS_ATTENDEE,
                 "Attendez qu'au moins une autre personne confirme sa présence pour rendre cette carte publique.");
         }
 
-        SlotRecap recap = openRecap(slot);
+        SlotRecap recap = openRecap(slot, occurrence);
         recap.setVisibility(visibility);
         if (visibility.isPublic() && recap.getPublishedAt() == null) {
             recap.setPublishedAt(Instant.now());
@@ -232,17 +240,47 @@ public class SlotRecapService {
      */
     @Transactional(readOnly = true)
     public SlotRecapDto get(UUID scheduleId, UUID requesterId) {
-        SlotRecap recap = recapRepository.findByScheduleId(scheduleId)
+        // Un créneau récurrent porte désormais une carte par séance. « La carte
+        // de ce créneau » est donc la plus récente que l'appelant ait le droit
+        // de lire — et non la plus récente tout court, qui rendrait 404 sur une
+        // séance privée alors qu'une séance publique plus ancienne existe.
+        return recapRepository.findByScheduleIdOrderByOccurrenceStartDesc(scheduleId).stream()
+            .filter(recap -> isPubliclyListable(recap.getSchedule()))
+            .filter(recap -> recap.getVisibility().isPublic()
+                || wasInvolved(requesterId, recap.getSchedule()))
+            .findFirst()
+            .map(recap -> toDto(recap, requesterId))
             .orElseThrow(SlotRecapService::noSuchRecap);
+    }
 
-        Schedule slot = recap.getSchedule();
-        if (!isPubliclyListable(slot)) {
-            throw noSuchRecap();
-        }
-        if (!recap.getVisibility().isPublic() && !wasInvolved(requesterId, slot)) {
-            throw noSuchRecap();
-        }
-        return toDto(recap, requesterId);
+    /**
+     * Cartes d'un programme — la page programme.
+     *
+     * <p>Ni position ni rayon : on regarde CE programme, pas ce qui est autour
+     * de soi. La visibilité graduée est portée par la requête, qui la calcule
+     * séance par séance.
+     */
+    @Transactional(readOnly = true)
+    public List<SlotRecapDto> getForProgram(UUID programId, UUID requesterId) {
+        return recapRepository.findForProgram(programId, requesterId).stream()
+            .map(recap -> toDto(recap, requesterId))
+            .toList();
+    }
+
+    /** Cartes publiques d'une activité du catalogue — la page activité. */
+    @Transactional(readOnly = true)
+    public List<SlotRecapDto> getForActivity(UUID activityId, UUID requesterId) {
+        return recapRepository.findPublicForActivity(activityId).stream()
+            .map(recap -> toDto(recap, requesterId))
+            .toList();
+    }
+
+    /** Cartes publiques des créneaux animés par quelqu'un — son profil. */
+    @Transactional(readOnly = true)
+    public List<SlotRecapDto> getForHost(UUID userId, UUID requesterId) {
+        return recapRepository.findPublicForHost(userId).stream()
+            .map(recap -> toDto(recap, requesterId))
+            .toList();
     }
 
     /** Les cartes publiques autour de moi. */
@@ -278,9 +316,10 @@ public class SlotRecapService {
      * le créneau n'a pas (encore) de carte — on n'en crée pas ici, une carte
      * naît d'une contribution, pas d'une présence.
      */
-    public void refreshAttendeeCount(UUID scheduleId) {
-        recapRepository.findByScheduleId(scheduleId).ifPresent(recap -> {
-            recap.setAttendeeCount(attendanceRepository.countPresentByScheduleId(scheduleId));
+    public void refreshAttendeeCount(UUID scheduleId, Instant occurrenceStart) {
+        recapRepository.findByScheduleIdAndOccurrenceStart(scheduleId, occurrenceStart).ifPresent(recap -> {
+            recap.setAttendeeCount(
+                attendanceRepository.countPresentByOccurrence(scheduleId, occurrenceStart));
             recapRepository.save(recap);
         });
     }
@@ -293,11 +332,31 @@ public class SlotRecapService {
     }
 
     /**
-     * Présence confirmée sur ce créneau — la <b>même</b> vérification que la
-     * boucle de recommandation, pas une variante.
+     * La séance à laquelle une contribution se rapporte : la dernière
+     * terminée.
+     *
+     * <p>Toute contribution parle d'un moment vécu. Sur un créneau récurrent,
+     * la ligne pointe déjà sur la séance suivante — s'y fier attachait la
+     * contribution au mauvais moment, quand elle ne la refusait pas.
      */
-    private void requirePresence(UUID userId, UUID scheduleId) {
-        if (!attendanceRepository.existsByScheduleIdAndUserIdAndWasPresentTrue(scheduleId, userId)) {
+    private SlotOccurrence requireEndedOccurrence(Schedule slot) {
+        SlotOccurrence occurrence = SlotTiming.lastEndedOccurrence(slot, Instant.now());
+        if (occurrence == null) {
+            // Même refus, et même formulation, que la confirmation de présence :
+            // il n'y a rien à raconter d'une séance qui n'a pas eu lieu.
+            throw new ValidationException("Ce créneau n'est pas encore terminé.");
+        }
+        return occurrence;
+    }
+
+    /**
+     * Présence confirmée sur cette séance — la <b>même</b> vérification que la
+     * boucle de recommandation, resserrée sur l'occurrence : être venu la
+     * semaine dernière ne donne pas voix au chapitre sur celle-ci.
+     */
+    private void requirePresence(UUID userId, UUID scheduleId, SlotOccurrence occurrence) {
+        if (!attendanceRepository.existsByScheduleIdAndUserIdAndAttendedAtAndWasPresentTrue(
+                scheduleId, userId, occurrence.startsAt())) {
             throw new ForbiddenException(ErrorCode.RECAP_NOT_ATTENDEE,
                 "Seules les personnes présentes à ce créneau peuvent contribuer à sa carte.");
         }
@@ -311,15 +370,20 @@ public class SlotRecapService {
         }
     }
 
-    private void requireWindowOpen(Schedule slot) {
-        if (!isWindowOpen(slot)) {
+    private void requireWindowOpen(SlotOccurrence occurrence) {
+        if (!Instant.now().isBefore(windowCloseOf(occurrence.endsAt()))) {
             throw new ConflictException(ErrorCode.RECAP_WINDOW_CLOSED,
                 "Cette carte est figée : la période de contribution de sept jours est terminée.");
         }
     }
 
-    private boolean isWindowOpen(Schedule slot) {
-        return Instant.now().isBefore(SlotTiming.endOf(slot).plus(CONTRIBUTION_WINDOW));
+    /**
+     * Quand une séance se fige. Compté depuis la <b>fin</b> du moment, pas
+     * depuis son début : un créneau long donnerait sinon une fenêtre plus
+     * courte qu'un créneau bref.
+     */
+    private static Instant windowCloseOf(Instant occurrenceEnd) {
+        return occurrenceEnd.plus(CONTRIBUTION_WINDOW);
     }
 
     /**
@@ -358,20 +422,26 @@ public class SlotRecapService {
         }
     }
 
-    /** Crée la carte si c'est la première contribution, la rend sinon. */
-    private SlotRecap openRecap(Schedule slot) {
-        return recapRepository.findByScheduleId(slot.getId()).orElseGet(() -> {
-            SlotRecap recap = new SlotRecap();
-            recap.setSchedule(slot);
-            recap.setVisibility(RecapVisibility.PRIVATE);
-            recap.setAttendeeCount(attendanceRepository.countPresentByScheduleId(slot.getId()));
-            return recapRepository.save(recap);
-        });
+    /** Crée la carte de cette séance si c'est la première contribution, la rend sinon. */
+    private SlotRecap openRecap(Schedule slot, SlotOccurrence occurrence) {
+        return recapRepository
+            .findByScheduleIdAndOccurrenceStart(slot.getId(), occurrence.startsAt())
+            .orElseGet(() -> {
+                SlotRecap recap = new SlotRecap();
+                recap.setSchedule(slot);
+                recap.setOccurrenceStart(occurrence.startsAt());
+                recap.setOccurrenceEnd(occurrence.endsAt());
+                recap.setVisibility(RecapVisibility.PRIVATE);
+                recap.setAttendeeCount(attendanceRepository.countPresentByOccurrence(
+                    slot.getId(), occurrence.startsAt()));
+                return recapRepository.save(recap);
+            });
     }
 
     /** Réaligne l'effectif et l'horodatage à chaque contribution. */
     private SlotRecap touch(SlotRecap recap) {
-        recap.setAttendeeCount(attendanceRepository.countPresentByScheduleId(recap.getSchedule().getId()));
+        recap.setAttendeeCount(attendanceRepository.countPresentByOccurrence(
+            recap.getSchedule().getId(), recap.getOccurrenceStart()));
         recap.setUpdatedAt(Instant.now());
         return recapRepository.save(recap);
     }
@@ -432,9 +502,13 @@ public class SlotRecapService {
         Category category = activity != null ? activity.getCategory() : null;
         User host = hostOf(slot);
 
-        boolean canContribute = isWindowOpen(slot)
+        Instant windowClosesAt = windowCloseOf(recap.getOccurrenceEnd());
+        boolean windowOpen = Instant.now().isBefore(windowClosesAt);
+
+        boolean canContribute = windowOpen
             && viewerId != null
-            && attendanceRepository.existsByScheduleIdAndUserIdAndWasPresentTrue(slot.getId(), viewerId);
+            && attendanceRepository.existsByScheduleIdAndUserIdAndAttendedAtAndWasPresentTrue(
+                slot.getId(), viewerId, recap.getOccurrenceStart());
 
         return new SlotRecapDto(
             slot.getId(),
@@ -442,18 +516,22 @@ public class SlotRecapService {
             activity != null ? activity.getName() : null,
             category != null ? category.getName() : null,
             category != null ? category.getColorRamp() : null,
-            slot.getStartsAt(),
+            recap.getOccurrenceStart(),
             slot.getPlaceName(),
             slot.getCity(),
             recap.getAttendeeCount() != null ? recap.getAttendeeCount() : 0,
             topVibes(recap),
-            publicPhotos(slot),
+            publicPhotos(recap),
             recap.getHostNote(),
             host != null ? userService.getPublicProfile(host.getId(), viewerId) : null,
             visibleAttendees(recap, slot, viewerId),
             nextSlot(program, viewerId),
             recap.getVisibility().name(),
             canContribute,
+            // Nulle une fois la fenêtre refermée : il n'y a plus de délai à
+            // annoncer, et une date passée serait affichée comme un compte à
+            // rebours négatif.
+            windowOpen ? windowClosesAt : null,
             myVibes(recap, viewerId)
         );
     }
@@ -472,8 +550,9 @@ public class SlotRecapService {
      * seulement côté client, il laisserait passer des images que personne n'a
      * accepté de publier.
      */
-    private List<String> publicPhotos(Schedule slot) {
-        return attendanceRepository.findByScheduleIdAndWasPresentTrue(slot.getId()).stream()
+    private List<String> publicPhotos(SlotRecap recap) {
+        return attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(
+                recap.getSchedule().getId(), recap.getOccurrenceStart()).stream()
             .filter(a -> Boolean.TRUE.equals(a.getMemoryIsPublic()))
             .map(Attendance::getMemoryPhotoUrl)
             .filter(Objects::nonNull)
@@ -495,7 +574,8 @@ public class SlotRecapService {
         UUID hostId = host != null ? host.getId() : null;
 
         List<UserPublicDto> visible = new ArrayList<>();
-        for (Attendance attendance : attendanceRepository.findByScheduleIdAndWasPresentTrue(slot.getId())) {
+        for (Attendance attendance : attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(
+                slot.getId(), recap.getOccurrenceStart())) {
             UUID attendeeId = attendance.getUser().getId();
             if (attendeeId.equals(hostId) || !consenting.contains(attendeeId)) {
                 continue;

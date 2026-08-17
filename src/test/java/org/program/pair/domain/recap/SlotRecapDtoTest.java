@@ -65,7 +65,7 @@ class SlotRecapDtoTest extends RecapTestFixtures {
         when(vibeVoteRepository.countByVibe(any())).thenReturn(List.of());
         when(vibeVoteRepository.findVibesByRecapIdAndUserId(any(), any())).thenReturn(List.of());
         when(consentRepository.findConsentingUserIds(any())).thenReturn(List.of());
-        when(attendanceRepository.findByScheduleIdAndWasPresentTrue(any())).thenReturn(List.of());
+        when(attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(any(), any())).thenReturn(List.of());
         when(slotAudience.participantIds(any())).thenReturn(List.of());
     }
 
@@ -140,7 +140,7 @@ class SlotRecapDtoTest extends RecapTestFixtures {
             sharedPhoto(slot, "deux.jpg"),
             sharedPhoto(slot, "trois.jpg"),
             sharedPhoto(slot, "quatre.jpg"));
-        when(attendanceRepository.findByScheduleIdAndWasPresentTrue(slot.getId())).thenReturn(withPhotos);
+        when(attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(slot.getId(), slot.getStartsAt())).thenReturn(withPhotos);
 
         SlotRecapDto dto = service.get(slot.getId(), UUID.randomUUID());
 
@@ -166,7 +166,7 @@ class SlotRecapDtoTest extends RecapTestFixtures {
     void canContribute_estFaux_pourQuiNEtaitPasLa() {
         Schedule slot = publicRecapOn(endedSlot(2));
         UUID reader = UUID.randomUUID();
-        when(attendanceRepository.existsByScheduleIdAndUserIdAndWasPresentTrue(slot.getId(), reader))
+        when(attendanceRepository.existsByScheduleIdAndUserIdAndAttendedAtAndWasPresentTrue(slot.getId(), reader, slot.getStartsAt()))
             .thenReturn(false);
 
         assertThat(service.get(slot.getId(), reader).canContribute()).isFalse();
@@ -176,7 +176,7 @@ class SlotRecapDtoTest extends RecapTestFixtures {
     void canContribute_estFaux_uneFoisLaFenetreRefermee() {
         Schedule slot = publicRecapOn(endedSlot(8 * 24));
         UUID attendee = UUID.randomUUID();
-        when(attendanceRepository.existsByScheduleIdAndUserIdAndWasPresentTrue(slot.getId(), attendee))
+        when(attendanceRepository.existsByScheduleIdAndUserIdAndAttendedAtAndWasPresentTrue(slot.getId(), attendee, slot.getStartsAt()))
             .thenReturn(true);
 
         assertThat(service.get(slot.getId(), attendee).canContribute()).isFalse();
@@ -211,7 +211,7 @@ class SlotRecapDtoTest extends RecapTestFixtures {
     private Schedule publicRecapOn(Schedule slot) {
         SlotRecap recap = recapFor(slot);
         recap.setVisibility(RecapVisibility.PUBLIC);
-        when(recapRepository.findByScheduleId(slot.getId())).thenReturn(Optional.of(recap));
+        when(recapRepository.findByScheduleIdOrderByOccurrenceStartDesc(slot.getId())).thenReturn(List.of(recap));
         return slot;
     }
 

@@ -21,10 +21,17 @@ import java.util.UUID;
  * prochain créneau.
  */
 @Entity
-@Table(name = "slot_recaps", indexes = {
-    @Index(name = "idx_recaps_schedule", columnList = "schedule_id"),
-    @Index(name = "idx_recaps_visibility", columnList = "visibility, published_at")
-})
+@Table(name = "slot_recaps",
+    // Une carte par SÉANCE, pas par ligne de créneau. La contrainte d'origine
+    // portait sur schedule_id seul : un créneau hebdomadaire ne pouvait donc
+    // porter qu'une carte, réécrite d'une semaine sur l'autre.
+    uniqueConstraints = @UniqueConstraint(name = "uq_recap_occurrence",
+        columnNames = {"schedule_id", "occurrence_start"}),
+    indexes = {
+        @Index(name = "idx_recaps_schedule", columnList = "schedule_id"),
+        @Index(name = "idx_recaps_visibility", columnList = "visibility, published_at"),
+        @Index(name = "idx_recaps_occurrence", columnList = "occurrence_start")
+    })
 @Getter
 @Setter
 @NoArgsConstructor
@@ -36,9 +43,31 @@ public class SlotRecap {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "schedule_id", nullable = false, unique = true)
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "schedule_id", nullable = false)
     private Schedule schedule;
+
+    /**
+     * La séance dont cette carte est la trace, nommée par son début.
+     *
+     * <p>C'est ici, et non dans {@code schedule.startsAt}, que se lit la date
+     * d'un souvenir. Sur un créneau récurrent la ligne a déjà été avancée par
+     * le rollover : s'y fier datait la carte d'un mardi <i>prochain</i>. Voir
+     * {@link org.program.pair.domain.program.SlotOccurrence}.
+     */
+    @Column(name = "occurrence_start", nullable = false)
+    private Instant occurrenceStart;
+
+    /**
+     * Fin de cette séance, figée à la naissance de la carte.
+     *
+     * <p>Copiée plutôt que relue depuis le créneau : la fenêtre de contribution
+     * de sept jours en découle, et une carte doit rester figée. Sans cette
+     * copie, allonger la durée d'un créneau rouvrirait une fenêtre close sous
+     * les yeux de quelqu'un qui a déjà partagé la carte.
+     */
+    @Column(name = "occurrence_end", nullable = false)
+    private Instant occurrenceEnd;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
