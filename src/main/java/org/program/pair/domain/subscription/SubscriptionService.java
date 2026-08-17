@@ -8,6 +8,7 @@ import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.Schedule;
+import org.program.pair.domain.subscription.dto.SubscriberDto;
 import org.program.pair.domain.subscription.dto.SubscriptionDto;
 import org.program.pair.domain.subscription.dto.SubscriptionScopeRequest;
 import org.program.pair.domain.subscription.dto.UpdateSubscriptionRequest;
@@ -23,6 +24,8 @@ import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.exception.ForbiddenException;
 import org.program.pair.shared.exception.ResourceNotFoundException;
 import org.program.pair.shared.exception.ValidationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -149,11 +152,94 @@ public class SubscriptionService {
             .ifPresent(subscriptionRepository::delete);
     }
 
+    /**
+     * Mes abonnements, paginés.
+     *
+     * <p>La route rendait tout d'un coup. L'enveloppe {@code Page} est une
+     * rupture de contrat assumée, et elle n'était sûre qu'une fois
+     * {@code subscribed} servi sur les DTO de cible (lot A) : livrée avant, elle
+     * aurait fait basculer à tort sur « S'abonner » tous les boutons dont la
+     * cible ne figurait pas dans la première page.
+     *
+     * @param type filtre facultatif ; {@code null} rend les trois types
+     */
     @Transactional(readOnly = true)
-    public List<SubscriptionDto> listMySubscriptions(UUID subscriberId) {
-        return subscriptionRepository.findBySubscriberId(subscriberId).stream()
-            .map(this::toDto)
-            .collect(Collectors.toList());
+    public Page<SubscriptionDto> listMySubscriptions(UUID subscriberId, SubscriptionType type,
+                                                     Pageable pageable) {
+        return subscriptionRepository.findMySubscriptions(subscriberId, type, pageable)
+            .map(this::toDto);
+    }
+
+    /**
+     * Mes abonnés — les personnes qui me suivent, moi ou l'une de mes activités.
+     *
+     * <p><b>C'est la liste de l'appelant, et de personne d'autre.</b> Aucune
+     * route ne permet de savoir qui suit un tiers : le paramètre
+     * {@code targetId} ne desserre pas cette règle, il la resserre.
+     *
+     * @param type     filtre facultatif sur le chemin d'arrivée
+     * @param targetId activité précise ; l'appelant doit en être l'auteur
+     */
+    @Transactional(readOnly = true)
+    public Page<SubscriberDto> listMySubscribers(UUID ownerId, SubscriptionType type,
+                                                 UUID targetId, Pageable pageable) {
+        requireListableType(type);
+        requireOwnedTarget(ownerId, targetId);
+
+        return subscriptionRepository.findMySubscribers(ownerId, type, targetId, pageable)
+            .map(this::toSubscriberDto);
+    }
+
+    /**
+     * Les abonnés d'une catégorie ne se listent pas, par personne.
+     *
+     * <p>La demande client mentionne {@code CATEGORY} parmi les valeurs du filtre,
+     * mais son propre chapitre sur la confidentialité interdit exactement cette
+     * exposition : « suivre une catégorie n'est pas un acte neutre — selon le
+     * référentiel, c'est une donnée de santé ou de situation personnelle ». Les
+     * deux paragraphes se contredisent, et c'est la confidentialité qui gagne.
+     *
+     * <p>S'y ajoute un fait de modèle : {@code Category} ne porte ni
+     * propriétaire ni créateur, c'est un référentiel partagé. Aucune catégorie
+     * n'appartenant à personne, il n'existe personne à qui cette liste pourrait
+     * légitimement revenir.
+     *
+     * <p>Un refus plutôt qu'une page vide : une page vide répondrait « vous
+     * n'avez aucun abonné par catégorie » à une question qui n'a de réponse pour
+     * personne.
+     */
+    private void requireListableType(SubscriptionType type) {
+        if (type == SubscriptionType.CATEGORY) {
+            throw new ForbiddenException(
+                "Les abonnés d'une catégorie ne sont listables par personne : "
+                    + "une catégorie n'appartient à aucun utilisateur.");
+        }
+    }
+
+    private void requireOwnedTarget(UUID ownerId, UUID targetId) {
+        if (targetId == null) {
+            return;
+        }
+        UserActivity target = userActivityRepository.findById(targetId)
+            .orElseThrow(() -> new ResourceNotFoundException("Activité introuvable."));
+        if (target.getUser() == null || !ownerId.equals(target.getUser().getId())) {
+            throw new ForbiddenException(
+                "Vous ne pouvez lister que les abonnés de vos propres activités.");
+        }
+    }
+
+    private SubscriberDto toSubscriberDto(Subscription s) {
+        User subscriber = s.getSubscriber();
+        UserActivity target = s.getTargetUserActivity();
+        return new SubscriberDto(
+            subscriber.getId(),
+            subscriber.getDisplayName(),
+            subscriber.getAvatarUrl(),
+            s.getType().name(),
+            target != null ? target.getId() : null,
+            target != null && target.getActivity() != null ? target.getActivity().getName() : null,
+            s.getCreatedAt()
+        );
     }
 
     // --- Réglage d'un abonnement existant ---

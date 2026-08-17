@@ -1,6 +1,9 @@
 package org.program.pair.repository;
 
 import org.program.pair.domain.subscription.Subscription;
+import org.program.pair.domain.subscription.SubscriptionType;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -120,4 +123,84 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, UUID
         where s.subscriber.id = :subscriberId and s.targetCategory is not null
         """)
     List<UUID> findSubscribedCategoryIds(@Param("subscriberId") UUID subscriberId);
+
+    // — Listes paginées —
+    //
+    // Les quatre requêtes ci-dessous rapatrient leurs associations par
+    // `left join fetch` plutôt que de les laisser se charger à la demande. Sans
+    // cela, rendre une page de vingt lignes déclenche jusqu'à quarante requêtes
+    // supplémentaires : `Subscription` porte trois cibles en `LAZY`, et la
+    // branche activité se résout en deux sauts (activité-utilisateur, puis
+    // activité du référentiel) pour n'obtenir qu'un nom.
+    //
+    // Le `join fetch` est ici compatible avec la pagination : toutes ces
+    // associations sont des `*ToOne`, elles ne multiplient donc pas les lignes
+    // et Hibernate pagine en SQL. Ce ne serait pas vrai d'une collection.
+
+    /**
+     * Mes abonnements, paginés et triables.
+     *
+     * <p>Le tri arrive par le {@link org.springframework.data.domain.Pageable} :
+     * seul {@code createdAt} est exposé, dans les deux sens. Le tri par nom de
+     * cible n'existe pas — il porterait sur trois tables différentes selon le
+     * type, et le client y a renoncé plutôt que d'accepter un tri qui ne
+     * classerait que la page.
+     */
+    @Query(value = """
+        select s from Subscription s
+        left join fetch s.targetAuthor
+        left join fetch s.targetUserActivity tua
+        left join fetch tua.activity
+        left join fetch s.targetCategory
+        where s.subscriber.id = :subscriberId
+          and (:type is null or s.type = :type)
+        """,
+        countQuery = """
+        select count(s) from Subscription s
+        where s.subscriber.id = :subscriberId
+          and (:type is null or s.type = :type)
+        """)
+    Page<Subscription> findMySubscriptions(@Param("subscriberId") UUID subscriberId,
+                                           @Param("type") SubscriptionType type,
+                                           Pageable pageable);
+
+    /**
+     * Mes abonnés : les personnes qui me suivent, moi ou l'une de mes activités.
+     *
+     * <p>La condition dit exactement ce que « m'appartenir » veut dire : un
+     * abonnement {@code AUTHOR} qui me vise, ou un abonnement
+     * {@code USER_ACTIVITY} sur une activité dont je suis l'auteur. Rien
+     * d'autre ne remonte, et notamment aucun abonnement {@code CATEGORY} — une
+     * catégorie n'appartient à personne.
+     */
+    @Query(value = """
+        select s from Subscription s
+        join fetch s.subscriber
+        left join fetch s.targetUserActivity tua
+        left join fetch tua.activity
+        where (
+                (s.type = org.program.pair.domain.subscription.SubscriptionType.AUTHOR
+                    and s.targetAuthor.id = :ownerId)
+             or (s.type = org.program.pair.domain.subscription.SubscriptionType.USER_ACTIVITY
+                    and tua.user.id = :ownerId)
+              )
+          and (:type is null or s.type = :type)
+          and (:targetId is null or tua.id = :targetId)
+        """,
+        countQuery = """
+        select count(s) from Subscription s
+        left join s.targetUserActivity tua
+        where (
+                (s.type = org.program.pair.domain.subscription.SubscriptionType.AUTHOR
+                    and s.targetAuthor.id = :ownerId)
+             or (s.type = org.program.pair.domain.subscription.SubscriptionType.USER_ACTIVITY
+                    and tua.user.id = :ownerId)
+              )
+          and (:type is null or s.type = :type)
+          and (:targetId is null or tua.id = :targetId)
+        """)
+    Page<Subscription> findMySubscribers(@Param("ownerId") UUID ownerId,
+                                          @Param("type") SubscriptionType type,
+                                          @Param("targetId") UUID targetId,
+                                          Pageable pageable);
 }
