@@ -3,12 +3,15 @@ package org.program.pair.integration;
 import org.junit.jupiter.api.Test;
 import org.program.pair.AbstractIntegrationTest;
 import org.program.pair.domain.activity.dto.CategoryDto;
+import org.program.pair.domain.activity.dto.UpsertUserActivityRequest;
+import org.program.pair.domain.activity.dto.UserActivityDto;
 import org.program.pair.domain.auth.dto.AuthResponse;
 import org.program.pair.domain.auth.dto.RegisterRequest;
 import org.program.pair.domain.subscription.dto.SubscriptionDto;
 import org.program.pair.domain.user.dto.PrivacySettingsDto;
 import org.program.pair.domain.user.dto.UserPublicDto;
 import org.program.pair.shared.dto.ErrorResponse;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 
 import java.util.List;
@@ -313,5 +316,85 @@ class SubscriptionLotAIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(profil.subscribed()).isTrue();
         assertThat(profil.subscriberCount()).isEqualTo(1L);
+    }
+
+    /**
+     * Le contournement : « qui peut me suivre » n'était vérifié que sur le
+     * profil, et l'on pouvait suivre la même personne par n'importe laquelle de
+     * ses activités — en recevant bien ses nouveaux programmes.
+     */
+    @Test
+    void profilFerme_doitAussiRefuserLAbonnementParUneDeSesActivites() {
+        String cible = register("lota12-cible@pair.app");
+        String suiveur = register("lota12-suiveur@pair.app");
+
+        // Une activité du référentiel, posée sur le profil de la cible.
+        UUID referentielId = UUID.fromString(webTestClient.get()
+            .uri("/api/activities?page=0&size=1")
+            .headers(h -> h.setBearerAuth(cible))
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody(new ParameterizedTypeReference<Map<String, Object>>() {})
+            .returnResult().getResponseBody()
+            .get("content") instanceof List<?> contenu
+                ? ((Map<?, ?>) contenu.get(0)).get("id").toString()
+                : null);
+
+        UUID activiteId = webTestClient.post().uri("/api/users/me/activities")
+            .headers(h -> h.setBearerAuth(cible))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(new UpsertUserActivityRequest(referentielId, true, null, null, null))
+            .exchange()
+            .expectStatus().isCreated()
+            .expectBody(UserActivityDto.class)
+            .returnResult().getResponseBody()
+            .id();
+
+        webTestClient.put().uri("/api/users/me/privacy")
+            .headers(h -> h.setBearerAuth(cible))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("allowSubscriptions", "NOBODY"))
+            .exchange().expectStatus().isOk();
+
+        ErrorResponse refus = webTestClient.post()
+            .uri("/api/user-activities/{id}/subscription", activiteId)
+            .headers(h -> h.setBearerAuth(suiveur))
+            .exchange()
+            .expectStatus().isForbidden()
+            .expectBody(ErrorResponse.class)
+            .returnResult().getResponseBody();
+
+        assertThat(refus.code()).isEqualTo("SUBSCRIPTIONS_NOT_ALLOWED");
+    }
+
+    /** On ne se suit pas soi-même, y compris par le détour d'une activité. */
+    @Test
+    void sAbonnerASaPropreActivite_doitEtreRefuse() {
+        String moi = register("lota13@pair.app");
+
+        UUID referentielId = UUID.fromString(webTestClient.get()
+            .uri("/api/activities?page=0&size=1")
+            .headers(h -> h.setBearerAuth(moi))
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody(new ParameterizedTypeReference<Map<String, Object>>() {})
+            .returnResult().getResponseBody()
+            .get("content") instanceof List<?> contenu
+                ? ((Map<?, ?>) contenu.get(0)).get("id").toString()
+                : null);
+
+        UUID maPropreActivite = webTestClient.post().uri("/api/users/me/activities")
+            .headers(h -> h.setBearerAuth(moi))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(new UpsertUserActivityRequest(referentielId, true, null, null, null))
+            .exchange()
+            .expectStatus().isCreated()
+            .expectBody(UserActivityDto.class)
+            .returnResult().getResponseBody()
+            .id();
+
+        webTestClient.post().uri("/api/user-activities/{id}/subscription", maPropreActivite)
+            .headers(h -> h.setBearerAuth(moi))
+            .exchange().expectStatus().isForbidden();
     }
 }

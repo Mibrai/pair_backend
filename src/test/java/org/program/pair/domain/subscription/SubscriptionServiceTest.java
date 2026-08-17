@@ -5,7 +5,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.program.pair.domain.activity.Activity;
 import org.program.pair.domain.activity.Category;
+import org.program.pair.domain.activity.UserActivity;
 import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.user.User;
@@ -331,6 +333,100 @@ class SubscriptionServiceTest {
         assertThatThrownBy(() -> subscriptionService.updateAuthorSubscription(
             subscriberId, authorId, new UpdateSubscriptionRequest("MUTED", null, null, null, null)))
             .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    // --- Le réglage « qui peut me suivre » vaut sur les deux chemins ---
+
+    /**
+     * Le contournement que corrige ce correctif : le réglage n'était vérifié que
+     * sur le profil, et suivre l'activité de quelqu'un revient à le suivre —
+     * l'abonné ainsi arrivé recevait bien ses nouveaux programmes.
+     */
+    @Test
+    void sAbonnerALActiviteDUnProfilFerme_doitEtreRefuse() {
+        UUID subscriberId = UUID.randomUUID();
+        UUID userActivityId = UUID.randomUUID();
+
+        User subscriber = new User();
+        subscriber.setId(subscriberId);
+
+        User auteurFerme = new User();
+        auteurFerme.setId(UUID.randomUUID());
+        auteurFerme.setPrivacySettings(PrivacySettings.builder()
+            .allowSubscriptions(SubscriptionPermission.NOBODY)
+            .build());
+
+        UserActivity activite = new UserActivity();
+        activite.setId(userActivityId);
+        activite.setUser(auteurFerme);
+
+        when(subscriptionRepository.existsBySubscriberIdAndTargetUserActivityId(subscriberId, userActivityId))
+            .thenReturn(false);
+        when(userRepository.findById(subscriberId)).thenReturn(Optional.of(subscriber));
+        when(userActivityRepository.findById(userActivityId)).thenReturn(Optional.of(activite));
+
+        assertThatThrownBy(() -> subscriptionService.subscribeToUserActivity(subscriberId, userActivityId))
+            .isInstanceOf(ForbiddenException.class)
+            .extracting(ex -> ((ForbiddenException) ex).getErrorCode())
+            .isEqualTo(ErrorCode.SUBSCRIPTIONS_NOT_ALLOWED);
+
+        verify(subscriptionRepository, never()).save(any());
+    }
+
+    @Test
+    void sAbonnerALActiviteDUnProfilOuvert_doitResterPossible() {
+        UUID subscriberId = UUID.randomUUID();
+        UUID userActivityId = UUID.randomUUID();
+
+        User subscriber = new User();
+        subscriber.setId(subscriberId);
+
+        User auteur = new User();
+        auteur.setId(UUID.randomUUID());
+
+        Activity referentiel = Activity.builder().id(UUID.randomUUID()).name("Course").build();
+        UserActivity activite = new UserActivity();
+        activite.setId(userActivityId);
+        activite.setUser(auteur);
+        activite.setActivity(referentiel);
+
+        when(subscriptionRepository.existsBySubscriberIdAndTargetUserActivityId(subscriberId, userActivityId))
+            .thenReturn(false);
+        when(userRepository.findById(subscriberId)).thenReturn(Optional.of(subscriber));
+        when(userActivityRepository.findById(userActivityId)).thenReturn(Optional.of(activite));
+        when(subscriptionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        assertThat(subscriptionService.subscribeToUserActivity(subscriberId, userActivityId).type())
+            .isEqualTo("USER_ACTIVITY");
+    }
+
+    /**
+     * La contrainte chk_subscription_not_self de la V36 ne couvre que la cible
+     * AUTHOR : dire la même chose d'une activité supposerait de joindre
+     * user_activities pour lire son propriétaire, ce qu'un CHECK ne sait pas
+     * faire. Ce garde-fou applicatif est donc le seul.
+     */
+    @Test
+    void sAbonnerASaPropreActivite_doitEtreInterdit() {
+        UUID moi = UUID.randomUUID();
+        UUID userActivityId = UUID.randomUUID();
+
+        User subscriber = new User();
+        subscriber.setId(moi);
+
+        UserActivity maPropreActivite = new UserActivity();
+        maPropreActivite.setId(userActivityId);
+        maPropreActivite.setUser(subscriber);
+
+        when(subscriptionRepository.existsBySubscriberIdAndTargetUserActivityId(moi, userActivityId))
+            .thenReturn(false);
+        when(userRepository.findById(moi)).thenReturn(Optional.of(subscriber));
+        when(userActivityRepository.findById(userActivityId)).thenReturn(Optional.of(maPropreActivite));
+
+        assertThatThrownBy(() -> subscriptionService.subscribeToUserActivity(moi, userActivityId))
+            .isInstanceOf(ForbiddenException.class);
+
+        verify(subscriptionRepository, never()).save(any());
     }
 
     private Subscription categorySubscription(UUID categoryId, Double lat, Double lng, Integer radius) {

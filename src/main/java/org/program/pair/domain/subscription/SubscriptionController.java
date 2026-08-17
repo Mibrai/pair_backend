@@ -68,7 +68,12 @@ public class SubscriptionController {
 
     @PostMapping("/user-activities/{userActivityId}/subscription")
     @ResponseStatus(HttpStatus.CREATED)
-    @Operation(summary = "S'abonner à une activité", description = "Être notifié des changements et des nouveaux programmes de cette activité")
+    @Operation(summary = "S'abonner à une activité",
+        description = "Être notifié des changements et des nouveaux programmes de cette "
+            + "activité. Mêmes refus que l'abonnement à un auteur, et pour la même raison "
+            + "— suivre ce que quelqu'un propose, c'est le suivre : 403 "
+            + "SUBSCRIPTIONS_NOT_ALLOWED si son auteur refuse les nouveaux abonnés, 403 "
+            + "sur sa propre activité, 409 ALREADY_SUBSCRIBED si l'abonnement existe déjà.")
     public SubscriptionDto subscribeToUserActivity(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID userActivityId) {

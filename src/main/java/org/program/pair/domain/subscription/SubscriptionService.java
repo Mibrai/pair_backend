@@ -59,9 +59,7 @@ public class SubscriptionService {
     // --- CRUD abonnements ---
 
     public SubscriptionDto subscribeToAuthor(UUID subscriberId, UUID authorId) {
-        if (subscriberId.equals(authorId)) {
-            throw new ForbiddenException("Vous ne pouvez pas vous abonner à vous-même.");
-        }
+        requireNotSelf(subscriberId, authorId);
         if (subscriptionRepository.existsBySubscriberIdAndTargetAuthorId(subscriberId, authorId)) {
             throw alreadySubscribed("Vous êtes déjà abonné à cet utilisateur.");
         }
@@ -96,6 +94,15 @@ public class SubscriptionService {
             .ifPresent(subscriptionRepository::delete);
     }
 
+    /**
+     * Abonnement à l'activité d'une personne.
+     *
+     * <p>Les deux refus qui suivent le chargement portent sur <b>l'auteur de
+     * l'activité</b>, et non sur l'activité elle-même : suivre ce que quelqu'un
+     * propose, c'est le suivre. Sans eux, « qui peut me suivre » se contournait
+     * par n'importe laquelle des activités de la personne, et l'on pouvait
+     * s'abonner à soi-même par un chemin détourné.
+     */
     public SubscriptionDto subscribeToUserActivity(UUID subscriberId, UUID userActivityId) {
         if (subscriptionRepository.existsBySubscriberIdAndTargetUserActivityId(subscriberId, userActivityId)) {
             throw alreadySubscribed("Vous êtes déjà abonné à cette activité.");
@@ -105,6 +112,12 @@ public class SubscriptionService {
             .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable."));
         UserActivity userActivity = userActivityRepository.findById(userActivityId)
             .orElseThrow(() -> new ResourceNotFoundException("Activité introuvable."));
+
+        User author = userActivity.getUser();
+        if (author != null) {
+            requireNotSelf(subscriberId, author.getId());
+            requireOpenToSubscriptions(author);
+        }
 
         Subscription subscription = Subscription.builder()
             .subscriber(subscriber)
@@ -706,6 +719,36 @@ public class SubscriptionService {
         return new ResourceNotFoundException("Vous n'êtes pas abonné à " + target + ".");
     }
 
+    /**
+     * On ne se suit pas soi-même — ni par le profil, ni par une activité.
+     *
+     * <p>La contrainte {@code chk_subscription_not_self} de la V36 ne couvre que
+     * la cible {@code AUTHOR} : dire la même chose d'une activité supposerait de
+     * joindre {@code user_activities} pour lire son propriétaire, ce qu'un
+     * {@code CHECK} ne sait pas faire. Le garde-fou est donc ici, et seulement
+     * ici — d'où l'importance de le traverser sur les deux chemins.
+     */
+    private void requireNotSelf(UUID subscriberId, UUID authorId) {
+        if (subscriberId.equals(authorId)) {
+            throw new ForbiddenException("Vous ne pouvez pas vous abonner à vous-même.");
+        }
+    }
+
+    /**
+     * Le réglage « qui peut me suivre » de l'auteur visé.
+     *
+     * <p>Il vaut pour <b>les deux chemins</b> qui mènent à une personne : son
+     * profil, et chacune de ses activités. Réservé au seul profil, il se
+     * contournait par n'importe laquelle de ses activités — et l'abonné ainsi
+     * arrivé recevait bien ses nouveaux programmes, ce qui vidait le réglage de
+     * son sens tout en le laissant afficher « fermé ».
+     *
+     * <p>Ne s'applique pas aux catégories : elles n'appartiennent à personne, et
+     * s'abonner à « Yoga » n'est pas suivre quelqu'un.
+     *
+     * <p>Rappel : le réglage ne vaut que pour l'avenir. Il refuse les nouveaux
+     * abonnements, il ne supprime pas les existants et ne les fait pas taire.
+     */
     private void requireOpenToSubscriptions(User author) {
         PrivacySettings settings = author.getPrivacySettings();
         if (settings != null && settings.getAllowSubscriptions() == SubscriptionPermission.NOBODY) {
