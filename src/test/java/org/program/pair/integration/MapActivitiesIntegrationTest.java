@@ -113,14 +113,27 @@ class MapActivitiesIntegrationTest extends AbstractIntegrationTest {
         assertThat(response.defaultCenter().zoom()).isPositive();
     }
 
+    /**
+     * La route est publique en lecture, délibérément : {@code SecurityConfig}
+     * l'ouvre nommément aux côtés de {@code /api/categories} et
+     * {@code /api/activities}, pour qu'une carte s'affiche avant toute connexion.
+     *
+     * <p>Ce test affirmait l'inverse — il exigeait un {@code 401} — et il est
+     * resté rouge depuis l'ouverture de la route, sans que personne n'ait tranché
+     * en le lisant. Il verrouille désormais le contrat réel.
+     *
+     * <p><b>À revoir au lot A3 :</b> sans appelant identifié, cette route ne peut
+     * pas filtrer les utilisateurs bloqués. Ou bien elle reçoit un
+     * {@code @AuthenticationPrincipal} optionnel, ou bien on assume par écrit
+     * qu'elle expose des organisateurs qu'un appelant connecté a bloqués.
+     */
     @Test
-    void shouldRequireAuthentication() {
-        // When: Trying to access without authentication
+    void lesActivitesDeLaCarte_doiventEtreLisiblesSansJeton() {
         webTestClient.get()
             .uri("/api/map/activities")
             .accept(MediaType.APPLICATION_JSON)
             .exchange()
-            .expectStatus().isUnauthorized();
+            .expectStatus().isOk();
     }
 
     @Test

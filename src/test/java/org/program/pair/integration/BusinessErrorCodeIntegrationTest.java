@@ -66,6 +66,10 @@ class BusinessErrorCodeIntegrationTest extends AbstractIntegrationTest {
     private static String hostToken;
     private static String joinerToken;
 
+    /** Décale chaque créneau créé dans la classe — voir {@link #createSlot}. */
+    private static final java.util.concurrent.atomic.AtomicInteger SLOT_SEQUENCE =
+        new java.util.concurrent.atomic.AtomicInteger();
+
     private User host;
 
     @BeforeEach
@@ -198,7 +202,15 @@ class BusinessErrorCodeIntegrationTest extends AbstractIntegrationTest {
             .isPublic(true)
             .build());
 
-        Instant startsAt = Instant.now().plus(2, ChronoUnit.DAYS);
+        // Chaque créneau de la classe occupe sa propre plage horaire. Les comptes
+        // et les participations survivent d'une méthode à l'autre — rien ne nettoie
+        // la base entre deux — donc des créneaux tous placés au même instant se
+        // chevauchent, et ScheduleConflictDetector refuse la deuxième inscription
+        // réussie de la classe avec un 409. Ce refus est correct ; c'est le montage
+        // qui était fautif, et il masquait le code d'erreur que ces tests vérifient.
+        Instant startsAt = Instant.now()
+            .plus(2, ChronoUnit.DAYS)
+            .plus(SLOT_SEQUENCE.getAndIncrement() * 6L, ChronoUnit.HOURS);
         Schedule schedule = scheduleRepository.save(Schedule.builder()
             .program(program)
             .placeName("Studio test codes d'erreur")
