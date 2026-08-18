@@ -62,6 +62,23 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-websocket</artifactId>
         </dependency>
+        <!--
+          Rendu des pages publiques (partage de créneau, page de sécurité). Les 179
+          endpoints existants sont en JSON et le resteront : Thymeleaf ne sert qu'aux
+          rares pages destinées à un navigateur ou à un robot d'aperçu.
+
+          Il est là pour une raison précise. Une page de partage doit porter ses
+          métadonnées OpenGraph dans des attributs — og:title vaut le titre du
+          programme, saisi par un utilisateur. Composer ces attributs à la main dans
+          un text block demanderait de les échapper soi-même, et HtmlSanitizer
+          assainit du contenu, pas des valeurs d'attribut : un titre contenant une
+          apostrophe ou un guillemet casserait la balise. th:content échappe pour
+          nous, systématiquement.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-thymeleaf</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-messaging</artifactId>

@@ -1,0 +1,6 @@
+Emplacement des gabarits Thymeleaf.
+
+Vide pour l'instant : les premières pages arrivent avec le partage de sécurité
+(A4) et la page publique de créneau (B1). Le dossier existe déjà parce que
+Thymeleaf avertit à chaque démarrage quand il ne le trouve pas, et cet
+avertissement se répétait à chaque contexte de test.
