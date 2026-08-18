@@ -24,8 +24,8 @@ class ChatFlowIntegrationTest extends AbstractIntegrationTest {
     @Test
     void conversation_neDoitJamaisSeCreer_siCibleRefuseLesMessages() {
         // Enregistrer et login deux utilisateurs
-        String tokenA = registerAndLogin("initiateur@pair.app", "Password123!", "Initiateur");
-        String tokenB = registerAndLogin("ferme@pair.app", "Password123!", "Ferme");
+        String tokenA = registerAndLogin(uniqueEmail("initiateur"), "Password123!", "Initiateur");
+        String tokenB = registerAndLogin(uniqueEmail("ferme"), "Password123!", "Ferme");
 
         // UserB désactive la réception de messages
         updateProfile(tokenB, new UpdateProfileRequest(null, null, null, null, false, null));
@@ -53,8 +53,8 @@ class ChatFlowIntegrationTest extends AbstractIntegrationTest {
     @Test
     void message_contenuXSS_devraitEtreNettoye_avantStockage() {
         // Enregistrer deux utilisateurs
-        String tokenA = registerAndLogin("a@pair.app", "Password123!", "UserA");
-        String tokenB = registerAndLogin("b@pair.app", "Password123!", "UserB");
+        String tokenA = registerAndLogin(uniqueEmail("a"), "Password123!", "UserA");
+        String tokenB = registerAndLogin(uniqueEmail("b"), "Password123!", "UserB");
 
         // UserA crée une conversation avec userB
         UUID targetUserId = getUserId(tokenB);
@@ -76,9 +76,9 @@ class ChatFlowIntegrationTest extends AbstractIntegrationTest {
     @Test
     void nonMembre_neDoitJamaisAccederALaConversation() {
         // Enregistrer trois utilisateurs
-        String tokenA = registerAndLogin("a@pair.app", "Password123!", "UserA");
-        String tokenB = registerAndLogin("b@pair.app", "Password123!", "UserB");
-        String tokenC = registerAndLogin("intrus@pair.app", "Password123!", "Intrus");
+        String tokenA = registerAndLogin(uniqueEmail("a"), "Password123!", "UserA");
+        String tokenB = registerAndLogin(uniqueEmail("b"), "Password123!", "UserB");
+        String tokenC = registerAndLogin(uniqueEmail("intrus"), "Password123!", "Intrus");
 
         // UserA crée une conversation avec userB
         UUID targetUserId = getUserId(tokenB);

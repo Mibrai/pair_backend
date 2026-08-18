@@ -82,4 +82,25 @@ public abstract class AbstractIntegrationTest {
         headers.setBearerAuth(accessToken);
         return headers;
     }
+
+    /**
+     * Une adresse dont on est sûr qu'aucune autre méthode ne l'a déjà prise.
+     *
+     * <p>Le conteneur est monté une fois par classe et <b>rien ne nettoie la base
+     * entre deux méthodes</b> : un compte créé par la première méthode est encore
+     * là pour la deuxième. Deux méthodes qui enregistrent la même adresse
+     * fonctionnent donc séparément et échouent ensemble, et c'est celle que JUnit
+     * tire en second qui reçoit le {@code 409} — l'échec se déplace quand l'ordre
+     * change, ce qui le fait passer pour de l'instabilité alors qu'il est
+     * parfaitement déterministe. Le cas se produit aussi <b>à l'intérieur</b>
+     * d'une seule méthode {@code @ParameterizedTest}, où chaque jeu de paramètres
+     * rejoue l'enregistrement.
+     *
+     * <p>Le préfixe reste lisible dans les journaux ; c'est le suffixe qui garantit
+     * l'unicité. À utiliser partout où un test enregistre un compte dont l'adresse
+     * exacte n'est pas l'objet de l'assertion.
+     */
+    protected static String uniqueEmail(String prefix) {
+        return prefix + "-" + java.util.UUID.randomUUID().toString().substring(0, 8) + "@pair.app";
+    }
 }

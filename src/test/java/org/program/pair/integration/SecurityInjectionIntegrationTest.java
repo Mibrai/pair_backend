@@ -75,7 +75,7 @@ class SecurityInjectionIntegrationTest extends AbstractIntegrationTest {
     })
     void bioProfil_devraitNeutraliserLeXSS(String payload) {
         // 1. Créer un utilisateur
-        String token = registerAndLogin("xsstest@pair.app");
+        String token = registerAndLogin(uniqueEmail("xsstest"));
 
         // 2. Mettre à jour le profil avec un payload XSS
         UpdateProfileRequest updateReq = new UpdateProfileRequest(
@@ -114,7 +114,7 @@ class SecurityInjectionIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void uploadAvatar_devraitRejeter_fichierNonImage() {
-        String token = registerAndLogin("upload@pair.app");
+        String token = registerAndLogin(uniqueEmail("upload"));
 
         // Créer un faux fichier .exe déguisé en .jpg
         byte[] fakeExeAsJpg = new byte[] {
@@ -140,7 +140,7 @@ class SecurityInjectionIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void uploadAvatar_devraitRejeter_fichierTropVolumineux() {
-        String token = registerAndLogin("bigfile@pair.app");
+        String token = registerAndLogin(uniqueEmail("bigfile"));
 
         // Créer un fichier de 6 MB (> limite de 5MB)
         byte[] bigFile = new byte[6 * 1024 * 1024];
