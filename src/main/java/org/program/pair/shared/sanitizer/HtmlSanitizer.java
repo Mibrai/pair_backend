@@ -26,14 +26,18 @@ import java.util.regex.Pattern;
  * {@code pom.xml}, et un {@code TODO Phase 2} demandait précisément de s'en
  * servir ; c'est fait.
  *
- * <p><b>La forme du résultat ne change pas.</b> Comme avant, la sortie est du
- * texte dont les caractères significatifs en HTML restent échappés : un
- * utilisateur qui écrit {@code 3 < 5} voit toujours {@code 3 &lt; 5} stocké.
- * C'est ce que la base contient déjà pour l'existant, et le modifier changerait
- * l'affichage de contenus vieux de plusieurs mois. La bibliothèque échappe en
- * prime les guillemets et les apostrophes, que l'ancienne version décodait sans
- * jamais les ré-encoder — un titre contenant une apostrophe pouvait donc casser
- * l'attribut HTML qui l'accueillerait.
+ * <p><b>La sortie est du texte, pas du HTML.</b> Ces champs ne sont jamais
+ * rendus tels quels dans une page : l'application mobile les affiche dans des
+ * widgets de texte, et les pages web du serveur passent par Thymeleaf, qui
+ * échappe. Échapper ici <i>aussi</i> reviendrait à échapper deux fois — un lieu
+ * nommé « Parc de l'Orangerie » s'affichait littéralement
+ * {@code Parc de l&amp;#39;Orangerie} sur la page de partage de sécurité. La
+ * bibliothèque produit du HTML échappé, on le ramène donc en texte avant de le
+ * stocker.
+ *
+ * <p>C'est la bonne répartition : le sanitiseur retire ce qui est dangereux, et
+ * chaque rendu échappe pour son propre contexte. Un seul échappement, posé au
+ * plus près de l'affichage, par celui qui sait dans quoi il écrit.
  *
  * <p><b>Les schémas d'URI dangereux sont neutralisés à part</b>, parce qu'aucun
  * analyseur HTML ne peut s'en charger : {@code javascript:alert(1)} saisi dans
@@ -73,6 +77,26 @@ public class HtmlSanitizer {
         // Le deux-points seul est retiré : le mot reste, le protocole meurt.
         sanitized = DANGEROUS_SCHEME.matcher(sanitized).replaceAll("$1");
 
-        return sanitized.trim();
+        return unescape(sanitized).trim();
+    }
+
+    /**
+     * Ramène en texte ce que la bibliothèque a rendu en HTML.
+     *
+     * <p>{@code &amp;} est décodé <b>en dernier</b>, et ce n'est pas un détail :
+     * le faire en premier transformerait {@code &amp;lt;} en {@code &lt;}, que
+     * la passe suivante changerait en {@code <}. Une chaîne écrite pour être lue
+     * deviendrait ainsi du balisage — précisément ce que la sanitisation venait
+     * d'empêcher.
+     */
+    private static String unescape(String html) {
+        return html
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&#34;", "\"")
+            .replace("&#39;", "'")
+            .replace("&#x27;", "'")
+            .replace("&amp;", "&");
     }
 }
