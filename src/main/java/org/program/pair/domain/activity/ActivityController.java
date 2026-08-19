@@ -56,6 +56,26 @@ public class ActivityController {
     }
 
     /**
+     * Les compteurs du panneau de filtres de l'Explorer.
+     *
+     * <p>Mêmes paramètres que {@code /activities/browse}, dont seuls la zone, les
+     * catégories et l'expiration sont retenus : un compteur doit annoncer ce
+     * qu'on obtiendrait <b>en cochant</b> la case, pas ce qu'on a déjà. Compter à
+     * l'intérieur du filtre courant afficherait zéro à côté de toutes les cases
+     * non cochées, et les ferait passer pour des impasses.
+     *
+     * <p>Route séparée plutôt qu'enveloppe autour de la page : le
+     * {@code Page<BrowsedActivityDto>} est déjà consommé par une version publiée
+     * du client, et l'envelopper aurait cassé ce contrat.
+     */
+    @GetMapping("/activities/browse/facets")
+    public ActivityFacetsDto browseFacets(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @ModelAttribute ActivityBrowseRequest request) {
+        return activityBrowseService.facets(request, idOrNull(principal));
+    }
+
+    /**
      * Activités à proposer à quelqu'un qui n'en a encore déclaré aucune.
      *
      * <p>Alimente le dernier écran du parcours d'accueil, juste après

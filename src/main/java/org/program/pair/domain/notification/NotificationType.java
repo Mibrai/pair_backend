@@ -50,17 +50,70 @@ public enum NotificationType {
      * n'aura pas lieu, et le lui apprendre le lendemain matin ne sert plus à
      * rien. Une suggestion d'activité appartient à la seconde, et peut attendre.
      *
-     * <p>Volontairement <b>court</b>. C'est le lot D6 (heures de silence) qui
-     * l'exploitera vraiment, et qui devra trancher les cas ambigus — au premier
-     * rang desquels PROGRAM_BROADCAST, dont le contenu est un message libre
-     * pouvant aussi bien dire « séance annulée » qu'une relance. Y verser des
-     * types par anticipation reviendrait à décider sans le dire.
+     * <p>Le critère qui a servi à trancher, et qu'il faut reprendre pour tout
+     * ajout : <b>que coûte le fait de l'apprendre trop tard ?</b> Un déplacement
+     * pour rien, ou une séance manquée à laquelle on s'était engagé, valent le
+     * réveil. Une occasion ratée ne le vaut pas.
+     *
+     * <p><b>PROGRAM_REMINDER en fait partie</b>, ce qui peut surprendre pour un
+     * rappel. Il part deux heures avant une séance qu'on a choisi de rejoindre :
+     * s'il tombe dans le silence, c'est que la séance elle-même y est presque, et
+     * l'étouffer transforme un réglage de confort en engagement manqué. Le rappel
+     * est unique, et ne parvient qu'à qui s'est inscrit.
+     *
+     * <p><b>SCHEDULE_CHANGED en fait partie aussi</b>, alors qu'aucun code ne
+     * l'émet encore. C'est délibéré, à rebours de la note qui figurait ici : une
+     * séance déplacée produit exactement le déplacement pour rien qu'une
+     * annulation produit, et le classement découle du coût de l'erreur, pas de
+     * l'existence d'un producteur. Le jour où quelqu'un écrira l'émetteur, il
+     * n'aura pas à redécouvrir cette question.
+     *
+     * <p><b>PROGRAM_BROADCAST n'en fait PAS partie</b>, et c'est le cas ambigu que
+     * la note précédente signalait. Son contenu est un texte libre, qui peut aussi
+     * bien annoncer une annulation qu'une relance — le serveur ne sait pas le
+     * lire. Le classer comme critique donnerait à tout auteur de programme le
+     * moyen de passer outre le silence de tous ses participants, avec n'importe
+     * quel message. C'est le mode d'échec au coût le plus élevé, et l'auteur qui
+     * doit vraiment joindre son groupe la nuit dispose de l'annulation, qui passe.
+     *
+     * <p><b>WAITLIST_PROMOTED n'en fait pas partie non plus</b>, et c'est le
+     * jugement le plus serré. Une place libérée est une bonne nouvelle qui peut se
+     * périmer ; mais celui qui l'apprend n'a encore engagé aucun déplacement, et
+     * la notification in-app l'attend au réveil. Perdre une place coûte moins que
+     * réveiller quelqu'un pour une place.
      */
-    private static final java.util.Set<NotificationType> CRITICAL =
-        java.util.EnumSet.of(SLOT_CANCELLED, PROGRAM_CANCELLED);
+    private static final java.util.Set<NotificationType> CRITICAL = java.util.EnumSet.of(
+        SLOT_CANCELLED, PROGRAM_CANCELLED, SCHEDULE_CHANGED, PROGRAM_REMINDER);
+
+    /**
+     * Celles qui méritent en plus un e-mail.
+     *
+     * <p><b>Un ensemble distinct, et non le même.</b> Les deux questions se
+     * ressemblent — « faut-il déranger ? », « faut-il écrire ? » — mais elles ne
+     * se répondent pas ensemble, et cette liste-ci a longtemps été confondue avec
+     * la précédente.
+     *
+     * <p>Le contre-exemple qui les sépare est {@code PROGRAM_REMINDER}. Il mérite
+     * de traverser les heures de silence, sans quoi un réglage de confort
+     * transforme un engagement en séance manquée. Il ne mérite pas un e-mail :
+     * il en partirait un pour chaque séance rejointe par chacun, ce qui remplirait
+     * les boîtes plus sûrement qu'aucune fonctionnalité et ferait couper le canal
+     * entier — y compris pour les annulations, qui sont la raison d'être de ce
+     * canal.
+     *
+     * <p>Ne restent donc ici que les faits qui rendent un déplacement inutile, et
+     * qu'on veut retrouver écrits quelque part même en ayant raté la notification.
+     */
+    private static final java.util.Set<NotificationType> EMAILED = java.util.EnumSet.of(
+        SLOT_CANCELLED, PROGRAM_CANCELLED, SCHEDULE_CHANGED);
 
     /** Vrai si cette notification passe outre les heures de silence. */
     public boolean isCritical() {
         return CRITICAL.contains(this);
+    }
+
+    /** Vrai si cette notification part aussi par e-mail, en plus de la push. */
+    public boolean warrantsEmail() {
+        return EMAILED.contains(this);
     }
 }

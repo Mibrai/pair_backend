@@ -4,6 +4,8 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import org.program.pair.domain.notification.dto.UpdateQuietHoursRequest;
+import org.program.pair.domain.notification.dto.QuietHoursDto;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.notification.dto.DeviceTokenDto;
@@ -37,6 +39,7 @@ public class NotificationController {
 
     private final NotificationService notificationService;
     private final DeviceTokenService deviceTokenService;
+    private final QuietHoursService quietHoursService;
 
     @GetMapping
     @Operation(summary = "Mes notifications", description = "Liste paginée des notifications in-app")
@@ -115,6 +118,32 @@ public class NotificationController {
         );
 
         return ResponseEntity.ok(NotificationPrefDto.fromEntity(pref));
+    }
+
+    @GetMapping("/quiet-hours")
+    @Operation(summary = "Mes heures de silence.",
+        description = "Nulles si aucun silence n'est demandé. Les heures sont pleines et "
+            + "locales : le fuseau retenu est celui de l'appareil qui reçoit, relevé à "
+            + "l'enregistrement du jeton — deux appareils dans deux fuseaux ne se taisent "
+            + "donc pas au même moment, ce qui est le comportement voulu.")
+    public QuietHoursDto getQuietHours(@AuthenticationPrincipal UserPrincipal currentUser) {
+        return quietHoursService.get(currentUser.getId());
+    }
+
+    @PutMapping("/quiet-hours")
+    @Operation(summary = "Règle ou retire les heures de silence.",
+        description = "start et end vont ensemble : deux valeurs nulles retirent le "
+            + "silence, une seule est refusée. La fenêtre peut traverser minuit — « 22 → 7 » "
+            + "décrit une nuit, et c'est le réglage courant.\n\n"
+            + "Le silence coupe la notification push, jamais la notification elle-même : "
+            + "elle est écrite et attend au réveil. Les faits qui rendent un déplacement "
+            + "inutile passent outre — annulation d'une séance ou d'un programme, "
+            + "changement d'horaire — ainsi que le rappel de séance, qui part deux heures "
+            + "avant quelque chose qu'on a choisi de rejoindre.")
+    public QuietHoursDto updateQuietHours(
+            @AuthenticationPrincipal UserPrincipal currentUser,
+            @Valid @RequestBody UpdateQuietHoursRequest request) {
+        return quietHoursService.update(currentUser.getId(), request.start(), request.end());
     }
 
     @PostMapping("/devices")

@@ -119,6 +119,14 @@ public interface UserActivityRepository extends JpaRepository<UserActivity, UUID
                OR NOT (agenda.schedule_count > 0 AND agenda.next_session_at IS NULL))
           AND (CAST(:categoryIds AS uuid[]) IS NULL OR c.id = ANY(CAST(:categoryIds AS uuid[])))
           AND (CAST(:levels AS text[]) IS NULL OR ua.level = ANY(CAST(:levels AS text[])))
+          AND (:myActivitiesOnly = FALSE OR EXISTS (
+                SELECT 1 FROM user_activities mine
+                WHERE mine.user_id = CAST(:viewerId AS uuid)
+                  AND mine.activity_id = ua.activity_id))
+          AND (:subscribedOnly = FALSE OR EXISTS (
+                SELECT 1 FROM subscriptions sub
+                WHERE sub.subscriber_id = CAST(:viewerId AS uuid)
+                  AND sub.target_user_activity_id = ua.id))
         ORDER BY
             place.loc IS NULL,
             CASE WHEN :sortByNextSession THEN NULL ELSE
@@ -163,6 +171,14 @@ public interface UserActivityRepository extends JpaRepository<UserActivity, UUID
                OR NOT (agenda.schedule_count > 0 AND agenda.next_session_at IS NULL))
           AND (CAST(:categoryIds AS uuid[]) IS NULL OR c.id = ANY(CAST(:categoryIds AS uuid[])))
           AND (CAST(:levels AS text[]) IS NULL OR ua.level = ANY(CAST(:levels AS text[])))
+          AND (:myActivitiesOnly = FALSE OR EXISTS (
+                SELECT 1 FROM user_activities mine
+                WHERE mine.user_id = CAST(:viewerId AS uuid)
+                  AND mine.activity_id = ua.activity_id))
+          AND (:subscribedOnly = FALSE OR EXISTS (
+                SELECT 1 FROM subscriptions sub
+                WHERE sub.subscriber_id = CAST(:viewerId AS uuid)
+                  AND sub.target_user_activity_id = ua.id))
         """,
         nativeQuery = true)
     Page<ActivityBrowseRow> browse(
@@ -173,7 +189,85 @@ public interface UserActivityRepository extends JpaRepository<UserActivity, UUID
         @Param("categoryIds") String categoryIds,
         @Param("levels") String levels,
         @Param("sortByNextSession") boolean sortByNextSession,
+        @Param("myActivitiesOnly") boolean myActivitiesOnly,
+        @Param("subscribedOnly") boolean subscribedOnly,
+        @Param("viewerId") String viewerId,
         Pageable pageable
+    );
+
+    /**
+     * Les compteurs de facettes de l'Explorer, en une seule passe.
+     *
+     * <p><b>Une requête et non une par facette.</b> Rétablir « Niveau débutant
+     * (12) » en interrogeant la base une fois par niveau, plus une fois pour
+     * « Mes activités » et une pour « Mes abonnements », aurait fait sept
+     * balayages géographiques à chaque ouverture d'un panneau de filtres. Le
+     * regroupement par niveau, avec deux {@code FILTER} pour les deux facettes
+     * personnelles, les rend tous d'un coup.
+     *
+     * <p><b>Les facettes ignorent délibérément les filtres de même nature.</b>
+     * Le périmètre est la zone, la catégorie et l'expiration ; ni le niveau, ni
+     * « Mes activités », ni « Mes abonnements » ne s'y appliquent. C'est ce qui
+     * fait qu'un compteur annonce ce qu'on obtiendrait <i>en cochant la case</i>,
+     * et non ce qu'on a déjà : compter à l'intérieur du filtre courant afficherait
+     * zéro à côté de toutes les cases non cochées, ce qui les ferait passer pour
+     * des impasses.
+     *
+     * <p>{@code level} peut être nul — une entrée sans niveau déclaré —, et cette
+     * ligne-là compte quand même dans le total. La convertir en « ANY » ici
+     * inventerait une déclaration que personne n'a faite.
+     */
+    @Query(nativeQuery = true, value = """
+        SELECT ua.level                                       AS level,
+               COUNT(*)                                       AS total,
+               COUNT(*) FILTER (WHERE EXISTS (
+                    SELECT 1 FROM user_activities mine
+                    WHERE mine.user_id = CAST(:viewerId AS uuid)
+                      AND mine.activity_id = ua.activity_id)) AS mine_count,
+               COUNT(*) FILTER (WHERE EXISTS (
+                    SELECT 1 FROM subscriptions sub
+                    WHERE sub.subscriber_id = CAST(:viewerId AS uuid)
+                      AND sub.target_user_activity_id = ua.id)) AS subscribed_count
+        FROM user_activities ua
+        JOIN users u      ON ua.user_id = u.id
+        JOIN activities a ON ua.activity_id = a.id
+        JOIN categories c ON a.category_id = c.id
+        LEFT JOIN LATERAL (
+            SELECT s.location AS loc
+            FROM schedules s
+            JOIN programs p ON s.program_id = p.id
+            WHERE p.user_activity_id = ua.id
+              AND s.location IS NOT NULL
+              AND p.status = 'ACTIVE' AND p.is_public = TRUE
+            ORDER BY s.starts_at
+            LIMIT 1
+        ) place ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT COUNT(*) AS schedule_count,
+                   MIN(s.starts_at) FILTER (WHERE s.starts_at > NOW()) AS next_session_at
+            FROM schedules s
+            JOIN programs p ON s.program_id = p.id
+            WHERE p.user_activity_id = ua.id
+              AND p.status = 'ACTIVE' AND p.is_public = TRUE
+        ) agenda ON TRUE
+        WHERE ua.visible_on_map = TRUE
+          AND u.is_active = TRUE
+          AND (place.loc IS NULL OR ST_DWithin(
+                place.loc::geography,
+                ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
+                :radiusMeters))
+          AND (:includeExpired = TRUE
+               OR NOT (agenda.schedule_count > 0 AND agenda.next_session_at IS NULL))
+          AND (CAST(:categoryIds AS uuid[]) IS NULL OR c.id = ANY(CAST(:categoryIds AS uuid[])))
+        GROUP BY ua.level
+        """)
+    List<ActivityFacetRow> browseFacets(
+        @Param("lat") double lat,
+        @Param("lng") double lng,
+        @Param("radiusMeters") int radiusMeters,
+        @Param("includeExpired") boolean includeExpired,
+        @Param("categoryIds") String categoryIds,
+        @Param("viewerId") String viewerId
     );
 
     boolean existsByUserIdAndActivityId(UUID userId, UUID activityId);
