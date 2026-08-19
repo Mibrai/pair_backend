@@ -65,5 +65,12 @@ public record SlotFeedItemDto(
     @Schema(description = "Langue principale annoncée pour la séance, ou null. Nulle dans "
         + "le cas normal : la plupart des créneaux n'en déclarent pas, et un créneau sans "
         + "langue n'est jamais écarté par le filtre du fil.")
-    String primaryLanguage
+    String primaryLanguage,
+
+    @Schema(description = "Étiquettes d'accueil annoncées par l'organisateur. "
+        + "**Déclaratives, jamais vérifiées** : personne ne contrôle qu'une salle "
+        + "annoncée accessible en fauteuil l'est réellement. L'interface doit les "
+        + "présenter comme des annonces, pas comme des faits établis — le coût de "
+        + "l'erreur retombe sur la personne qui s'est déplacée. Vide dans le cas normal.")
+    java.util.List<String> accessibilityTags
 ) {}

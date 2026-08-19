@@ -193,7 +193,7 @@ class SearchPaginationIntegrationTest extends AbstractIntegrationTest {
     }
 
     private SearchResponse post(String query, int page, int pageSize) {
-        return exchange(new SearchRequest(query, LAT, LNG, 50_000, page, pageSize));
+        return exchange(new SearchRequest(query, LAT, LNG, 50_000, page, pageSize, null));
     }
 
     private SearchResponse searchWithoutPagination() {

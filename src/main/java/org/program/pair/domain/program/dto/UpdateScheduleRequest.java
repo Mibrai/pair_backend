@@ -25,5 +25,9 @@ public record UpdateScheduleRequest(
 
     // Chaîne vide pour retirer la langue déclarée : null veut dire « ne touche
     // pas », comme partout ailleurs dans cette requête de mise à jour partielle.
-    @Size(max = 5) String primaryLanguage
+    @Size(max = 5) String primaryLanguage,
+
+    // Liste vide pour tout retirer ; null veut dire « ne touche pas », comme
+    // partout ailleurs dans cette mise à jour partielle.
+    java.util.Set<org.program.pair.domain.program.AccessibilityTag> accessibilityTags
 ) {}

@@ -74,12 +74,16 @@ public class SlotService {
         Set<String> languages = request.effectiveLanguages();
         boolean filterByLanguage = !languages.isEmpty();
 
+        Set<String> tags = request.effectiveAccessibilityTags();
+        boolean filterByTags = !tags.isEmpty();
+
         List<Schedule> slots = scheduleRepository.findOpenSlotsInRadius(
             request.lat(), request.lng(), request.radiusMeters(),
             from, to, request.activityId(),
             filterByCategory, filterByCategory ? categoryIds : ScheduleRepository.NO_CATEGORY_FILTER,
             request.createdSince(), 100, requesterId,
-            filterByLanguage, filterByLanguage ? languages : ScheduleRepository.NO_LANGUAGE_FILTER);
+            filterByLanguage, filterByLanguage ? languages : ScheduleRepository.NO_LANGUAGE_FILTER,
+            filterByTags, filterByTags ? tags : ScheduleRepository.NO_TAG_FILTER, tags.size());
 
         return slots.stream()
             .filter(s -> !s.getProgram().getUserActivity().getUser().getId().equals(requesterId))
@@ -498,7 +502,8 @@ public class SlotService {
             slot.getWelcomeNote(),
             myParticipationStatus,
             myWaitlistPosition,
-            slot.getPrimaryLanguage()
+            slot.getPrimaryLanguage(),
+            slot.getAccessibilityTags().stream().map(Enum::name).sorted().toList()
         );
     }
 

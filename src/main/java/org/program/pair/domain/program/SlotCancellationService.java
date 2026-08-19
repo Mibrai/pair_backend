@@ -156,7 +156,8 @@ public class SlotCancellationService {
             // Pas d'appelant : la charge utile est composée une fois pour tous,
             // et un filtre de blocage résolu pour l'un s'appliquerait aux autres.
             null,
-            false, ScheduleRepository.NO_LANGUAGE_FILTER);
+            false, ScheduleRepository.NO_LANGUAGE_FILTER,
+            false, ScheduleRepository.NO_TAG_FILTER, 0L);
 
         return (int) nearby.stream()
             .filter(candidate -> !candidate.getId().equals(slot.getId()))

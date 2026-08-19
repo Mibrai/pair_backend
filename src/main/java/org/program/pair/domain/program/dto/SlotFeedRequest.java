@@ -40,8 +40,30 @@ public record SlotFeedRequest(
         + "dans la liste. Un créneau qui n'en déclare aucune n'est jamais exclu : la "
         + "plupart n'en déclareront pas, et exclure faute d'information punirait ceux "
         + "qui n'ont rien rempli. Répétable ou séparé par des virgules.")
-    List<String> languages
+    List<String> languages,
+
+    @Schema(description = "Ne retenir que les créneaux qui déclarent TOUTES ces "
+        + "étiquettes d'accueil. Restrictif, à l'inverse du filtre de langue : une "
+        + "étiquette non déclarée veut dire « rien ne permet de l'affirmer », et "
+        + "montrer quand même le créneau enverrait quelqu'un vers un lieu dont "
+        + "personne n'a garanti l'accueil. Déclaratif : ces étiquettes ne sont jamais "
+        + "vérifiées, et l'interface doit le dire.")
+    List<String> accessibilityTags
 ) {
+
+    /** Les étiquettes d'accessibilité demandées, normalisées et sans doublon. */
+    public java.util.Set<String> effectiveAccessibilityTags() {
+        if (accessibilityTags == null) {
+            return java.util.Set.of();
+        }
+        return accessibilityTags.stream()
+            .filter(java.util.Objects::nonNull)
+            .flatMap(value -> java.util.Arrays.stream(value.split(",")))
+            .map(String::strip)
+            .filter(value -> !value.isEmpty())
+            .map(value -> value.toUpperCase(java.util.Locale.ROOT))
+            .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+    }
 
     /**
      * Les étiquettes de langue demandées, normalisées en minuscules et sans

@@ -254,12 +254,18 @@ public class SemanticSearchService {
 
         TimeHintParser.Window window = TimeHintParser.resolveWindow(intent.timeHint(), Instant.now());
 
+        // Le filtre d'accessibilité ne porte que sur les créneaux : une étiquette
+        // décrit une séance et un lieu, pas un programme.
+        java.util.Set<String> tags = request.effectiveAccessibilityTags();
+        boolean filterByTags = !tags.isEmpty();
+
         // La recherche cible une activité précise, donc jamais une catégorie, et ne
         // filtre pas sur la date de publication : les deux paramètres sont neutres.
         List<Schedule> slots = scheduleRepository.findOpenSlotsInRadius(
             request.lat(), request.lng(), radius, window.from(), window.to(), activityId,
             false, ScheduleRepository.NO_CATEGORY_FILTER, null, MAX_SLOT_RESULTS, requesterId,
-            false, ScheduleRepository.NO_LANGUAGE_FILTER);
+            false, ScheduleRepository.NO_LANGUAGE_FILTER,
+            filterByTags, filterByTags ? tags : ScheduleRepository.NO_TAG_FILTER, tags.size());
 
         return slots.stream()
             .filter(s -> !s.getProgram().getUserActivity().getUser().getId().equals(requesterId))
