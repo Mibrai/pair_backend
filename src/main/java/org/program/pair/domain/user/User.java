@@ -113,4 +113,14 @@ public class User {
 
     @Column(name = "last_attendance_at")
     private Instant lastAttendanceAt;
+
+    // Parcours d'accueil (V60). Placés en fin de classe à dessein : plusieurs
+    // champs de cette entité portent leur annotation d'audit sur la ligne qui
+    // les précède, et s'insérer entre les deux la déplacerait silencieusement.
+    @Column(name = "onboarding_completed_at")
+    private Instant onboardingCompletedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "onboarding_step", length = 30)
+    private OnboardingStep onboardingStep;
 }

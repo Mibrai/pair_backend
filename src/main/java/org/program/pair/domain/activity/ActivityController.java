@@ -1,6 +1,8 @@
 package org.program.pair.domain.activity;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.activity.dto.*;
 import org.program.pair.domain.media.ImageProcessor;
@@ -29,6 +31,7 @@ public class ActivityController {
 
     private final ActivityService activityService;
     private final ActivityBrowseService activityBrowseService;
+    private final SuggestedActivityService suggestedActivityService;
     private final StorageService storageService;
     private final MediaValidator mediaValidator;
     private final ImageProcessor imageProcessor;
@@ -50,6 +53,27 @@ public class ActivityController {
             @AuthenticationPrincipal UserPrincipal principal,
             @Valid @ModelAttribute ActivityBrowseRequest request) {
         return activityBrowseService.browse(request, idOrNull(principal));
+    }
+
+    /**
+     * Activités à proposer à quelqu'un qui n'en a encore déclaré aucune.
+     *
+     * <p>Alimente le dernier écran du parcours d'accueil, juste après
+     * l'autorisation de position. <b>Ne rend jamais une liste vide</b> tant que la
+     * base contient des activités : à défaut de voisinage, elle propose les plus
+     * pratiquées ailleurs, et le dit par le drapeau {@code fallback}.
+     *
+     * <p>Route authentifiée : {@code /api/activities} n'est ouverte qu'en
+     * correspondance exacte, et la suggestion a besoin de savoir ce que
+     * l'appelant déclare déjà pour ne pas le lui proposer.
+     */
+    @GetMapping("/activities/suggested")
+    public List<SuggestedActivityDto> suggestedActivities(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam double lat,
+            @RequestParam double lng,
+            @RequestParam(defaultValue = "12") @Min(1) @Max(50) int limit) {
+        return suggestedActivityService.suggest(principal.getId(), lat, lng, limit);
     }
 
     /**
