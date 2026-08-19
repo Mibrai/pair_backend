@@ -55,5 +55,10 @@ public record SlotFeedItemDto(
     Integer participantCount,
     Boolean isOpenToPartners,
     String welcomeNote,
-    String myParticipationStatus // null si je n'ai pas rejoint
+    String myParticipationStatus, // null si je n'ai pas rejoint
+
+    @Schema(description = "Mon rang dans la liste d'attente, à partir de 1. Nul si je "
+        + "n'y suis pas. C'est le serveur qui le tient : le déduire côté client "
+        + "supposerait de connaître toute la file, qui n'est visible que de l'hôte.")
+    Integer myWaitlistPosition
 ) {}

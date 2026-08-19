@@ -29,4 +29,24 @@ public interface SlotParticipationRepository extends JpaRepository<SlotParticipa
     @Query("SELECT COUNT(sp) FROM SlotParticipation sp " +
            "WHERE sp.schedule.id = :scheduleId AND sp.status = 'CONFIRMED'")
     long countConfirmedByScheduleId(@Param("scheduleId") UUID scheduleId);
+
+    /**
+     * La file d'attente d'un créneau, dans l'ordre où les gens s'y sont mis.
+     *
+     * <p>Le rang, et non la date de création : deux personnes inscrites dans la
+     * même seconde doivent quand même avoir un ordre, et c'est celui-là qui fait
+     * foi partout — affichage comme promotion.
+     */
+    @Query("""
+        SELECT sp FROM SlotParticipation sp
+        WHERE sp.schedule.id = :scheduleId AND sp.status = org.program.pair.domain.program.ParticipationStatus.WAITLISTED
+        ORDER BY sp.waitlistPosition ASC
+        """)
+    List<SlotParticipation> findWaitlist(@Param("scheduleId") UUID scheduleId);
+
+    @Query("""
+        SELECT COALESCE(MAX(sp.waitlistPosition), 0) FROM SlotParticipation sp
+        WHERE sp.schedule.id = :scheduleId AND sp.status = org.program.pair.domain.program.ParticipationStatus.WAITLISTED
+        """)
+    int lastWaitlistPosition(@Param("scheduleId") UUID scheduleId);
 }

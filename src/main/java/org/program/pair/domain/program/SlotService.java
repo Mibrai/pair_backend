@@ -198,17 +198,30 @@ public class SlotService {
     }
 
     public void leaveSlot(UUID userId, UUID scheduleId) {
+        // Le verrou est pris en PREMIER, avant toute écriture.
+        //
+        // L'ordre inverse — écrire le désistement, puis verrouiller — laissait
+        // une fenêtre non protégée entre les deux. Sans promotion automatique
+        // elle ne coûtait qu'un compteur momentanément faux ; avec elle, deux
+        // désistements simultanés pouvaient lire la même file et promouvoir deux
+        // fois la même personne.
+        Schedule slot = scheduleRepository.lockById(scheduleId)
+            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+
         SlotParticipation participation = participationRepository
             .findByScheduleIdAndUserId(scheduleId, userId)
             .orElseThrow(() -> new ResourceNotFoundException("Participation introuvable."));
 
+        boolean wasConfirmed = participation.getStatus() == ParticipationStatus.CONFIRMED;
+
         participation.setStatus(ParticipationStatus.WITHDRAWN);
+        participation.setWithdrawnAt(Instant.now());
+        participation.setWaitlistPosition(null);
         participationRepository.save(participation);
 
-        // Verrou pessimiste pour recalculer participantCount/status en cohérence
-        // avec un join concurrent sur le même créneau.
-        Schedule slot = scheduleRepository.lockById(participation.getSchedule().getId())
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+        if (wasConfirmed) {
+            promoteFirstWaiting(slot);
+        }
         long confirmed = scheduleRepository.countConfirmedParticipants(slot.getId());
         slot.setParticipantCount((int) confirmed);
         if (slot.getStatus() == SlotStatus.FULL
@@ -218,12 +231,180 @@ public class SlotService {
         scheduleRepository.save(slot);
     }
 
+    /**
+     * Se mettre en liste d'attente sur un créneau complet.
+     *
+     * <p>La file est une <b>transition d'état sur la ligne unique</b>
+     * {@code (schedule_id, user_id)}, jamais une seconde ligne : la contrainte
+     * d'unicité l'interdit, et c'est heureux — une personne à la fois inscrite
+     * et en attente sur le même créneau n'aurait aucun sens.
+     *
+     * <p>Contrairement à {@code joinSlot}, un créneau {@code FULL} est accepté :
+     * c'est exactement celui pour lequel cette route existe.
+     */
+    public SlotFeedItemDto joinWaitlist(UUID userId, UUID scheduleId) {
+        Schedule slot = scheduleRepository.lockById(scheduleId)
+            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+
+        User host = slot.getProgram().getUserActivity().getUser();
+
+        if (blockFilterService.blockedBy(userId, host.getId())) {
+            throw new ValidationException(ErrorCode.USER_BLOCKED,
+                "Vous avez bloqué l'organisateur de ce créneau.");
+        }
+        if (blockFilterService.blocked(userId, host.getId())) {
+            throw new ResourceNotFoundException("Créneau introuvable.");
+        }
+        if (host.getId().equals(userId)) {
+            throw new ValidationException(ErrorCode.SLOT_OWN_SLOT,
+                "Vous ne pouvez pas vous mettre en attente de votre propre créneau.");
+        }
+        if (!Boolean.TRUE.equals(slot.getIsOpenToPartners())) {
+            throw new ValidationException(ErrorCode.SLOT_NOT_OPEN_TO_PARTNERS,
+                "Ce créneau n'est pas ouvert aux partenaires.");
+        }
+        if (slot.getStartsAt().isBefore(Instant.now())) {
+            throw new ValidationException(ErrorCode.SLOT_ALREADY_STARTED, "Ce créneau est déjà passé.");
+        }
+
+        SlotParticipation participation = participationRepository
+            .findByScheduleIdAndUserId(scheduleId, userId)
+            .orElseGet(() -> {
+                SlotParticipation fresh = new SlotParticipation();
+                fresh.setSchedule(slot);
+                fresh.setUser(userRepository.getReferenceById(userId));
+                return fresh;
+            });
+
+        if (participation.getStatus() == ParticipationStatus.CONFIRMED) {
+            throw new BusinessException(ErrorCode.SLOT_ALREADY_JOINED,
+                "Vous avez déjà rejoint ce créneau.");
+        }
+        if (participation.getStatus() != ParticipationStatus.WAITLISTED) {
+            participation.setStatus(ParticipationStatus.WAITLISTED);
+            participation.setWithdrawnAt(null);
+            participation.setWaitlistPosition(
+                participationRepository.lastWaitlistPosition(scheduleId) + 1);
+            participationRepository.save(participation);
+        }
+
+        return toFeedItem(slot, null, null, userId);
+    }
+
+    /** Quitter la file. Les rangs suivants remontent d'un cran. */
+    public void leaveWaitlist(UUID userId, UUID scheduleId) {
+        Schedule slot = scheduleRepository.lockById(scheduleId)
+            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+
+        SlotParticipation participation = participationRepository
+            .findByScheduleIdAndUserId(scheduleId, userId)
+            .filter(p -> p.getStatus() == ParticipationStatus.WAITLISTED)
+            .orElseThrow(() -> new ResourceNotFoundException("Vous n'êtes pas en liste d'attente."));
+
+        participation.setStatus(ParticipationStatus.WITHDRAWN);
+        participation.setWithdrawnAt(Instant.now());
+        participation.setWaitlistPosition(null);
+        participationRepository.save(participation);
+
+        resequenceWaitlist(slot.getId());
+    }
+
+    /**
+     * La file, réservée à l'organisateur.
+     *
+     * <p>404 et non 403 pour qui n'est pas l'hôte : {@code getParticipants} rend
+     * un 403 depuis toujours, mais la règle transverse du produit demande de ne
+     * pas confirmer l'existence d'une ressource qu'on n'a pas le droit de voir.
+     */
+    @Transactional(readOnly = true)
+    public List<SlotParticipantDto> getWaitlist(UUID userId, UUID scheduleId) {
+        Schedule slot = scheduleRepository.findById(scheduleId)
+            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+
+        if (!slot.getProgram().getUserActivity().getUser().getId().equals(userId)) {
+            throw new ResourceNotFoundException("Créneau introuvable.");
+        }
+
+        return participationRepository.findWaitlist(scheduleId).stream()
+            .map(p -> new SlotParticipantDto(
+                p.getId(),
+                userService.getPublicProfile(p.getUser().getId(), userId),
+                p.getStatus().name(),
+                p.getJoinMessage(),
+                p.getCreatedAt()))
+            .toList();
+    }
+
+    /**
+     * Une place s'est libérée : la première personne de la file y entre.
+     *
+     * <p>Appelée sous le verrou pessimiste du créneau, et seulement là. C'est ce
+     * qui empêche deux désistements simultanés de promouvoir la même personne ou
+     * de sauter un rang.
+     *
+     * <p><b>Le conflit d'agenda est vérifié ici, et pas à l'inscription en
+     * file.</b> Attendre n'est pas s'engager : interdire de patienter sur deux
+     * créneaux qui se chevauchent viderait la liste d'attente de son usage, qui
+     * est précisément de garder plusieurs fers au feu. Mais promouvoir quelqu'un
+     * qui s'est engagé ailleurs entre-temps créerait un double engagement qu'il
+     * n'a pas choisi — on passe donc au suivant, en le laissant dans la file.
+     */
+    private void promoteFirstWaiting(Schedule slot) {
+        if (slot.getMaxParticipants() != null
+                && scheduleRepository.countConfirmedParticipants(slot.getId())
+                    >= slot.getMaxParticipants()) {
+            return;
+        }
+
+        for (SlotParticipation candidate : participationRepository.findWaitlist(slot.getId())) {
+            UUID candidateId = candidate.getUser().getId();
+
+            if (!conflictDetector.detect(candidateId, List.of(slot)).isEmpty()) {
+                continue;
+            }
+
+            candidate.setStatus(ParticipationStatus.CONFIRMED);
+            candidate.setPromotedAt(Instant.now());
+            candidate.setWaitlistPosition(null);
+            participationRepository.save(candidate);
+
+            resequenceWaitlist(slot.getId());
+
+            notificationService.notify(candidateId,
+                slot.getProgram().getUserActivity().getUser().getId(),
+                NotificationType.WAITLIST_PROMOTED,
+                NotificationPayload.ofSchedule(slot).build());
+            return;
+        }
+    }
+
+    /**
+     * Recompacte les rangs à partir de 1.
+     *
+     * <p>Sans cela, la file garderait des trous — deuxième, quatrième, cinquième —
+     * et « vous êtes 4e » deviendrait faux dès le premier départ.
+     */
+    private void resequenceWaitlist(UUID scheduleId) {
+        int position = 1;
+        for (SlotParticipation waiting : participationRepository.findWaitlist(scheduleId)) {
+            if (!Integer.valueOf(position).equals(waiting.getWaitlistPosition())) {
+                waiting.setWaitlistPosition(position);
+                participationRepository.save(waiting);
+            }
+            position++;
+        }
+    }
+
     @Transactional(readOnly = true)
     public List<SlotFeedItemDto> getMySlots(UUID userId, boolean upcomingOnly) {
         List<Schedule> hosted = scheduleRepository.findHostedOpenSlots(userId);
 
         List<Schedule> joined = participationRepository
-            .findByUserIdAndStatusIn(userId, List.of(ParticipationStatus.INTERESTED, ParticipationStatus.CONFIRMED))
+            // WAITLISTED compris : un créneau où j'attends une place reste un
+            // créneau qui me concerne, et le voir disparaître de « mes créneaux »
+            // donnerait l'impression que l'inscription en file n'a pas pris.
+            .findByUserIdAndStatusIn(userId, List.of(ParticipationStatus.INTERESTED,
+                ParticipationStatus.CONFIRMED, ParticipationStatus.WAITLISTED))
             .stream()
             .map(SlotParticipation::getSchedule)
             .toList();
@@ -246,7 +427,11 @@ public class SlotService {
             throw new ForbiddenException(ErrorCode.SLOT_PARTICIPANTS_HOST_ONLY, "Seul l'hôte peut voir les participants.");
         }
 
+        // La file d'attente a son propre endpoint : sans ce filtre, les personnes
+        // en attente arriveraient ici mêlées aux inscrits, et l'hôte croirait son
+        // créneau plus rempli qu'il n'est.
         return participationRepository.findByScheduleId(scheduleId).stream()
+            .filter(p -> p.getStatus() != ParticipationStatus.WAITLISTED)
             .map(p -> new SlotParticipantDto(
                 p.getId(),
                 userService.getPublicProfile(p.getUser().getId(), userId),
@@ -271,9 +456,15 @@ public class SlotService {
                 slot.getLocation().getY(), slot.getLocation().getX());
         }
 
-        String myParticipationStatus = requesterId == null ? null : participationRepository
-            .findByScheduleIdAndUserId(slot.getId(), requesterId)
-            .map(p -> p.getStatus().name())
+        var myParticipation = requesterId == null
+            ? java.util.Optional.<SlotParticipation>empty()
+            : participationRepository.findByScheduleIdAndUserId(slot.getId(), requesterId);
+
+        String myParticipationStatus = myParticipation.map(p -> p.getStatus().name()).orElse(null);
+
+        Integer myWaitlistPosition = myParticipation
+            .filter(p -> p.getStatus() == ParticipationStatus.WAITLISTED)
+            .map(SlotParticipation::getWaitlistPosition)
             .orElse(null);
 
         return new SlotFeedItemDto(
@@ -301,7 +492,8 @@ public class SlotService {
             slot.getParticipantCount(),
             slot.getIsOpenToPartners(),
             slot.getWelcomeNote(),
-            myParticipationStatus
+            myParticipationStatus,
+            myWaitlistPosition
         );
     }
 

@@ -485,8 +485,13 @@ public class ProgramService {
 
         Program prog = schedule.getProgram();
 
+        // WAITLISTED compris : quelqu'un qui attendait une place a organisé sa
+        // journée autour de ce créneau autant qu'un inscrit. Ne pas le prévenir
+        // le laisserait attendre une promotion qui n'arrivera jamais.
         List<UUID> slotParticipantIds = slotParticipationRepository.findByScheduleId(scheduleId).stream()
-            .filter(p -> p.getStatus() == ParticipationStatus.CONFIRMED || p.getStatus() == ParticipationStatus.INTERESTED)
+            .filter(p -> p.getStatus() == ParticipationStatus.CONFIRMED
+                || p.getStatus() == ParticipationStatus.INTERESTED
+                || p.getStatus() == ParticipationStatus.WAITLISTED)
             .map(p -> p.getUser().getId())
             .toList();
         List<UUID> programParticipantIds = userProgramRepository.findByProgramIdAndStatus(prog.getId(), UserProgramStatus.ACTIVE)
