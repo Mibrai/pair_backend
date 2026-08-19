@@ -77,8 +77,27 @@ public class UserController {
         return practiceStatsService.getStats(principal.getId());
     }
 
+    /**
+     * Statistiques de pratique d'une personne.
+     *
+     * <p><b>Cette route n'avait aucun contrôle</b> : ni appelant identifié, ni
+     * vérification de blocage. N'importe qui pouvait lire les compteurs bruts de
+     * n'importe qui. C'était sans grande conséquence tant qu'ils décrivaient une
+     * pratique ; ça en aurait avec le signal de fiabilité, dont le dénominateur
+     * ne doit jamais rejoindre ce DTO — deux nombres et une division suffiraient
+     * à reconstituer le pourcentage que le produit refuse d'afficher.
+     *
+     * <p>{@code joinedSlotsCount} n'y figure donc pas, et ne doit pas y être
+     * ajouté « par symétrie ». Le blocage est appliqué comme sur le profil : un
+     * compte masqué est introuvable, pas interdit.
+     */
     @GetMapping("/{userId}/practice-stats")
-    public PracticeStatsDto getPracticeStats(@PathVariable UUID userId) {
+    public PracticeStatsDto getPracticeStats(
+            @PathVariable UUID userId,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        if (blockFilterService.blocked(principal.getId(), userId)) {
+            throw new UserNotFoundException("Utilisateur introuvable.");
+        }
         return practiceStatsService.getStats(userId);
     }
 

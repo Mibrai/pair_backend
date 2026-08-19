@@ -132,4 +132,18 @@ public class User {
 
     @Column(name = "guidelines_version", length = 10)
     private String guidelinesVersion;
+
+    /**
+     * Créneaux passés auxquels cette personne s'était inscrite (V69).
+     *
+     * <p>Le dénominateur du signal de fiabilité. Le numérateur est
+     * {@code attendanceCount}, qui existe depuis V41 — un second compteur de
+     * présences aurait fait doublon et fini par diverger.
+     *
+     * <p>Ni trié, ni filtré, ni exposé tel quel : seul le libellé sort de
+     * l'API, voir {@code ReliabilitySignal}.
+     */
+    @Column(name = "joined_slots_count", nullable = false)
+    @Builder.Default
+    private Integer joinedSlotsCount = 0;
 }

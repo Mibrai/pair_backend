@@ -49,4 +49,19 @@ public interface SlotParticipationRepository extends JpaRepository<SlotParticipa
         WHERE sp.schedule.id = :scheduleId AND sp.status = org.program.pair.domain.program.ParticipationStatus.WAITLISTED
         """)
     int lastWaitlistPosition(@Param("scheduleId") UUID scheduleId);
+
+    /**
+     * Créneaux passés auxquels cette personne s'était inscrite.
+     *
+     * <p>Le dénominateur du signal de fiabilité. Seuls les {@code CONFIRMED}
+     * comptent : un désistement annoncé à l'avance n'est pas un manquement, et
+     * le compter reviendrait à punir le geste honnête.
+     */
+    @Query("""
+        SELECT COUNT(sp) FROM SlotParticipation sp
+        WHERE sp.user.id = :userId
+          AND sp.status = org.program.pair.domain.program.ParticipationStatus.CONFIRMED
+          AND sp.schedule.startsAt < :now
+        """)
+    int countPastJoinedByUserId(@Param("userId") UUID userId, @Param("now") java.time.Instant now);
 }
