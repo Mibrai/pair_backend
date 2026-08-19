@@ -32,5 +32,9 @@ public record CreateScheduleRequest(
 
     // Langue principale de la séance. Facultative, et jamais devinée : un
     // créneau qui n'en déclare pas reste visible de tous.
-    @Size(max = 5) String primaryLanguage
+    @Size(max = 5) String primaryLanguage,
+
+    // Étiquettes d'accueil. Déclaratives, jamais vérifiées : le contrat le dit,
+    // l'interface doit le dire aussi.
+    java.util.Set<org.program.pair.domain.program.AccessibilityTag> accessibilityTags
 ) {}

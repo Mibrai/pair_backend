@@ -95,8 +95,10 @@ public class QuickSlotService {
                 request.maxParticipants(),
                 true,
                 request.welcomeNote(),
-                // Le chemin court ne demande pas de langue : un écran de
-                // publication en une fois n'a pas la place de tout demander.
+                // Le chemin court ne demande ni langue ni étiquettes d'accueil :
+                // un écran de publication en une fois n'a pas la place de tout
+                // demander, et l'organisateur pourra les ajouter ensuite.
+                null,
                 null));
 
         // Rendu par le même chemin que /api/slots/{id} : le client n'a qu'un seul

@@ -373,6 +373,9 @@ public class ProgramService {
             schedule.setPrimaryLanguage(
                 request.primaryLanguage().strip().toLowerCase(java.util.Locale.ROOT));
         }
+        if (request.accessibilityTags() != null) {
+            schedule.setAccessibilityTags(new java.util.LinkedHashSet<>(request.accessibilityTags()));
+        }
 
         Schedule saved = scheduleRepository.save(schedule);
         ScheduleDto dto = toScheduleDto(saved, userId);
@@ -475,6 +478,8 @@ public class ProgramService {
         if (request.primaryLanguage() != null)
             schedule.setPrimaryLanguage(request.primaryLanguage().isBlank() ? null
                 : request.primaryLanguage().strip().toLowerCase(java.util.Locale.ROOT));
+        if (request.accessibilityTags() != null)
+            schedule.setAccessibilityTags(new java.util.LinkedHashSet<>(request.accessibilityTags()));
 
         ScheduleDto dto = toScheduleDto(scheduleRepository.save(schedule), userId);
         refreshNextSessionAt(schedule.getProgram());

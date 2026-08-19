@@ -35,6 +35,9 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
      */
     Collection<String> NO_LANGUAGE_FILTER = List.of("");
 
+    /** Même parade que ci-dessus pour les étiquettes d'accessibilité. */
+    Collection<String> NO_TAG_FILTER = List.of("");
+
     List<Schedule> findByStartsAtBetween(Instant from, Instant to);
 
     List<Schedule> findByProgramId(UUID programId);
@@ -212,6 +215,24 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
      * fenêtre {@code fromTs}/{@code toTs} — qui porte sur le <i>début</i> des
      * séances — ne sait pas exprimer. Filtré en base pour ne pas transporter puis
      * jeter les créneaux hors fenêtre.
+     *
+     * <p><b>Le filtre de langue est permissif, celui d'accessibilité est
+     * restrictif</b>, et cette asymétrie est délibérée. Une langue non déclarée
+     * veut dire « on ne sait pas », et exclure faute d'information punirait ceux
+     * qui n'ont rien rempli. Une étiquette d'accessibilité non déclarée veut dire
+     * « rien ne permet de l'affirmer », et montrer quand même le créneau
+     * enverrait quelqu'un en fauteuil vers un lieu dont personne n'a garanti
+     * l'accueil. Le coût de l'erreur n'est pas du même ordre dans les deux sens.
+     *
+     * <p>Les étiquettes demandées se <b>cumulent</b> : le compte de celles
+     * trouvées doit égaler celui des demandées. Qui filtre « fauteuil » ET
+     * « sans alcool » a besoin des deux, pas de l'une ou l'autre.
+     *
+     * <p><b>Aucun commentaire SQL dans le corps de cette requête.</b>
+     * L'analyseur de paramètres de Spring Data suit les guillemets simples sans
+     * savoir qu'il traverse un commentaire : une apostrophe française y casse le
+     * chargement du dépôt entier, au démarrage, avec un message qui ne la nomme
+     * pas. Les explications vivent donc ici.
      */
     @Query(value = """
         SELECT s.* FROM schedules s
@@ -230,12 +251,13 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
                 SELECT 1 FROM activities a
                 WHERE a.id = ua.activity_id AND a.category_id IN (:categoryIds)))
           AND (CAST(:createdSince AS timestamptz) IS NULL OR s.created_at >= :createdSince)
-          -- Un créneau sans langue déclarée n'est jamais exclu : la plupart n'en
-          -- déclareront pas, et exclure faute d'information punirait ceux qui
-          -- n'ont rien rempli. Même principe que la ville, jamais devinée.
           AND (CAST(:filterByLanguage AS boolean) = FALSE
                OR s.primary_language IS NULL
                OR s.primary_language IN (:languages))
+          AND (CAST(:filterByTags AS boolean) = FALSE OR (
+                SELECT COUNT(DISTINCT sat.tag) FROM schedule_accessibility_tags sat
+                WHERE sat.schedule_id = s.id AND sat.tag IN (:accessibilityTags)
+              ) = :requiredTagCount)
           AND ST_DWithin(
                 s.location::geography,
                 ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
@@ -260,7 +282,10 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
         @Param("limit") int limit,
         @Param("viewerId") UUID viewerId,
         @Param("filterByLanguage") boolean filterByLanguage,
-        @Param("languages") Collection<String> languages
+        @Param("languages") Collection<String> languages,
+        @Param("filterByTags") boolean filterByTags,
+        @Param("accessibilityTags") Collection<String> accessibilityTags,
+        @Param("requiredTagCount") long requiredTagCount
     );
 
     /**

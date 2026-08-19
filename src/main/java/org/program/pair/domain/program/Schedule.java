@@ -132,6 +132,22 @@ public class Schedule {
     private Instant lastOccurrenceEnd;
 
     /**
+     * Étiquettes d'accueil annoncées pour cette séance (V72).
+     *
+     * <p>Chargées à la demande. Le fil en charge une par créneau, ce qui est le
+     * régime que cette route pratique déjà — la visibilité d'adresse fait de
+     * même. Si le fil devient coûteux, c'est l'ensemble de ces chargements par
+     * ligne qu'il faudra traiter, pas celui-ci en particulier.
+     */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "schedule_accessibility_tags",
+        joinColumns = @JoinColumn(name = "schedule_id"))
+    @Column(name = "tag", length = 40)
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private java.util.Set<AccessibilityTag> accessibilityTags = new java.util.LinkedHashSet<>();
+
+    /**
      * Langue principale de la séance (V71). Nulle dans le cas normal — la
      * plupart des créneaux n'en déclareront jamais — et un créneau sans langue
      * n'est jamais exclu par le filtre.
