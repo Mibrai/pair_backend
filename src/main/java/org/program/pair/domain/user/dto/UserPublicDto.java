@@ -26,7 +26,15 @@ public record UserPublicDto(
         + "abonnement en sourdine (MUTED) : la sourdine coupe l'émission, pas le lien. "
         + "Nul dans les mêmes cas que subscriberCount. Absent aussi sur GET /users/me, "
         + "qui rend un UserPrivateDto — on ne s'abonne pas à soi-même.")
-    Boolean subscribed
+    Boolean subscribed,
+
+    @Schema(description = "Signal de fiabilité, ou null. Un libellé, jamais un chiffre : "
+        + "renvoyer « 12 venues sur 15 inscriptions » laisserait n'importe quel client "
+        + "afficher 80 %, puis classer les gens par ce nombre, puis en faire un filtre. "
+        + "Une seule valeur existe, USUALLY_SHOWS_UP, et elle n'aura jamais de contraire "
+        + "— l'absence de signal n'est pas un mauvais signal, c'est l'état de qui vient "
+        + "d'arriver. Ne rien afficher quand il est nul.")
+    String reliabilitySignal
 ) {
 
     /**
@@ -41,6 +49,6 @@ public record UserPublicDto(
     public static UserPublicDto identity(UUID id, String displayName, String bio,
                                          String avatarUrl, String verificationStatus) {
         return new UserPublicDto(id, displayName, bio, avatarUrl, verificationStatus,
-            List.of(), List.of(), false, null, null);
+            List.of(), List.of(), false, null, null, null);
     }
 }

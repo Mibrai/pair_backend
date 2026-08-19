@@ -143,6 +143,16 @@ public class Program {
     @Column(name = "location_type", length = 20)
     private LocationType locationType;
 
+    /**
+     * Par quel chemin ce programme est né (V61). Le {@code @Builder.Default} n'est
+     * pas décoratif : plusieurs tests construisent un {@code Program.builder()}
+     * sans ce champ, et il arriverait nul là où la colonne est {@code NOT NULL}.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "created_via", nullable = false, length = 20)
+    @Builder.Default
+    private ProgramCreatedVia createdVia = ProgramCreatedVia.FULL;
+
     @OneToMany(mappedBy = "program", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("startsAt ASC")
     @Builder.Default

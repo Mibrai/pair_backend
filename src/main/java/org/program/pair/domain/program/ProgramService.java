@@ -77,6 +77,35 @@ public class ProgramService {
         return toDto(saved, userId);
     }
 
+    /**
+     * Programme minimal du chemin court : un titre, une activité, et publié.
+     *
+     * <p>Vit ici, et non chez l'appelant, pour une raison précise : {@code Program}
+     * porte deux copies dénormalisées de l'auteur — son nom affiché et son avatar —
+     * et une seconde façon de les remplir divergerait le jour où l'une des deux
+     * évoluerait. C'est la seule chose que cette méthode partage avec
+     * {@link #createProgram} ; tout le reste l'en distingue.
+     *
+     * <p>Deux différences assumées avec le formulaire complet. Le statut est
+     * {@code ACTIVE} d'emblée, là où un programme classique naît en brouillon : le
+     * chemin court n'a pas d'écran de publication, et un créneau invisible dans le
+     * fil serait exactement ce qu'il prétend éviter. Et {@code createdVia} vaut
+     * {@code QUICK}, ce qui distinguera plus tard « on ne lui a jamais demandé de
+     * description » de « il n'en a pas voulu ».
+     */
+    Program createQuickProgram(UserActivity userActivity, String title) {
+        Program program = new Program();
+        program.setUserActivity(userActivity);
+        program.setTitle(sanitizer.sanitize(title).strip());
+        program.setStatus(ProgramStatus.ACTIVE);
+        program.setIsPublic(true);
+        program.setAllowParticipantMessages(true);
+        program.setCreatedVia(ProgramCreatedVia.QUICK);
+        program.setOrganizerName(userActivity.getUser().getDisplayName());
+        program.setOrganizerAvatarUrl(userActivity.getUser().getAvatarUrl());
+        return programRepository.save(program);
+    }
+
     public ProgramDto updateProgram(UUID userId, UUID programId,
                                      UpdateProgramRequest request) {
         Program program = findProgramOwnedBy(programId, userId);
@@ -298,6 +327,17 @@ public class ProgramService {
             throw new ValidationException("L'adresse est obligatoire pour un lieu public.");
         }
 
+        // Un lieu physique sans coordonnées n'apparaîtrait sur aucune carte et
+        // dans aucun rayon. La règle ne peut pas vivre sur le DTO : elle dépend
+        // de placeType. Tant qu'elle n'était pas écrite ici, lat et lng étaient
+        // déclarées obligatoires pour tous, ce qui rendait un créneau en ligne
+        // impossible à créer autrement qu'en inventant des coordonnées.
+        if (request.placeType() != PlaceType.ONLINE
+                && (request.lat() == null || request.lng() == null)) {
+            throw new ValidationException(
+                "Les coordonnées sont obligatoires pour un lieu physique.");
+        }
+
         Schedule schedule = new Schedule();
         schedule.setProgram(program);
         schedule.setPlaceName(sanitizer.sanitize(request.placeName()).strip());
@@ -328,6 +368,13 @@ public class ProgramService {
         }
         if (request.welcomeNote() != null) {
             schedule.setWelcomeNote(sanitizer.sanitize(request.welcomeNote()).strip());
+        }
+        if (request.primaryLanguage() != null && !request.primaryLanguage().isBlank()) {
+            schedule.setPrimaryLanguage(
+                request.primaryLanguage().strip().toLowerCase(java.util.Locale.ROOT));
+        }
+        if (request.accessibilityTags() != null) {
+            schedule.setAccessibilityTags(new java.util.LinkedHashSet<>(request.accessibilityTags()));
         }
 
         Schedule saved = scheduleRepository.save(schedule);
@@ -399,6 +446,19 @@ public class ProgramService {
                 new Coordinate(request.lng(), request.lat())));
         }
 
+        // Un créneau qui passe en ligne n'a plus de lieu : garder l'ancienne
+        // position le ferait apparaître dans des recherches par rayon pour une
+        // séance où il n'y a nulle part où aller.
+        if (effectivePlaceType == PlaceType.ONLINE) {
+            schedule.setLocation(null);
+        } else if (schedule.getLocation() == null) {
+            // Chemin inverse : repasser en présentiel sans donner de coordonnées.
+            // Sans ce refus, c'est la contrainte de base (V61) qui trancherait,
+            // et un refus métier lisible vaut mieux qu'une violation d'intégrité.
+            throw new ValidationException(
+                "Les coordonnées sont obligatoires pour un lieu physique.");
+        }
+
         if (request.addressPublic() != null) {
             if (effectivePlaceType == PlaceType.PUBLIC
                     || Boolean.TRUE.equals(request.showExactAddress())) {
@@ -415,6 +475,11 @@ public class ProgramService {
         if (request.maxParticipants() != null) schedule.setMaxParticipants(request.maxParticipants());
         if (request.isOpenToPartners() != null) schedule.setIsOpenToPartners(request.isOpenToPartners());
         if (request.welcomeNote() != null)    schedule.setWelcomeNote(sanitizer.sanitize(request.welcomeNote()).strip());
+        if (request.primaryLanguage() != null)
+            schedule.setPrimaryLanguage(request.primaryLanguage().isBlank() ? null
+                : request.primaryLanguage().strip().toLowerCase(java.util.Locale.ROOT));
+        if (request.accessibilityTags() != null)
+            schedule.setAccessibilityTags(new java.util.LinkedHashSet<>(request.accessibilityTags()));
 
         ScheduleDto dto = toScheduleDto(scheduleRepository.save(schedule), userId);
         refreshNextSessionAt(schedule.getProgram());
@@ -432,8 +497,13 @@ public class ProgramService {
 
         Program prog = schedule.getProgram();
 
+        // WAITLISTED compris : quelqu'un qui attendait une place a organisé sa
+        // journée autour de ce créneau autant qu'un inscrit. Ne pas le prévenir
+        // le laisserait attendre une promotion qui n'arrivera jamais.
         List<UUID> slotParticipantIds = slotParticipationRepository.findByScheduleId(scheduleId).stream()
-            .filter(p -> p.getStatus() == ParticipationStatus.CONFIRMED || p.getStatus() == ParticipationStatus.INTERESTED)
+            .filter(p -> p.getStatus() == ParticipationStatus.CONFIRMED
+                || p.getStatus() == ParticipationStatus.INTERESTED
+                || p.getStatus() == ParticipationStatus.WAITLISTED)
             .map(p -> p.getUser().getId())
             .toList();
         List<UUID> programParticipantIds = userProgramRepository.findByProgramIdAndStatus(prog.getId(), UserProgramStatus.ACTIVE)
@@ -456,6 +526,7 @@ public class ProgramService {
             java.util.stream.Stream.concat(slotParticipantIds.stream(), programParticipantIds.stream())
                 .distinct()
                 .forEach(participantId -> notificationService.notify(participantId,
+                    schedule.getProgram().getUserActivity().getUser().getId(),
                     NotificationType.SLOT_CANCELLED,
                     NotificationPayload.ofSchedule(schedule).build()));
         }
@@ -591,7 +662,8 @@ public class ProgramService {
             p.getPrivacy() != null ? p.getPrivacy().name() : ProgramPrivacy.PUBLIC.name(),
             p.getGoals(),
             p.getPrerequisites(),
-            p.getLocationType() != null ? p.getLocationType().name() : null
+            p.getLocationType() != null ? p.getLocationType().name() : null,
+            p.getCreatedVia() != null ? p.getCreatedVia().name() : ProgramCreatedVia.FULL.name()
         );
     }
 

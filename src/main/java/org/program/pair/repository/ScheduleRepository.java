@@ -1,6 +1,7 @@
 package org.program.pair.repository;
 
 import jakarta.persistence.LockModeType;
+import org.program.pair.domain.block.BlockSql;
 import org.program.pair.domain.program.Schedule;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -26,6 +27,16 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
      * rien. L'UUID nul n'identifie aucune catégorie.
      */
     Set<UUID> NO_CATEGORY_FILTER = Set.of(new UUID(0L, 0L));
+
+    /**
+     * Sentinelle pour le filtre de langue, sur le modèle de
+     * {@link #NO_CATEGORY_FILTER} : Hibernate refuse de lier une liste vide dans
+     * un {@code IN}, et la requête ne la regarde pas quand le drapeau est faux.
+     */
+    Collection<String> NO_LANGUAGE_FILTER = List.of("");
+
+    /** Même parade que ci-dessus pour les étiquettes d'accessibilité. */
+    Collection<String> NO_TAG_FILTER = List.of("");
 
     List<Schedule> findByStartsAtBetween(Instant from, Instant to);
 
@@ -101,6 +112,10 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT s FROM Schedule s WHERE s.id = :id")
     Optional<Schedule> lockById(@Param("id") UUID id);
+
+    Optional<Schedule> findByPublicShareToken(String publicShareToken);
+
+    boolean existsByPublicShareToken(String publicShareToken);
 
     /**
      * Nombre de participants confirmés toutes sources confondues : inscriptions
@@ -200,6 +215,39 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
      * fenêtre {@code fromTs}/{@code toTs} — qui porte sur le <i>début</i> des
      * séances — ne sait pas exprimer. Filtré en base pour ne pas transporter puis
      * jeter les créneaux hors fenêtre.
+     *
+     * <p><b>Le filtre de langue est permissif, celui d'accessibilité est
+     * restrictif</b>, et cette asymétrie est délibérée. Une langue non déclarée
+     * veut dire « on ne sait pas », et exclure faute d'information punirait ceux
+     * qui n'ont rien rempli. Une étiquette d'accessibilité non déclarée veut dire
+     * « rien ne permet de l'affirmer », et montrer quand même le créneau
+     * enverrait quelqu'un en fauteuil vers un lieu dont personne n'a garanti
+     * l'accueil. Le coût de l'erreur n'est pas du même ordre dans les deux sens.
+     *
+     * <p>Les étiquettes demandées se <b>cumulent</b> : le compte de celles
+     * trouvées doit égaler celui des demandées. Qui filtre « fauteuil » ET
+     * « sans alcool » a besoin des deux, pas de l'une ou l'autre.
+     *
+     * <p><b>Les disponibilités pondèrent, elles n'excluent pas.</b> Le
+     * classement se fait par jour d'abord, puis par « ce créneau tombe-t-il dans
+     * une case cochée », puis par heure et par distance. Deux conséquences
+     * voulues : la chronologie n'est jamais bousculée — un créneau de la semaine
+     * prochaine ne passe pas devant un de demain — et la préférence ne joue
+     * qu'entre créneaux du même jour. Une personne qui n'a rien coché retrouve
+     * exactement l'ordre d'avant, tous les rangs étant alors égaux.
+     *
+     * <p>Le rapprochement entre un {@code starts_at} en UTC et une case
+     * « mardi soir » se fait dans le fuseau applicatif, passé en paramètre. Le
+     * seul fuseau que le système connaisse vraiment est celui de l'appareil, qui
+     * n'est pas disponible ici et peut différer d'un appareil à l'autre pour la
+     * même personne : c'est une approximation, et elle est la même que celle du
+     * développement des récurrences.
+     *
+     * <p><b>Aucun commentaire SQL dans le corps de cette requête.</b>
+     * L'analyseur de paramètres de Spring Data suit les guillemets simples sans
+     * savoir qu'il traverse un commentaire : une apostrophe française y casse le
+     * chargement du dépôt entier, au démarrage, avec un message qui ne la nomme
+     * pas. Les explications vivent donc ici.
      */
     @Query(value = """
         SELECT s.* FROM schedules s
@@ -218,15 +266,38 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
                 SELECT 1 FROM activities a
                 WHERE a.id = ua.activity_id AND a.category_id IN (:categoryIds)))
           AND (CAST(:createdSince AS timestamptz) IS NULL OR s.created_at >= :createdSince)
+          AND (CAST(:filterByLanguage AS boolean) = FALSE
+               OR s.primary_language IS NULL
+               OR s.primary_language IN (:languages))
+          AND (CAST(:filterByTags AS boolean) = FALSE OR (
+                SELECT COUNT(DISTINCT sat.tag) FROM schedule_accessibility_tags sat
+                WHERE sat.schedule_id = s.id AND sat.tag IN (:accessibilityTags)
+              ) = :requiredTagCount)
           AND ST_DWithin(
                 s.location::geography,
                 ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
                 :radiusMeters)
-        ORDER BY s.starts_at ASC,
+        """ + BlockSql.NOT_BLOCKED_U + """
+        ORDER BY (s.starts_at AT TIME ZONE :zone)::date ASC,
+                 CASE WHEN EXISTS (
+                     SELECT 1 FROM user_availability av
+                     WHERE av.user_id = :viewerId
+                       AND av.day_of_week = EXTRACT(ISODOW FROM (s.starts_at AT TIME ZONE :zone))
+                       AND av.time_slot = CASE
+                             WHEN EXTRACT(HOUR FROM (s.starts_at AT TIME ZONE :zone)) BETWEEN 6 AND 11
+                                  THEN 'MORNING'
+                             WHEN EXTRACT(HOUR FROM (s.starts_at AT TIME ZONE :zone)) BETWEEN 12 AND 17
+                                  THEN 'AFTERNOON'
+                             WHEN EXTRACT(HOUR FROM (s.starts_at AT TIME ZONE :zone)) >= 18
+                                  THEN 'EVENING'
+                             ELSE 'NIGHT' END
+                 ) THEN 0 ELSE 1 END,
+                 s.starts_at ASC,
                  ST_Distance(s.location::geography,
                              ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography)
         LIMIT :limit
         """, nativeQuery = true)
+
     List<Schedule> findOpenSlotsInRadius(
         @Param("lat") double lat,
         @Param("lng") double lng,
@@ -237,7 +308,14 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
         @Param("filterByCategory") boolean filterByCategory,
         @Param("categoryIds") Collection<UUID> categoryIds,
         @Param("createdSince") Instant createdSince,
-        @Param("limit") int limit
+        @Param("limit") int limit,
+        @Param("viewerId") UUID viewerId,
+        @Param("filterByLanguage") boolean filterByLanguage,
+        @Param("languages") Collection<String> languages,
+        @Param("filterByTags") boolean filterByTags,
+        @Param("accessibilityTags") Collection<String> accessibilityTags,
+        @Param("requiredTagCount") long requiredTagCount,
+        @Param("zone") String zone
     );
 
     /**

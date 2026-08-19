@@ -26,11 +26,34 @@ public record SearchRequest(
 
     @Schema(description = "Taille de page. Absente : 20, la taille que la route "
         + "renvoyait avant d'être paginée. Plafonnée à 100.", defaultValue = "20")
-    Integer pageSize
+    Integer pageSize,
+
+    @Schema(description = "Ne retenir que les créneaux déclarant TOUTES ces étiquettes "
+        + "d'accueil. Ne porte que sur les résultats de type « slot » : une étiquette "
+        + "d'accessibilité décrit une séance et un lieu, pas un programme, et l'appliquer "
+        + "aux programmes reviendrait à leur prêter une propriété qu'ils n'ont pas. "
+        + "Déclaratif, jamais vérifié.\n\n"
+        + "Premier filtre structuré réellement lu par cette route : les champs "
+        + "`filters` et `sort_by` qu'un client enverrait restent ignorés.")
+    java.util.List<String> accessibilityTags
 ) {
+
+    /** Étiquettes demandées, normalisées et sans doublon. */
+    public java.util.Set<String> effectiveAccessibilityTags() {
+        if (accessibilityTags == null) {
+            return java.util.Set.of();
+        }
+        return accessibilityTags.stream()
+            .filter(java.util.Objects::nonNull)
+            .map(String::strip)
+            .filter(value -> !value.isEmpty())
+            .map(value -> value.toUpperCase(java.util.Locale.ROOT))
+            .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+    }
+
     /** Constructeur court, pour les appelants qui ne paginent pas. */
     public SearchRequest(String query, Double lat, Double lng, Integer radiusMeters) {
-        this(query, lat, lng, radiusMeters, null, null);
+        this(query, lat, lng, radiusMeters, null, null, null);
     }
 
     public int effectivePage() {

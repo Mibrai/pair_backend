@@ -43,6 +43,7 @@ public class ChatPushListener {
 
             notificationService.notifyPushOnly(
                 event.recipientId(),
+                event.senderId(),
                 broadcast ? NotificationType.PROGRAM_BROADCAST : NotificationType.NEW_MESSAGE,
                 NotificationPayload.empty()
                     .with("conversationId", event.conversationId())

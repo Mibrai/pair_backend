@@ -1,5 +1,7 @@
 package org.program.pair.domain.program.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -44,5 +46,11 @@ public record ProgramDto(
     String privacy,
     String goals,
     String prerequisites,
-    String locationType
+    String locationType,
+
+    @Schema(description = "Par quel chemin le programme a été créé : FULL pour le "
+        + "formulaire complet, QUICK pour le chemin court. Un programme QUICK n'a ni "
+        + "description ni objectifs parce qu'on ne les lui a jamais demandés, et non "
+        + "parce que son auteur les a laissés vides. Tolérer une valeur inconnue.")
+    String createdVia
 ) {}

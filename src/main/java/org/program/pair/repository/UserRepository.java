@@ -1,5 +1,6 @@
 package org.program.pair.repository;
 
+import org.program.pair.domain.block.BlockSql;
 import org.program.pair.domain.user.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -27,6 +28,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
               ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
               :radiusMeters
           )
+        """ + BlockSql.NOT_BLOCKED_U + """
         ORDER BY ST_Distance(
             u.location::geography,
             ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
@@ -38,7 +40,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
         @Param("lng") double lng,
         @Param("radiusMeters") int radiusMeters,
         @Param("limit") int limit,
-        @Param("offset") int offset
+        @Param("offset") int offset,
+        @Param("viewerId") UUID viewerId
     );
 
     /**
@@ -60,6 +63,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
         WHERE u.is_active = true
           AND u.location_public = true
           AND u.location && ST_MakeEnvelope(:west, :south, :east, :north, 4326)
+        """ + BlockSql.NOT_BLOCKED_U + """
         ORDER BY ST_Distance(
             u.location::geography,
             ST_SetSRID(ST_MakePoint((:west + :east) / 2, (:south + :north) / 2), 4326)::geography
@@ -72,7 +76,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
         @Param("west") double west,
         @Param("east") double east,
         @Param("limit") int limit,
-        @Param("offset") int offset
+        @Param("offset") int offset,
+        @Param("viewerId") UUID viewerId
     );
 
     /** Total exact avant application de {@code limit}, pour {@code totalInBounds}. */
@@ -81,12 +86,14 @@ public interface UserRepository extends JpaRepository<User, UUID> {
         WHERE u.is_active = true
           AND u.location_public = true
           AND u.location && ST_MakeEnvelope(:west, :south, :east, :north, 4326)
+        """ + BlockSql.NOT_BLOCKED_U + """
         """, nativeQuery = true)
     long countVisibleUsersInBounds(
         @Param("south") double south,
         @Param("north") double north,
         @Param("west") double west,
-        @Param("east") double east
+        @Param("east") double east,
+        @Param("viewerId") UUID viewerId
     );
 
     @Query("SELECT u FROM User u WHERE u.id IN :ids AND u.lastActiveAt > :since AND u.onlineStatusVisible = true")
@@ -116,6 +123,7 @@ public interface UserRepository extends JpaRepository<User, UUID> {
               ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
               :radiusMeters
           ))
+        """ + BlockSql.NOT_BLOCKED_U + """
         ORDER BY
           CASE WHEN :lat IS NULL OR :lng IS NULL THEN 0
           ELSE ST_Distance(
@@ -131,7 +139,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
         @Param("lng") Double lng,
         @Param("radiusMeters") int radiusMeters,
         @Param("limit") int limit,
-        @Param("offset") int offset
+        @Param("offset") int offset,
+        @Param("viewerId") UUID viewerId
     );
 
     /**
@@ -150,11 +159,13 @@ public interface UserRepository extends JpaRepository<User, UUID> {
               ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
               :radiusMeters
           ))
+        """ + BlockSql.NOT_BLOCKED_U + """
         """, nativeQuery = true)
     long countSearchResults(
         @Param("query") String query,
         @Param("lat") Double lat,
         @Param("lng") Double lng,
-        @Param("radiusMeters") int radiusMeters
+        @Param("radiusMeters") int radiusMeters,
+        @Param("viewerId") UUID viewerId
     );
 }

@@ -11,7 +11,8 @@ import org.program.pair.domain.chat.dto.SendMessageRequest;
 import org.program.pair.domain.user.dto.UserPrivateDto;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.MediaType;
-import org.springframework.messaging.converter.MappingJackson2MessageConverter;
+import org.springframework.messaging.converter.JacksonJsonMessageConverter;
+import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompFrameHandler;
 import org.springframework.messaging.simp.stomp.StompHeaders;
 import org.springframework.messaging.simp.stomp.StompSession;
@@ -25,8 +26,10 @@ import org.springframework.web.socket.sockjs.client.WebSocketTransport;
 import java.lang.reflect.Type;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -42,8 +45,8 @@ class WebSocketChatIntegrationTest extends AbstractIntegrationTest {
         // Si WebSocket n'est pas encore configuré, ce test échouera
 
         // Enregistrer deux utilisateurs
-        String tokenA = registerAndLogin("wsA@pair.app", "Password123!", "UserA");
-        String tokenB = registerAndLogin("wsB@pair.app", "Password123!", "UserB");
+        String tokenA = registerAndLogin(uniqueEmail("wsA"), "Password123!", "UserA");
+        String tokenB = registerAndLogin(uniqueEmail("wsB"), "Password123!", "UserB");
 
         // Créer une conversation entre A et B
         UUID targetUserId = getUserId(tokenB);
@@ -52,56 +55,82 @@ class WebSocketChatIntegrationTest extends AbstractIntegrationTest {
         // Configurer le client WebSocket STOMP
         WebSocketStompClient stompClient = new WebSocketStompClient(
             new SockJsClient(List.of(new WebSocketTransport(new StandardWebSocketClient()))));
-        stompClient.setMessageConverter(new MappingJackson2MessageConverter());
+
+        // Le convertisseur doit être celui de Jackson 3, comme le serveur.
+        // MessageDto porte un Instant, et l'ancien MappingJackson2MessageConverter
+        // s'appuie sur un Jackson 2 sans module java.time : il échouait à
+        // désérialiser la trame. Le message arrivait donc bien — le journal du
+        // courtier le montrait, avec la même destination résolue au SUBSCRIBE et
+        // au MESSAGE — mais handleFrame n'était jamais atteint.
+        stompClient.setMessageConverter(new JacksonJsonMessageConverter());
 
         // Headers de connexion avec le token de userB
         StompHeaders connectHeaders = new StompHeaders();
         connectHeaders.add("Authorization", "Bearer " + tokenB);
 
-        // Future pour synchroniser la réception du message
-        CompletableFuture<MessageDto> receivedMessage = new CompletableFuture<>();
+        BlockingQueue<MessageDto> received = new LinkedBlockingQueue<>();
+        AtomicReference<Throwable> clientError = new AtomicReference<>();
 
-        try {
-            // UserB se connecte au WebSocket
-            StompSession sessionB = stompClient.connectAsync(
-                "ws://localhost:" + port + "/ws/chat",
-                new WebSocketHttpHeaders(),
-                connectHeaders,
-                new StompSessionHandlerAdapter() {}
-            ).get(5, TimeUnit.SECONDS);
+        // StompSessionHandlerAdapter ne fait rien de ses erreurs. C'est ce
+        // silence qui a fait passer ce test pour instable pendant des mois : il
+        // expirait au bout de cinq secondes sans jamais dire pourquoi. On les
+        // retient, pour que la prochaine panne se lise dans le message d'échec.
+        StompSessionHandlerAdapter errorAwareHandler = new StompSessionHandlerAdapter() {
+            @Override
+            public void handleException(StompSession session, StompCommand command,
+                                        StompHeaders headers, byte[] payload, Throwable exception) {
+                clientError.compareAndSet(null, exception);
+            }
 
-            // UserB s'abonne à sa file de messages
-            sessionB.subscribe("/user/queue/messages", new StompFrameHandler() {
-                @Override
-                public Type getPayloadType(StompHeaders headers) {
-                    return MessageDto.class;
-                }
+            @Override
+            public void handleTransportError(StompSession session, Throwable exception) {
+                clientError.compareAndSet(null, exception);
+            }
+        };
 
-                @Override
-                public void handleFrame(StompHeaders headers, Object payload) {
-                    receivedMessage.complete((MessageDto) payload);
-                }
-            });
+        // UserB se connecte au WebSocket
+        StompSession sessionB = stompClient.connectAsync(
+            "ws://localhost:" + port + "/ws/chat",
+            new WebSocketHttpHeaders(),
+            connectHeaders,
+            errorAwareHandler
+        ).get(5, TimeUnit.SECONDS);
 
-            // UserA envoie un message via REST (qui déclenche le broadcast WebSocket)
+        sessionB.subscribe("/user/queue/messages", new StompFrameHandler() {
+            @Override
+            public Type getPayloadType(StompHeaders headers) {
+                return MessageDto.class;
+            }
+
+            @Override
+            public void handleFrame(StompHeaders headers, Object payload) {
+                received.add((MessageDto) payload);
+            }
+        });
+
+        // S'abonner est une trame envoyée, pas un appel qui rend la main une fois
+        // le serveur prêt : rien ne garantit que le SUBSCRIBE soit traité avant le
+        // message, puisqu'ils empruntent deux connexions distinctes. L'accusé de
+        // réception STOMP réglerait la question, mais le courtier en mémoire de
+        // Spring n'en émet pas. On renvoie donc jusqu'à ce que la file réponde ;
+        // le contenu étant identique à chaque tentative, un doublon éventuel ne
+        // change rien à l'assertion.
+        MessageDto message = null;
+        for (int attempt = 1; attempt <= 3 && message == null; attempt++) {
             sendMessageViaRest(tokenA, conversationId, "Salut via WebSocket !");
-
-            // Attendre la réception du message
-            MessageDto received = receivedMessage.get(5, TimeUnit.SECONDS);
-
-            // Vérifications
-            assertThat(received.content()).isEqualTo("Salut via WebSocket !");
-            assertThat(received.conversationId()).isEqualTo(conversationId);
-
-            // Fermer la session
-            sessionB.disconnect();
-        } catch (Exception e) {
-            // Si WebSocket n'est pas configuré, on affiche un message informatif
-            System.err.println("ATTENTION: Ce test nécessite que WebSocket soit activé dans WebSocketConfig");
-            System.err.println("Erreur: " + e.getMessage());
-            // On relance l'exception pour que le test échoue
-            throw e;
+            message = received.poll(2, TimeUnit.SECONDS);
         }
+
+        assertThat(clientError.get())
+            .as("le client STOMP a signalé une erreur")
+            .isNull();
+        assertThat(message)
+            .as("aucun message reçu sur /user/queue/messages")
+            .isNotNull();
+        assertThat(message.content()).isEqualTo("Salut via WebSocket !");
+        assertThat(message.conversationId()).isEqualTo(conversationId);
+
+        sessionB.disconnect();
     }
 
     @Test

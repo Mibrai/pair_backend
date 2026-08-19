@@ -5,6 +5,7 @@ import org.program.pair.domain.subscription.SubscriptionType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -38,6 +39,32 @@ public interface SubscriptionRepository extends JpaRepository<Subscription, UUID
     List<Subscription> findByTargetUserActivityId(UUID targetUserActivityId);
 
     List<Subscription> findByTargetCategoryId(UUID targetCategoryId);
+
+    /**
+     * Rompt les abonnements qui lient ces deux personnes, dans les deux sens.
+     *
+     * <p>Effet de bord d'un blocage. Deux types sont concernés et non un seul :
+     * l'abonnement à l'auteur, évidemment, mais aussi l'abonnement à l'une de ses
+     * activités — « suivre ce que quelqu'un propose, c'est le suivre ». N'en
+     * traiter qu'un laisserait le fanout continuer de porter les annonces de
+     * quelqu'un qu'on vient de bloquer.
+     *
+     * <p>Les abonnements par catégorie sont laissés intacts : ils ne visent
+     * personne. C'est aussi pourquoi le filtrage des notifications reste
+     * nécessaire malgré cette rupture — une catégorie peut annoncer le programme
+     * d'un bloqué.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("""
+        DELETE FROM Subscription s
+        WHERE (s.subscriber.id = :a AND s.targetAuthor.id = :b)
+           OR (s.subscriber.id = :b AND s.targetAuthor.id = :a)
+           OR (s.subscriber.id = :a AND s.targetUserActivity.id IN (
+                 SELECT ua.id FROM UserActivity ua WHERE ua.user.id = :b))
+           OR (s.subscriber.id = :b AND s.targetUserActivity.id IN (
+                 SELECT ua.id FROM UserActivity ua WHERE ua.user.id = :a))
+        """)
+    int deleteBetween(@Param("a") UUID a, @Param("b") UUID b);
 
     // — Compteurs d'abonnés —
     //

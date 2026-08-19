@@ -113,4 +113,37 @@ public class User {
 
     @Column(name = "last_attendance_at")
     private Instant lastAttendanceAt;
+
+    // Parcours d'accueil (V60). Placés en fin de classe à dessein : plusieurs
+    // champs de cette entité portent leur annotation d'audit sur la ligne qui
+    // les précède, et s'insérer entre les deux la déplacerait silencieusement.
+    @Column(name = "onboarding_completed_at")
+    private Instant onboardingCompletedAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "onboarding_step", length = 30)
+    private OnboardingStep onboardingStep;
+
+    // Règles de communauté (V64). Nulles tant que la personne n'a jamais
+    // accepté — aucun rétro-remplissage, à l'inverse de l'onboarding : c'est
+    // l'acceptation explicite qui est demandée.
+    @Column(name = "guidelines_accepted_at")
+    private Instant guidelinesAcceptedAt;
+
+    @Column(name = "guidelines_version", length = 10)
+    private String guidelinesVersion;
+
+    /**
+     * Créneaux passés auxquels cette personne s'était inscrite (V69).
+     *
+     * <p>Le dénominateur du signal de fiabilité. Le numérateur est
+     * {@code attendanceCount}, qui existe depuis V41 — un second compteur de
+     * présences aurait fait doublon et fini par diverger.
+     *
+     * <p>Ni trié, ni filtré, ni exposé tel quel : seul le libellé sort de
+     * l'API, voir {@code ReliabilitySignal}.
+     */
+    @Column(name = "joined_slots_count", nullable = false)
+    @Builder.Default
+    private Integer joinedSlotsCount = 0;
 }

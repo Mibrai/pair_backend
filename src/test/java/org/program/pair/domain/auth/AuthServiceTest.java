@@ -107,11 +107,26 @@ class AuthServiceTest {
             .hasMessage("Identifiants invalides.");
     }
 
+    /**
+     * Empreinte bcrypt de forme réaliste : {@code $2a$}, 60 caractères.
+     *
+     * <p>Ce détail n'est pas cosmétique. {@code login} refuse d'emblée toute
+     * empreinte qui ne ressemble pas à du bcrypt — moins de 60 caractères, ou
+     * ne commençant pas par {@code $2} — et lève {@code InvalidCredentialsException}
+     * sans jamais interroger le {@code PasswordEncoder}. Avec l'ancien fixture
+     * {@code "$2a$hashed"} (11 caractères), le test du mot de passe incorrect
+     * passait donc par ce garde-fou-là : il rendait bien l'exception attendue,
+     * mais n'avait jamais comparé de mot de passe, et Mockito le signalait en
+     * refusant un stub jamais appelé.
+     */
+    private static final String BCRYPT_HASH =
+        "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
+
     private User buildActiveUser() {
         User u = new User();
         u.setId(UUID.randomUUID());
         u.setEmail("test@pair.app");
-        u.setPasswordHash("$2a$hashed");
+        u.setPasswordHash(BCRYPT_HASH);
         u.setIsActive(true);
         u.setVerificationStatus(VerificationStatus.UNVERIFIED);
         return u;

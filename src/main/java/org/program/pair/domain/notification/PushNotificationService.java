@@ -503,6 +503,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
             // les émet réellement.
             case SLOT_JOINED -> msg(locale, "push.SLOT_JOINED.title", arg(payload, "participantName"));
             case SLOT_CANCELLED -> msg(locale, "push.SLOT_CANCELLED.title", arg(payload, "programTitle"));
+            case WAITLIST_PROMOTED -> msg(locale, "push.WAITLIST_PROMOTED.title", arg(payload, "programTitle"));
             case ATTENDANCE_PROMPT -> msg(locale, "push.ATTENDANCE_PROMPT.title");
             case ACTIVITY_ALERT_MATCH -> msg(locale, "push.ACTIVITY_ALERT_MATCH.title", arg(payload, "activityName"));
             // Le programme, pas l'auteur : dans un fil de diffusion c'est le
@@ -540,6 +541,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
                 rawOr(payload, "programTitle", locale, "push.generic.body");
             case SLOT_JOINED -> rawOr(payload, "programTitle", locale, "push.generic.body");
             case SLOT_CANCELLED -> msg(locale, "push.SLOT_CANCELLED.body", arg(payload, "placeName"));
+            case WAITLIST_PROMOTED -> msg(locale, "push.WAITLIST_PROMOTED.body", arg(payload, "placeName"));
             case ATTENDANCE_PROMPT -> msg(locale, "push.ATTENDANCE_PROMPT.body", arg(payload, "programTitle"));
             case ACTIVITY_ALERT_MATCH -> msg(locale, "push.ACTIVITY_ALERT_MATCH.body",
                 arg(payload, "activityName"), arg(payload, "placeName"));
