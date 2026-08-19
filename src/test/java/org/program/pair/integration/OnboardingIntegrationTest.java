@@ -81,19 +81,77 @@ class OnboardingIntegrationTest extends AbstractIntegrationTest {
         // Il ne double pas seulement les requêtes, il les livre parfois dans le
         // désordre. Une trame retardée ne doit pas renvoyer quelqu'un en arrière.
         String token = registerAndLogin();
-        advance(token, "DISCOVERY");
+        advance(token, "LOCATION");
 
-        assertThat(advance(token, "WELCOME").step()).isEqualTo("DISCOVERY");
+        assertThat(advance(token, "ACTIVITIES").step()).isEqualTo("LOCATION");
+    }
+
+    @Test
+    void lOrdreDesEcrans_doitEtreCeluiDuParcoursReel() {
+        // Le défaut que ce lot corrige. L'ancien contrat plaçait la position avant
+        // les activités ; le parcours demande les activités d'abord. Chacune des
+        // quatre étapes doit donc avancer, et aucune ne doit être avalée par la
+        // règle « un parcours ne recule pas » — c'est précisément ce qui arrivait
+        // à « position », acceptée puis ignorée en 200.
+        String token = registerAndLogin();
+
+        assertThat(advance(token, "ACTIVITIES").step()).isEqualTo("ACTIVITIES");
+        assertThat(advance(token, "LEVELS").step()).isEqualTo("LEVELS");
+        assertThat(advance(token, "LOCATION").step()).isEqualTo("LOCATION");
+        assertThat(advance(token, "PREVIEW").step()).isEqualTo("PREVIEW");
     }
 
     @Test
     void atteindreLaDerniereEtape_refermeLAccueil() {
+        // Il n'y a plus d'étape « terminé » : la fin se lit sur la date, et c'est
+        // le franchissement du dernier écran qui la pose.
         String token = registerAndLogin();
 
-        OnboardingStateDto state = advance(token, "DONE");
+        OnboardingStateDto state = advance(token, "PREVIEW");
 
         assertThat(state.completed()).isTrue();
         assertThat(state.completedAt()).isNotNull();
+    }
+
+    // — l'ancien vocabulaire —
+
+    @Test
+    void lAncienVocabulaire_doitEncoreEtreAccepte() {
+        // Une version publiée du client parle encore cette langue ; la refuser
+        // l'aurait cassée d'un déploiement à l'autre.
+        String token = registerAndLogin();
+
+        assertThat(advance(token, "WELCOME").step()).isEqualTo("ACTIVITIES");
+        assertThat(advance(token, "DISCOVERY").step()).isEqualTo("PREVIEW");
+    }
+
+    @Test
+    void lAncienneSequence_doitDevenirCroissante_uneFoisRelue() {
+        // Ce que le client publié émet aujourd'hui, dans l'ordre. Relue dans le
+        // vrai vocabulaire, la séquence monte — ce qu'elle ne faisait pas avant,
+        // « position » arrivant après une étape que l'ancien contrat disait plus
+        // avancée qu'elle.
+        String token = registerAndLogin();
+
+        advance(token, "ACTIVITIES");
+        advance(token, "ACTIVITIES");
+        assertThat(advance(token, "LOCATION").step()).isEqualTo("LOCATION");
+        assertThat(advance(token, "DISCOVERY").completed()).isTrue();
+    }
+
+    @Test
+    void uneEtapeInconnue_doitEtreRefusee() {
+        // Accepter n'importe quoi reviendrait à enregistrer un avancement qui ne
+        // veut rien dire, sans que le client apprenne jamais qu'il se trompe.
+        String token = registerAndLogin();
+
+        webTestClient.patch()
+            .uri("/api/users/me/onboarding")
+            .headers(h -> h.setBearerAuth(token))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("step", "TROISIEME_ECRAN"))
+            .exchange()
+            .expectStatus().isBadRequest();
     }
 
     @Test

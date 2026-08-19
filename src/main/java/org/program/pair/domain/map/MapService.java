@@ -29,6 +29,7 @@ public class MapService {
     private final ScheduleRepository scheduleRepository;
     private final ProgramRepository programRepository;
     private final UserProgramRepository userProgramRepository;
+    private final org.program.pair.domain.block.BlockFilterService blockFilterService;
     private final Random random = new Random();
 
     /**
@@ -708,11 +709,23 @@ public class MapService {
      * @return marqueurs, centre par défaut, et de quoi savoir si la carte est
      *         partielle ({@code truncated}, {@code totalInBounds})
      */
-    public MapActivitiesResponse getAllActivitiesForMap(MapActivitiesRequest request) {
+    public MapActivitiesResponse getAllActivitiesForMap(MapActivitiesRequest request, UUID viewerId) {
         validate(request);
 
         // 1. Créneaux localisés, bornés en base si un filtre est demandé.
         List<Schedule> allSchedules = loadSchedules(request);
+
+        // 2. Les personnes bloquées, dans un sens ou dans l'autre.
+        //
+        // Filtré en mémoire, contrairement au reste du lot A3 qui pousse le
+        // prédicat dans le SQL. Ce n'est pas une facilité : un marqueur agrège
+        // ici plusieurs organisateurs sur une même activité, et les compteurs de
+        // la réponse — totalInBounds, les count de clusters, truncated — sont
+        // tous dérivés de la liste après agrégation. Écarter les créneaux avant
+        // de construire les marqueurs les laisse donc exacts, là où un filtrage
+        // en SQL sur les créneaux seuls n'aurait rien changé au problème et un
+        // post-filtrage des marqueurs les aurait tous faussés.
+        Set<UUID> invisible = blockFilterService.invisibleTo(viewerId);
 
         // 3. Build a map of activity -> list of schedule locations
         Map<UUID, List<Schedule>> activityScheduleMap = new LinkedHashMap<>();
@@ -725,6 +738,13 @@ public class MapService {
             UserActivity userActivity = program.getUserActivity();
             Activity activity = userActivity.getActivity();
             if (activity == null) continue;
+
+            // Un profil bloqué qui garde ses activités visibles sur la carte est
+            // un profil qui n'est pas bloqué.
+            if (!invisible.isEmpty() && userActivity.getUser() != null
+                    && invisible.contains(userActivity.getUser().getId())) {
+                continue;
+            }
 
             // ATTENTION : la clé est l'activité du RÉFÉRENTIEL, sans l'organisateur.
             //

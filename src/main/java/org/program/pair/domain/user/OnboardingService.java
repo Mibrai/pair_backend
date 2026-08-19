@@ -45,9 +45,11 @@ public class OnboardingService {
      * Répondre par une erreur serait pire qu'inutile : le client n'aurait aucun
      * moyen de distinguer son propre doublon d'un vrai problème.
      *
-     * <p>Atteindre {@link OnboardingStep#DONE} referme le parcours. La date n'est
-     * posée qu'une fois : repasser par {@code DONE} ne la réécrit pas, sinon la
-     * mesure du parcours dépendrait du nombre de fois où le client a réessayé.
+     * <p>Franchir le dernier écran referme le parcours : il n'existe pas d'étape
+     * « terminé » à part, la fin se lisant sur {@code onboardingCompletedAt}. La
+     * date n'est posée qu'une fois — repasser par le dernier écran ne la réécrit
+     * pas, sinon la mesure du parcours dépendrait du nombre de fois où le client
+     * a réessayé.
      */
     public OnboardingStateDto advance(UUID userId, OnboardingStep step) {
         User user = load(userId);
@@ -56,7 +58,7 @@ public class OnboardingService {
             user.setOnboardingStep(step);
         }
 
-        if (step == OnboardingStep.DONE && user.getOnboardingCompletedAt() == null) {
+        if (step.isFinal() && user.getOnboardingCompletedAt() == null) {
             user.setOnboardingCompletedAt(Instant.now());
         }
 

@@ -50,6 +50,15 @@ public class PublicSlotController {
     @Value("${pair.public.base-url:https://meetdo.fun}")
     private String publicBaseUrl;
 
+    /**
+     * Le schéma d'URI propre à l'application, celui que le bouton utilise.
+     *
+     * <p>Séparé de {@code publicBaseUrl} parce qu'il désigne autre chose :
+     * l'application installée sur l'appareil, et non ce serveur.
+     */
+    @Value("${pair.mobile.scheme:meetdo}")
+    private String mobileScheme;
+
     /** Le créneau en JSON, pour un client qui compose sa propre présentation. */
     @GetMapping("/public/slots/{token}")
     @ResponseBody
@@ -92,7 +101,14 @@ public class PublicSlotController {
         model.addAttribute("ogImage", slot.hasImage()
             ? publicBaseUrl + "/public/slots/" + token + "/image"
             : null);
-        model.addAttribute("deepLink", publicBaseUrl + "/s/" + token);
+        // Le bouton pointait vers l'adresse de cette même page. C'était sans effet
+        // dans les deux cas de figure : sans application installée il la
+        // rechargeait, et avec — une fois les liens universels actifs — iOS
+        // n'intercepte justement pas un lien vers le domaine où l'on se trouve
+        // déjà. Le schéma propre à l'application, lui, ouvre l'application
+        // aujourd'hui, sans rien attendre des fichiers d'association ni des
+        // entitlements qui leur manquent encore.
+        model.addAttribute("appLink", mobileScheme + "://slot/" + token);
 
         return "public-slot";
     }

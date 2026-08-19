@@ -23,7 +23,7 @@ class MapServiceBlurTest {
 
     // Aucune dépendance n'est touchée par applyBlur : le service est construit
     // à vide, comme SemanticSearchServiceTest le fait pour ses helpers purs.
-    private final MapService mapService = new MapService(null, null, null, null, null, null, null);
+    private final MapService mapService = new MapService(null, null, null, null, null, null, null, null);
 
     private static final double LAT = 48.8566;
     private static final double LNG = 2.3522;

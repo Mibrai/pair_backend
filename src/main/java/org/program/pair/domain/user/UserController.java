@@ -205,8 +205,26 @@ public class UserController {
         return ResponseEntity.ok().build();
     }
 
+    /**
+     * Les programmes publics d'un profil.
+     *
+     * <p>Le refus est celui de la fiche de profil juste au-dessus, et pour la
+     * même raison : ces deux routes servent le même écran, et laisser la seconde
+     * ouverte quand la première refuse rendrait le blocage sans effet — la liste
+     * des programmes nomme son auteur, ses lieux et ses horaires. Un profil
+     * bloqué qui garde ses programmes visibles est un profil qui n'est pas
+     * bloqué.
+     *
+     * <p>{@code 404} et non {@code 403}, dans les deux sens : un code nommé
+     * apprendrait le blocage à celui qui l'a subi.
+     */
     @GetMapping("/{userId}/programs")
-    public List<ProgramDto> getPublicProgramsByUser(@PathVariable UUID userId) {
+    public List<ProgramDto> getPublicProgramsByUser(
+            @PathVariable UUID userId,
+            @AuthenticationPrincipal UserPrincipal principal) {
+        if (blockFilterService.blocked(principal.getId(), userId)) {
+            throw new UserNotFoundException("Utilisateur introuvable.");
+        }
         return programService.getPublicProgramsByUser(userId);
     }
 
