@@ -123,4 +123,13 @@ public class User {
     @Enumerated(EnumType.STRING)
     @Column(name = "onboarding_step", length = 30)
     private OnboardingStep onboardingStep;
+
+    // Règles de communauté (V64). Nulles tant que la personne n'a jamais
+    // accepté — aucun rétro-remplissage, à l'inverse de l'onboarding : c'est
+    // l'acceptation explicite qui est demandée.
+    @Column(name = "guidelines_accepted_at")
+    private Instant guidelinesAcceptedAt;
+
+    @Column(name = "guidelines_version", length = 10)
+    private String guidelinesVersion;
 }
