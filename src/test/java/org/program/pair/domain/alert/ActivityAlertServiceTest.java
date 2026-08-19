@@ -56,7 +56,7 @@ class ActivityAlertServiceTest {
 
         activityAlertService.evaluateAndNotify(slot);
 
-        verify(notificationService, never()).notify(eq(hostId), any(), any());
+        verify(notificationService, never()).notify(eq(hostId), any(), any(), any());
     }
 
     @Test
@@ -73,7 +73,7 @@ class ActivityAlertServiceTest {
         activityAlertService.evaluateAndNotify(slot);
 
         ArgumentCaptor<Map<String, Object>> payloadCaptor = ArgumentCaptor.forClass(Map.class);
-        verify(notificationService).notify(eq(watcherId), eq(NotificationType.ACTIVITY_ALERT_MATCH), payloadCaptor.capture());
+        verify(notificationService).notify(eq(watcherId), any(), eq(NotificationType.ACTIVITY_ALERT_MATCH), payloadCaptor.capture());
         assertThat(payloadCaptor.getValue()).containsEntry("scheduleId", slot.getId().toString());
         assertThat(alert.getLastTriggeredAt()).isNotNull();
     }

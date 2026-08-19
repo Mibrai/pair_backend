@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.program.pair.domain.program.dto.CancelSlotRequest;
 import org.program.pair.domain.program.dto.JoinSlotRequest;
 import org.program.pair.domain.program.dto.SlotFeedItemDto;
 import org.program.pair.domain.program.dto.SlotFeedRequest;
@@ -27,6 +28,7 @@ import java.util.UUID;
 public class SlotController {
 
     private final SlotService slotService;
+    private final SlotCancellationService slotCancellationService;
 
     @GetMapping("/feed")
     public List<SlotFeedItemDto> getFeed(
@@ -79,5 +81,51 @@ public class SlotController {
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID scheduleId) {
         return slotService.getParticipants(principal.getId(), scheduleId);
+    }
+
+    @PostMapping("/{scheduleId}/waitlist")
+    @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Se mettre en liste d'attente.",
+        description = "Accepte les créneaux complets — c'est exactement ceux pour "
+            + "lesquels cette route existe. Attendre n'est pas s'engager : on peut "
+            + "patienter sur plusieurs créneaux qui se chevauchent, et c'est au moment "
+            + "de la promotion que le conflit d'agenda est vérifié.")
+    public SlotFeedItemDto joinWaitlist(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID scheduleId) {
+        return slotService.joinWaitlist(principal.getId(), scheduleId);
+    }
+
+    @DeleteMapping("/{scheduleId}/waitlist")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Quitter la liste d'attente. Les rangs suivants remontent.")
+    public void leaveWaitlist(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID scheduleId) {
+        slotService.leaveWaitlist(principal.getId(), scheduleId);
+    }
+
+    @GetMapping("/{scheduleId}/waitlist")
+    @Operation(summary = "La liste d'attente, réservée à l'organisateur.",
+        description = "404 pour quiconque d'autre, jamais 403 : un refus nommé "
+            + "confirmerait l'existence du créneau.")
+    public List<SlotParticipantDto> getWaitlist(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID scheduleId) {
+        return slotService.getWaitlist(principal.getId(), scheduleId);
+    }
+
+    @PostMapping("/{scheduleId}/cancel")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Annule une séance et prévient tout le monde.",
+        description = "Réservé à l'organisateur ; 404 pour quiconque d'autre. Prévient "
+            + "immédiatement les inscrits ET la liste d'attente, par notification et par "
+            + "e-mail — l'un des rares cas où le double canal se justifie : ne pas "
+            + "recevoir une annulation coûte un déplacement pour rien.")
+    public void cancel(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID scheduleId,
+            @Valid @RequestBody(required = false) CancelSlotRequest request) {
+        slotCancellationService.cancel(principal.getId(), scheduleId, request);
     }
 }

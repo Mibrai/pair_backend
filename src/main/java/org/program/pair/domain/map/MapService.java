@@ -22,12 +22,14 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class MapService {
 
+    private final org.program.pair.repository.UserLanguageRepository userLanguageRepository;
     private final UserRepository userRepository;
     private final UserActivityRepository userActivityRepository;
     private final ActivityRepository activityRepository;
     private final ScheduleRepository scheduleRepository;
     private final ProgramRepository programRepository;
     private final UserProgramRepository userProgramRepository;
+    private final org.program.pair.domain.block.BlockFilterService blockFilterService;
     private final Random random = new Random();
 
     /**
@@ -42,7 +44,22 @@ public class MapService {
     public List<MapUserDto> getUsersOnMap(MapSearchRequest request, UUID requesterId) {
         // 1. Find visible users in radius
         List<User> nearbyUsers = userRepository.findVisibleUsersInRadius(
-            request.lat(), request.lng(), request.radiusMeters(), 100, 0);
+            request.lat(), request.lng(), request.radiusMeters(), 100, 0, requesterId);
+
+        // Filtre de langue, appliqué sur la page déjà rapportée — comme celui
+        // d'activité juste en dessous. La limite de 100 est posée en base avant
+        // les deux, si bien qu'un filtre sélectif rend moins de marqueurs qu'il
+        // n'en existe. C'est la dette que porte déjà cette route ; la creuser
+        // n'aurait pas été mieux que la signaler.
+        java.util.Set<String> languages = request.effectiveLanguages();
+        if (!languages.isEmpty() && !nearbyUsers.isEmpty()) {
+            java.util.Set<UUID> speakers = new java.util.HashSet<>(
+                userLanguageRepository.findUserIdsSpeaking(
+                    nearbyUsers.stream().map(User::getId).toList(), languages));
+            nearbyUsers = nearbyUsers.stream()
+                .filter(u -> speakers.contains(u.getId()))
+                .toList();
+        }
 
         // 2. Filter by activity if requested
         if (request.activityId() != null) {
@@ -124,7 +141,7 @@ public class MapService {
 
         // 1. Find visible users in bounds
         List<User> nearbyUsers = userRepository.findVisibleUsersInRadius(
-            centerLat, centerLng, radiusMeters, 1000, 0);
+            centerLat, centerLng, radiusMeters, 1000, 0, requesterId);
 
         // 2. Filter by activity if requested
         if (request.activityId() != null) {
@@ -323,7 +340,7 @@ public class MapService {
         // bornes demandées.
         List<User> nearbyUsers = userRepository.findVisibleUsersInBounds(
             request.south(), request.north(), request.west(), request.east(),
-            request.limit(), request.offset());
+            request.limit(), request.offset(), requesterId);
         int fetched = nearbyUsers.size();
 
         // Filter by activity levels if provided
@@ -349,24 +366,24 @@ public class MapService {
         // s'appliquent après le limit et la réduiraient sans qu'aucun marqueur
         // n'ait manqué.
         long total = userRepository.countVisibleUsersInBounds(
-            request.south(), request.north(), request.west(), request.east());
+            request.south(), request.north(), request.west(), request.east(), requesterId);
         boolean truncated = total > (long) request.offset() + fetched;
 
         return new Layer<>(items, (int) Math.min(total, Integer.MAX_VALUE), truncated);
     }
 
-    public List<MapActivityDto> getActivitiesInBounds(MapBoundsRequest request) {
-        return activitiesLayer(request).items();
+    public List<MapActivityDto> getActivitiesInBounds(MapBoundsRequest request, UUID requesterId) {
+        return activitiesLayer(request, requesterId).items();
     }
 
-    private Layer<MapActivityDto> activitiesLayer(MapBoundsRequest request) {
+    private Layer<MapActivityDto> activitiesLayer(MapBoundsRequest request, UUID requesterId) {
         // Une Activity n'a pas de coordonnées : la couche est agrégée depuis les
         // personnes qui la déclarent. D'où un plafond interne sur ces personnes,
         // qui est aussi la raison pour laquelle totalInBounds n'est qu'un
         // minorant sur cette couche (cf. MapMarkersResponse).
         List<User> nearbyUsers = userRepository.findVisibleUsersInBounds(
             request.south(), request.north(), request.west(), request.east(),
-            MAX_USERS_FOR_ACTIVITY_AGGREGATION, 0);
+            MAX_USERS_FOR_ACTIVITY_AGGREGATION, 0, requesterId);
 
         // Get unique activities from these users
         Map<UUID, List<User>> activityUserMap = new HashMap<>();
@@ -407,7 +424,7 @@ public class MapService {
             .toList();
 
         long usersInBounds = userRepository.countVisibleUsersInBounds(
-            request.south(), request.north(), request.west(), request.east());
+            request.south(), request.north(), request.west(), request.east(), requesterId);
         boolean sampled = usersInBounds > MAX_USERS_FOR_ACTIVITY_AGGREGATION;
 
         List<MapActivityDto> items = aggregated.stream().limit(request.limit()).toList();
@@ -481,7 +498,7 @@ public class MapService {
         return switch (type.toLowerCase()) {
             case "users" -> {
                 List<User> users = userRepository.findVisibleUsersInRadius(
-                    lat, lng, radiusMeters, 100, 0);
+                    lat, lng, radiusMeters, 100, 0, requesterId);
                 yield users.stream()
                     .filter(u -> !u.getId().equals(requesterId))
                     .map(u -> toMapDto(u, null))
@@ -559,7 +576,7 @@ public class MapService {
         validateBounds(request);
 
         Layer<MapUserDto> users = usersLayer(request, requesterId);
-        Layer<MapActivityDto> activities = activitiesLayer(request);
+        Layer<MapActivityDto> activities = activitiesLayer(request, requesterId);
         Layer<MapProgramDto> programs = programsLayer(request);
 
         return new MapMarkersResponse(
@@ -692,11 +709,23 @@ public class MapService {
      * @return marqueurs, centre par défaut, et de quoi savoir si la carte est
      *         partielle ({@code truncated}, {@code totalInBounds})
      */
-    public MapActivitiesResponse getAllActivitiesForMap(MapActivitiesRequest request) {
+    public MapActivitiesResponse getAllActivitiesForMap(MapActivitiesRequest request, UUID viewerId) {
         validate(request);
 
         // 1. Créneaux localisés, bornés en base si un filtre est demandé.
         List<Schedule> allSchedules = loadSchedules(request);
+
+        // 2. Les personnes bloquées, dans un sens ou dans l'autre.
+        //
+        // Filtré en mémoire, contrairement au reste du lot A3 qui pousse le
+        // prédicat dans le SQL. Ce n'est pas une facilité : un marqueur agrège
+        // ici plusieurs organisateurs sur une même activité, et les compteurs de
+        // la réponse — totalInBounds, les count de clusters, truncated — sont
+        // tous dérivés de la liste après agrégation. Écarter les créneaux avant
+        // de construire les marqueurs les laisse donc exacts, là où un filtrage
+        // en SQL sur les créneaux seuls n'aurait rien changé au problème et un
+        // post-filtrage des marqueurs les aurait tous faussés.
+        Set<UUID> invisible = blockFilterService.invisibleTo(viewerId);
 
         // 3. Build a map of activity -> list of schedule locations
         Map<UUID, List<Schedule>> activityScheduleMap = new LinkedHashMap<>();
@@ -709,6 +738,13 @@ public class MapService {
             UserActivity userActivity = program.getUserActivity();
             Activity activity = userActivity.getActivity();
             if (activity == null) continue;
+
+            // Un profil bloqué qui garde ses activités visibles sur la carte est
+            // un profil qui n'est pas bloqué.
+            if (!invisible.isEmpty() && userActivity.getUser() != null
+                    && invisible.contains(userActivity.getUser().getId())) {
+                continue;
+            }
 
             // ATTENTION : la clé est l'activité du RÉFÉRENTIEL, sans l'organisateur.
             //

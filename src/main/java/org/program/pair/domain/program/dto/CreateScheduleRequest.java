@@ -8,8 +8,13 @@ import java.time.Instant;
 public record CreateScheduleRequest(
     @NotBlank @Size(max = 200) String placeName,
     @NotNull PlaceType placeType,
-    @NotNull @DecimalMin("-90") @DecimalMax("90") Double lat,
-    @NotNull @DecimalMin("-180") @DecimalMax("180") Double lng,
+    // Obligatoires pour un lieu physique, interdites de sens pour un lieu en
+    // ligne. La contrainte ne peut donc pas être portée par une annotation :
+    // elle dépend de placeType, et c'est le service qui la vérifie — comme il
+    // le fait déjà pour addressPublic. Les avoir déclarées @NotNull rendait tout
+    // créneau ONLINE impossible à créer par l'API.
+    @DecimalMin("-90") @DecimalMax("90") Double lat,
+    @DecimalMin("-180") @DecimalMax("180") Double lng,
     String addressPublic,
     Boolean showExactAddress,
 
@@ -23,5 +28,13 @@ public record CreateScheduleRequest(
     String recurrenceRule,
     @Min(1) Integer maxParticipants,
     Boolean isOpenToPartners,
-    @Size(max = 300) String welcomeNote
+    @Size(max = 300) String welcomeNote,
+
+    // Langue principale de la séance. Facultative, et jamais devinée : un
+    // créneau qui n'en déclare pas reste visible de tous.
+    @Size(max = 5) String primaryLanguage,
+
+    // Étiquettes d'accueil. Déclaratives, jamais vérifiées : le contrat le dit,
+    // l'interface doit le dire aussi.
+    java.util.Set<org.program.pair.domain.program.AccessibilityTag> accessibilityTags
 ) {}

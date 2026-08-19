@@ -1,5 +1,6 @@
 package org.program.pair.domain.subscription;
 
+import org.program.pair.domain.block.BlockFilterService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.locationtech.jts.geom.Coordinate;
@@ -50,6 +51,8 @@ class SubscriptionFanoutTest {
     @Mock UserActivityRepository userActivityRepository;
     @Mock CategoryRepository categoryRepository;
     @Mock NotificationService notificationService;
+
+    @Mock BlockFilterService blockFilterService;
 
     @InjectMocks SubscriptionService subscriptionService;
 
@@ -129,9 +132,9 @@ class SubscriptionFanoutTest {
         subscriptionService.notifySubscribersOfNewProgram(slot);
 
         verify(notificationService, times(1))
-            .notify(eq(abonne.getId()), eq(NotificationType.AUTHOR_NEW_PROGRAM), any());
+            .notify(eq(abonne.getId()), any(), eq(NotificationType.AUTHOR_NEW_PROGRAM), any());
         verify(notificationService, never())
-            .notify(any(), eq(NotificationType.ACTIVITY_NEW_PROGRAM), any());
+            .notify(any(), any(), eq(NotificationType.ACTIVITY_NEW_PROGRAM), any());
     }
 
     @Test
@@ -152,9 +155,9 @@ class SubscriptionFanoutTest {
 
         subscriptionService.notifySubscribersOfNewProgram(slot);
 
-        verify(notificationService).notify(eq(parAuteur.getId()),
+        verify(notificationService).notify(eq(parAuteur.getId()), any(),
             eq(NotificationType.AUTHOR_NEW_PROGRAM), any());
-        verify(notificationService).notify(eq(parActivite.getId()),
+        verify(notificationService).notify(eq(parActivite.getId()), any(),
             eq(NotificationType.ACTIVITY_NEW_PROGRAM), any());
     }
 
@@ -184,7 +187,7 @@ class SubscriptionFanoutTest {
         subscriptionService.notifySubscribersOfNewProgram(slot);
 
         verify(notificationService, times(1))
-            .notify(eq(abonne.getId()), eq(NotificationType.ACTIVITY_NEW_PROGRAM), any());
+            .notify(eq(abonne.getId()), any(), eq(NotificationType.ACTIVITY_NEW_PROGRAM), any());
     }
 
     // --- Niveau ---
@@ -227,7 +230,7 @@ class SubscriptionFanoutTest {
         when(subscriptionRepository.findByTargetAuthorId(auteur.getId())).thenReturn(List.of());
 
         subscriptionService.notifySubscribersOfNewProgram(slot);
-        verify(notificationService).notify(eq(abonne.getId()),
+        verify(notificationService).notify(eq(abonne.getId()), any(),
             eq(NotificationType.ACTIVITY_NEW_PROGRAM), any());
     }
 
@@ -244,7 +247,7 @@ class SubscriptionFanoutTest {
 
         subscriptionService.notifySubscribersOfUserActivityUpdate(ua);
 
-        verify(notificationService).notify(eq(abonne.getId()),
+        verify(notificationService).notify(eq(abonne.getId()), any(),
             eq(NotificationType.ACTIVITY_UPDATED), any());
     }
 
@@ -291,7 +294,7 @@ class SubscriptionFanoutTest {
 
         subscriptionService.notifyCategorySubscribersIfFirstLocatedSlot(slot);
 
-        verify(notificationService).notify(eq(abonne.getId()),
+        verify(notificationService).notify(eq(abonne.getId()), any(),
             eq(NotificationType.CATEGORY_NEW_ACTIVITY), any());
     }
 
@@ -313,7 +316,7 @@ class SubscriptionFanoutTest {
 
         subscriptionService.notifyCategorySubscribersIfFirstLocatedSlot(slot);
 
-        verify(notificationService).notify(eq(abonne.getId()),
+        verify(notificationService).notify(eq(abonne.getId()), any(),
             eq(NotificationType.CATEGORY_NEW_ACTIVITY), any());
     }
 
@@ -331,7 +334,7 @@ class SubscriptionFanoutTest {
 
         subscriptionService.notifyCategorySubscribersIfFirstLocatedSlot(slot);
 
-        verify(notificationService).notify(eq(abonne.getId()),
+        verify(notificationService).notify(eq(abonne.getId()), any(),
             eq(NotificationType.CATEGORY_NEW_ACTIVITY), any());
     }
 
@@ -372,7 +375,7 @@ class SubscriptionFanoutTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> payload = ArgumentCaptor.forClass(Map.class);
-        verify(notificationService).notify(eq(abonne.getId()),
+        verify(notificationService).notify(eq(abonne.getId()), any(),
             eq(NotificationType.AUTHOR_NEW_PROGRAM), payload.capture());
 
         // C'est l'abonnement gagnant qui est nommé — celui que l'appui long
@@ -401,7 +404,7 @@ class SubscriptionFanoutTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> payload = ArgumentCaptor.forClass(Map.class);
-        verify(notificationService).notify(any(),
+        verify(notificationService).notify(any(), any(),
             eq(NotificationType.ACTIVITY_NEW_PROGRAM), payload.capture());
 
         assertThat(payload.getValue())

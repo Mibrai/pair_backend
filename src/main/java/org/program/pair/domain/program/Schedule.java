@@ -42,7 +42,13 @@ public class Schedule {
     @Column(name = "place_type", nullable = false, length = 10)
     private PlaceType placeType;
 
-    @Column(columnDefinition = "geometry(Point,4326)", nullable = false)
+    /**
+     * Position du lieu. <b>Nulle si et seulement si le créneau est en ligne</b> —
+     * la contrainte {@code chk_schedule_location_unless_online} (V61) le garantit
+     * en base. Un lieu physique sans position ne serait sur aucune carte, dans
+     * aucun rayon, et personne ne saurait où aller.
+     */
+    @Column(columnDefinition = "geometry(Point,4326)")
     private Point location;
 
     @Column(name = "address_public", length = 300)
@@ -124,6 +130,77 @@ public class Schedule {
     /** Fin de cette même séance, conservée telle qu'elle était vécue. */
     @Column(name = "last_occurrence_end")
     private Instant lastOccurrenceEnd;
+
+    /**
+     * Étiquettes d'accueil annoncées pour cette séance (V72).
+     *
+     * <p>Chargées à la demande. Le fil en charge une par créneau, ce qui est le
+     * régime que cette route pratique déjà — la visibilité d'adresse fait de
+     * même. Si le fil devient coûteux, c'est l'ensemble de ces chargements par
+     * ligne qu'il faudra traiter, pas celui-ci en particulier.
+     */
+    @ElementCollection(fetch = FetchType.LAZY)
+    @CollectionTable(name = "schedule_accessibility_tags",
+        joinColumns = @JoinColumn(name = "schedule_id"))
+    @Column(name = "tag", length = 40)
+    @Enumerated(EnumType.STRING)
+    @Builder.Default
+    private java.util.Set<AccessibilityTag> accessibilityTags = new java.util.LinkedHashSet<>();
+
+    /**
+     * Langue principale de la séance (V71). Nulle dans le cas normal — la
+     * plupart des créneaux n'en déclareront jamais — et un créneau sans langue
+     * n'est jamais exclu par le filtre.
+     */
+    @Column(name = "primary_language", length = 5)
+    private String primaryLanguage;
+
+    // Annulation (V68).
+
+    /** Motif donné par l'organisateur, montré aux participants. */
+    @Column(name = "cancellation_reason", length = 300)
+    private String cancellationReason;
+
+    @Column(name = "cancelled_at")
+    private Instant cancelledAt;
+
+    /**
+     * Qui a annulé. Nul si le compte a disparu depuis — la suppression d'un
+     * compte ne doit pas effacer le fait qu'une séance a été annulée.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cancelled_by")
+    private org.program.pair.domain.user.User cancelledBy;
+
+    // Partage public (V65). Placés avant les collections, jamais entre un champ
+    // et l'annotation d'audit qui le précède.
+
+    /**
+     * Adresse publique du créneau. <b>Nulle tant que personne ne l'a partagé</b> :
+     * le jeton est créé à la première demande de lien plutôt que par une
+     * migration, ce qui évite deux qualités de jeton dans la même colonne — et
+     * dit au passage quels créneaux ont déjà été partagés.
+     */
+    @Column(name = "public_share_token", length = 22, unique = true)
+    private String publicShareToken;
+
+    /**
+     * L'organisateur peut retirer son créneau du web ouvert. Vrai par défaut :
+     * un créneau public dans l'application l'est aussi hors d'elle, et
+     * l'inverse aurait rendu la fonctionnalité invisible.
+     */
+    @Column(name = "is_publicly_shareable", nullable = false)
+    @Builder.Default
+    private Boolean isPubliclyShareable = true;
+
+    /**
+     * Nombre d'ouvertures de la page publique. Indicatif : les caches des
+     * messageries et les robots d'aperçu le faussent par nature, et il ne sert
+     * qu'à dire « ce lien a circulé », jamais à mesurer une audience.
+     */
+    @Column(name = "public_view_count", nullable = false)
+    @Builder.Default
+    private Integer publicViewCount = 0;
 
     @OneToMany(mappedBy = "schedule", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default

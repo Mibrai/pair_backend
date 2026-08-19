@@ -15,14 +15,25 @@ public class EmailService {
 
     private final ResendEmailService resendEmailService;
 
+    /**
+     * De l'identifiant à l'adresse. Injecté comme fonction plutôt que par une
+     * dépendance au dépôt utilisateur : cette classe vit dans {@code shared} et
+     * sert aussi l'authentification, qui n'a rien à voir avec les notifications.
+     */
+    private final java.util.function.Function<UUID, String> recipientEmail;
+
     @Value("${email.from:noreply@pair.app}")
     private String fromAddress;
 
     @Value("${email.base-url:http://localhost:3000}")
     private String baseUrl;
 
-    public EmailService(ResendEmailService resendEmailService) {
+    public EmailService(ResendEmailService resendEmailService,
+                        org.program.pair.repository.UserRepository userRepository) {
         this.resendEmailService = resendEmailService;
+        this.recipientEmail = userId -> userRepository.findById(userId)
+            .map(org.program.pair.domain.user.User::getEmail)
+            .orElse(null);
     }
 
     public void sendVerificationEmail(String email, String token) {
@@ -67,8 +78,100 @@ public class EmailService {
         }
     }
 
+    /**
+     * L'e-mail d'une notification — pour les seules notifications qui le méritent.
+     *
+     * <p><b>Ce que cette méthode faisait avant : rien.</b> Elle journalisait en
+     * debug, avec un commentaire renvoyant à un digest « géré par des jobs
+     * Quartz » qui n'ont jamais été écrits. Cocher « recevoir les e-mails » ne
+     * produisait donc aucun e-mail, et personne ne pouvait s'en apercevoir.
+     *
+     * <p><b>Pourquoi elle reste bornée.</b> L'envoyer pour les trente et un types
+     * transformerait chaque notification en e-mail, ce que personne n'a demandé
+     * et qui ferait fuir les gens plus sûrement qu'aucune fonctionnalité. Seules
+     * les notifications critiques passent — celles qu'on enverrait même en pleine
+     * nuit, parce que ne pas les recevoir coûte un déplacement pour rien. Le
+     * digest reste à écrire ; il l'était déjà, à ceci près que le code ne le
+     * prétend plus.
+     */
     public void sendNotificationEmail(UUID userId, NotificationType type, Map<String, Object> payload) {
-        // Notification emails sont groupées en digest — pas d'envoi direct ici
-        log.debug("Notification email queued for digest: type={} userId={}", type, userId);
+        if (!type.isCritical()) {
+            log.debug("Notification non critique, pas d'e-mail : type={} userId={}", type, userId);
+            return;
+        }
+
+        String email = recipientEmail.apply(userId);
+        if (email == null || email.isBlank()) {
+            return;
+        }
+
+        String subject = String.valueOf(payload.getOrDefault("programTitle", "Votre créneau meetDo"));
+        String text = notificationText(type, payload);
+
+        if (!resendEmailService.isEnabled()) {
+            // Même repli que la vérification d'adresse : en développement, le
+            // contenu part dans les journaux plutôt que nulle part.
+            log.info("[DEV] E-mail {} pour {} : {}", type, email, text);
+            return;
+        }
+
+        boolean sent = resendEmailService.sendEmail(email, subjectFor(type, subject), text,
+            htmlFor(type, subject, text));
+        if (!sent) {
+            // Un e-mail perdu ne doit pas emporter l'annulation elle-même : le
+            // push et la notification in-app sont déjà partis.
+            log.error("Échec de l'e-mail {} vers {}", type, email);
+        }
+    }
+
+    private String subjectFor(NotificationType type, String programTitle) {
+        return type == NotificationType.SLOT_CANCELLED
+            ? "Séance annulée : " + programTitle
+            : "meetDo — " + programTitle;
+    }
+
+    private String notificationText(NotificationType type, Map<String, Object> payload) {
+        StringBuilder text = new StringBuilder();
+        text.append("La séance « ")
+            .append(payload.getOrDefault("programTitle", "votre créneau"))
+            .append(" » est annulée.");
+
+        Object reason = payload.get("cancellationReason");
+        if (reason != null && !String.valueOf(reason).isBlank()) {
+            text.append("\n\nMotif indiqué par l'organisateur : ").append(reason);
+        }
+
+        Object alternatives = payload.get("alternativesCount");
+        if (alternatives instanceof Number count && count.intValue() > 0) {
+            text.append("\n\n").append(count.intValue())
+                .append(count.intValue() > 1
+                    ? " autres créneaux de la même activité ont lieu près de chez vous."
+                    : " autre créneau de la même activité a lieu près de chez vous.");
+        }
+
+        return text.toString();
+    }
+
+    /**
+     * Version HTML du même texte. Les valeurs sont échappées : elles viennent de
+     * l'organisateur — titre du programme, motif d'annulation — et le HTML est
+     * assemblé par concaténation, ce qui n'échappe rien tout seul.
+     */
+    private String htmlFor(NotificationType type, String programTitle, String text) {
+        return """
+            <div style="font-family:system-ui,sans-serif;line-height:1.5;">
+              <h2 style="font-size:1.1rem;">%s</h2>
+              <p style="white-space:pre-line;">%s</p>
+            </div>
+            """.formatted(escape(subjectFor(type, programTitle)), escape(text));
+    }
+
+    private static String escape(String value) {
+        return value
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("'", "&#39;");
     }
 }

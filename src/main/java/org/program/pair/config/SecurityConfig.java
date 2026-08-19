@@ -60,13 +60,29 @@ public class SecurityConfig {
                 // Public endpoints for categories and activities (read-only)
                 .requestMatchers(HttpMethod.GET, "/api/categories").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/activities").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/map/activities").permitAll()
+                // /api/map/activities a quitté cette liste le 2026-08-19 : aucun
+                // écran hors session ne l'appelait, et sans identité d'appelant
+                // elle rendait les organisateurs bloqués comme les autres.
                 // Public Phase 3 endpoints
                 .requestMatchers(HttpMethod.GET, "/api/badges").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/badges/users/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/recommendations/users/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/recommendations/stats/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/reviews/programs/**").permitAll()
+                // Pages publiques, lisibles sans compte. Le lien de sécurité en
+                // est la première : son destinataire est un proche qui n'a pas
+                // de compte meetDo, et lui en demander un viderait la
+                // fonctionnalité de son sens. La confidentialité repose
+                // entièrement sur le jeton, opaque et périssable.
+                .requestMatchers(HttpMethod.GET, "/public/safety/**").permitAll()
+                // Page publique de créneau, son JSON, son image, et l'adresse
+                // courte qu'on partage réellement.
+                .requestMatchers(HttpMethod.GET, "/public/slots/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/s/**").permitAll()
+                // Fichiers d'association des liens universels. Ouverts sans
+                // condition : Apple et Google les lisent sans identité, et une
+                // redirection suffirait à faire échouer la validation.
+                .requestMatchers(HttpMethod.GET, "/.well-known/**").permitAll()
                 // Tout le reste : authentifié
                 .anyRequest().authenticated()
             )

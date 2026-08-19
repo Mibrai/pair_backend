@@ -1,7 +1,11 @@
 package org.program.pair.integration;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.program.pair.AbstractIntegrationTest;
+import org.program.pair.domain.auth.dto.AuthResponse;
+import org.program.pair.domain.auth.dto.LoginRequest;
+import org.program.pair.domain.auth.dto.RegisterRequest;
 import org.program.pair.repository.ScheduleRepository;
 import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.http.MediaType;
@@ -9,6 +13,7 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
 /**
@@ -37,12 +42,27 @@ class MapActivitiesErrorPathIntegrationTest extends AbstractIntegrationTest {
 
     @MockitoBean ScheduleRepository scheduleRepository;
 
+    /**
+     * La route est authentifiée depuis le 2026-08-19. Le jeton est pris une fois
+     * pour la classe entière : chaque inscription consomme le limiteur de débit,
+     * qui plafonne à cinq par contexte.
+     */
+    private String token;
+
+    @BeforeEach
+    void authenticate() {
+        if (token == null) {
+            token = registerAndLogin();
+        }
+    }
+
     @Test
     void zoneSansAucuneDonnee_doitRendre200EtUneListeVide() {
         when(scheduleRepository.findAllWithActivityDetails()).thenReturn(List.of());
 
         webTestClient.get()
             .uri("/api/map/activities")
+            .headers(h -> h.setBearerAuth(token))
             .accept(MediaType.APPLICATION_JSON)
             .exchange()
             .expectStatus().isOk()
@@ -63,6 +83,7 @@ class MapActivitiesErrorPathIntegrationTest extends AbstractIntegrationTest {
 
         webTestClient.get()
             .uri("/api/map/activities")
+            .headers(h -> h.setBearerAuth(token))
             .accept(MediaType.APPLICATION_JSON)
             .exchange()
             .expectStatus().is5xxServerError()
@@ -83,10 +104,27 @@ class MapActivitiesErrorPathIntegrationTest extends AbstractIntegrationTest {
     void parametreInvalide_doitRendreUn400Nomme() {
         webTestClient.get()
             .uri(b -> b.path("/api/map/activities").queryParam("zoom", 25).build())
+            .headers(h -> h.setBearerAuth(token))
             .accept(MediaType.APPLICATION_JSON)
             .exchange()
             .expectStatus().isBadRequest()
             .expectBody()
             .jsonPath("$.code").isEqualTo("MAP_ZOOM_OUT_OF_RANGE");
+    }
+
+    private String registerAndLogin() {
+        String email = uniqueEmail("maperr");
+        webTestClient.post().uri("/api/auth/register")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(new RegisterRequest(email, "Password123!", "Carte"))
+            .exchange().expectStatus().isCreated();
+
+        AuthResponse auth = webTestClient.post().uri("/api/auth/login")
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(new LoginRequest(email, "Password123!"))
+            .exchange().expectStatus().isOk()
+            .expectBody(AuthResponse.class).returnResult().getResponseBody();
+        assertThat(auth).isNotNull();
+        return auth.accessToken();
     }
 }

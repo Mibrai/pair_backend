@@ -1,5 +1,6 @@
 package org.program.pair.domain.chat;
 
+import org.program.pair.domain.block.BlockFilterService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -50,6 +51,8 @@ class ChatServiceTest {
 
     @Mock
     ApplicationEventPublisher eventPublisher;
+
+    @Mock BlockFilterService blockFilterService;
 
     @InjectMocks
     ChatService chatService;

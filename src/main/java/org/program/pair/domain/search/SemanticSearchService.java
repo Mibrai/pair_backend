@@ -11,6 +11,7 @@ import org.program.pair.domain.program.LocationType;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotAddressVisibility;
+import org.program.pair.domain.block.BlockFilterService;
 import org.program.pair.domain.search.dto.*;
 import org.program.pair.domain.search.embedding.LocalEmbeddingService;
 import org.program.pair.domain.user.User;
@@ -39,6 +40,16 @@ import java.util.UUID;
 @Slf4j
 public class SemanticSearchService {
 
+    /**
+     * Fuseau de référence pour rapprocher un instant UTC d'une case de
+     * disponibilité. Le même que celui du développement des récurrences : deux
+     * fuseaux différents rangeraient la même séance dans « mardi soir » ici et
+     * « mardi après-midi » là.
+     */
+    @Value("${pair.recurrence.zone:Europe/Paris}")
+    private String zoneId;
+
+    private final BlockFilterService blockFilterService;
     private final RuleBasedIntentExtractor intentExtractor;
     private final Messages messages;
     private final LocalEmbeddingService embeddingService;
@@ -188,6 +199,26 @@ public class SemanticSearchService {
         // rappel sémantique/full-text, dédupliqués par programme.
         List<SearchResultDto> results = mergeResults(taxonomyResults, recallResults, CANDIDATE_LIMIT);
 
+        // Blocage : appliqué ici, avant la pagination et avant countsByType, donc
+        // les compteurs d'onglets portent bien sur ce que l'appelant peut voir.
+        // Filtrer plus tard ferait annoncer « Programmes (12) » puis en servir 9.
+        //
+        // C'est le seul endroit du lot où le filtre reste en mémoire. Les trois
+        // requêtes de rappel plein texte sont bâties à la main avec des
+        // paramètres positionnels, et y insérer un prédicat au mauvais rang est
+        // le mode de panne que ce fichier documente déjà. La contrepartie est
+        // bornée et connue : la limite de candidats s'applique avant ce filtre,
+        // donc quelqu'un qui a beaucoup bloqué peut recevoir un peu moins de
+        // candidats — jamais un résultat qu'il ne devrait pas voir.
+        if (requesterId != null && !results.isEmpty()) {
+            Set<UUID> invisible = blockFilterService.invisibleTo(requesterId);
+            if (!invisible.isEmpty()) {
+                results = results.stream()
+                    .filter(r -> r.organizerId() == null || !invisible.contains(r.organizerId()))
+                    .toList();
+            }
+        }
+
         // Filtrer par niveau si spécifié par le LLM
         if (intent.level() != null && !results.isEmpty()) {
             results = results.stream()
@@ -232,15 +263,26 @@ public class SemanticSearchService {
 
         TimeHintParser.Window window = TimeHintParser.resolveWindow(intent.timeHint(), Instant.now());
 
+        // Le filtre d'accessibilité ne porte que sur les créneaux : une étiquette
+        // décrit une séance et un lieu, pas un programme.
+        java.util.Set<String> tags = request.effectiveAccessibilityTags();
+        boolean filterByTags = !tags.isEmpty();
+
         // La recherche cible une activité précise, donc jamais une catégorie, et ne
         // filtre pas sur la date de publication : les deux paramètres sont neutres.
         List<Schedule> slots = scheduleRepository.findOpenSlotsInRadius(
             request.lat(), request.lng(), radius, window.from(), window.to(), activityId,
-            false, ScheduleRepository.NO_CATEGORY_FILTER, null, MAX_SLOT_RESULTS);
+            false, ScheduleRepository.NO_CATEGORY_FILTER, null, MAX_SLOT_RESULTS, requesterId,
+            false, ScheduleRepository.NO_LANGUAGE_FILTER,
+            filterByTags, filterByTags ? tags : ScheduleRepository.NO_TAG_FILTER, tags.size(),
+            zoneId);
 
+        // L'ordre de la requête est conservé tel quel. Il trie déjà par jour puis
+        // par heure ; le retrier ici par startsAt seul écraserait la pondération
+        // par disponibilité que la requête vient d'appliquer, sans rien changer
+        // d'autre — les deux ordres coïncident pour qui n'a rien déclaré.
         return slots.stream()
             .filter(s -> !s.getProgram().getUserActivity().getUser().getId().equals(requesterId))
-            .sorted(Comparator.comparing(Schedule::getStartsAt))
             .map(s -> toSlotResultDto(s, request.lat(), request.lng(), requesterId))
             .toList();
     }

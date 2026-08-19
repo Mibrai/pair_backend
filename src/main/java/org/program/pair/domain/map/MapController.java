@@ -107,12 +107,20 @@ public class MapController {
      * pastille est donc le nombre de marqueurs réellement affichables.
      * {@code includeExpired=true} rétablit la population d'avant ce filtre.
      *
+     * <p><b>Authentifiée depuis le 2026-08-19.</b> Elle était ouverte sans jeton,
+     * hérité d'un temps où la carte servait de vitrine. Le client ne l'appelle
+     * depuis aucun de ses cinq écrans hors session — l'équipe mobile l'a vérifié
+     * route par route — et sans identité d'appelant il n'y avait personne à qui
+     * masquer les organisateurs bloqués. Le jour où une page web publique devra
+     * afficher une carte, ce sera une route dédiée à cette page, pas celle-ci.
+     *
      * @return marqueurs, centre par défaut, et l'état de troncature
      *         ({@code truncated}, {@code totalInBounds})
      */
     @GetMapping("/activities")
     public MapActivitiesResponse getAllActivitiesForMap(
+            @AuthenticationPrincipal UserPrincipal principal,
             @Valid @ModelAttribute MapActivitiesRequest request) {
-        return mapService.getAllActivitiesForMap(request);
+        return mapService.getAllActivitiesForMap(request, principal.getId());
     }
 }

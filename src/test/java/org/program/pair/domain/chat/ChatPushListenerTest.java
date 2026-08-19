@@ -53,7 +53,7 @@ class ChatPushListenerTest {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> payload = ArgumentCaptor.forClass(Map.class);
         verify(notificationService).notifyPushOnly(
-            eq(recipient), eq(NotificationType.NEW_MESSAGE), payload.capture());
+            eq(recipient), any(), eq(NotificationType.NEW_MESSAGE), payload.capture());
 
         Map<String, Object> sent = payload.getValue();
         assertThat(sent.get("messageAuthorName")).isEqualTo("Sophie Martin");
@@ -80,7 +80,7 @@ class ChatPushListenerTest {
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> payload = ArgumentCaptor.forClass(Map.class);
         verify(notificationService).notifyPushOnly(
-            eq(recipient), eq(NotificationType.PROGRAM_BROADCAST), payload.capture());
+            eq(recipient), any(), eq(NotificationType.PROGRAM_BROADCAST), payload.capture());
 
         Map<String, Object> sent = payload.getValue();
         assertThat(sent.get("programId")).isEqualTo(program.toString());
@@ -92,7 +92,7 @@ class ChatPushListenerTest {
         // Le message est écrit et diffusé par WebSocket avant d'arriver ici : une
         // push perdue ne doit pas faire échouer ce qui a déjà eu lieu.
         doThrow(new RuntimeException("FCM indisponible"))
-            .when(notificationService).notifyPushOnly(any(), any(), anyMap());
+            .when(notificationService).notifyPushOnly(any(), any(), any(), anyMap());
 
         assertThatCode(() -> listener.onMessageSent(new MessageSentEvent(
             UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),

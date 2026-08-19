@@ -32,5 +32,10 @@ public enum AuditActionType {
     // Privacy
     LOCATION_UPDATE,
     VISIBILITY_CHANGE,
-    PREFERENCE_UPDATE
+    PREFERENCE_UPDATE,
+
+    // Parcours d'accueil. Passer l'accueil est permis — la spec le dit
+    // explicitement — mais tracé : c'est la seule façon de savoir plus tard si
+    // les gens le sautent, et donc si le parcours vaut ce qu'il coûte.
+    ONBOARDING_SKIP
 }

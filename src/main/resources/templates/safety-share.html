@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="fr" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Aucune métadonnée de partage social ici, délibérément : cette page dit
+         où quelqu'un se rend, et ne doit pas produire d'aperçu quand le lien
+         transite par une messagerie. C'est l'inverse exact de la page publique
+         de créneau, dont l'aperçu est toute la raison d'être. -->
+    <meta name="robots" content="noindex, nofollow">
+    <title>Point de sécurité — meetDo</title>
+    <style>
+        :root { color-scheme: light dark; }
+        body {
+            margin: 0; padding: 2rem 1.25rem;
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            line-height: 1.55; color: #16191c; background: #f5f6f7;
+        }
+        .card {
+            max-width: 32rem; margin: 0 auto; background: #fff;
+            border-radius: 10px; padding: 1.75rem; box-shadow: 0 1px 3px rgba(0,0,0,.09);
+        }
+        h1 { font-size: 1.15rem; margin: 0 0 1.25rem; font-weight: 600; }
+        dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: .6rem 1.25rem; }
+        dt { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: #6b757d; }
+        dd { margin: 0; font-weight: 500; }
+        .note { margin-top: 1.5rem; font-size: .85rem; color: #6b757d; }
+        @media (prefers-color-scheme: dark) {
+            body { background: #101315; color: #e6e9ea; }
+            .card { background: #181c1f; box-shadow: none; }
+            dt, .note { color: #8d979e; }
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1>Une personne vous a partagé son rendez-vous</h1>
+    <dl>
+        <dt>Activité</dt>
+        <dd th:text="${activityName}">Yoga</dd>
+
+        <dt>Quand</dt>
+        <dd><span th:text="${day}">samedi 14 juin</span>,
+            de <span th:text="${startTime}">9h00</span>
+            à <span th:text="${endTime}">10h00</span></dd>
+
+        <dt>Lieu</dt>
+        <dd><span th:text="${placeName}">Studio Lumière</span><span
+                th:if="${city}" th:text="' — ' + ${city}"></span></dd>
+
+        <dt>Organise</dt>
+        <dd th:text="${organizerGivenName} ?: 'Non renseigné'">Camille</dd>
+    </dl>
+    <p class="note">
+        Ce lien expire six heures après la fin prévue. L'adresse exacte et les
+        coordonnées des participants ne sont volontairement pas affichées.
+    </p>
+</div>
+</body>
+</html>

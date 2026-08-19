@@ -7,6 +7,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.program.pair.domain.user.User;
 import org.program.pair.repository.AttendanceRepository;
+import org.program.pair.repository.SlotParticipationRepository;
 import org.program.pair.repository.UserRepository;
 
 import java.time.DayOfWeek;
@@ -27,6 +28,8 @@ class PracticeStatsServiceTest {
 
     @Mock AttendanceRepository attendanceRepository;
     @Mock UserRepository userRepository;
+
+    @Mock SlotParticipationRepository slotParticipationRepository;
 
     @InjectMocks
     PracticeStatsService practiceStatsService;
