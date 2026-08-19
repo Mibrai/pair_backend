@@ -23,5 +23,8 @@ public enum BadgeConditionType {
     ATTENDANCE_COUNT,
     DISTINCT_PARTNERS,
     WEEKLY_STREAK,
-    SLOT_HOSTED_COUNT
+    SLOT_HOSTED_COUNT,
+    // Invitations qui ont abouti sur un créneau. Le seuil est à 1 : la
+    // récompense marque un geste, elle ne mesure pas une performance.
+    INVITATION_CONVERTED
 }
