@@ -67,6 +67,12 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/recommendations/users/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/recommendations/stats/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/reviews/programs/**").permitAll()
+                // Pages publiques, lisibles sans compte. Le lien de sécurité en
+                // est la première : son destinataire est un proche qui n'a pas
+                // de compte meetDo, et lui en demander un viderait la
+                // fonctionnalité de son sens. La confidentialité repose
+                // entièrement sur le jeton, opaque et périssable.
+                .requestMatchers(HttpMethod.GET, "/public/safety/**").permitAll()
                 // Tout le reste : authentifié
                 .anyRequest().authenticated()
             )
