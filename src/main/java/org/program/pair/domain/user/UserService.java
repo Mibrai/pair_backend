@@ -6,6 +6,7 @@ import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
+import org.program.pair.domain.guidelines.Guidelines;
 import org.program.pair.domain.subscription.SubscriptionService;
 import org.program.pair.domain.user.dto.*;
 import org.program.pair.repository.BadgeAwardRepository;
@@ -14,6 +15,7 @@ import org.program.pair.shared.exception.InvalidCredentialsException;
 import org.program.pair.shared.exception.UserNotFoundException;
 import org.program.pair.shared.exception.ValidationException;
 import org.program.pair.shared.sanitizer.HtmlSanitizer;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -41,6 +43,15 @@ public class UserService {
     private final PasswordEncoder passwordEncoder;
     private final GeometryFactory geometryFactory = new GeometryFactory(
         new PrecisionModel(), 4326);
+
+    /**
+     * Version en vigueur des règles, injectée par champ et non par le
+     * constructeur : ce service est monté dans ses tests unitaires par
+     * {@code @InjectMocks} avec la liste exacte de ses dépendances, et lui en
+     * ajouter une casserait une classe de test étrangère au sujet.
+     */
+    @Value("${pair.guidelines.current-version:1.0}")
+    private String guidelinesVersion;
 
     @Transactional(readOnly = true)
     public UserPrivateDto getMyProfile(UUID userId) {
@@ -307,7 +318,9 @@ public class UserService {
             List.of(), // activities — rempli par ActivityService
             subscriptionService.countAuthorSubscribers(user.getId()),
             user.getOnboardingCompletedAt(),
-            user.getOnboardingStep() == null ? null : user.getOnboardingStep().name()
+            user.getOnboardingStep() == null ? null : user.getOnboardingStep().name(),
+            user.getGuidelinesVersion(),
+            Guidelines.acceptanceRequired(guidelinesVersion, user.getGuidelinesVersion())
         );
     }
 }
