@@ -123,6 +123,15 @@ public class FullTextSearchService {
      *
      * <p>Un paramètre : le rayon en mètres.
      */
+    /**
+     * Seuil de similarité du repli trigramme, celui de PostgreSQL par défaut.
+     *
+     * <p>Plus bas, la recherche rend n'importe quoi plutôt que rien — ce qui est
+     * pire : une liste de résultats sans rapport se lit comme une erreur du
+     * produit, là où une liste vide se lit comme une absence.
+     */
+    private static final double TRIGRAM_THRESHOLD = 0.3;
+
     private static final String VENUE_WITHIN_RADIUS = """
         (
             p.location_type IN ('REMOTE', 'ONLINE')
@@ -218,6 +227,80 @@ public class FullTextSearchService {
             return rows.stream().map(r -> mapRowToSearchResult(r, request.lat(), request.lng())).toList();
         } catch (Exception e) {
             log.error("Activity search error: {}", e.getMessage(), e);
+            return List.of();
+        }
+    }
+
+    /**
+     * Similarité trigramme — la quatrième couche, celle du repli.
+     *
+     * <p><b>À n'appeler que lorsque les trois autres n'ont rien rendu.</b> La
+     * mesure ne sait pas ce qu'est un mot : « Yoga » et « Toga » partagent trois
+     * trigrammes sur quatre, et faire remonter le second au milieu de résultats
+     * exacts dégraderait toutes les recherches qui fonctionnent, pour rattraper
+     * celles qui échouent. C'est le seul ordre qui gagne sans rien perdre.
+     *
+     * <p>Elle compare le nom de l'activité <b>et</b> le titre du programme, et
+     * retient la meilleure des deux : quelqu'un qui tape « yoag » vise
+     * l'activité, quelqu'un qui tape « cours du sami » vise un titre.
+     *
+     * <p>Le seuil de 0,3 est celui que PostgreSQL retient par défaut pour
+     * l'opérateur {@code %}. Il est écrit explicitement plutôt que laissé au
+     * réglage de session {@code pg_trgm.similarity_threshold} : ce réglage est
+     * global, modifiable par n'importe quelle autre requête, et la recherche ne
+     * doit pas dépendre de ce que le voisin a fait de sa connexion.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public List<SearchResultDto> searchByTrigramSimilarity(String query, SearchRequest request, int limit) {
+        if (query == null || query.isBlank()) {
+            return List.of();
+        }
+        int radius = request.radiusMeters() != null ? request.radiusMeters() : 5000;
+
+        String sql = """
+            SELECT
+                %s,
+                venue.distance_meters,
+                GREATEST(similarity(a.name, ?), similarity(p.title, ?)) AS rank
+            FROM programs p
+            INNER JOIN user_activities ua  ON p.user_activity_id = ua.id
+            INNER JOIN users u             ON ua.user_id          = u.id
+            INNER JOIN activities a        ON ua.activity_id      = a.id
+            INNER JOIN categories cat      ON a.category_id       = cat.id
+            %s
+            WHERE
+                p.status = 'ACTIVE'
+                AND p.is_public = true
+                AND GREATEST(similarity(a.name, ?), similarity(p.title, ?)) >= ?
+                AND %s
+            ORDER BY rank DESC, venue.distance_meters ASC NULLS LAST, p.id
+            LIMIT ?
+            """.formatted(PROGRAM_SELECT, VENUE_JOIN, VENUE_WITHIN_RADIUS);
+
+        try {
+            // ATTENTION À L'ORDRE. Les paramètres sont positionnels, et les deux
+            // premiers « ? » de cette requête sont ceux du SELECT — la mesure de
+            // similarité y est calculée pour être triée —, donc AVANT ceux de
+            // VENUE_JOIN. Les autres requêtes de ce fichier n'ont aucun paramètre
+            // dans leur SELECT et commencent toutes par (lng, lat) ; recopier cet
+            // ordre ici passait les coordonnées à similarity() et la requête
+            // entière au calcul de distance. L'erreur ne se voyait pas : elle
+            // était avalée par le catch ci-dessous et rendait une liste vide,
+            // c'est-à-dire exactement ce que le repli est censé corriger.
+            List<Map<String, Object>> rows = jdbcTemplate.queryForList(
+                sql,
+                query, query,                              // SELECT : la mesure
+                request.lng(), request.lat(),              // VENUE_JOIN
+                query, query, TRIGRAM_THRESHOLD,           // WHERE : le seuil
+                radius,
+                limit
+            );
+            return rows.stream().map(r -> mapRowToSearchResult(r, request.lat(), request.lng())).toList();
+        } catch (Exception e) {
+            // Un repli qui échoue rend vide, jamais ne fait échouer la recherche :
+            // l'appelant n'avait déjà rien à montrer. Le journal est en ERROR
+            // parce que c'est la seule trace qu'il en reste.
+            log.error("Trigram search error: {}", e.getMessage(), e);
             return List.of();
         }
     }

@@ -27,6 +27,21 @@ public interface ConversationMemberRepository extends JpaRepository<Conversation
         @Param("userId") UUID userId);
 
     /**
+     * Ceux qui ont mis ce fil en sourdine.
+     *
+     * <p>Interrogé à chaque envoi, pour retirer ces destinataires de la
+     * <b>push</b> — et d'elle seule. Le WebSocket part quand même : une
+     * application ouverte sur le fil doit voir le message arriver, la sourdine ne
+     * demandant pas de perdre des messages mais de ne pas sonner.
+     *
+     * <p>Ne rend que ceux qui ont une ligne : sur un fil de diffusion, une ligne
+     * absente veut dire « jamais ouvert », donc jamais mis en sourdine.
+     */
+    @Query("SELECT cm.id.userId FROM ConversationMember cm "
+        + "WHERE cm.id.conversationId = :conversationId AND cm.mutedAt IS NOT NULL")
+    List<UUID> findMutedUserIdsByConversationId(@Param("conversationId") UUID conversationId);
+
+    /**
      * Find all conversations for a user (for GDPR export)
      */
     @Query("SELECT cm.conversation FROM ConversationMember cm WHERE cm.id.userId = :userId")

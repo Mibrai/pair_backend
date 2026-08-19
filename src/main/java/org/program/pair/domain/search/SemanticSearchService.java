@@ -199,6 +199,25 @@ public class SemanticSearchService {
         // rappel sémantique/full-text, dédupliqués par programme.
         List<SearchResultDto> results = mergeResults(taxonomyResults, recallResults, CANDIDATE_LIMIT);
 
+        // 4. Repli trigramme, et uniquement si les trois couches précédentes n'ont
+        // rien rendu. « yoag », « escallade » : des requêtes dont l'auteur conclut
+        // que l'application est vide plutôt qu'il s'est trompé d'une lettre.
+        //
+        // L'ordre n'est pas négociable. La similarité trigramme ne sait pas ce
+        // qu'est un mot — « Yoga » et « Toga » partagent trois trigrammes sur
+        // quatre — et la fusionner avec les autres couches ferait remonter du
+        // vaguement ressemblant au-dessus de l'exact. Placée ici, elle ne peut
+        // que transformer une réponse vide en réponse imparfaite, jamais dégrader
+        // une réponse qui fonctionnait.
+        //
+        // Elle ne rattrape que la faute de frappe, dans la langue où elle a été
+        // faite : « Klettern » et « escalade » n'ont aucun trigramme commun, et
+        // c'est la taxonomie, passée en premier, qui les rapproche.
+        if (results.isEmpty()) {
+            results = fullTextSearchService.searchByTrigramSimilarity(
+                request.query(), searchRequest, CANDIDATE_LIMIT);
+        }
+
         // Blocage : appliqué ici, avant la pagination et avant countsByType, donc
         // les compteurs d'onglets portent bien sur ce que l'appelant peut voir.
         // Filtrer plus tard ferait annoncer « Programmes (12) » puis en servir 9.

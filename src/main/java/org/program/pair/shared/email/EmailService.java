@@ -88,14 +88,21 @@ public class EmailService {
      *
      * <p><b>Pourquoi elle reste bornée.</b> L'envoyer pour les trente et un types
      * transformerait chaque notification en e-mail, ce que personne n'a demandé
-     * et qui ferait fuir les gens plus sûrement qu'aucune fonctionnalité. Seules
-     * les notifications critiques passent — celles qu'on enverrait même en pleine
-     * nuit, parce que ne pas les recevoir coûte un déplacement pour rien. Le
+     * et qui ferait fuir les gens plus sûrement qu'aucune fonctionnalité. Le
      * digest reste à écrire ; il l'était déjà, à ceci près que le code ne le
      * prétend plus.
+     *
+     * <p><b>Le filtre est {@code warrantsEmail} et non {@code isCritical}</b>,
+     * depuis que les heures de silence ont donné un second usage à ce dernier.
+     * Les deux questions se ressemblent mais ne se répondent pas ensemble :
+     * {@code PROGRAM_REMINDER} doit traverser le silence — sinon un réglage de
+     * confort fait manquer une séance à laquelle on s'était engagé — sans pour
+     * autant produire un e-mail par séance rejointe. Les avoir laissés confondus
+     * aurait rempli les boîtes, et fait couper le canal entier, y compris pour
+     * les annulations qui en sont la raison d'être.
      */
     public void sendNotificationEmail(UUID userId, NotificationType type, Map<String, Object> payload) {
-        if (!type.isCritical()) {
+        if (!type.warrantsEmail()) {
             log.debug("Notification non critique, pas d'e-mail : type={} userId={}", type, userId);
             return;
         }

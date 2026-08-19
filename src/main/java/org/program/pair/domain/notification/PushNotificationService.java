@@ -85,15 +85,18 @@ public class PushNotificationService implements PushNotificationServiceInterface
     private final DeviceTokenRepository deviceTokenRepository;
     private final Messages messages;
     private final AndroidPushText androidText;
+    private final org.program.pair.repository.UserRepository userRepository;
 
     public PushNotificationService(FirebaseMessaging firebaseMessaging,
                                     DeviceTokenRepository deviceTokenRepository,
                                     Messages messages,
-                                    AndroidPushText androidText) {
+                                    AndroidPushText androidText,
+                                    org.program.pair.repository.UserRepository userRepository) {
         this.firebaseMessaging = firebaseMessaging;
         this.deviceTokenRepository = deviceTokenRepository;
         this.messages = messages;
         this.androidText = androidText;
+        this.userRepository = userRepository;
     }
 
     /**
@@ -138,6 +141,12 @@ public class PushNotificationService implements PushNotificationServiceInterface
             return;
         }
 
+        devices = awake(userId, type, devices);
+        if (devices.isEmpty()) {
+            log.debug("Heures de silence : push {} retenue pour {}", type, userId);
+            return;
+        }
+
         int badge = badgeValue(badgeCount);
 
         // Un même utilisateur peut avoir des appareils en des langues différentes,
@@ -157,6 +166,42 @@ public class PushNotificationService implements PushNotificationServiceInterface
                 body(group.getKey(), type, payload),
                 payload, badge);
         }
+    }
+
+    /**
+     * Les appareils qu'on a le droit de faire sonner, à cet instant.
+     *
+     * <p><b>Appareil par appareil, et non compte par compte.</b> Le fuseau est
+     * celui de l'appareil ({@code device_tokens.timezone}, posé en V56) : un
+     * téléphone à Paris et une tablette restée à Tokyo ne sont pas dans la nuit
+     * au même moment, et trancher pour le compte entier aurait fait taire l'un ou
+     * réveillé l'autre. C'est le même fuseau qui sert déjà à composer les heures
+     * dans le texte des pushes Android, donc la bannière et la décision de
+     * l'envoyer parlent du même moment.
+     *
+     * <p>Ce qui est coupé, c'est la push, jamais la notification elle-même : elle
+     * est écrite en base dans tous les cas par {@code NotificationService}, et
+     * attend au réveil. Rien n'est perdu, seul le fait de sonner l'est.
+     */
+    private List<DeviceToken> awake(UUID userId, NotificationType type, List<DeviceToken> devices) {
+        if (type.isCritical()) {
+            return devices;
+        }
+
+        QuietHours quiet = userRepository.findById(userId)
+            .map(u -> QuietHours.of(
+                u.getQuietHoursStart() == null ? null : u.getQuietHoursStart().intValue(),
+                u.getQuietHoursEnd() == null ? null : u.getQuietHoursEnd().intValue()))
+            .orElseGet(() -> QuietHours.of(null, null));
+
+        if (quiet.disabled()) {
+            return devices;
+        }
+
+        Instant now = Instant.now();
+        return devices.stream()
+            .filter(device -> !quiet.silences(now, androidText.zoneOf(device.getTimezone())))
+            .toList();
     }
 
     private TextGroup textGroup(DeviceToken device) {

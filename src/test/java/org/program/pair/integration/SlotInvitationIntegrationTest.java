@@ -47,7 +47,7 @@ class SlotInvitationIntegrationTest extends AbstractIntegrationTest {
         InvitationLinkDto second = invite(host, slotId);
 
         assertThat(first.code()).hasSize(22);
-        assertThat(first.url()).isEqualTo("https://meetdo.fun/i/" + first.code());
+        assertThat(first.url()).isEqualTo("https://lien.meetdo.fun/i/" + first.code());
         assertThat(second.code()).isNotEqualTo(first.code());
     }
 

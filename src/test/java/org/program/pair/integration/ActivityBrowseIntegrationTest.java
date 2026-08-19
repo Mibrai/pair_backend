@@ -240,7 +240,161 @@ class ActivityBrowseIntegrationTest extends AbstractIntegrationTest {
             .jsonPath("$.code").isEqualTo("MAP_RADIUS_OUT_OF_RANGE");
     }
 
+    // — lot D8 : les filtres personnels et leurs compteurs —
+
+    @Test
+    void mesActivites_doitRendreCeQuiSePratiqueDansMesSports_pasMesPropresAnnonces() {
+        // La sémantique retenue, et celle que le test verrouille : l'appelant
+        // déclare « Yoga » sans le rendre visible sur la carte, et le filtre lui
+        // rend les entrées de Lena et de Marc — pas la sienne, qui n'est pas
+        // publiée. « Mes activités » désigne ce qui se pratique autour de moi
+        // dans mes sports, pas la liste de ce que j'annonce.
+        //
+        // Les assertions portent sur l'inclusion d'un côté et l'exclusion de
+        // l'autre, jamais sur un ensemble exact : d'autres méthodes de cette
+        // classe déclarent d'autres activités pour le même appelant, et JUnit ne
+        // garantit pas leur ordre.
+        declareForCaller("Yoga", false);
+
+        List<String> names = contentOf(browse(b -> query(b, 100_000)
+            .queryParam("size", 100)
+            .queryParam("myActivitiesOnly", true)
+            .build()))
+            .stream().map(e -> e.get("activityName").asText()).toList();
+
+        assertThat(names).contains("Yoga");
+        assertThat(names.stream().filter("Yoga"::equals).count())
+            .as("les deux organisateurs de Yoga, pas un seul")
+            .isEqualTo(2);
+        assertThat(names)
+            .as("Meditation n'est déclarée par personne du côté de l'appelant")
+            .doesNotContain("Meditation");
+    }
+
+    @Test
+    void mesAbonnements_doitNeRendreQueCeQueJeSuis() {
+        List<JsonNode> all = nearbyEntries(100_000);
+        String followed = entryNamed(all, "Escalade").get("userActivityId").asText();
+        subscribeToEntry(followed);
+
+        List<JsonNode> entries = contentOf(browse(b -> query(b, 100_000)
+            .queryParam("size", 100)
+            .queryParam("subscribedOnly", true)
+            .build()));
+
+        assertThat(idsOf(browse(b -> query(b, 100_000)
+            .queryParam("size", 100)
+            .queryParam("subscribedOnly", true)
+            .build()))).containsExactly(followed);
+        assertThat(entries).allMatch(e -> e.get("subscribed").asBoolean());
+    }
+
+    @Test
+    void lesDeuxFiltres_doiventSeCumulerParEt() {
+        // Deux entrées de la même activité, une seule suivie : le cumul doit
+        // rendre celle-là et pas l'autre. C'est ce qui distingue un ET d'un OU,
+        // et l'assertion tient quel que soit l'ordre des méthodes.
+        declareForCaller("Yoga", false);
+
+        List<JsonNode> allYoga = nearbyEntries(100_000).stream()
+            .filter(e -> "Yoga".equals(e.get("activityName").asText()))
+            .toList();
+        assertThat(allYoga).hasSize(2);
+
+        String followed = allYoga.get(0).get("userActivityId").asText();
+        String notFollowed = allYoga.get(1).get("userActivityId").asText();
+        subscribeToEntry(followed);
+
+        List<String> ids = idsOf(browse(b -> query(b, 100_000)
+            .queryParam("size", 100)
+            .queryParam("myActivitiesOnly", true)
+            .queryParam("subscribedOnly", true)
+            .build()));
+
+        assertThat(ids).contains(followed);
+        assertThat(ids)
+            .as("l'autre entrée est bien « une de mes activités », mais n'est pas suivie")
+            .doesNotContain(notFollowed);
+    }
+
+    @Test
+    void sansFiltrePersonnel_laListeNeDoitPasChanger() {
+        // Non-régression : les deux paramètres sont absents dans le client publié.
+        assertThat(nearbyEntries(100_000)).isNotEmpty();
+    }
+
+    @Test
+    void lesCompteurs_doiventAnnoncerCeQuUneCaseRendrait_pasCeQuOnADeja() {
+        // Le point de conception des facettes : elles ignorent les filtres de
+        // même nature. Demander les compteurs AVEC myActivitiesOnly ne doit pas
+        // faire retomber le total sur le sous-ensemble — sinon toutes les cases
+        // non cochées afficheraient zéro et passeraient pour des impasses.
+        declareForCaller("Escalade", false);
+
+        JsonNode wide = facets(b -> b.path("/api/activities/browse/facets")
+            .queryParam("lat", LAT).queryParam("lng", LNG)
+            .queryParam("radiusMeters", 100_000).build());
+        JsonNode filtered = facets(b -> b.path("/api/activities/browse/facets")
+            .queryParam("lat", LAT).queryParam("lng", LNG)
+            .queryParam("radiusMeters", 100_000)
+            .queryParam("myActivitiesOnly", true).build());
+
+        assertThat(wide.get("total").asLong()).isPositive();
+        assertThat(filtered.get("total").asLong()).isEqualTo(wide.get("total").asLong());
+        assertThat(wide.get("myActivities").asLong()).isPositive();
+    }
+
+    @Test
+    void lesCompteurs_doiventVentilerParNiveau_sansInventerDeDeclaration() {
+        // Les fixtures ne déclarent aucun niveau : la clé UNSPECIFIED les porte,
+        // et les ranger sous « ANY » aurait inventé une déclaration.
+        JsonNode facets = facets(b -> b.path("/api/activities/browse/facets")
+            .queryParam("lat", LAT).queryParam("lng", LNG)
+            .queryParam("radiusMeters", 100_000).build());
+
+        assertThat(facets.get("byLevel")).isNotNull();
+        long sum = 0;
+        for (java.util.Iterator<String> it = facets.get("byLevel").fieldNames(); it.hasNext(); ) {
+            sum += facets.get("byLevel").get(it.next()).asLong();
+        }
+        assertThat(sum)
+            .as("la somme des niveaux doit retomber sur le total")
+            .isEqualTo(facets.get("total").asLong());
+    }
+
     // — helpers —
+
+    /** Déclare une activité pour l'appelant lui-même. */
+    private void declareForCaller(String activityName, boolean visibleOnMap) {
+        User caller = userRepository.findByEmail(CALLER_EMAIL).orElseThrow();
+        Activity activity = activityRepository.findBySlug(slugOf(activityName)).orElseThrow();
+        if (userActivityRepository.findByUserIdAndActivityId(caller.getId(), activity.getId()).isEmpty()) {
+            userActivityRepository.save(UserActivity.builder()
+                .user(caller).activity(activity).visibleOnMap(visibleOnMap).build());
+        }
+    }
+
+    private void subscribeToEntry(String userActivityId) {
+        webTestClient.post().uri("/api/user-activities/{id}/subscription", userActivityId)
+            .headers(h -> h.setBearerAuth(token))
+            .exchange().expectStatus().is2xxSuccessful();
+    }
+
+    private JsonNode facets(Function<UriBuilder, URI> uri) {
+        byte[] body = webTestClient.get()
+            .uri(uri)
+            .headers(h -> h.setBearerAuth(token))
+            .accept(MediaType.APPLICATION_JSON)
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody().returnResult().getResponseBody();
+        try {
+            return objectMapper.readTree(body);
+        } catch (Exception e) {
+            throw new AssertionError("Réponse illisible", e);
+        }
+    }
+
 
     private UriBuilder query(UriBuilder b, int radiusMeters) {
         return b.path("/api/activities/browse")

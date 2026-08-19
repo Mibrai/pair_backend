@@ -81,9 +81,15 @@ class PushNotificationServiceTest {
     /** 17/08/2026 à 17:00 UTC, soit 19:00 à Paris. */
     private static final Instant NOW = Instant.parse("2026-08-17T15:00:00Z");
 
+    /**
+     * Le dépôt d'utilisateurs sert aux heures de silence (lot D6). Ces tests-ci
+     * n'appellent que la composition des textes, qui ne le touche pas — d'où un
+     * simulacre nu plutôt qu'un montage complet.
+     */
     private PushNotificationService service() {
         return new PushNotificationService(firebaseMessaging, deviceTokenRepository,
-            messages(), androidText());
+            messages(), androidText(),
+            org.mockito.Mockito.mock(org.program.pair.repository.UserRepository.class));
     }
 
     @Test
@@ -639,6 +645,121 @@ class PushNotificationServiceTest {
             .mapToInt(e -> e.getKey().getBytes(StandardCharsets.UTF_8).length
                 + e.getValue().getBytes(StandardCharsets.UTF_8).length)
             .sum();
+    }
+
+    // ─── D6 — les heures de silence ───────────────────────────────────────────
+
+    /**
+     * Le silence est appliqué <b>ici</b>, dans le service de push, et non dans
+     * {@code NotificationService} : c'est le seul endroit qui connaisse le fuseau
+     * de chaque appareil. Un test d'intégration qui simule
+     * {@code PushNotificationServiceInterface} remplace donc précisément le code
+     * à vérifier, et ne peut rien en dire — d'où ces tests-ci.
+     */
+    @Test
+    void pendantLeSilence_uneNotificationOrdinaire_neDoitPasPartir() throws Exception {
+        UUID userId = UUID.randomUUID();
+        PushNotificationService service = serviceFor(userId, quietAllDay());
+        when(deviceTokenRepository.findByUserId(userId))
+            .thenReturn(List.of(device("token-fr", "fr", DevicePlatform.IOS, "Europe/Paris")));
+
+        service.sendPush(userId, NotificationType.NEW_FOLLOWER, Map.of(), 1);
+
+        verify(firebaseMessaging, never()).sendEachForMulticast(any(MulticastMessage.class));
+    }
+
+    @Test
+    void pendantLeSilence_uneAnnulation_doitPartirQuandMeme() throws Exception {
+        UUID userId = UUID.randomUUID();
+        PushNotificationService service = serviceFor(userId, quietAllDay());
+        when(deviceTokenRepository.findByUserId(userId))
+            .thenReturn(List.of(device("token-fr", "fr", DevicePlatform.IOS, "Europe/Paris")));
+        when(firebaseMessaging.sendEachForMulticast(any(MulticastMessage.class)))
+            .thenReturn(batchResponse);
+        when(batchResponse.getResponses()).thenReturn(List.of());
+
+        service.sendPush(userId, NotificationType.SLOT_CANCELLED,
+            Map.of("programTitle", "Yoga du soir"), 1);
+
+        verify(firebaseMessaging, times(1)).sendEachForMulticast(any(MulticastMessage.class));
+    }
+
+    @Test
+    void leSilence_doitSAppliquerAppareilParAppareil() throws Exception {
+        // La raison d'être du fuseau porté par device_tokens : à un même instant,
+        // un téléphone resté à Tokyo dort et un téléphone parisien non. Trancher
+        // pour le compte entier aurait fait taire l'un ou réveillé l'autre.
+        UUID userId = UUID.randomUUID();
+        // Silence de minuit à 8 h. À l'instant fixé du test (19 h à Paris), Paris
+        // est éveillé et Tokyo est à 2 h du matin.
+        PushNotificationService service = serviceFor(userId, quiet(0, 8));
+        when(deviceTokenRepository.findByUserId(userId)).thenReturn(List.of(
+            device("token-paris", "fr", DevicePlatform.IOS, "Europe/Paris"),
+            device("token-tokyo", "fr", DevicePlatform.IOS, "Asia/Tokyo")));
+        when(firebaseMessaging.sendEachForMulticast(any(MulticastMessage.class)))
+            .thenReturn(batchResponse);
+        when(batchResponse.getResponses()).thenReturn(List.of());
+
+        service.sendPush(userId, NotificationType.NEW_FOLLOWER, Map.of(), 1);
+
+        // Deux fuseaux font deux groupes de texte ; un seul survit au silence.
+        verify(firebaseMessaging, times(1)).sendEachForMulticast(any(MulticastMessage.class));
+    }
+
+    @Test
+    void sansHeuresDeSilence_toutDoitPartir() throws Exception {
+        UUID userId = UUID.randomUUID();
+        PushNotificationService service = serviceFor(userId, user(null, null));
+        when(deviceTokenRepository.findByUserId(userId))
+            .thenReturn(List.of(device("token-fr", "fr", DevicePlatform.IOS, "Europe/Paris")));
+        when(firebaseMessaging.sendEachForMulticast(any(MulticastMessage.class)))
+            .thenReturn(batchResponse);
+        when(batchResponse.getResponses()).thenReturn(List.of());
+
+        service.sendPush(userId, NotificationType.NEW_FOLLOWER, Map.of(), 1);
+
+        verify(firebaseMessaging, times(1)).sendEachForMulticast(any(MulticastMessage.class));
+    }
+
+    /**
+     * Un service dont le dépôt rend cet utilisateur-là.
+     *
+     * <p>Le simulacre est {@code lenient} parce qu'une notification critique ne
+     * le consulte jamais : {@code awake} rend la main avant, sans lire les heures
+     * de silence de personne. Mockito le signalait comme inutile, ce qui est en
+     * réalité la confirmation que le court-circuit fonctionne.
+     */
+    private PushNotificationService serviceFor(UUID userId, org.program.pair.domain.user.User user) {
+        org.program.pair.repository.UserRepository users =
+            org.mockito.Mockito.mock(org.program.pair.repository.UserRepository.class);
+        org.mockito.Mockito.lenient().when(users.findById(userId))
+            .thenReturn(java.util.Optional.of(user));
+        return new PushNotificationService(firebaseMessaging, deviceTokenRepository,
+            messages(), androidText(), users);
+    }
+
+    /**
+     * Une fenêtre qui couvre l'heure courante quelle qu'elle soit.
+     *
+     * <p>Ces tests-ci appellent {@code sendPush}, qui lit {@code Instant.now()} —
+     * l'horloge fixée du {@code AndroidPushText} ne porte que sur la composition
+     * des textes. La fenêtre est donc calculée maintenant plutôt qu'écrite en
+     * dur, sans quoi le test dirait des choses différentes selon l'heure.
+     */
+    private static org.program.pair.domain.user.User quietAllDay() {
+        int hour = java.time.ZonedDateTime.now(ZONE).getHour();
+        return user(hour, (hour + 1) % 24);
+    }
+
+    private static org.program.pair.domain.user.User quiet(int start, int end) {
+        return user(start, end);
+    }
+
+    private static org.program.pair.domain.user.User user(Integer start, Integer end) {
+        org.program.pair.domain.user.User user = new org.program.pair.domain.user.User();
+        user.setQuietHoursStart(start == null ? null : start.shortValue());
+        user.setQuietHoursEnd(end == null ? null : end.shortValue());
+        return user;
     }
 
     private static DeviceToken device(String token, String locale) {

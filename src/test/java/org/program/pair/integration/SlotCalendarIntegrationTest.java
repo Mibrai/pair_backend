@@ -64,6 +64,10 @@ class SlotCalendarIntegrationTest extends AbstractIntegrationTest {
         // sonnerait sinon pour un rendez-vous qui a changé d'heure.
         assertThat(ics).contains("BEGIN:VALARM").contains("TRIGGER:-PT2H");
         // Identifiant stable : réimporter met à jour au lieu de dédoubler.
+        // Le domaine de l'UID reste meetdo.fun alors que les liens sont passés à
+        // lien.meetdo.fun, et c'est voulu : un UID est une identité, pas une
+        // adresse. Le faire suivre dupliquerait, dans les agendas de tout le
+        // monde, chaque événement déjà importé.
         assertThat(ics).contains("UID:" + slotId + "@meetdo.fun");
     }
 
@@ -98,7 +102,7 @@ class SlotCalendarIntegrationTest extends AbstractIntegrationTest {
         UUID slotId = publishSlot(host, PlaceType.PUBLIC);
         String token = shareToken(host, slotId);
 
-        assertThat(publicCalendar(token)).contains("https://meetdo.fun/s/" + token);
+        assertThat(publicCalendar(token)).contains("https://lien.meetdo.fun/s/" + token);
     }
 
     @Test

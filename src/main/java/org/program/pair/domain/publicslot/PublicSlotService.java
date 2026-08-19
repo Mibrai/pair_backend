@@ -1,6 +1,7 @@
 package org.program.pair.domain.publicslot;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.activity.Activity;
 import org.program.pair.domain.activity.UserActivity;
 import org.program.pair.domain.program.Program;
@@ -8,6 +9,7 @@ import org.program.pair.domain.program.ProgramStatus;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotAddressVisibility;
 import org.program.pair.domain.program.SlotAudience;
+import org.program.pair.domain.program.SlotStatus;
 import org.program.pair.domain.program.SlotTiming;
 import org.program.pair.domain.publicslot.dto.PublicShareLinkDto;
 import org.program.pair.domain.user.GivenName;
@@ -17,6 +19,7 @@ import org.program.pair.repository.ScheduleRepository;
 import org.program.pair.shared.exception.ResourceNotFoundException;
 import org.program.pair.shared.security.ShareToken;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,6 +43,7 @@ import java.util.UUID;
  * accessible qui n'aurait pas dû l'être.
  */
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class PublicSlotService {
 
@@ -54,7 +58,7 @@ public class PublicSlotService {
     private final ScheduleRepository scheduleRepository;
     private final SlotAudience slotAudience;
 
-    @Value("${pair.public.base-url:https://meetdo.fun}")
+    @Value("${pair.public.base-url:https://lien.meetdo.fun}")
     private String publicBaseUrl;
 
     /**
@@ -89,19 +93,93 @@ public class PublicSlotService {
     }
 
     /**
-     * Le contenu de la page, ou rien.
+     * Ouvre ou ferme le partage public d'un créneau.
      *
-     * <p>Le compteur d'ouvertures est incrémenté ici, et il est indicatif : les
-     * caches des messageries et les robots d'aperçu le faussent par nature.
+     * <p><b>Réservé à l'organisateur</b>, là où {@code shareLink} s'ouvre à tous
+     * les participants. La distinction n'est pas un détail : fabriquer une
+     * adresse publique pour un créneau qu'on a rejoint est un geste de partage
+     * ordinaire, tandis que retirer cette adresse retire à tous les autres un
+     * lien qu'ils ont peut-être déjà collé quelque part. Ce geste-là appartient à
+     * qui organise.
+     *
+     * <p>Le jeton n'est <b>jamais</b> effacé ni régénéré. Le refermer suffit à ce
+     * que le lien ne mène plus nulle part, et le rouvrir doit rendre valides les
+     * liens déjà partagés — un jeton neuf transformerait une pause en rupture
+     * définitive, sans que personne l'ait demandé.
      */
     @Transactional
+    public PublicShareLinkDto setShareable(UUID userId, UUID scheduleId, boolean shareable) {
+        Schedule slot = scheduleRepository.findById(scheduleId)
+            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+
+        if (!userId.equals(hostIdOf(slot))) {
+            throw new ResourceNotFoundException("Créneau introuvable.");
+        }
+
+        slot.setIsPubliclyShareable(shareable);
+        slot = scheduleRepository.save(slot);
+
+        String token = slot.getPublicShareToken();
+        return new PublicShareLinkDto(
+            token,
+            token == null ? null : publicBaseUrl + "/s/" + token,
+            token == null ? null : publicBaseUrl + "/public/slots/" + token + "/page",
+            shareable);
+    }
+
+    /** L'organisateur du créneau, ou null si la chaîne est incomplète. */
+    private UUID hostIdOf(Schedule slot) {
+        Program program = slot.getProgram();
+        if (program == null || program.getUserActivity() == null
+            || program.getUserActivity().getUser() == null) {
+            return null;
+        }
+        return program.getUserActivity().getUser().getId();
+    }
+
+    /**
+     * Le contenu de la page, ou rien.
+     *
+     * <p><b>Ne compte pas l'ouverture</b> — voir {@link #countView}. Elle
+     * l'incrémentait, ce qui produisait deux défauts : le JSON destiné aux
+     * clients programmatiques comptait comme une ouverture de page, et un robot
+     * d'aperçu comptait autant qu'un lecteur.
+     */
+    @Transactional(readOnly = true)
     public PublicSlotView view(String token, Instant now) {
         Schedule slot = scheduleRepository.findByPublicShareToken(token)
             .filter(s -> publiclyVisible(s, now))
             .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
 
-        slot.setPublicViewCount(slot.getPublicViewCount() + 1);
         return toView(slot);
+    }
+
+    /**
+     * Compte une ouverture de la page partagée, sauf robot d'aperçu.
+     *
+     * <p>Hors du rendu, et pour deux raisons distinctes. La première est
+     * évidente : la page ne doit pas attendre une écriture pour partir, un robot
+     * d'aperçu abandonnant au bout de quelques secondes. La seconde l'est moins —
+     * l'incrément passe par un {@code UPDATE} atomique et non par une lecture
+     * suivie d'une écriture. Deux ouvertures simultanées du même lien, ce que le
+     * partage dans un groupe produit précisément, n'en comptaient qu'une : les
+     * deux transactions lisaient la même valeur avant que l'une n'écrive.
+     *
+     * <p>Une exception ici ne doit rien casser : le compteur est indicatif, la
+     * page ne l'est pas. {@code @Async} l'isole déjà du rendu, mais l'appelant
+     * n'en saurait rien de toute façon.
+     */
+    @Async
+    @Transactional
+    public void countView(String token, String userAgent) {
+        if (PreviewBots.isPreviewBot(userAgent)) {
+            return;
+        }
+        try {
+            scheduleRepository.incrementPublicViewCount(token);
+        } catch (RuntimeException e) {
+            log.warn("Comptage d'ouverture perdu pour le jeton {} : {}", token, e.getMessage());
+        }
     }
 
     /** Le même créneau, sans compter l'ouverture — pour l'image et les tests. */
@@ -113,7 +191,7 @@ public class PublicSlotService {
     }
 
     /**
-     * Les cinq conditions de la spécification, plus une qu'elle omettait.
+     * Les conditions de refus, réunies en un seul endroit.
      *
      * <p>« Programme non public » est ambigu dans le modèle : {@code Program}
      * porte à la fois {@code isPublic} et une énumération {@code privacy}, dont
@@ -121,9 +199,22 @@ public class PublicSlotService {
      * et il manquait à la liste {@code status = ACTIVE} — sans quoi la page
      * publique serait plus permissive que le fil, où un programme en brouillon
      * n'apparaît jamais.
+     *
+     * <p><b>Le créneau annulé a été ajouté après coup, et c'est instructif.</b>
+     * Cette méthode a été écrite au lot B1, avant que le lot C3 n'introduise
+     * l'annulation d'un créneau ({@code SlotStatus.CANCELLED}, {@code
+     * cancelledAt}) — et personne n'est revenu ici. Le lien partagé continuait
+     * donc d'inviter du monde à une séance annulée, sans qu'aucune erreur ne se
+     * produise nulle part : c'est exactement la panne que le paragraphe
+     * ci-dessus annonçait, une page accessible qui n'aurait pas dû l'être.
+     * Chaque nouvel état d'un créneau doit repasser par cette liste.
      */
     private boolean publiclyVisible(Schedule slot, Instant now) {
         if (!Boolean.TRUE.equals(slot.getIsPubliclyShareable())) {
+            return false;
+        }
+
+        if (slot.getStatus() == SlotStatus.CANCELLED) {
             return false;
         }
 
@@ -160,6 +251,8 @@ public class PublicSlotService {
             program.getTitle(),
             activity.getName(),
             activity.getCategory() != null ? activity.getCategory().getName() : null,
+            activity.getCategory() != null ? activity.getCategory().getColorRamp() : null,
+            slot.getPrimaryLanguage(),
             slot.getStartsAt(),
             SlotTiming.endOf(slot),
             slot.getPlaceName(),

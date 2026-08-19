@@ -50,7 +50,7 @@ public class SlotInvitationService {
     private final SlotService slotService;
     private final BadgeService badgeService;
 
-    @Value("${pair.public.base-url:https://meetdo.fun}")
+    @Value("${pair.public.base-url:https://lien.meetdo.fun}")
     private String publicBaseUrl;
 
     /**
