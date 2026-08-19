@@ -16,6 +16,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,7 +50,7 @@ class PublicSlotPageIntegrationTest extends AbstractIntegrationTest {
 
         PublicShareLinkDto first = shareLink(host, slotId);
         assertThat(first.token()).hasSize(22);
-        assertThat(first.shortUrl()).isEqualTo("https://meetdo.fun/s/" + first.token());
+        assertThat(first.shortUrl()).isEqualTo("https://lien.meetdo.fun/s/" + first.token());
         assertThat(first.shareable()).isTrue();
 
         // Redemander ne doit pas changer l'adresse : un lien déjà partagé
@@ -86,10 +87,13 @@ class PublicSlotPageIntegrationTest extends AbstractIntegrationTest {
         // vague ne ferait pas ouvrir le lien.
         assertThat(html).contains("Parc de l&#39;Orangerie");
         assertThat(html).contains("Strasbourg");
-        assertThat(html).containsPattern("· \\d+ inscrit");
+        // Le décompte passe désormais par un choix de catalogue : à zéro il dit
+        // « Personne encore, soyez le premier » plutôt que « 0 inscrit », qui se
+        // lit comme un aveu d'échec sur la seule page censée donner envie.
+        assertThat(html).containsPattern("· (\\d+ inscrit|Personne encore)");
         // L'adresse absolue, jamais relative : un robot d'aperçu ne suit pas de
         // chemin relatif.
-        assertThat(html).contains("https://meetdo.fun/s/" + token);
+        assertThat(html).contains("https://lien.meetdo.fun/s/" + token);
     }
 
     @Test
@@ -216,7 +220,238 @@ class PublicSlotPageIntegrationTest extends AbstractIntegrationTest {
         assertThat(body("/s/" + token)).contains("meetdo://slot/" + token);
     }
 
+    // — spécification des liens publics (2026-08-19) —
+
+    @Test
+    void unCreneauAnnule_neDoitPlusAvoirDePagePublique() {
+        // Le défaut que la relecture de la spécification a trouvé. Ces règles ont
+        // été écrites au lot B1, avant que le lot C3 n'introduise l'annulation
+        // d'un créneau — et personne n'est revenu ici. Le lien partagé continuait
+        // d'inviter du monde à une séance annulée, sans qu'aucune erreur ne se
+        // produise nulle part.
+        String host = registerAndLogin();
+        UUID slotId = publishSlot(host);
+        String token = shareLink(host, slotId).token();
+
+        assertThat(status("/s/" + token)).isEqualTo(200);
+
+        webTestClient.post().uri("/api/slots/{id}/cancel", slotId)
+            .headers(h -> h.setBearerAuth(host))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("reason", "Pluie"))
+            .exchange().expectStatus().is2xxSuccessful();
+
+        assertThat(status("/s/" + token)).isEqualTo(404);
+    }
+
+    @Test
+    void lApercu_doitToujoursPorterUneImage() {
+        // Un aperçu sans visuel s'affiche dans une messagerie comme deux lignes
+        // grises, à peu près indiscernables d'un lien mort — et cet aperçu est la
+        // seule raison d'être de la page.
+        String host = registerAndLogin();
+        UUID slotId = publishSlot(host);
+        String token = shareLink(host, slotId).token();
+
+        // Avec photo : c'est elle. Le référentiel en donne une à l'activité, si
+        // bien que le cas nu ne se produit pas spontanément — il faut le créer.
+        assertThat(body("/s/" + token)).contains("/public/slots/" + token + "/image");
+
+        String restore = stripImages(slotId);
+        try {
+            assertThat(body("/s/" + token))
+                .contains("og:image")
+                .contains("/public/slots/" + token + "/cover.png");
+        } finally {
+            jdbcTemplate.update("UPDATE activities SET image_url = ? WHERE id = ?",
+                restore, activityRepository.findAll().get(0).getId());
+        }
+    }
+
+    @Test
+    void laVignetteDessinee_doitEtreUnPngValide() {
+        // La route existe quelle que soit l'image du créneau : c'est un repli
+        // pour l'aperçu, pas une variante de l'image.
+        String host = registerAndLogin();
+        String token = shareLink(host, publishSlot(host)).token();
+
+        byte[] png = webTestClient.get().uri("/public/slots/{t}/cover.png", token)
+            .exchange().expectStatus().isOk()
+            .expectHeader().contentType(org.springframework.http.MediaType.IMAGE_PNG)
+            .expectBody(byte[].class).returnResult().getResponseBody();
+
+        assertThat(png).isNotNull();
+        // La signature PNG, plutôt qu'une simple taille non nulle : un flux
+        // tronqué ou une page d'erreur passeraient le second test.
+        assertThat(png[0] & 0xFF).isEqualTo(0x89);
+        assertThat(new String(png, 1, 3, java.nio.charset.StandardCharsets.US_ASCII)).isEqualTo("PNG");
+    }
+
+    @Test
+    void unRobotDApercu_neDoitPasCompterCommeUneOuverture() {
+        // Un seul lien collé dans un groupe déclenche plusieurs de ces visites,
+        // avant que quiconque n'ait cliqué. Comptées brutes, elles diraient que le
+        // partage fonctionne alors que personne n'a rien ouvert.
+        String host = registerAndLogin();
+        UUID slotId = publishSlot(host);
+        String token = shareLink(host, slotId).token();
+
+        get("/s/" + token, "WhatsApp/2.23.20.0");
+        get("/s/" + token, "facebookexternalhit/1.1");
+        assertThat(viewCount(slotId)).isZero();
+
+        get("/s/" + token, "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0) AppleWebKit/605.1.15");
+        assertThat(pollViewCount(slotId, 1)).isEqualTo(1);
+    }
+
+    @Test
+    void leJsonEtLaPageInterne_neDoiventPasCompterDouverture() {
+        // Seule l'adresse courte est collée quelque part.
+        String host = registerAndLogin();
+        UUID slotId = publishSlot(host);
+        String token = shareLink(host, slotId).token();
+
+        get("/public/slots/" + token, "Mozilla/5.0");
+        get("/public/slots/" + token + "/page", "Mozilla/5.0");
+
+        assertThat(viewCount(slotId)).isZero();
+    }
+
+    @Test
+    void refermerLePartage_doitEteindreLeLien_sansChangerLeJeton() {
+        // Rouvrir doit rendre valides les liens déjà collés ailleurs : un jeton
+        // neuf transformerait une pause en rupture définitive.
+        String host = registerAndLogin();
+        UUID slotId = publishSlot(host);
+        String token = shareLink(host, slotId).token();
+
+        assertThat(setShareable(host, slotId, false).shareable()).isFalse();
+        assertThat(status("/s/" + token)).isEqualTo(404);
+
+        PublicShareLinkDto reopened = setShareable(host, slotId, true);
+        assertThat(reopened.token()).isEqualTo(token);
+        assertThat(status("/s/" + token)).isEqualTo(200);
+    }
+
+    @Test
+    void refermerLePartage_doitEtreReserveALorganisateur() {
+        // 404 et non 403 : un refus nommé confirmerait que le créneau existe.
+        String host = registerAndLogin();
+        UUID slotId = publishSlot(host);
+        String intruder = registerAndLogin("Curieux");
+
+        webTestClient.patch().uri("/api/slots/{id}/shareable", slotId)
+            .headers(h -> h.setBearerAuth(intruder))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("isPubliclyShareable", false))
+            .exchange().expectStatus().isNotFound();
+    }
+
+    @Test
+    void lagenda_doitEtreJoignableDepuisLadresseCourte() {
+        // Le lien « Ajouter à mon agenda » de la page est relatif à l'adresse
+        // que le lecteur a sous les yeux.
+        String host = registerAndLogin();
+        String token = shareLink(host, publishSlot(host)).token();
+
+        assertThat(body("/s/" + token)).contains("/s/" + token + "/calendar.ics");
+        assertThat(status("/s/" + token + "/calendar.ics")).isEqualTo(200);
+    }
+
+    @Test
+    void laPage_doitParlerLaLangueDemandee() {
+        String host = registerAndLogin();
+        String token = shareLink(host, publishSlot(host)).token();
+
+        String german = webTestClient.get().uri("/s/" + token)
+            .header("Accept-Language", "de")
+            .exchange().expectStatus().isOk()
+            .expectBody(String.class).returnResult().getResponseBody();
+
+        assertThat(german).contains("In meetDo öffnen").contains("lang=\"de\"");
+
+        String english = webTestClient.get().uri("/s/" + token)
+            .header("Accept-Language", "en")
+            .exchange().expectStatus().isOk()
+            .expectBody(String.class).returnResult().getResponseBody();
+
+        assertThat(english).contains("Open in meetDo");
+    }
+
+    @Test
+    void laLangueDuCreneau_doitPrimerSurCelleDuNavigateur() {
+        // C'est la langue dans laquelle la séance se tiendra, donc celle du
+        // lecteur visé — mieux que l'en-tête d'un appareil qui n'appartient
+        // peut-être pas à quelqu'un du coin.
+        String host = registerAndLogin();
+        UUID slotId = publishSlot(host);
+        String token = shareLink(host, slotId).token();
+        jdbcTemplate.update("UPDATE schedules SET primary_language = 'de' WHERE id = ?", slotId);
+
+        String page = webTestClient.get().uri("/s/" + token)
+            .header("Accept-Language", "en")
+            .exchange().expectStatus().isOk()
+            .expectBody(String.class).returnResult().getResponseBody();
+
+        assertThat(page).contains("In meetDo öffnen");
+    }
+
     // — helpers —
+
+    private PublicShareLinkDto setShareable(String token, UUID slotId, boolean shareable) {
+        return webTestClient.patch().uri("/api/slots/{id}/shareable", slotId)
+            .headers(h -> h.setBearerAuth(token))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("isPubliclyShareable", shareable))
+            .exchange().expectStatus().isOk()
+            .expectBody(PublicShareLinkDto.class).returnResult().getResponseBody();
+    }
+
+    /**
+     * Retire les images du créneau et rend celle de l'activité, pour la reposer.
+     *
+     * <p>L'activité est partagée par toute la classe : la laisser sans image
+     * ferait dépendre les tests suivants de l'ordre de passage.
+     */
+    private String stripImages(UUID slotId) {
+        UUID activityId = activityRepository.findAll().get(0).getId();
+        String previous = jdbcTemplate.queryForObject(
+            "SELECT image_url FROM activities WHERE id = ?", String.class, activityId);
+        jdbcTemplate.update("UPDATE activities SET image_url = NULL WHERE id = ?", activityId);
+        jdbcTemplate.update("""
+            UPDATE programs SET image_url = NULL
+            WHERE id = (SELECT program_id FROM schedules WHERE id = ?)
+            """, slotId);
+        return previous;
+    }
+
+    private void get(String uri, String userAgent) {
+        webTestClient.get().uri(uri)
+            .header("User-Agent", userAgent)
+            .exchange().expectStatus().isOk();
+    }
+
+    private int viewCount(UUID slotId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT public_view_count FROM schedules WHERE id = ?", Integer.class, slotId);
+    }
+
+    /** countView est @Async : la réponse HTTP part avant l'écriture. */
+    private int pollViewCount(UUID slotId, int expected) {
+        int seen = 0;
+        for (int attempt = 0; attempt < 50 && seen < expected; attempt++) {
+            seen = viewCount(slotId);
+            if (seen < expected) {
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+        return seen;
+    }
 
     private String body(String uri) {
         return new String(webTestClient.get().uri(uri)

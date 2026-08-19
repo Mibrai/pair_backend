@@ -54,7 +54,7 @@ public class SlotCalendarController {
     private final SlotAudience slotAudience;
     private final PublicSlotService publicSlotService;
 
-    @Value("${pair.public.base-url:https://meetdo.fun}")
+    @Value("${pair.public.base-url:https://lien.meetdo.fun}")
     private String publicBaseUrl;
 
     @GetMapping("/api/slots/{scheduleId}/calendar.ics")
@@ -114,8 +114,15 @@ public class SlotCalendarController {
      * reprend pas — il est importé, resynchronisé, parfois partagé entre
      * appareils — et y écrire une adresse obtenue pour un demandeur particulier
      * la ferait voyager bien au-delà de lui.
+     *
+     * <p>Deux adresses pour la même ressource, et la seconde n'est pas
+     * cosmétique : le lien « Ajouter à mon agenda » de la page publique est
+     * relatif à l'adresse courte que le lecteur a sous les yeux. Lui faire
+     * traverser /public/slots/ l'aurait envoyé sur un chemin que rien d'autre
+     * ne présente, et que les liens universels n'interceptent pas de la même
+     * façon.
      */
-    @GetMapping("/public/slots/{token}/calendar.ics")
+    @GetMapping({"/public/slots/{token}/calendar.ics", "/s/{token}/calendar.ics"})
     @ResponseBody
     @Transactional
     public ResponseEntity<String> publicSlot(@PathVariable String token) {

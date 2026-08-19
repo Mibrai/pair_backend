@@ -128,12 +128,27 @@ l'empreinte manque. Nous ne la remplirons pas avec une valeur plausible — une
 association fausse mise en cache par un appareil est plus longue à corriger
 qu'une association absente. Elle attend la décision sur Play App Signing.
 
-### Le domaine public : ✅ `meetdo.fun`, confirmé
+### Le domaine public : ⚠️ **`lien.meetdo.fun`**, et non `meetdo.fun`
 
-C'est la valeur de `pair.public.base-url`, celle qui apparaît dans les balises
-`og:url` et dans les liens partagés. Vous pouvez poser vos deux moitiés dessus :
-`applinks:meetdo.fun` dans `Runner.entitlements`, et le même domaine dans
-l'intent-filter Android à la place de `REMPLACER_PAR_LE_DOMAINE_PUBLIC`.
+**Correction d'une réponse antérieure de ce même document.** Nous avions
+confirmé `meetdo.fun` ; c'est faux, et mieux vaut le lire ici qu'après avoir
+régénéré vos profils de provisioning.
+
+Les deux noms désignent deux serveurs. `meetdo.fun` est le site vitrine hébergé
+chez Hostinger ; ce backend vit sur Railway, et c'est le sous-domaine
+`lien.meetdo.fun` qui lui est dédié. Ni proxy ni redirection ne permettaient de
+servir les deux depuis le même nom : `mod_proxy` n'est pas disponible sur l'offre
+d'hébergement, et une redirection `302` aurait cassé l'aperçu — plusieurs robots
+de prévisualisation ne la suivent pas, or l'aperçu est toute la raison d'être de
+la page.
+
+Posez donc vos deux moitiés sur **`applinks:lien.meetdo.fun`** dans
+`Runner.entitlements`, et le même hôte dans l'intent-filter Android à la place de
+`REMPLACER_PAR_LE_DOMAINE_PUBLIC`, avec `android:autoVerify="true"` et le chemin
+`/s/`.
+
+`https://lien.meetdo.fun/.well-known/apple-app-site-association` est servi dès à
+présent, au format `appIDs`/`components` d'iOS 13 et au-delà.
 
 Merci pour l'angle mort — notre document présentait les trois valeurs comme le
 seul obstacle, ce qui était faux, et rien n'aurait fonctionné sans que la cause
@@ -202,8 +217,15 @@ préférez que nous ouvrions le champ ou que vous le présentiez comme il est.
 | 5 | Réglages e-mail : ouvrir le champ, ou l'afficher tel quel ? | vous |
 | — | `first_name` : toujours différé, ensemble | les deux |
 
-Et de votre côté, inchangé : entitlement `associated-domains` (iOS) et
-intent-filter App Links (Android) sur `meetdo.fun`, désormais confirmé.
+Et de votre côté : entitlement `associated-domains` (iOS) et intent-filter App
+Links (Android) sur **`lien.meetdo.fun`** — lisez la correction du §3 avant de
+toucher aux profils de provisioning.
+
+Deux ajouts qui vous concernent, issus de la spécification des liens publics :
+`GET /s/{jeton}/calendar.ics` sert désormais l'agenda depuis l'adresse courte, et
+`PATCH /api/slots/{id}/shareable` permet à l'organisateur de refermer un partage
+— le jeton n'est alors ni effacé ni régénéré, si bien que rouvrir rend valides
+les liens déjà partagés.
 
 Sur la publication des règles de communauté, votre mise en garde est retenue :
 le passage de `pair.guidelines.current-version` suit la publication au store,

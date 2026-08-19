@@ -7,7 +7,9 @@ import org.program.pair.domain.auth.dto.RegisterRequest;
 import org.program.pair.domain.chat.dto.ConversationSummaryDto;
 import org.program.pair.domain.chat.dto.CreateConversationRequest;
 import org.program.pair.domain.chat.dto.MessageDto;
+import org.program.pair.domain.chat.ChatController;
 import org.program.pair.domain.chat.dto.SendMessageRequest;
+import org.program.pair.domain.chat.dto.TypingEventDto;
 import org.program.pair.domain.user.dto.UserPrivateDto;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.MediaType;
@@ -131,6 +133,95 @@ class WebSocketChatIntegrationTest extends AbstractIntegrationTest {
         assertThat(message.conversationId()).isEqualTo(conversationId);
 
         sessionB.disconnect();
+    }
+
+    /**
+     * Lot D5 — l'indicateur de saisie, prévu à l'origine puis absent des routes.
+     *
+     * <p>Le test vérifie les deux moitiés du contrat en un seul passage, et
+     * l'ordre compte : la réception chez l'autre est établie <b>d'abord</b>, ce
+     * qui rend seulement alors significatif le silence sur la file de l'émetteur.
+     * Affirmer une absence sans avoir prouvé que la diffusion a eu lieu ne
+     * prouverait rien du tout — une file vide des deux côtés passerait.
+     */
+    @Test
+    void indicateurDeSaisie_doitAtteindreLautre_etJamaisSonAuteur() throws Exception {
+        String tokenA = registerAndLogin(uniqueEmail("typA"), "Password123!", "UserA");
+        String tokenB = registerAndLogin(uniqueEmail("typB"), "Password123!", "UserB");
+
+        UUID conversationId = createConversation(tokenA, getUserId(tokenB));
+
+        WebSocketStompClient stompClient = new WebSocketStompClient(
+            new SockJsClient(List.of(new WebSocketTransport(new StandardWebSocketClient()))));
+        stompClient.setMessageConverter(new JacksonJsonMessageConverter());
+
+        BlockingQueue<TypingEventDto> atB = new LinkedBlockingQueue<>();
+        BlockingQueue<TypingEventDto> atA = new LinkedBlockingQueue<>();
+        AtomicReference<Throwable> clientError = new AtomicReference<>();
+
+        StompSession sessionB = connect(stompClient, tokenB, clientError);
+        StompSession sessionA = connect(stompClient, tokenA, clientError);
+        subscribeTyping(sessionB, atB);
+        subscribeTyping(sessionA, atA);
+
+        // Même parade que plus haut : le courtier en mémoire n'émet pas d'accusé
+        // de réception, donc rien ne dit quand le SUBSCRIBE a été traité. On
+        // renvoie jusqu'à ce que la file réponde ; l'indicateur étant idempotent,
+        // un doublon ne change rien.
+        TypingEventDto seenByB = null;
+        for (int attempt = 1; attempt <= 3 && seenByB == null; attempt++) {
+            sessionA.send("/app/chat.typing",
+                new ChatController.TypingEvent(conversationId, true));
+            seenByB = atB.poll(2, TimeUnit.SECONDS);
+        }
+
+        assertThat(clientError.get()).as("le client STOMP a signalé une erreur").isNull();
+        assertThat(seenByB).as("aucun indicateur reçu sur /user/queue/typing").isNotNull();
+        assertThat(seenByB.conversationId()).isEqualTo(conversationId);
+        assertThat(seenByB.userId()).isEqualTo(getUserId(tokenA));
+        assertThat(seenByB.typing()).isTrue();
+
+        // La diffusion a donc bien eu lieu : le silence ci-dessous a un sens.
+        assertThat(atA).as("l'auteur ne doit pas se voir écrire lui-même").isEmpty();
+
+        sessionA.disconnect();
+        sessionB.disconnect();
+    }
+
+    private StompSession connect(WebSocketStompClient client, String token,
+                                 AtomicReference<Throwable> clientError) throws Exception {
+        StompHeaders connectHeaders = new StompHeaders();
+        connectHeaders.add("Authorization", "Bearer " + token);
+
+        StompSessionHandlerAdapter handler = new StompSessionHandlerAdapter() {
+            @Override
+            public void handleException(StompSession session, StompCommand command,
+                                        StompHeaders headers, byte[] payload, Throwable exception) {
+                clientError.compareAndSet(null, exception);
+            }
+
+            @Override
+            public void handleTransportError(StompSession session, Throwable exception) {
+                clientError.compareAndSet(null, exception);
+            }
+        };
+
+        return client.connectAsync("ws://localhost:" + port + "/ws/chat",
+            new WebSocketHttpHeaders(), connectHeaders, handler).get(5, TimeUnit.SECONDS);
+    }
+
+    private void subscribeTyping(StompSession session, BlockingQueue<TypingEventDto> sink) {
+        session.subscribe("/user/queue/typing", new StompFrameHandler() {
+            @Override
+            public Type getPayloadType(StompHeaders headers) {
+                return TypingEventDto.class;
+            }
+
+            @Override
+            public void handleFrame(StompHeaders headers, Object payload) {
+                sink.add((TypingEventDto) payload);
+            }
+        });
     }
 
     @Test
