@@ -28,6 +28,7 @@ import java.util.UUID;
 @Slf4j
 public class BadgeService {
 
+    private final org.program.pair.repository.SlotInvitationRepository slotInvitationRepository;
     private final BadgeRepository badgeRepository;
     private final BadgeAwardRepository badgeAwardRepository;
     private final ProgramRepository programRepository;
@@ -77,11 +78,25 @@ public class BadgeService {
             case DISTINCT_PARTNERS -> checkDistinctPartners(userId, badge.getConditionThreshold());
             case WEEKLY_STREAK -> checkWeeklyStreak(userId, badge.getConditionThreshold());
             case SLOT_HOSTED_COUNT -> checkSlotHostedCount(userId, badge.getConditionThreshold());
+            case INVITATION_CONVERTED -> checkInvitationsConverted(userId, badge.getConditionThreshold());
             case MANUAL -> false; // Manual badges cannot be auto-awarded
             // Types utilisés uniquement par les badges pré-attribués via seed SQL (V12/V27) —
             // pas encore d'évaluation automatique implémentée pour ceux-ci.
             default -> false;
         };
+    }
+
+    /**
+     * Invitations de cette personne ayant mené quelqu'un sur un créneau.
+     *
+     * <p>Le seuil vaut 1 et n'a pas vocation à monter : la récompense marque un
+     * geste, elle ne mesure pas une performance. Un badge à 10, puis à 50,
+     * transformerait l'invitation en objectif — exactement ce que le garde-fou
+     * du produit écarte, avec les points et le classement de parrains.
+     */
+    private boolean checkInvitationsConverted(UUID userId, Integer threshold) {
+        long converted = slotInvitationRepository.countConvertedByInviterId(userId);
+        return converted >= (threshold == null ? 1 : threshold);
     }
 
     /**
