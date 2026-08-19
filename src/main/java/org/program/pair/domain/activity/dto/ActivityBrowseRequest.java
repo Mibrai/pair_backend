@@ -50,8 +50,28 @@ public record ActivityBrowseRequest(
     @Schema(description = "Inclure les 3 prochains programmes de chaque entrée. La liste "
         + "de l'Explorer n'en a pas besoin ; seule la page de détail les consomme.",
         defaultValue = "false")
-    Boolean includePrograms
+    Boolean includePrograms,
+
+    @Schema(description = "« Mes activités » : ne garder que les entrées portant une "
+        + "activité que l'appelant a lui-même déclarée — ce qui se pratique autour de lui "
+        + "dans SES sports, et non ses propres annonces. Sans appelant identifié, le "
+        + "filtre ne s'applique pas : il n'y a pas d'activités à comparer.",
+        defaultValue = "false")
+    Boolean myActivitiesOnly,
+
+    @Schema(description = "« Mes abonnements » : ne garder que les entrées auxquelles "
+        + "l'appelant est abonné. Sans appelant identifié, le filtre ne s'applique pas.",
+        defaultValue = "false")
+    Boolean subscribedOnly
 ) {
+
+    public boolean effectiveMyActivitiesOnly() {
+        return Boolean.TRUE.equals(myActivitiesOnly);
+    }
+
+    public boolean effectiveSubscribedOnly() {
+        return Boolean.TRUE.equals(subscribedOnly);
+    }
     public int effectiveRadiusMeters() {
         return radiusMeters != null ? radiusMeters : 25_000;
     }

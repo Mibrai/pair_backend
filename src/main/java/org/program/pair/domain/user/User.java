@@ -124,6 +124,28 @@ public class User {
     @Column(name = "onboarding_step", length = 30)
     private OnboardingStep onboardingStep;
 
+    /**
+     * Heures de silence, en heures pleines locales (0–23), ou nulles.
+     *
+     * <p>Les deux vont ensemble, la base le contraint. La fenêtre <b>traverse
+     * minuit</b> dans le cas normal — « 22 h – 7 h » —, ce que
+     * {@link org.program.pair.domain.notification.QuietHours} sait lire et qu'une
+     * comparaison écrite à la main ici casserait.
+     *
+     * <p>Sans fuseau : c'est celui de l'appareil qui décide, appareil par
+     * appareil, au moment de l'envoi.
+     *
+     * <p>{@code Short} et non {@code Integer}, pour coller au {@code SMALLINT} de
+     * la colonne — même choix qu'au lot D3 pour {@code day_of_week}. Hibernate
+     * valide le schéma au démarrage et refuse l'écart, ce qui fait échouer
+     * l'application entière et non la seule fonctionnalité concernée.
+     */
+    @Column(name = "quiet_hours_start")
+    private Short quietHoursStart;
+
+    @Column(name = "quiet_hours_end")
+    private Short quietHoursEnd;
+
     // Règles de communauté (V64). Nulles tant que la personne n'a jamais
     // accepté — aucun rétro-remplissage, à l'inverse de l'onboarding : c'est
     // l'acceptation explicite qui est demandée.

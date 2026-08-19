@@ -2,6 +2,8 @@ package org.program.pair.domain.activity;
 
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.activity.dto.ActivityBrowseRequest;
+import org.program.pair.domain.activity.dto.ActivityFacetsDto;
+import org.program.pair.repository.ActivityFacetRow;
 import org.program.pair.domain.activity.dto.BrowsedActivityDto;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.subscription.SubscriptionService;
@@ -16,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -59,6 +62,13 @@ public class ActivityBrowseService {
             toUuidArrayLiteral(request.categoryIds()),
             toTextArrayLiteral(request.activityLevels()),
             request.sortByNextSession(),
+            // Sans appelant identifié, les deux filtres personnels ne
+            // s'appliquent pas : il n'y a ni activités ni abonnements à
+            // comparer. Les appliquer quand même aurait rendu une liste vide,
+            // c'est-à-dire « rien autour de vous » au lieu de « connectez-vous ».
+            requesterId != null && request.effectiveMyActivitiesOnly(),
+            requesterId != null && request.effectiveSubscribedOnly(),
+            requesterId == null ? null : requesterId.toString(),
             // Sort.unsorted() volontairement : l'ordre total est dans la requête,
             // laisser Spring en injecter un second le contredirait.
             PageRequest.of(request.effectivePage(), request.effectiveSize()));
@@ -83,6 +93,48 @@ public class ActivityBrowseService {
             subscriberCounts.getOrDefault(row.getUserActivityId(), 0L),
             subscribedTo.contains(row.getUserActivityId()),
             programsByEntry.get(row.getUserActivityId())));
+    }
+
+    /**
+     * Les compteurs des filtres, pour la même zone.
+     *
+     * <p>Sert le panneau de filtres : « Débutant (12) », « Mes activités (4) ».
+     * C'est ce que la spécification appelle « rétablir les compteurs » — ils
+     * existaient tant que le client filtrait les pages déjà chargées, et ont
+     * disparu en même temps que ce filtrage.
+     *
+     * <p>Route séparée, et non un enrichissement de la réponse paginée. Celle-ci
+     * est un {@code Page<BrowsedActivityDto>} qu'une version publiée du client
+     * consomme déjà : l'envelopper pour y loger les facettes aurait cassé ce
+     * contrat, alors qu'une route de plus n'enlève rien à personne. Le client
+     * l'appelle quand il ouvre ses filtres, pas à chaque page.
+     */
+    public ActivityFacetsDto facets(ActivityBrowseRequest request, UUID requesterId) {
+        validate(request);
+
+        List<ActivityFacetRow> rows = userActivityRepository.browseFacets(
+            request.lat(), request.lng(),
+            request.effectiveRadiusMeters(),
+            request.effectiveIncludeExpired(),
+            toUuidArrayLiteral(request.categoryIds()),
+            requesterId == null ? null : requesterId.toString());
+
+        Map<String, Long> byLevel = new LinkedHashMap<>();
+        long total = 0;
+        long mine = 0;
+        long subscribed = 0;
+
+        for (ActivityFacetRow row : rows) {
+            // Un niveau nul est une absence de déclaration, pas un niveau
+            // « ANY » : la clé le dit, et la ligne compte quand même au total.
+            byLevel.merge(row.getLevel() == null ? "UNSPECIFIED" : row.getLevel(),
+                row.getTotal(), Long::sum);
+            total += row.getTotal();
+            mine += row.getMineCount();
+            subscribed += row.getSubscribedCount();
+        }
+
+        return new ActivityFacetsDto(total, byLevel, mine, subscribed);
     }
 
     private BrowsedActivityDto toDto(ActivityBrowseRow row,
