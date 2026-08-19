@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr" xmlns:th="http://www.thymeleaf.org">
+<html th:lang="${lang}" xmlns:th="http://www.thymeleaf.org">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,10 +15,23 @@
     <meta property="og:title"       th:content="${slot.programTitle}">
     <meta property="og:description" th:content="${ogDescription}">
     <meta property="og:url"         th:content="${ogUrl}">
-    <meta property="og:image"       th:if="${ogImage}" th:content="${ogImage}">
-    <meta name="twitter:card"       th:content="${ogImage} ? 'summary_large_image' : 'summary'">
+    <!-- og:image n'est jamais nul : à défaut de photo, la vignette dessinée par
+         PublicSlotCover. Un aperçu sans visuel s'affiche comme deux lignes
+         grises, à peu près indiscernables d'un lien mort — et cet aperçu est la
+         seule raison d'être de cette page. -->
+    <meta property="og:image"       th:content="${ogImage}">
+    <meta property="og:image:width"  content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale"      th:content="${lang}">
+    <meta name="twitter:card"       content="summary_large_image">
     <meta name="twitter:title"      th:content="${slot.programTitle}">
     <meta name="twitter:description" th:content="${ogDescription}">
+    <meta name="twitter:image"      th:content="${ogImage}">
+
+    <!-- Le canonique désigne l'adresse courte, celle qu'on partage réellement :
+         la même page est joignable par /public/slots/{token}/page, et deux URL
+         pour un même contenu divisent les signaux d'un moteur de recherche. -->
+    <link rel="canonical" th:href="${ogUrl}">
 
     <style>
         :root { color-scheme: light dark; }
@@ -52,10 +65,16 @@
             margin: .75rem 0 0; text-align: center;
             font-size: .8rem; color: #6b757d;
         }
+        .links {
+            margin: 1.25rem 0 0; text-align: center;
+            font-size: .85rem; color: #6b757d;
+        }
+        .links a { color: #14607f; }
         @media (prefers-color-scheme: dark) {
             body { background: #101315; color: #e6e9ea; }
             .card { background: #181c1f; box-shadow: none; }
-            .eyebrow, dt, .hint { color: #8d979e; }
+            .eyebrow, dt, .hint, .links { color: #8d979e; }
+            .links a { color: #6eb4d2; }
             .welcome { color: #b3bdc3; }
             .cta { background: #6eb4d2; color: #0e1113; }
         }
@@ -63,7 +82,7 @@
 </head>
 <body>
 <div class="card">
-    <img class="cover" th:if="${ogImage}" th:src="${ogImage}" alt="">
+    <img class="cover" th:src="${ogImage}" alt="">
     <div class="body">
         <p class="eyebrow">
             <span th:text="${slot.activityName}">Yoga</span><span
@@ -72,25 +91,23 @@
         <h1 th:text="${slot.programTitle}">Yoga du samedi</h1>
 
         <dl>
-            <dt>Quand</dt>
+            <dt th:text="${t.when}">Quand</dt>
             <dd><span th:text="${day}">samedi 14 juin</span>,
                 de <span th:text="${startTime}">9h00</span>
                 à <span th:text="${endTime}">10h00</span></dd>
 
-            <dt>Où</dt>
+            <dt th:text="${t.where}">Où</dt>
             <dd><span th:text="${slot.placeName}">Studio Lumière</span><span
                     th:if="${slot.city}" th:text="', ' + ${slot.city}"></span>
                 <!-- L'adresse n'apparaît que si elle est déjà diffusable : pour
                      un lieu privé non partagé, broadcastableAddress rend null. -->
                 <span th:if="${slot.displayAddress}" th:text="' — ' + ${slot.displayAddress}"></span></dd>
 
-            <dt>Qui</dt>
-            <dd><span th:text="${slot.organizerGivenName} ?: 'Un membre'">Camille</span><span
+            <dt th:text="${t.who}">Participants</dt>
+            <dd><span th:text="${t.joined}">3 inscrits</span><span
+                    th:if="${slot.maxParticipants}" th:text="' / ' + ${slot.maxParticipants}"></span>
+                <span th:if="${t.host}" th:text="' — ' + ${t.host}"></span><span
                     th:if="${slot.organizerVerified}" title="Compte vérifié"> ✓</span></dd>
-
-            <dt>Inscrits</dt>
-            <dd><span th:text="${slot.participantCount}">3</span><span
-                    th:if="${slot.maxParticipants}" th:text="' sur ' + ${slot.maxParticipants}"></span></dd>
         </dl>
 
         <p class="welcome" th:if="${slot.welcomeNote}" th:text="${slot.welcomeNote}"></p>
@@ -107,8 +124,17 @@
              simplement rien, et sans un mot la page passerait pour cassée. Elle
              sera remplacée par un lien de téléchargement dès que l'application
              sera publiée quelque part ; elle ne peut pas l'être avant. -->
-        <a class="cta" th:href="${appLink}">Ouvrir dans meetDo</a>
-        <p class="hint">Il faut avoir installé meetDo sur cet appareil.</p>
+        <a class="cta" th:href="${appLink}" th:text="${t.cta}">Ouvrir dans meetDo</a>
+        <p class="hint" th:text="${t.hint}"></p>
+
+        <!-- Deux liens discrets, et pas un bouton de plus : un créneau rejoint
+             puis oublié est une rencontre qui n'a pas lieu, et l'agenda est le
+             seul ajout de cette page qui agisse sur la présence réelle. -->
+        <p class="links">
+            <a th:href="${calendarUrl}" th:text="${t.calendar}">Ajouter à mon agenda</a>
+            <span aria-hidden="true"> · </span>
+            <a href="https://meetdo.fun" th:text="${t.about}">Qu'est-ce que meetDo ?</a>
+        </p>
     </div>
 </div>
 </body>

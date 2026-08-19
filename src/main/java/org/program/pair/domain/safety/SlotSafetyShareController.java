@@ -44,4 +44,21 @@ public class SlotSafetyShareController {
             @PathVariable UUID scheduleId) {
         return publicSlotService.shareLink(principal.getId(), scheduleId);
     }
+
+    @org.springframework.web.bind.annotation.PatchMapping("/{scheduleId}/shareable")
+    @Operation(summary = "Ouvre ou ferme le partage public de ce créneau.",
+        description = "Réservé à l'organisateur, là où /share-link s'ouvre à tous les "
+            + "participants : refermer retire à tous les autres un lien qu'ils ont "
+            + "peut-être déjà collé quelque part. Le jeton n'est jamais effacé ni "
+            + "régénéré — rouvrir rend valides les liens déjà partagés, un jeton neuf "
+            + "transformerait une pause en rupture définitive. 404 pour qui n'organise "
+            + "pas, jamais 403.")
+    public org.program.pair.domain.publicslot.dto.PublicShareLinkDto setShareable(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID scheduleId,
+            @jakarta.validation.Valid @org.springframework.web.bind.annotation.RequestBody
+                org.program.pair.domain.publicslot.dto.SetShareableRequest request) {
+        return publicSlotService.setShareable(
+            principal.getId(), scheduleId, request.isPubliclyShareable());
+    }
 }

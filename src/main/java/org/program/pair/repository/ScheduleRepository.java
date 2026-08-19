@@ -113,6 +113,19 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
     @Query("SELECT s FROM Schedule s WHERE s.id = :id")
     Optional<Schedule> lockById(@Param("id") UUID id);
 
+    /**
+     * Incrémente le compteur d'ouvertures d'une page publique.
+     *
+     * <p>Un {@code UPDATE} atomique, et non une lecture suivie d'une écriture.
+     * Deux ouvertures simultanées du même lien — ce que le partage dans un
+     * groupe produit précisément — n'en comptaient qu'une, les deux transactions
+     * lisant la même valeur avant que l'une n'écrive.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE Schedule s SET s.publicViewCount = s.publicViewCount + 1 "
+        + "WHERE s.publicShareToken = :token")
+    int incrementPublicViewCount(@Param("token") String token);
+
     Optional<Schedule> findByPublicShareToken(String publicShareToken);
 
     boolean existsByPublicShareToken(String publicShareToken);

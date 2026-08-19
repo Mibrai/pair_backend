@@ -80,6 +80,14 @@ public class SlotCalendarService {
         // L'identifiant est stable et dérivé du créneau : réimporter le même
         // fichier met à jour l'événement au lieu d'en créer un second, et un
         // créneau déplacé se replace dans l'agenda au lieu de s'y dédoubler.
+        // Le domaine de l'UID est écrit en dur, et ne doit PAS suivre
+        // pair.public.base-url. Un UID iCalendar est une identité, pas une
+        // adresse : c'est par lui qu'un agenda reconnaît un événement déjà
+        // importé et le met à jour au lieu de le dupliquer. Le faire dépendre de
+        // l'URL publique aurait transformé le passage à lien.meetdo.fun en
+        // duplication silencieuse de tous les événements déjà dans les agendas —
+        // sans qu'aucun test ne s'en aperçoive, puisque les deux fichiers sont
+        // valides.
         event.add(new Uid(slot.getId() + "@meetdo.fun"));
 
         // LOCATION ne reçoit que ce que l'appelant a décidé de publier. Le nom du
