@@ -8,8 +8,13 @@ import java.time.Instant;
 public record CreateScheduleRequest(
     @NotBlank @Size(max = 200) String placeName,
     @NotNull PlaceType placeType,
-    @NotNull @DecimalMin("-90") @DecimalMax("90") Double lat,
-    @NotNull @DecimalMin("-180") @DecimalMax("180") Double lng,
+    // Obligatoires pour un lieu physique, interdites de sens pour un lieu en
+    // ligne. La contrainte ne peut donc pas être portée par une annotation :
+    // elle dépend de placeType, et c'est le service qui la vérifie — comme il
+    // le fait déjà pour addressPublic. Les avoir déclarées @NotNull rendait tout
+    // créneau ONLINE impossible à créer par l'API.
+    @DecimalMin("-90") @DecimalMax("90") Double lat,
+    @DecimalMin("-180") @DecimalMax("180") Double lng,
     String addressPublic,
     Boolean showExactAddress,
 

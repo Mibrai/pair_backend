@@ -42,7 +42,13 @@ public class Schedule {
     @Column(name = "place_type", nullable = false, length = 10)
     private PlaceType placeType;
 
-    @Column(columnDefinition = "geometry(Point,4326)", nullable = false)
+    /**
+     * Position du lieu. <b>Nulle si et seulement si le créneau est en ligne</b> —
+     * la contrainte {@code chk_schedule_location_unless_online} (V61) le garantit
+     * en base. Un lieu physique sans position ne serait sur aucune carte, dans
+     * aucun rayon, et personne ne saurait où aller.
+     */
+    @Column(columnDefinition = "geometry(Point,4326)")
     private Point location;
 
     @Column(name = "address_public", length = 300)
