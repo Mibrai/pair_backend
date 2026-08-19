@@ -102,6 +102,7 @@ public class ProgramReminderJob {
      */
     private int remind(Schedule slot) {
         Map<String, Object> payload = NotificationPayload.ofSchedule(slot).build();
+        UUID hostId = slot.getProgram().getUserActivity().getUser().getId();
 
         int sent = 0;
         for (UUID userId : slotAudience.participantIds(slot)) {
@@ -112,7 +113,7 @@ public class ProgramReminderJob {
             if (!userRepository.existsById(userId)) {
                 continue;
             }
-            notificationService.notify(userId, NotificationType.PROGRAM_REMINDER, payload);
+            notificationService.notify(userId, hostId, NotificationType.PROGRAM_REMINDER, payload);
             sent++;
         }
         return sent;

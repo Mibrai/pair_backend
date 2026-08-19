@@ -10,6 +10,8 @@ import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.notification.NotificationType;
+import org.program.pair.domain.activity.UserActivity;
+import org.program.pair.domain.user.User;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotAudience;
@@ -65,9 +67,9 @@ class ProgramReminderJobTest {
 
         job.sendUpcomingSlotReminders();
 
-        verify(notificationService).notify(eq(host), eq(NotificationType.PROGRAM_REMINDER), anyMap());
-        verify(notificationService).notify(eq(participant), eq(NotificationType.PROGRAM_REMINDER), anyMap());
-        verify(notificationService).notify(eq(suiveur), eq(NotificationType.PROGRAM_REMINDER), anyMap());
+        verify(notificationService).notify(eq(host), any(), eq(NotificationType.PROGRAM_REMINDER), anyMap());
+        verify(notificationService).notify(eq(participant), any(), eq(NotificationType.PROGRAM_REMINDER), anyMap());
+        verify(notificationService).notify(eq(suiveur), any(), eq(NotificationType.PROGRAM_REMINDER), anyMap());
     }
 
     @Test
@@ -87,7 +89,7 @@ class ProgramReminderJobTest {
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<Map<String, Object>> payload = ArgumentCaptor.forClass(Map.class);
-        verify(notificationService).notify(any(), eq(NotificationType.PROGRAM_REMINDER), payload.capture());
+        verify(notificationService).notify(any(), any(), eq(NotificationType.PROGRAM_REMINDER), payload.capture());
 
         assertThat(payload.getValue().get("sessionAt")).isEqualTo("2026-08-17T18:30:00Z");
         assertThat(payload.getValue().get("programTitle")).isEqualTo("Longueurs du soir");
@@ -122,7 +124,7 @@ class ProgramReminderJobTest {
         job.sendUpcomingSlotReminders();
 
         assertThat(slot.getReminderSentFor()).isEqualTo(slot.getStartsAt());
-        verify(notificationService, never()).notify(any(), any(), anyMap());
+        verify(notificationService, never()).notify(any(), any(), any(), anyMap());
     }
 
     @Test
@@ -141,8 +143,8 @@ class ProgramReminderJobTest {
 
         job.sendUpcomingSlotReminders();
 
-        verify(notificationService, never()).notify(eq(supprime), any(), anyMap());
-        verify(notificationService).notify(eq(vivant), eq(NotificationType.PROGRAM_REMINDER), anyMap());
+        verify(notificationService, never()).notify(eq(supprime), any(), any(), anyMap());
+        verify(notificationService).notify(eq(vivant), any(), eq(NotificationType.PROGRAM_REMINDER), anyMap());
     }
 
     @Test
@@ -154,7 +156,7 @@ class ProgramReminderJobTest {
 
         job.sendUpcomingSlotReminders();
 
-        verify(notificationService, never()).notify(any(), any(), anyMap());
+        verify(notificationService, never()).notify(any(), any(), any(), anyMap());
     }
 
     @Test
@@ -174,9 +176,20 @@ class ProgramReminderJobTest {
     }
 
     private static Schedule slot(Instant startsAt) {
+        // L'auteur est renseigné parce que le rappel le nomme comme acteur, pour
+        // ne rien envoyer entre deux personnes qui se sont bloquées. Program.userActivity
+        // est NOT NULL en base : un programme sans auteur n'existe pas.
+        User host = new User();
+        host.setId(UUID.randomUUID());
+
+        UserActivity userActivity = new UserActivity();
+        userActivity.setId(UUID.randomUUID());
+        userActivity.setUser(host);
+
         Program program = new Program();
         program.setId(UUID.randomUUID());
         program.setTitle("Longueurs du soir");
+        program.setUserActivity(userActivity);
 
         Schedule slot = new Schedule();
         slot.setId(UUID.randomUUID());

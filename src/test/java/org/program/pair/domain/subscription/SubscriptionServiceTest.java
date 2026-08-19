@@ -1,5 +1,6 @@
 package org.program.pair.domain.subscription;
 
+import org.program.pair.domain.block.BlockFilterService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -53,6 +54,8 @@ class SubscriptionServiceTest {
     @Mock
     NotificationService notificationService;
 
+    @Mock BlockFilterService blockFilterService;
+
     @InjectMocks
     SubscriptionService subscriptionService;
 
@@ -99,7 +102,7 @@ class SubscriptionServiceTest {
 
         subscriptionService.subscribeToAuthor(subscriberId, authorId);
 
-        verify(notificationService).notify(eq(authorId), eq(NotificationType.NEW_FOLLOWER), any());
+        verify(notificationService).notify(eq(authorId), any(), eq(NotificationType.NEW_FOLLOWER), any());
     }
 
     @Test

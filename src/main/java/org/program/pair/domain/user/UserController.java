@@ -3,6 +3,7 @@ package org.program.pair.domain.user;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.attendance.PracticeStatsService;
+import org.program.pair.domain.block.BlockFilterService;
 import org.program.pair.domain.attendance.dto.PracticeStatsDto;
 import org.program.pair.domain.media.dto.MediaUploadResponse;
 import org.program.pair.domain.media.ImageProcessor;
@@ -11,6 +12,7 @@ import org.program.pair.domain.media.StorageService;
 import org.program.pair.domain.program.ProgramService;
 import org.program.pair.domain.program.dto.ProgramDto;
 import org.program.pair.domain.user.dto.*;
+import org.program.pair.shared.exception.UserNotFoundException;
 import org.program.pair.shared.security.UserPrincipal;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
@@ -37,6 +39,7 @@ public class UserController {
     private final ImageProcessor imageProcessor;
     private final ProgramService programService;
     private final PracticeStatsService practiceStatsService;
+    private final BlockFilterService blockFilterService;
 
     @GetMapping
     public Page<UserPublicDto> searchUsers(
@@ -133,10 +136,26 @@ public class UserController {
         return userService.getMyProfile(principal.getId());
     }
 
+    /**
+     * Profil public.
+     *
+     * <p>Un profil bloqué est <b>introuvable</b>, dans les deux sens et avec le
+     * message d'un compte qui n'existe pas. Un 403 dirait « il existe, mais » —
+     * exactement ce qu'un blocage ne doit pas laisser déduire.
+     *
+     * <p>La garde est ici et non dans {@code getPublicProfile} : cette méthode
+     * est aussi la fabrique du DTO public pour cinq appelants internes — cartes-
+     * souvenirs, participants d'un créneau, hôte d'un créneau, présence. Y faire
+     * lever une exception transformerait un masquage en erreur serveur chez des
+     * appelants qui n'ont rien demandé.
+     */
     @GetMapping("/{id}")
     public UserPublicDto getPublicProfile(
             @PathVariable UUID id,
             @AuthenticationPrincipal UserPrincipal principal) {
+        if (blockFilterService.blocked(principal.getId(), id)) {
+            throw new UserNotFoundException("Utilisateur introuvable.");
+        }
         return userService.getPublicProfile(id, principal.getId());
     }
 

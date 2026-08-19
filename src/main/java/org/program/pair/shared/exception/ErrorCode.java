@@ -109,5 +109,12 @@ public enum ErrorCode {
     MAP_BOUNDS_INCOMPLETE,
     MAP_BOUNDS_INVALID,
     MAP_LIMIT_OUT_OF_RANGE,
-    MAP_ZOOM_OUT_OF_RANGE
+    MAP_ZOOM_OUT_OF_RANGE,
+
+    // — blocage d'utilisateur (BlockFilterService) —
+    // L'appelant a bloqué la personne visée, ou en a été bloqué. Ce code n'est
+    // rendu qu'au bloqueur : côté bloqué, un refus nommé révélerait le blocage,
+    // et la règle est qu'il reste indétectable. Celui-là reçoit un 404 ordinaire,
+    // le même que pour une ressource qui n'existe pas.
+    USER_BLOCKED
 }

@@ -42,7 +42,7 @@ public class MapService {
     public List<MapUserDto> getUsersOnMap(MapSearchRequest request, UUID requesterId) {
         // 1. Find visible users in radius
         List<User> nearbyUsers = userRepository.findVisibleUsersInRadius(
-            request.lat(), request.lng(), request.radiusMeters(), 100, 0);
+            request.lat(), request.lng(), request.radiusMeters(), 100, 0, requesterId);
 
         // 2. Filter by activity if requested
         if (request.activityId() != null) {
@@ -124,7 +124,7 @@ public class MapService {
 
         // 1. Find visible users in bounds
         List<User> nearbyUsers = userRepository.findVisibleUsersInRadius(
-            centerLat, centerLng, radiusMeters, 1000, 0);
+            centerLat, centerLng, radiusMeters, 1000, 0, requesterId);
 
         // 2. Filter by activity if requested
         if (request.activityId() != null) {
@@ -323,7 +323,7 @@ public class MapService {
         // bornes demandées.
         List<User> nearbyUsers = userRepository.findVisibleUsersInBounds(
             request.south(), request.north(), request.west(), request.east(),
-            request.limit(), request.offset());
+            request.limit(), request.offset(), requesterId);
         int fetched = nearbyUsers.size();
 
         // Filter by activity levels if provided
@@ -349,24 +349,24 @@ public class MapService {
         // s'appliquent après le limit et la réduiraient sans qu'aucun marqueur
         // n'ait manqué.
         long total = userRepository.countVisibleUsersInBounds(
-            request.south(), request.north(), request.west(), request.east());
+            request.south(), request.north(), request.west(), request.east(), requesterId);
         boolean truncated = total > (long) request.offset() + fetched;
 
         return new Layer<>(items, (int) Math.min(total, Integer.MAX_VALUE), truncated);
     }
 
-    public List<MapActivityDto> getActivitiesInBounds(MapBoundsRequest request) {
-        return activitiesLayer(request).items();
+    public List<MapActivityDto> getActivitiesInBounds(MapBoundsRequest request, UUID requesterId) {
+        return activitiesLayer(request, requesterId).items();
     }
 
-    private Layer<MapActivityDto> activitiesLayer(MapBoundsRequest request) {
+    private Layer<MapActivityDto> activitiesLayer(MapBoundsRequest request, UUID requesterId) {
         // Une Activity n'a pas de coordonnées : la couche est agrégée depuis les
         // personnes qui la déclarent. D'où un plafond interne sur ces personnes,
         // qui est aussi la raison pour laquelle totalInBounds n'est qu'un
         // minorant sur cette couche (cf. MapMarkersResponse).
         List<User> nearbyUsers = userRepository.findVisibleUsersInBounds(
             request.south(), request.north(), request.west(), request.east(),
-            MAX_USERS_FOR_ACTIVITY_AGGREGATION, 0);
+            MAX_USERS_FOR_ACTIVITY_AGGREGATION, 0, requesterId);
 
         // Get unique activities from these users
         Map<UUID, List<User>> activityUserMap = new HashMap<>();
@@ -407,7 +407,7 @@ public class MapService {
             .toList();
 
         long usersInBounds = userRepository.countVisibleUsersInBounds(
-            request.south(), request.north(), request.west(), request.east());
+            request.south(), request.north(), request.west(), request.east(), requesterId);
         boolean sampled = usersInBounds > MAX_USERS_FOR_ACTIVITY_AGGREGATION;
 
         List<MapActivityDto> items = aggregated.stream().limit(request.limit()).toList();
@@ -481,7 +481,7 @@ public class MapService {
         return switch (type.toLowerCase()) {
             case "users" -> {
                 List<User> users = userRepository.findVisibleUsersInRadius(
-                    lat, lng, radiusMeters, 100, 0);
+                    lat, lng, radiusMeters, 100, 0, requesterId);
                 yield users.stream()
                     .filter(u -> !u.getId().equals(requesterId))
                     .map(u -> toMapDto(u, null))
@@ -559,7 +559,7 @@ public class MapService {
         validateBounds(request);
 
         Layer<MapUserDto> users = usersLayer(request, requesterId);
-        Layer<MapActivityDto> activities = activitiesLayer(request);
+        Layer<MapActivityDto> activities = activitiesLayer(request, requesterId);
         Layer<MapProgramDto> programs = programsLayer(request);
 
         return new MapMarkersResponse(
