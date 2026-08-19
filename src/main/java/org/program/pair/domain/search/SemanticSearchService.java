@@ -258,7 +258,8 @@ public class SemanticSearchService {
         // filtre pas sur la date de publication : les deux paramètres sont neutres.
         List<Schedule> slots = scheduleRepository.findOpenSlotsInRadius(
             request.lat(), request.lng(), radius, window.from(), window.to(), activityId,
-            false, ScheduleRepository.NO_CATEGORY_FILTER, null, MAX_SLOT_RESULTS, requesterId);
+            false, ScheduleRepository.NO_CATEGORY_FILTER, null, MAX_SLOT_RESULTS, requesterId,
+            false, ScheduleRepository.NO_LANGUAGE_FILTER);
 
         return slots.stream()
             .filter(s -> !s.getProgram().getUserActivity().getUser().getId().equals(requesterId))

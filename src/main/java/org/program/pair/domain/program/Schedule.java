@@ -131,6 +131,14 @@ public class Schedule {
     @Column(name = "last_occurrence_end")
     private Instant lastOccurrenceEnd;
 
+    /**
+     * Langue principale de la séance (V71). Nulle dans le cas normal — la
+     * plupart des créneaux n'en déclareront jamais — et un créneau sans langue
+     * n'est jamais exclu par le filtre.
+     */
+    @Column(name = "primary_language", length = 5)
+    private String primaryLanguage;
+
     // Annulation (V68).
 
     /** Motif donné par l'organisateur, montré aux participants. */

@@ -60,5 +60,10 @@ public record SlotFeedItemDto(
     @Schema(description = "Mon rang dans la liste d'attente, à partir de 1. Nul si je "
         + "n'y suis pas. C'est le serveur qui le tient : le déduire côté client "
         + "supposerait de connaître toute la file, qui n'est visible que de l'hôte.")
-    Integer myWaitlistPosition
+    Integer myWaitlistPosition,
+
+    @Schema(description = "Langue principale annoncée pour la séance, ou null. Nulle dans "
+        + "le cas normal : la plupart des créneaux n'en déclarent pas, et un créneau sans "
+        + "langue n'est jamais écarté par le filtre du fil.")
+    String primaryLanguage
 ) {}

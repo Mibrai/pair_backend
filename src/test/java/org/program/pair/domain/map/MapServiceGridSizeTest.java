@@ -27,7 +27,7 @@ class MapServiceGridSizeTest {
 
     // calculateGridSize ne touche aucune dépendance : le service est construit à
     // vide, comme MapServiceBlurTest le fait pour applyBlur.
-    private final MapService mapService = new MapService(null, null, null, null, null, null);
+    private final MapService mapService = new MapService(null, null, null, null, null, null, null);
 
     private static final int MIN_ZOOM = 1;
     private static final int MAX_ZOOM = 20;

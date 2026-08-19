@@ -369,6 +369,10 @@ public class ProgramService {
         if (request.welcomeNote() != null) {
             schedule.setWelcomeNote(sanitizer.sanitize(request.welcomeNote()).strip());
         }
+        if (request.primaryLanguage() != null && !request.primaryLanguage().isBlank()) {
+            schedule.setPrimaryLanguage(
+                request.primaryLanguage().strip().toLowerCase(java.util.Locale.ROOT));
+        }
 
         Schedule saved = scheduleRepository.save(schedule);
         ScheduleDto dto = toScheduleDto(saved, userId);
@@ -468,6 +472,9 @@ public class ProgramService {
         if (request.maxParticipants() != null) schedule.setMaxParticipants(request.maxParticipants());
         if (request.isOpenToPartners() != null) schedule.setIsOpenToPartners(request.isOpenToPartners());
         if (request.welcomeNote() != null)    schedule.setWelcomeNote(sanitizer.sanitize(request.welcomeNote()).strip());
+        if (request.primaryLanguage() != null)
+            schedule.setPrimaryLanguage(request.primaryLanguage().isBlank() ? null
+                : request.primaryLanguage().strip().toLowerCase(java.util.Locale.ROOT));
 
         ScheduleDto dto = toScheduleDto(scheduleRepository.save(schedule), userId);
         refreshNextSessionAt(schedule.getProgram());

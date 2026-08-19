@@ -28,6 +28,13 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
      */
     Set<UUID> NO_CATEGORY_FILTER = Set.of(new UUID(0L, 0L));
 
+    /**
+     * Sentinelle pour le filtre de langue, sur le modèle de
+     * {@link #NO_CATEGORY_FILTER} : Hibernate refuse de lier une liste vide dans
+     * un {@code IN}, et la requête ne la regarde pas quand le drapeau est faux.
+     */
+    Collection<String> NO_LANGUAGE_FILTER = List.of("");
+
     List<Schedule> findByStartsAtBetween(Instant from, Instant to);
 
     List<Schedule> findByProgramId(UUID programId);
@@ -223,6 +230,12 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
                 SELECT 1 FROM activities a
                 WHERE a.id = ua.activity_id AND a.category_id IN (:categoryIds)))
           AND (CAST(:createdSince AS timestamptz) IS NULL OR s.created_at >= :createdSince)
+          -- Un créneau sans langue déclarée n'est jamais exclu : la plupart n'en
+          -- déclareront pas, et exclure faute d'information punirait ceux qui
+          -- n'ont rien rempli. Même principe que la ville, jamais devinée.
+          AND (CAST(:filterByLanguage AS boolean) = FALSE
+               OR s.primary_language IS NULL
+               OR s.primary_language IN (:languages))
           AND ST_DWithin(
                 s.location::geography,
                 ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
@@ -233,6 +246,7 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
                              ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography)
         LIMIT :limit
         """, nativeQuery = true)
+
     List<Schedule> findOpenSlotsInRadius(
         @Param("lat") double lat,
         @Param("lng") double lng,
@@ -244,7 +258,9 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
         @Param("categoryIds") Collection<UUID> categoryIds,
         @Param("createdSince") Instant createdSince,
         @Param("limit") int limit,
-        @Param("viewerId") UUID viewerId
+        @Param("viewerId") UUID viewerId,
+        @Param("filterByLanguage") boolean filterByLanguage,
+        @Param("languages") Collection<String> languages
     );
 
     /**

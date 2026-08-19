@@ -71,11 +71,15 @@ public class SlotService {
         Set<UUID> categoryIds = request.effectiveCategoryIds();
         boolean filterByCategory = !categoryIds.isEmpty();
 
+        Set<String> languages = request.effectiveLanguages();
+        boolean filterByLanguage = !languages.isEmpty();
+
         List<Schedule> slots = scheduleRepository.findOpenSlotsInRadius(
             request.lat(), request.lng(), request.radiusMeters(),
             from, to, request.activityId(),
             filterByCategory, filterByCategory ? categoryIds : ScheduleRepository.NO_CATEGORY_FILTER,
-            request.createdSince(), 100, requesterId);
+            request.createdSince(), 100, requesterId,
+            filterByLanguage, filterByLanguage ? languages : ScheduleRepository.NO_LANGUAGE_FILTER);
 
         return slots.stream()
             .filter(s -> !s.getProgram().getUserActivity().getUser().getId().equals(requesterId))
@@ -493,7 +497,8 @@ public class SlotService {
             slot.getIsOpenToPartners(),
             slot.getWelcomeNote(),
             myParticipationStatus,
-            myWaitlistPosition
+            myWaitlistPosition,
+            slot.getPrimaryLanguage()
         );
     }
 
