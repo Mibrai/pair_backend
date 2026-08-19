@@ -1,5 +1,6 @@
 package org.program.pair.domain.chat;
 
+import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.chat.dto.*;
@@ -38,9 +39,14 @@ public class ChatController {
 
     @GetMapping("/api/conversations")
     @ResponseBody
+    @Operation(summary = "Les conversations de l'appelant.",
+        description = "archived=false (défaut) rend les fils courants, archived=true les "
+            + "fils archivés. Les deux listes sont disjointes : ranger un fil, c'est "
+            + "demander qu'il quitte l'écran, pas qu'il y reste marqué.")
     public List<ConversationSummaryDto> getMyConversations(
-            @AuthenticationPrincipal UserPrincipal principal) {
-        return chatService.getMyConversations(principal.getId());
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(defaultValue = "false") boolean archived) {
+        return chatService.getMyConversations(principal.getId(), archived);
     }
 
     /**
@@ -156,11 +162,66 @@ public class ChatController {
         return chatService.uploadImage(principal.getId(), conversationId, imageUrl);
     }
 
-    // WebSocket message handler
+    /**
+     * Partage ponctuel de position dans une conversation.
+     *
+     * <p>Le partage produit un message ordinaire, visible dans le fil : c'est ce
+     * qui garantit qu'on ne peut pas suivre quelqu'un à son insu — renouveler
+     * suppose un nouveau message, donc une nouvelle bulle.
+     */
+    @PostMapping("/api/conversations/{conversationId}/location")
+    @ResponseBody
+    @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Partage sa position, une fois, pour 30 minutes au plus.",
+        description = "Un point capturé à l'envoi, qui ne se met jamais à jour et cesse "
+            + "d'être servi à son échéance. Une durée supérieure à 30 minutes est "
+            + "refusée (400) plutôt que rabotée en silence.")
+    public MessageDto shareLocation(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID conversationId,
+            @Valid @RequestBody ShareLocationRequest request) {
+        return chatService.shareLocation(principal.getId(), conversationId, request);
+    }
+
+    @PatchMapping("/api/conversations/{conversationId}/settings")
+    @ResponseBody
+    @Operation(summary = "Met une conversation en sourdine, ou l'archive.",
+        description = "Réglages propres à l'appelant : deux personnes d'un même fil ne le "
+            + "classent pas pareil. Un champ absent reste inchangé.")
+    public ConversationSummaryDto updateSettings(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID conversationId,
+            @Valid @RequestBody UpdateConversationSettingsRequest request) {
+        return chatService.updateSettings(
+            principal.getId(), conversationId, request.muted(), request.archived());
+    }
+
+    // WebSocket message handlers
 
     @MessageMapping("/chat.send")
     public void sendMessage(@Payload SendMessageRequest request, Principal principal) {
         UUID senderId = UUID.fromString(principal.getName());
         chatService.sendMessage(senderId, request);
     }
+
+    /**
+     * Indicateur de saisie, prévu à l'origine puis absent des routes.
+     *
+     * <p>Rien n'en est conservé : il repart vers les autres membres du fil et
+     * s'arrête là. Il ne touche ni le fil, ni la date de lecture, ni le badge.
+     *
+     * <p>Une erreur ici ne remonte nulle part — le protocole STOMP n'a pas de
+     * réponse à une trame entrante, et le courtier simple de Spring n'émet même
+     * pas d'accusé. Un fil auquel on n'appartient pas produit donc un silence
+     * côté émetteur, ce qui est la bonne réponse : lui répondre « refusé » lui
+     * apprendrait que la conversation existe.
+     */
+    @MessageMapping("/chat.typing")
+    public void typing(@Payload TypingEvent event, Principal principal) {
+        chatService.typing(
+            UUID.fromString(principal.getName()), event.conversationId(), event.typing());
+    }
+
+    /** Ce que le client envoie sur {@code /app/chat.typing}. */
+    public record TypingEvent(UUID conversationId, boolean typing) {}
 }

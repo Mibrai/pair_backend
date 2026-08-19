@@ -59,4 +59,25 @@ public class Message {
 
     @Column(name = "image_url", length = 500)
     private String imageUrl;
+
+    /**
+     * Position partagée ponctuellement, et son échéance.
+     *
+     * <p>Les trois vont ensemble ou pas du tout, la base le contraint. Le point
+     * est capturé à l'envoi et ne se met jamais à jour : partager sa position
+     * deux fois, c'est envoyer deux messages, tous deux visibles dans le fil.
+     *
+     * <p><b>Lire ces champs ne suffit pas</b> — il faut aussi vérifier
+     * {@code locationExpiresAt}. Un balayage efface les coordonnées échues, mais
+     * c'est la lecture qui fait foi : entre l'échéance et le passage du balayage,
+     * les colonnes portent encore un point qu'il ne faut plus servir.
+     */
+    @Column(name = "location_lat")
+    private Double locationLat;
+
+    @Column(name = "location_lng")
+    private Double locationLng;
+
+    @Column(name = "location_expires_at")
+    private Instant locationExpiresAt;
 }
