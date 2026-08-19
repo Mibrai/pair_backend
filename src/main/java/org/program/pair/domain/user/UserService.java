@@ -6,6 +6,7 @@ import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
+import org.program.pair.domain.attendance.ReliabilitySignal;
 import org.program.pair.domain.guidelines.Guidelines;
 import org.program.pair.domain.subscription.SubscriptionService;
 import org.program.pair.domain.user.dto.*;
@@ -287,8 +288,8 @@ public class UserService {
             List.of(), // activities — rempli par ActivityService
             showOnline,
             subscriberCount,
-            subscribed
-        );
+            subscribed,
+            ReliabilitySignal.of(user.getJoinedSlotsCount(), user.getAttendanceCount()));
     }
 
     private UserPrivateDto toPrivateDto(User user) {

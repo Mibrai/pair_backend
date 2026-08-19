@@ -33,6 +33,7 @@ public class PracticeStatsService {
 
     private final AttendanceRepository attendanceRepository;
     private final UserRepository userRepository;
+    private final org.program.pair.repository.SlotParticipationRepository slotParticipationRepository;
 
     /**
      * Recalcule les compteurs dénormalisés d'un utilisateur.
@@ -46,6 +47,11 @@ public class PracticeStatsService {
         int streakWeeks = computeWeeklyStreak(userId);
         Instant last = attendanceRepository.findLastAttendanceDate(userId).orElse(null);
 
+        // Recalculé et non incrémenté, comme les autres : la reconstruction est
+        // idempotente et se répare toute seule, là où un +1 manqué reste faux
+        // pour toujours.
+        user.setJoinedSlotsCount(
+            slotParticipationRepository.countPastJoinedByUserId(userId, Instant.now()));
         user.setAttendanceCount(attendanceCount);
         user.setDistinctPartnersCount(distinctPartners);
         user.setCurrentStreakWeeks(streakWeeks);
