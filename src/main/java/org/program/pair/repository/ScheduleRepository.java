@@ -103,6 +103,10 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
     @Query("SELECT s FROM Schedule s WHERE s.id = :id")
     Optional<Schedule> lockById(@Param("id") UUID id);
 
+    Optional<Schedule> findByPublicShareToken(String publicShareToken);
+
+    boolean existsByPublicShareToken(String publicShareToken);
+
     /**
      * Nombre de participants confirmés toutes sources confondues : inscriptions
      * actives à un programme structuré (UserProgram) + RSVP confirmés sur le

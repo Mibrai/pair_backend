@@ -20,6 +20,7 @@ import java.util.UUID;
 public class SlotSafetyShareController {
 
     private final SlotSafetyShareService safetyShareService;
+    private final org.program.pair.domain.publicslot.PublicSlotService publicSlotService;
 
     @PostMapping("/{scheduleId}/safety-share")
     @ResponseStatus(HttpStatus.CREATED)
@@ -31,5 +32,16 @@ public class SlotSafetyShareController {
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID scheduleId) {
         return safetyShareService.create(principal.getId(), scheduleId);
+    }
+
+    @org.springframework.web.bind.annotation.GetMapping("/{scheduleId}/share-link")
+    @Operation(summary = "L'adresse publique de ce créneau.",
+        description = "Créée à la première demande — un créneau que personne n'a jamais "
+            + "partagé n'a pas besoin d'adresse publique. Réservée aux personnes du "
+            + "créneau : l'adresse est publique, mais la fabriquer ne l'est pas.")
+    public org.program.pair.domain.publicslot.dto.PublicShareLinkDto shareLink(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID scheduleId) {
+        return publicSlotService.shareLink(principal.getId(), scheduleId);
     }
 }

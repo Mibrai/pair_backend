@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="fr" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="${slot.programTitle} + ' — meetDo'">meetDo</title>
+
+    <!-- Les métadonnées d'aperçu sont la raison d'être de cette page. Sans
+         elles, un lien collé dans une messagerie reste une URL nue et ne
+         convertit pas. th:content échappe les valeurs saisies par
+         l'utilisateur : un titre contenant une apostrophe casserait sinon
+         l'attribut, et avec lui tout l'aperçu. -->
+    <meta property="og:type"        content="website">
+    <meta property="og:site_name"   content="meetDo">
+    <meta property="og:title"       th:content="${slot.programTitle}">
+    <meta property="og:description" th:content="${ogDescription}">
+    <meta property="og:url"         th:content="${ogUrl}">
+    <meta property="og:image"       th:if="${ogImage}" th:content="${ogImage}">
+    <meta name="twitter:card"       th:content="${ogImage} ? 'summary_large_image' : 'summary'">
+    <meta name="twitter:title"      th:content="${slot.programTitle}">
+    <meta name="twitter:description" th:content="${ogDescription}">
+
+    <style>
+        :root { color-scheme: light dark; }
+        body {
+            margin: 0; padding: 2rem 1.25rem;
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            line-height: 1.55; color: #16191c; background: #f5f6f7;
+        }
+        .card {
+            max-width: 32rem; margin: 0 auto; background: #fff;
+            border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.09);
+        }
+        .cover { display: block; width: 100%; height: auto; }
+        .body { padding: 1.75rem; }
+        .eyebrow {
+            font-size: .75rem; text-transform: uppercase; letter-spacing: .07em;
+            color: #6b757d; margin: 0 0 .4rem;
+        }
+        h1 { font-size: 1.3rem; margin: 0 0 1rem; font-weight: 600; }
+        dl { margin: 0 0 1.5rem; display: grid; grid-template-columns: auto 1fr; gap: .55rem 1.25rem; }
+        dt { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: #6b757d; }
+        dd { margin: 0; font-weight: 500; }
+        .welcome { margin: 0 0 1.5rem; color: #3d474e; font-style: italic; }
+        .cta {
+            display: block; text-align: center; text-decoration: none;
+            background: #14607f; color: #fff; font-weight: 600;
+            padding: .85rem 1rem; border-radius: 8px;
+        }
+        .cta:focus-visible { outline: 3px solid #14607f; outline-offset: 3px; }
+        @media (prefers-color-scheme: dark) {
+            body { background: #101315; color: #e6e9ea; }
+            .card { background: #181c1f; box-shadow: none; }
+            .eyebrow, dt { color: #8d979e; }
+            .welcome { color: #b3bdc3; }
+            .cta { background: #6eb4d2; color: #0e1113; }
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <img class="cover" th:if="${ogImage}" th:src="${ogImage}" alt="">
+    <div class="body">
+        <p class="eyebrow">
+            <span th:text="${slot.activityName}">Yoga</span><span
+                th:if="${slot.categoryName}" th:text="' · ' + ${slot.categoryName}"></span>
+        </p>
+        <h1 th:text="${slot.programTitle}">Yoga du samedi</h1>
+
+        <dl>
+            <dt>Quand</dt>
+            <dd><span th:text="${day}">samedi 14 juin</span>,
+                de <span th:text="${startTime}">9h00</span>
+                à <span th:text="${endTime}">10h00</span></dd>
+
+            <dt>Où</dt>
+            <dd><span th:text="${slot.placeName}">Studio Lumière</span><span
+                    th:if="${slot.city}" th:text="', ' + ${slot.city}"></span>
+                <!-- L'adresse n'apparaît que si elle est déjà diffusable : pour
+                     un lieu privé non partagé, broadcastableAddress rend null. -->
+                <span th:if="${slot.displayAddress}" th:text="' — ' + ${slot.displayAddress}"></span></dd>
+
+            <dt>Qui</dt>
+            <dd><span th:text="${slot.organizerGivenName} ?: 'Un membre'">Camille</span><span
+                    th:if="${slot.organizerVerified}" title="Compte vérifié"> ✓</span></dd>
+
+            <dt>Inscrits</dt>
+            <dd><span th:text="${slot.participantCount}">3</span><span
+                    th:if="${slot.maxParticipants}" th:text="' sur ' + ${slot.maxParticipants}"></span></dd>
+        </dl>
+
+        <p class="welcome" th:if="${slot.welcomeNote}" th:text="${slot.welcomeNote}"></p>
+
+        <!-- Un seul bouton, aucun formulaire : la page a une seule chose à
+             obtenir, et tout ce qui la partage la dilue. -->
+        <a class="cta" th:href="${deepLink}">Rejoindre sur meetDo</a>
+    </div>
+</div>
+</body>
+</html>
