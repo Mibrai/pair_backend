@@ -118,7 +118,8 @@ public class ActivityAlertService {
         for (ActivityAlert alert : matching) {
             if (alert.getUser().getId().equals(hostId)) continue;
 
-            notificationService.notify(alert.getUser().getId(), NotificationType.ACTIVITY_ALERT_MATCH,
+            notificationService.notify(alert.getUser().getId(), hostId,
+                NotificationType.ACTIVITY_ALERT_MATCH,
                 NotificationPayload.ofSchedule(slot).build());
 
             alert.setLastTriggeredAt(Instant.now());

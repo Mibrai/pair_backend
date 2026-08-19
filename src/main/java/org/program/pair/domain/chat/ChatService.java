@@ -3,6 +3,7 @@ package org.program.pair.domain.chat;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.chat.dto.*;
 import org.program.pair.domain.notification.UnreadChangedEvent;
+import org.program.pair.domain.block.BlockFilterService;
 import org.program.pair.domain.user.User;
 import org.program.pair.domain.user.dto.UserPublicDto;
 import org.program.pair.repository.*;
@@ -40,6 +41,7 @@ public class ChatService {
     private final UserProgramRepository userProgramRepository;
     private final SimpMessagingTemplate messagingTemplate;
     private final HtmlSanitizer sanitizer;
+    private final BlockFilterService blockFilterService;
     private final ApplicationEventPublisher eventPublisher;
 
     /** Longueur de l'aperçu de message porté par la push. */
@@ -66,6 +68,19 @@ public class ChatService {
         // 1. Check if target accepts messages
         User target = userRepository.findById(request.targetUserId())
             .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable."));
+
+        // Avant tout le reste : les refus qui suivent sont bavards, et l'un
+        // d'eux appris par une personne bloquée lui dirait que le compte visé
+        // existe et va bien.
+        if (blockFilterService.blockedBy(initiatorId, request.targetUserId())) {
+            throw new ForbiddenException(ErrorCode.USER_BLOCKED,
+                "Vous avez bloqué cette personne.");
+        }
+        if (blockFilterService.blocked(initiatorId, request.targetUserId())) {
+            // L'autre sens : rien ne doit distinguer ce refus de celui d'un
+            // compte qui n'existe pas.
+            throw new ResourceNotFoundException("Utilisateur introuvable.");
+        }
 
         if (!Boolean.TRUE.equals(target.getReceiveMessages())) {
             throw new ForbiddenException("Cet utilisateur n'accepte pas les messages.");

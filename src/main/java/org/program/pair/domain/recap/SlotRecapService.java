@@ -287,7 +287,8 @@ public class SlotRecapService {
     @Transactional(readOnly = true)
     public List<SlotRecapDto> getFeed(RecapFeedRequest request, UUID requesterId) {
         return recapRepository
-            .findPublicInRadius(request.lat(), request.lng(), request.radiusMeters(), FEED_LIMIT)
+            .findPublicInRadius(request.lat(), request.lng(), request.radiusMeters(), FEED_LIMIT,
+                requesterId)
             .stream()
             .map(recap -> toDto(recap, requesterId))
             .toList();

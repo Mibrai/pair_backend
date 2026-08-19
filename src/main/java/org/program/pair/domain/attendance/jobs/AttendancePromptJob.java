@@ -53,7 +53,9 @@ public class AttendancePromptJob {
             int notified = 0;
             for (Schedule slot : finished) {
                 for (UUID userId : unconfirmedParticipantIds(slot)) {
-                    notificationService.notify(userId, NotificationType.ATTENDANCE_PROMPT,
+                    notificationService.notify(userId,
+                        slot.getProgram().getUserActivity().getUser().getId(),
+                        NotificationType.ATTENDANCE_PROMPT,
                         NotificationPayload.ofSchedule(slot).build());
                     notified++;
                 }

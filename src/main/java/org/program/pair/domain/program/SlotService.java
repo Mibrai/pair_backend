@@ -14,6 +14,7 @@ import org.program.pair.domain.program.dto.ScheduleConflictDto;
 import org.program.pair.domain.program.dto.SlotFeedItemDto;
 import org.program.pair.domain.program.dto.SlotFeedRequest;
 import org.program.pair.domain.program.dto.SlotParticipantDto;
+import org.program.pair.domain.block.BlockFilterService;
 import org.program.pair.domain.user.User;
 import org.program.pair.domain.user.UserService;
 import org.program.pair.repository.ScheduleRepository;
@@ -56,6 +57,7 @@ public class SlotService {
     private final ChatService chatService;
     private final NotificationService notificationService;
     private final ScheduleConflictDetector conflictDetector;
+    private final BlockFilterService blockFilterService;
     private final HtmlSanitizer sanitizer;
 
     @Transactional(readOnly = true)
@@ -73,7 +75,7 @@ public class SlotService {
             request.lat(), request.lng(), request.radiusMeters(),
             from, to, request.activityId(),
             filterByCategory, filterByCategory ? categoryIds : ScheduleRepository.NO_CATEGORY_FILTER,
-            request.createdSince(), 100);
+            request.createdSince(), 100, requesterId);
 
         return slots.stream()
             .filter(s -> !s.getProgram().getUserActivity().getUser().getId().equals(requesterId))
@@ -99,6 +101,20 @@ public class SlotService {
             .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
 
         User host = slot.getProgram().getUserActivity().getUser();
+
+        // En tête de la chaîne, et pas ailleurs : les refus qui suivent nomment
+        // précisément ce qui cloche, et l'un d'eux rendu à une personne bloquée
+        // lui apprendrait que le créneau existe, qu'il est ouvert, et qu'il a de
+        // la place.
+        if (blockFilterService.blockedBy(userId, host.getId())) {
+            throw new ValidationException(ErrorCode.USER_BLOCKED,
+                "Vous avez bloqué l'organisateur de ce créneau.");
+        }
+        if (blockFilterService.blocked(userId, host.getId())) {
+            // Bloqué par l'hôte : le créneau a déjà disparu de son fil, il ne
+            // doit pas réapparaître par son identifiant.
+            throw new ResourceNotFoundException("Créneau introuvable.");
+        }
 
         if (host.getId().equals(userId)) {
             throw new ValidationException(ErrorCode.SLOT_OWN_SLOT, "Vous ne pouvez pas rejoindre votre propre créneau.");
@@ -171,7 +187,7 @@ public class SlotService {
                 slot.getId());
         }
 
-        notificationService.notify(host.getId(), NotificationType.SLOT_JOINED,
+        notificationService.notify(host.getId(), userId, NotificationType.SLOT_JOINED,
             NotificationPayload.ofSchedule(slot)
                 .with("participantId", userId)
                 .with("participantName", userRepository.findById(userId)

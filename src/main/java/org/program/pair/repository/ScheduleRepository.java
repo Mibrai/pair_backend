@@ -1,6 +1,7 @@
 package org.program.pair.repository;
 
 import jakarta.persistence.LockModeType;
+import org.program.pair.domain.block.BlockSql;
 import org.program.pair.domain.program.Schedule;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -222,6 +223,7 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
                 s.location::geography,
                 ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
                 :radiusMeters)
+        """ + BlockSql.NOT_BLOCKED_U + """
         ORDER BY s.starts_at ASC,
                  ST_Distance(s.location::geography,
                              ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography)
@@ -237,7 +239,8 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
         @Param("filterByCategory") boolean filterByCategory,
         @Param("categoryIds") Collection<UUID> categoryIds,
         @Param("createdSince") Instant createdSince,
-        @Param("limit") int limit
+        @Param("limit") int limit,
+        @Param("viewerId") UUID viewerId
     );
 
     /**

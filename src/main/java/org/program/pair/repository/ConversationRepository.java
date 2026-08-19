@@ -59,10 +59,24 @@ public interface ConversationRepository extends JpaRepository<Conversation, UUID
         @Param("userId2") UUID userId2
     );
 
+    /**
+     * Mes conversations.
+     *
+     * <p>Une conversation avec quelqu'un de bloqué disparaît <b>des deux côtés</b>,
+     * et sans être supprimée : le blocage peut être levé, et l'historique doit
+     * alors revenir tel quel. Le filtre porte sur les autres membres, jamais sur
+     * moi-même — sans quoi une conversation de groupe s'évanouirait dès que l'un
+     * de ses membres bloquerait n'importe qui.
+     */
     @Query("SELECT c FROM Conversation c " +
            "WHERE EXISTS (" +
            "  SELECT 1 FROM ConversationMember cm " +
            "  WHERE cm.id.conversationId = c.id AND cm.id.userId = :userId) " +
+           "  AND NOT EXISTS (" +
+           "  SELECT 1 FROM ConversationMember other, UserBlock b " +
+           "  WHERE other.id.conversationId = c.id AND other.id.userId <> :userId " +
+           "    AND ((b.blocker.id = :userId AND b.blocked.id = other.id.userId) " +
+           "      OR (b.blocker.id = other.id.userId AND b.blocked.id = :userId))) " +
            "ORDER BY c.createdAt DESC")
     List<Conversation> findByMemberId(@Param("userId") UUID userId);
 

@@ -509,6 +509,7 @@ public class ProgramService {
             java.util.stream.Stream.concat(slotParticipantIds.stream(), programParticipantIds.stream())
                 .distinct()
                 .forEach(participantId -> notificationService.notify(participantId,
+                    schedule.getProgram().getUserActivity().getUser().getId(),
                     NotificationType.SLOT_CANCELLED,
                     NotificationPayload.ofSchedule(schedule).build()));
         }

@@ -1,5 +1,6 @@
 package org.program.pair.domain.program;
 
+import org.program.pair.domain.block.BlockFilterService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -46,6 +47,8 @@ class SlotServiceTest {
     // conflit » — le comportement d'avant l'introduction de la règle B1.
     @Mock ScheduleConflictDetector conflictDetector;
     @Mock HtmlSanitizer sanitizer;
+
+    @Mock BlockFilterService blockFilterService;
 
     @InjectMocks
     SlotService slotService;

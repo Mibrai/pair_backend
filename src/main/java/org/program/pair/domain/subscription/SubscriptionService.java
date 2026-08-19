@@ -17,6 +17,7 @@ import org.program.pair.domain.subscription.dto.SubscriptionScopeRequest;
 import org.program.pair.domain.subscription.dto.UpdateSubscriptionRequest;
 import org.program.pair.domain.user.PrivacySettings;
 import org.program.pair.domain.user.SubscriptionPermission;
+import org.program.pair.domain.block.BlockFilterService;
 import org.program.pair.domain.user.User;
 import org.program.pair.repository.CategoryRepository;
 import org.program.pair.repository.SubscriptionRepository;
@@ -51,6 +52,7 @@ import java.util.stream.Collectors;
 public class SubscriptionService {
 
     private final SubscriptionRepository subscriptionRepository;
+    private final BlockFilterService blockFilterService;
     private final UserRepository userRepository;
     private final UserActivityRepository userActivityRepository;
     private final CategoryRepository categoryRepository;
@@ -69,6 +71,7 @@ public class SubscriptionService {
         User author = userRepository.findById(authorId)
             .orElseThrow(() -> new ResourceNotFoundException("Auteur introuvable."));
 
+        requireNotBlocked(subscriberId, author.getId());
         requireOpenToSubscriptions(author);
 
         Subscription subscription = Subscription.builder()
@@ -79,7 +82,7 @@ public class SubscriptionService {
 
         subscription = subscriptionRepository.save(subscription);
 
-        notificationService.notify(authorId, NotificationType.NEW_FOLLOWER,
+        notificationService.notify(authorId, subscriberId, NotificationType.NEW_FOLLOWER,
             NotificationPayload.empty()
                 .with("subscriberId", subscriberId)
                 .with("followerName", subscriber.getDisplayName())
@@ -116,6 +119,7 @@ public class SubscriptionService {
         User author = userActivity.getUser();
         if (author != null) {
             requireNotSelf(subscriberId, author.getId());
+            requireNotBlocked(subscriberId, author.getId());
             requireOpenToSubscriptions(author);
         }
 
@@ -453,7 +457,7 @@ public class SubscriptionService {
         collect(candidates, subscriptionRepository.findByTargetAuthorId(authorId),
             NotificationType.AUTHOR_NEW_ACTIVITY);
 
-        emit(candidates, activityContext(userActivity));
+        emit(candidates, userActivity.getUser().getId(), activityContext(userActivity));
     }
 
     /**
@@ -498,7 +502,7 @@ public class SubscriptionService {
             }
         }
 
-        emit(candidates, activityContext(userActivity));
+        emit(candidates, userActivity.getUser().getId(), activityContext(userActivity));
 
         userActivity.setCategoryNotifiedAt(Instant.now());
         userActivityRepository.save(userActivity);
@@ -517,7 +521,8 @@ public class SubscriptionService {
         collect(candidates, subscriptionRepository.findByTargetUserActivityId(userActivity.getId()),
             NotificationType.ACTIVITY_UPDATED);
 
-        emit(candidates, NotificationPayload.ofUserActivity(userActivity).build());
+        emit(candidates, userActivity.getUser().getId(),
+            NotificationPayload.ofUserActivity(userActivity).build());
     }
 
     /**
@@ -558,7 +563,7 @@ public class SubscriptionService {
         collect(candidates, subscriptionRepository.findByTargetUserActivityId(userActivity.getId()),
             NotificationType.ACTIVITY_NEW_PROGRAM);
 
-        emit(candidates, NotificationPayload.ofSchedule(firstSlot).build());
+        emit(candidates, authorId, NotificationPayload.ofSchedule(firstSlot).build());
     }
 
     /** Contexte commun aux deux annonces d'activité, auteur compris. */
@@ -649,14 +654,18 @@ public class SubscriptionService {
      * décrivent tous <b>le même fait</b> — un programme, ou une activité — donc
      * les réunir par personne suffit à n'en garder qu'un par fait.
      */
-    private void emit(List<Candidate> candidates, Map<String, Object> context) {
+    private void emit(List<Candidate> candidates, UUID authorId, Map<String, Object> context) {
         Map<UUID, Candidate> retained = new LinkedHashMap<>();
         for (Candidate candidate : candidates) {
             retained.merge(candidate.recipientId(), candidate,
                 (kept, other) -> rank(kept.type()) <= rank(other.type()) ? kept : other);
         }
+        // L'acteur est l'auteur de ce qui est annoncé. Le filtre est indispensable
+        // même après la rupture des abonnements au blocage : un abonnement par
+        // catégorie survit au blocage — il ne vise personne — et porterait sinon
+        // les annonces de quelqu'un qu'on vient de bloquer.
         retained.values().forEach(candidate ->
-            notificationService.notify(candidate.recipientId(), candidate.type(),
+            notificationService.notify(candidate.recipientId(), authorId, candidate.type(),
                 withProvenance(context, candidate.source())));
     }
 
@@ -749,6 +758,24 @@ public class SubscriptionService {
      * <p>Rappel : le réglage ne vaut que pour l'avenir. Il refuse les nouveaux
      * abonnements, il ne supprime pas les existants et ne les fait pas taire.
      */
+    /**
+     * Refuse un abonnement entre deux personnes que le blocage a séparées.
+     *
+     * <p>Posée avant {@link #requireOpenToSubscriptions} : ce dernier rend un
+     * code nommé qui apprendrait à une personne bloquée que le compte visé
+     * existe et va bien. Elle reçoit donc, ici, le refus d'une ressource
+     * introuvable.
+     */
+    private void requireNotBlocked(UUID subscriberId, UUID authorId) {
+        if (blockFilterService.blockedBy(subscriberId, authorId)) {
+            throw new ForbiddenException(ErrorCode.USER_BLOCKED,
+                "Vous avez bloqué cette personne.");
+        }
+        if (blockFilterService.blocked(subscriberId, authorId)) {
+            throw new ResourceNotFoundException("Auteur introuvable.");
+        }
+    }
+
     private void requireOpenToSubscriptions(User author) {
         PrivacySettings settings = author.getPrivacySettings();
         if (settings != null && settings.getAllowSubscriptions() == SubscriptionPermission.NOBODY) {

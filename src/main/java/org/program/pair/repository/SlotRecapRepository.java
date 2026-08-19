@@ -1,5 +1,6 @@
 package org.program.pair.repository;
 
+import org.program.pair.domain.block.BlockSql;
 import org.program.pair.domain.recap.SlotRecap;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -58,6 +59,7 @@ public interface SlotRecapRepository extends JpaRepository<SlotRecap, UUID> {
                 s.location::geography,
                 ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
                 :radiusMeters)
+        """ + BlockSql.NOT_BLOCKED_U + """
         ORDER BY r.published_at DESC
         LIMIT :limit
         """, nativeQuery = true)
@@ -65,7 +67,8 @@ public interface SlotRecapRepository extends JpaRepository<SlotRecap, UUID> {
         @Param("lat") double lat,
         @Param("lng") double lng,
         @Param("radiusMeters") int radiusMeters,
-        @Param("limit") int limit
+        @Param("limit") int limit,
+        @Param("viewerId") UUID viewerId
     );
 
     /**

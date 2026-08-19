@@ -199,7 +199,8 @@ public class UserService {
             longitude,
             radiusMeters,
             size,
-            offset
+            offset,
+            requesterId
         );
 
         // Get total count for pagination
@@ -207,7 +208,8 @@ public class UserService {
             query,
             latitude,
             longitude,
-            radiusMeters
+            radiusMeters,
+            requesterId
         );
 
         // Compteurs et état d'abonnement en deux requêtes pour toute la page,

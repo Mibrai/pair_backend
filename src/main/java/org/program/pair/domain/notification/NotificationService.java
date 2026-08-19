@@ -1,5 +1,6 @@
 package org.program.pair.domain.notification;
 
+import org.program.pair.domain.block.BlockFilterService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -33,7 +34,34 @@ public class NotificationService {
     private final PushNotificationServiceInterface pushService;
     private final ObjectMapper objectMapper;
     private final UnreadCounter unreadCounter;
+    private final BlockFilterService blockFilterService;
     private final ApplicationEventPublisher eventPublisher;
+
+    /**
+     * Notification déclenchée par quelqu'un.
+     *
+     * <p>Rien ne part si le destinataire et l'acteur se sont bloqués. Le
+     * contrôle est ici plutôt que chez les appelants pour une raison précise :
+     * il y a neuf producteurs de notifications aujourd'hui, dont deux jobs et un
+     * écouteur transactionnel, et le dixième sera écrit dans six mois par
+     * quelqu'un qui ne connaîtra pas cette règle. Posé au point de passage, il
+     * s'applique aussi à lui.
+     *
+     * <p>L'acteur ne peut pas être déduit de la charge utile : certaines en
+     * portent un ({@code authorId}, {@code senderId}), d'autres non. Un filtre
+     * qui s'appuierait dessus serait un filtre à trous.
+     *
+     * @param actorId qui déclenche — nul pour une notification que personne
+     *                n'a provoquée, un rappel d'agenda par exemple
+     */
+    @Async
+    public void notify(UUID userId, UUID actorId, NotificationType type, Map<String, Object> payload) {
+        if (blockFilterService.blocked(userId, actorId)) {
+            log.debug("Notification {} supprimée : blocage entre {} et {}", type, userId, actorId);
+            return;
+        }
+        notify(userId, type, payload);
+    }
 
     /**
      * Point d'entrée unique pour toutes les notifications
@@ -89,6 +117,16 @@ public class NotificationService {
      * destinataire, qui continue de faire foi, et le badge, qui porte le total
      * relu après écriture du message.
      */
+    /** Variante de {@link #notifyPushOnly} qui connaît l'émetteur. */
+    @Async
+    public void notifyPushOnly(UUID userId, UUID actorId, NotificationType type,
+                               Map<String, Object> payload) {
+        if (blockFilterService.blocked(userId, actorId)) {
+            return;
+        }
+        notifyPushOnly(userId, type, payload);
+    }
+
     @Async
     public void notifyPushOnly(UUID userId, NotificationType type, Map<String, Object> payload) {
         NotificationPref pref = prefRepository

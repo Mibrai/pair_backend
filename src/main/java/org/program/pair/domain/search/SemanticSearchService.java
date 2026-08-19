@@ -11,6 +11,7 @@ import org.program.pair.domain.program.LocationType;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotAddressVisibility;
+import org.program.pair.domain.block.BlockFilterService;
 import org.program.pair.domain.search.dto.*;
 import org.program.pair.domain.search.embedding.LocalEmbeddingService;
 import org.program.pair.domain.user.User;
@@ -39,6 +40,7 @@ import java.util.UUID;
 @Slf4j
 public class SemanticSearchService {
 
+    private final BlockFilterService blockFilterService;
     private final RuleBasedIntentExtractor intentExtractor;
     private final Messages messages;
     private final LocalEmbeddingService embeddingService;
@@ -188,6 +190,26 @@ public class SemanticSearchService {
         // rappel sémantique/full-text, dédupliqués par programme.
         List<SearchResultDto> results = mergeResults(taxonomyResults, recallResults, CANDIDATE_LIMIT);
 
+        // Blocage : appliqué ici, avant la pagination et avant countsByType, donc
+        // les compteurs d'onglets portent bien sur ce que l'appelant peut voir.
+        // Filtrer plus tard ferait annoncer « Programmes (12) » puis en servir 9.
+        //
+        // C'est le seul endroit du lot où le filtre reste en mémoire. Les trois
+        // requêtes de rappel plein texte sont bâties à la main avec des
+        // paramètres positionnels, et y insérer un prédicat au mauvais rang est
+        // le mode de panne que ce fichier documente déjà. La contrepartie est
+        // bornée et connue : la limite de candidats s'applique avant ce filtre,
+        // donc quelqu'un qui a beaucoup bloqué peut recevoir un peu moins de
+        // candidats — jamais un résultat qu'il ne devrait pas voir.
+        if (requesterId != null && !results.isEmpty()) {
+            Set<UUID> invisible = blockFilterService.invisibleTo(requesterId);
+            if (!invisible.isEmpty()) {
+                results = results.stream()
+                    .filter(r -> r.organizerId() == null || !invisible.contains(r.organizerId()))
+                    .toList();
+            }
+        }
+
         // Filtrer par niveau si spécifié par le LLM
         if (intent.level() != null && !results.isEmpty()) {
             results = results.stream()
@@ -236,7 +258,7 @@ public class SemanticSearchService {
         // filtre pas sur la date de publication : les deux paramètres sont neutres.
         List<Schedule> slots = scheduleRepository.findOpenSlotsInRadius(
             request.lat(), request.lng(), radius, window.from(), window.to(), activityId,
-            false, ScheduleRepository.NO_CATEGORY_FILTER, null, MAX_SLOT_RESULTS);
+            false, ScheduleRepository.NO_CATEGORY_FILTER, null, MAX_SLOT_RESULTS, requesterId);
 
         return slots.stream()
             .filter(s -> !s.getProgram().getUserActivity().getUser().getId().equals(requesterId))
