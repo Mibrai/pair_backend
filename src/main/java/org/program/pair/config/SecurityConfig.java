@@ -73,6 +73,14 @@ public class SecurityConfig {
                 // fonctionnalité de son sens. La confidentialité repose
                 // entièrement sur le jeton, opaque et périssable.
                 .requestMatchers(HttpMethod.GET, "/public/safety/**").permitAll()
+                // Page publique de créneau, son JSON, son image, et l'adresse
+                // courte qu'on partage réellement.
+                .requestMatchers(HttpMethod.GET, "/public/slots/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/s/**").permitAll()
+                // Fichiers d'association des liens universels. Ouverts sans
+                // condition : Apple et Google les lisent sans identité, et une
+                // redirection suffirait à faire échouer la validation.
+                .requestMatchers(HttpMethod.GET, "/.well-known/**").permitAll()
                 // Tout le reste : authentifié
                 .anyRequest().authenticated()
             )

@@ -131,6 +131,36 @@ public class Schedule {
     @Column(name = "last_occurrence_end")
     private Instant lastOccurrenceEnd;
 
+    // Partage public (V65). Placés avant les collections, jamais entre un champ
+    // et l'annotation d'audit qui le précède.
+
+    /**
+     * Adresse publique du créneau. <b>Nulle tant que personne ne l'a partagé</b> :
+     * le jeton est créé à la première demande de lien plutôt que par une
+     * migration, ce qui évite deux qualités de jeton dans la même colonne — et
+     * dit au passage quels créneaux ont déjà été partagés.
+     */
+    @Column(name = "public_share_token", length = 22, unique = true)
+    private String publicShareToken;
+
+    /**
+     * L'organisateur peut retirer son créneau du web ouvert. Vrai par défaut :
+     * un créneau public dans l'application l'est aussi hors d'elle, et
+     * l'inverse aurait rendu la fonctionnalité invisible.
+     */
+    @Column(name = "is_publicly_shareable", nullable = false)
+    @Builder.Default
+    private Boolean isPubliclyShareable = true;
+
+    /**
+     * Nombre d'ouvertures de la page publique. Indicatif : les caches des
+     * messageries et les robots d'aperçu le faussent par nature, et il ne sert
+     * qu'à dire « ce lien a circulé », jamais à mesurer une audience.
+     */
+    @Column(name = "public_view_count", nullable = false)
+    @Builder.Default
+    private Integer publicViewCount = 0;
+
     @OneToMany(mappedBy = "schedule", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default
     private List<SlotParticipation> participations = new ArrayList<>();
