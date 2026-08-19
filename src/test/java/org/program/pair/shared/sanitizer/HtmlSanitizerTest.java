@@ -71,18 +71,22 @@ class HtmlSanitizerTest {
     // — ce qui doit être préservé —
 
     @Test
-    void laFormeEchappee_doitResterCelleDAvant() {
-        // La base contient déjà des « &lt; » pour l'existant ; changer cette
-        // convention modifierait l'affichage de contenus vieux de plusieurs mois.
-        assertThat(sanitizer.sanitize("3 < 5")).isEqualTo("3 &lt; 5");
+    void laSortie_doitEtreDuTexte_pasDuHtmlEchappe() {
+        // Ces champs ne sont jamais rendus tels quels : l'application les affiche
+        // dans des widgets de texte, et les pages du serveur passent par
+        // Thymeleaf, qui échappe. Échapper ici aussi ferait afficher les entités
+        // en clair — « Parc de l&#39;Orangerie » sur la page de sécurité.
+        assertThat(sanitizer.sanitize("3 < 5")).isEqualTo("3 < 5");
+        assertThat(sanitizer.sanitize("L'atelier \"du soir\""))
+            .isEqualTo("L'atelier \"du soir\"");
     }
 
     @Test
-    void lesApostrophesEtGuillemets_doiventEtreEchappes() {
-        // L'ancienne version les décodait sans les ré-encoder : un titre avec une
-        // apostrophe cassait l'attribut HTML qui l'aurait accueilli.
-        String sanitized = sanitizer.sanitize("L'atelier \"du soir\"");
-        assertThat(sanitized).doesNotContain("'").doesNotContain("\"");
+    void uneEsperluetteEchappee_neDoitPasDevenirDuBalisage() {
+        // Le piège du décodage : traiter &amp; en premier transformerait
+        // « &amp;lt;script&amp;gt; » en « <script> ». L'ordre de la passe compte.
+        assertThat(sanitizer.sanitize("&amp;lt;script&amp;gt;"))
+            .isEqualTo("&lt;script&gt;");
     }
 
     @Test
