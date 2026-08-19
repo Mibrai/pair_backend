@@ -183,11 +183,37 @@ class PublicSlotPageIntegrationTest extends AbstractIntegrationTest {
     // — liens universels —
 
     @Test
-    void lesFichiersDAssociation_neDoiventRienServir_tantQueLesValeursManquent() {
-        // Publier une association inventée serait pire que de n'en publier
-        // aucune : Apple et Google la mettent en cache agressivement.
-        assertThat(status("/.well-known/apple-app-site-association")).isEqualTo(404);
+    void lAssociationApple_doitEtreServie_depuisQueLIdentifiantEstConnu() {
+        // Valeur communiquée par l'équipe mobile le 2026-08-19, relevée dans leur
+        // projet iOS. Servie en JSON et sans redirection : Apple n'accepte ni
+        // l'un ni l'autre écart.
+        assertThat(status("/.well-known/apple-app-site-association")).isEqualTo(200);
+        assertThat(body("/.well-known/apple-app-site-association"))
+            .contains("97727T64DH.com.meetdo.app")
+            .contains("/s/*");
+    }
+
+    @Test
+    void lAssociationAndroid_doitRester404_tantQueLEmpreinteManque() {
+        // L'empreinte SHA-256 dépend d'une décision qui n'est pas prise —
+        // signature locale ou Play App Signing, auquel cas c'est Google qui
+        // détient le certificat. Publier une association inventée serait pire que
+        // de n'en publier aucune : Apple et Google les mettent en cache
+        // agressivement, et une association fausse mémorisée par un appareil est
+        // plus longue à corriger qu'une association absente.
         assertThat(status("/.well-known/assetlinks.json")).isEqualTo(404);
+    }
+
+    @Test
+    void leBouton_doitViserLApplication_etNonLaPageElleMeme() {
+        // Il pointait vers l'adresse de cette même page, ce qui ne menait nulle
+        // part : sans application il la rechargeait, et avec — une fois les liens
+        // universels actifs — iOS n'ouvre pas l'application depuis un lien vers
+        // le domaine où le navigateur se trouve déjà.
+        String host = registerAndLogin();
+        String token = shareLink(host, publishSlot(host)).token();
+
+        assertThat(body("/s/" + token)).contains("meetdo://slot/" + token);
     }
 
     // — helpers —

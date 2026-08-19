@@ -7,6 +7,8 @@ import org.program.pair.domain.auth.dto.LoginRequest;
 import org.program.pair.domain.auth.dto.RegisterRequest;
 import org.program.pair.domain.program.PlaceType;
 import org.program.pair.domain.program.dto.QuickSlotRequest;
+import org.program.pair.domain.map.dto.MapActivitiesResponse;
+import org.program.pair.domain.map.dto.MapActivityMarkerDto;
 import org.program.pair.domain.program.dto.SlotFeedItemDto;
 import org.program.pair.repository.ActivityRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -272,7 +274,75 @@ class UserBlockIntegrationTest extends AbstractIntegrationTest {
             .expectStatus().isNotFound();
     }
 
+    // — les deux surfaces refermées le 2026-08-19 —
+
+    @Test
+    void laCarteDesActivites_doitMasquerLesOrganisateursBloques() {
+        // Cette route est restée ouverte sans jeton jusqu'au 2026-08-19, et sans
+        // appelant identifié il n'y avait personne à qui masquer quoi que ce
+        // soit. Un profil bloqué qui garde ses activités sur la carte est un
+        // profil qui n'est pas bloqué.
+        Account alice = account();
+        Account bob = account();
+        // Un lieu à lui : voir publishSlotAt.
+        publishSlotAt(bob, 48.6402, 7.8123);
+
+        assertThat(mapOrganizerIds(alice)).contains(bob.id);
+
+        block(alice, bob);
+
+        assertThat(mapOrganizerIds(alice)).doesNotContain(bob.id);
+        // Bilatéral : c'est alice qui a bloqué, et pourtant bob ne se voit pas
+        // retirer moins qu'elle — il garde ses propres marqueurs, mais perd les
+        // siens à elle. Alice n'ayant rien publié, on vérifie le sens qui compte
+        // ici : bob se voit toujours lui-même, le filtre n'ayant pas débordé.
+        assertThat(mapOrganizerIds(bob)).contains(bob.id);
+    }
+
+    @Test
+    void laCarteDesActivites_neDoitPlusRepondreSansJeton() {
+        webTestClient.get()
+            .uri("/api/map/activities")
+            .exchange()
+            .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void lesProgrammesDunProfil_doiventDevenirIntrouvables() {
+        // La fiche de profil refusait déjà ; la liste de ses programmes, servie
+        // au même écran, répondait encore — et elle nomme son auteur, ses lieux
+        // et ses horaires.
+        Account alice = account();
+        Account bob = account();
+        block(alice, bob);
+
+        webTestClient.get()
+            .uri("/api/users/{id}/programs", alice.id)
+            .headers(h -> h.setBearerAuth(bob.token))
+            .exchange()
+            .expectStatus().isNotFound();
+
+        webTestClient.get()
+            .uri("/api/users/{id}/programs", bob.id)
+            .headers(h -> h.setBearerAuth(alice.token))
+            .exchange()
+            .expectStatus().isNotFound();
+    }
+
     // — helpers —
+
+    private List<UUID> mapOrganizerIds(Account viewer) {
+        MapActivitiesResponse response = webTestClient.get()
+            .uri(b -> b.path("/api/map/activities").queryParam("limit", 500).build())
+            .headers(h -> h.setBearerAuth(viewer.token))
+            .exchange().expectStatus().isOk()
+            .expectBody(MapActivitiesResponse.class).returnResult().getResponseBody();
+        assertThat(response).isNotNull();
+        return response.activities().stream()
+            .map(MapActivityMarkerDto::organizerId)
+            .filter(java.util.Objects::nonNull)
+            .toList();
+    }
 
     private record Account(UUID id, String token, String displayName) {}
 
@@ -321,13 +391,27 @@ class UserBlockIntegrationTest extends AbstractIntegrationTest {
     }
 
     private UUID publishSlot(Account host) {
+        return publishSlotAt(host, LAT, LNG);
+    }
+
+    /**
+     * Publie à un lieu choisi.
+     *
+     * <p>Les marqueurs de la carte regroupent les créneaux par (activité, lieu
+     * arrondi à ~111 m) et n'exposent qu'un organisateur « représentatif » par
+     * marqueur, choisi par date. Deux comptes qui publient au même endroit se
+     * fondent donc en un seul marqueur, et le second devient invisible sans
+     * qu'aucun blocage y soit pour quelque chose : un test sur ce filtre doit
+     * donner à sa victime un lieu à elle.
+     */
+    private UUID publishSlotAt(Account host, double lat, double lng) {
         UUID activityId = activityRepository.findAll().get(0).getId();
         SlotFeedItemDto slot = webTestClient.post().uri("/api/quick-slots")
             .headers(h -> h.setBearerAuth(host.token))
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(new QuickSlotRequest(
                 activityId, Instant.now().plus(3, ChronoUnit.DAYS), null,
-                "Parc de l'Orangerie", PlaceType.PUBLIC, LAT, LNG,
+                "Parc de l'Orangerie", PlaceType.PUBLIC, lat, lng,
                 "1 avenue de l'Europe", null, "Strasbourg", null, null, null, null))
             .exchange().expectStatus().isCreated()
             .expectBody(SlotFeedItemDto.class).returnResult().getResponseBody();
