@@ -19,9 +19,11 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -306,24 +308,47 @@ public class ChatService {
             throw new ValidationException("Message vide après sanitisation.");
         }
 
-        // 3. Create message
+        // 3 à 5 : écriture, diffusion, push.
+        return persistAndDeliver(senderId, conv, cleanContent, null, null, null);
+    }
+
+    /**
+     * Écrit le message, le diffuse et déclenche les pushes.
+     *
+     * <p>Extrait de {@code sendMessage} pour que le partage de position emprunte
+     * exactement le même chemin. Un partage de position <b>est</b> un message :
+     * il apparaît dans le fil, il compte comme non lu, il notifie. Lui écrire un
+     * chemin parallèle aurait fait diverger les deux le jour où l'un des deux
+     * change — et la liste des destinataires d'un fil de diffusion est la
+     * dernière chose qu'on veut voir calculée à deux endroits.
+     *
+     * <p>Les contrôles d'accès restent chez l'appelant : ce sont eux qui
+     * distinguent les deux gestes, l'un pouvant être refusé là où l'autre passe.
+     */
+    private MessageDto persistAndDeliver(UUID senderId, Conversation conv, String content,
+                                         Double lat, Double lng, Instant locationExpiresAt) {
         User sender = userRepository.findById(senderId)
             .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable."));
 
         Message message = new Message();
         message.setConversation(conv);
         message.setSender(sender);
-        message.setContent(cleanContent);
+        message.setContent(content);
         message.setStatus(MessageStatus.SENT);
+        message.setLocationLat(lat);
+        message.setLocationLng(lng);
+        message.setLocationExpiresAt(locationExpiresAt);
         message = messageRepository.save(message);
 
         MessageDto dto = toMessageDto(message);
 
-        // 4. Destinataires. Pour un fil de diffusion, ils sont dérivés des
-        //    inscriptions actives au moment de l'envoi — pas d'une liste de
-        //    membres recopiée, qui aurait divergé dès la première inscription.
+        // Destinataires. Pour un fil de diffusion, ils sont dérivés des
+        // inscriptions actives au moment de l'envoi — pas d'une liste de membres
+        // recopiée, qui aurait divergé dès la première inscription.
         List<UUID> memberIds = recipientsOf(conv);
 
+        // La sourdine ne retire personne d'ici : une application ouverte sur le
+        // fil doit voir le message arriver. Elle ne coupe que la push, plus bas.
         for (UUID memberId : memberIds) {
             messagingTemplate.convertAndSendToUser(
                 memberId.toString(),
@@ -332,28 +357,165 @@ public class ChatService {
             );
         }
 
-        // 5. Push aux destinataires — le WebSocket ci-dessus ne porte que jusqu'à
+        // Push aux destinataires — le WebSocket ci-dessus ne porte que jusqu'à
         // une app ouverte, or le badge sert précisément quand elle est fermée.
         // L'expéditeur est exclu : il vient d'écrire, il n'a rien à lire.
         String programTitle = conv.getType() == ConversationType.PROGRAM_BROADCAST
             ? contextOf(conv.getId()).programTitle()
             : null;
 
+        Set<UUID> muted = Set.copyOf(
+            conversationMemberRepository.findMutedUserIdsByConversationId(conv.getId()));
+
         for (UUID memberId : memberIds) {
-            if (!memberId.equals(senderId)) {
-                eventPublisher.publishEvent(new MessageSentEvent(
-                    memberId,
-                    senderId,
-                    conv.getId(),
-                    message.getId(),
-                    sender.getDisplayName(),
-                    preview(cleanContent),
-                    conv.getType() == ConversationType.PROGRAM_BROADCAST ? conv.getProgramId() : null,
-                    programTitle));
+            if (memberId.equals(senderId) || muted.contains(memberId)) {
+                continue;
             }
+            eventPublisher.publishEvent(new MessageSentEvent(
+                memberId,
+                senderId,
+                conv.getId(),
+                message.getId(),
+                sender.getDisplayName(),
+                preview(content),
+                conv.getType() == ConversationType.PROGRAM_BROADCAST ? conv.getProgramId() : null,
+                programTitle));
         }
 
         return dto;
+    }
+
+    /**
+     * Durée maximale d'un partage de position, en minutes.
+     *
+     * <p>Garde-fou n°4. La borne n'est pas un réglage de confort : c'est elle qui
+     * fait la différence entre « je te dis où je suis » et un suivi. Une demande
+     * qui la dépasse est refusée plutôt que rabotée — raboter en silence
+     * laisserait l'appelant croire qu'il a obtenu ce qu'il demandait.
+     */
+    public static final int MAX_LOCATION_SHARE_MINUTES = 30;
+
+    /** Ce qu'affiche le fil quand rien n'est joint au partage. */
+    private static final String DEFAULT_LOCATION_NOTE = "Position partagée.";
+
+    /**
+     * Partage ponctuel de position dans une conversation.
+     *
+     * <p><b>Ponctuel veut dire un point, pas un flux.</b> La position est celle
+     * que l'appelant transmet au moment de l'envoi ; elle ne se met jamais à
+     * jour, et rien ne permet d'en demander une plus récente. Renouveler suppose
+     * un nouveau message, donc une nouvelle bulle dans le fil : suivre quelqu'un
+     * resterait visible de celui qu'on suit, ce qui est toute la protection.
+     *
+     * <p>Le message emprunte le chemin d'un message ordinaire, contrôles
+     * d'accès compris — un fil de diffusion ne se partage pas plus une position
+     * qu'il ne se répond, et une lecture seule reste une lecture seule.
+     */
+    public MessageDto shareLocation(UUID senderId, UUID conversationId, ShareLocationRequest request) {
+        Conversation conv = loadConversation(conversationId);
+        assertMayRead(conv, senderId);
+        assertMayWriteInBroadcast(conv, senderId);
+        assertMayWriteInProgramThread(conv, senderId);
+
+        int minutes = request.expiresInMinutes() == null
+            ? MAX_LOCATION_SHARE_MINUTES
+            : request.expiresInMinutes();
+        if (minutes > MAX_LOCATION_SHARE_MINUTES) {
+            throw new ValidationException(
+                "Un partage de position ne peut pas dépasser "
+                    + MAX_LOCATION_SHARE_MINUTES + " minutes.");
+        }
+
+        // Le mot joint passe par le même assainissement que n'importe quel
+        // contenu : il finit dans une bulle de conversation, au même titre.
+        String note = request.note() == null ? null : sanitizer.sanitize(request.note());
+        String content = StringUtils.hasText(note) ? note : DEFAULT_LOCATION_NOTE;
+
+        return persistAndDeliver(senderId, conv, content,
+            request.lat(), request.lng(),
+            Instant.now().plus(minutes, ChronoUnit.MINUTES));
+    }
+
+    /**
+     * Sourdine et archivage, pour l'appelant seul.
+     *
+     * <p>Les deux réglages sont indépendants et ne se déduisent pas l'un de
+     * l'autre : on peut archiver un fil qu'on veut continuer d'entendre, et
+     * mettre en sourdine un fil qu'on garde sous les yeux. Un champ absent reste
+     * inchangé, de sorte que régler l'un ne remette pas l'autre à sa valeur par
+     * défaut — c'est ce qui distingue un PATCH d'un PUT, et ici cela compte : les
+     * deux commandes vivent sur deux écrans différents.
+     *
+     * <p>La ligne d'appartenance est créée si elle manque, comme à la première
+     * lecture : sur un fil de diffusion, l'accès vient du programme et non d'elle.
+     */
+    public ConversationSummaryDto updateSettings(UUID userId, UUID conversationId,
+                                                 Boolean muted, Boolean archived) {
+        Conversation conv = loadConversation(conversationId);
+        assertMayRead(conv, userId);
+        ensureMemberRow(conversationId, userId);
+
+        ConversationMember member = conversationMemberRepository
+            .findByConversationIdAndUserId(conversationId, userId)
+            .orElseThrow(() -> new ForbiddenException("Membre introuvable."));
+
+        // La date n'est réécrite que sur un vrai changement d'état : réappliquer
+        // « en sourdine » à un fil déjà en sourdine ne doit pas faire croire que
+        // le geste vient d'être refait. Le réseau mobile double les requêtes.
+        if (muted != null) {
+            if (muted && member.getMutedAt() == null) {
+                member.setMutedAt(Instant.now());
+            } else if (!muted) {
+                member.setMutedAt(null);
+            }
+        }
+        if (archived != null) {
+            if (archived && member.getArchivedAt() == null) {
+                member.setArchivedAt(Instant.now());
+            } else if (!archived) {
+                member.setArchivedAt(null);
+            }
+        }
+        conversationMemberRepository.save(member);
+
+        // Le badge bouge : mettre en sourdine ou archiver retire des messages non
+        // lus du total, sans qu'aucun ait été lu.
+        eventPublisher.publishEvent(new UnreadChangedEvent(userId));
+
+        return toSummaryDto(conv, userId, contextOf(conversationId));
+    }
+
+    /**
+     * Indicateur de saisie.
+     *
+     * <p><b>Rien n'est écrit nulle part.</b> Un « untel écrit… » n'a de valeur
+     * que dans la seconde où il est émis ; le persister reviendrait à conserver
+     * une trace de qui a commencé à écrire puis renoncé, ce que personne n'a
+     * demandé. Il ne touche donc ni le fil, ni la date de lecture, ni le badge,
+     * et ne déclenche aucune push : il n'existe que pour une application ouverte.
+     *
+     * <p>L'appartenance est vérifiée malgré tout. Sans ce contrôle, n'importe
+     * quel compte connecté pourrait faire apparaître son nom dans le fil de
+     * n'importe qui, ce qui suffirait à découvrir l'existence d'une conversation.
+     *
+     * <p>Le serveur ne pose aucune échéance et n'émet aucun rappel : c'est au
+     * client d'effacer l'indicateur au bout de quelques secondes sans nouvelle.
+     * Un émetteur qui perd sa connexion juste après avoir annoncé qu'il écrivait
+     * ne pourra jamais annoncer le contraire, et l'indicateur resterait sinon
+     * allumé pour toujours.
+     */
+    @Transactional(readOnly = true)
+    public void typing(UUID userId, UUID conversationId, boolean typing) {
+        Conversation conv = loadConversation(conversationId);
+        assertMayRead(conv, userId);
+
+        TypingEventDto event = new TypingEventDto(conversationId, userId, typing);
+        for (UUID memberId : recipientsOf(conv)) {
+            if (!memberId.equals(userId)) {
+                messagingTemplate.convertAndSendToUser(
+                    memberId.toString(), "/queue/typing", event);
+            }
+        }
     }
 
     /**
@@ -407,6 +569,18 @@ public class ChatService {
 
     @Transactional(readOnly = true)
     public List<ConversationSummaryDto> getMyConversations(UUID userId) {
+        return getMyConversations(userId, false);
+    }
+
+    /**
+     * Les conversations de quelqu'un, archivées ou non.
+     *
+     * <p>Les deux listes sont disjointes et jamais mélangées : {@code archived}
+     * choisit laquelle on veut. Rendre les archivées au milieu des autres, même
+     * marquées, aurait fait de l'archivage un simple drapeau d'affichage — or
+     * ranger un fil, c'est demander qu'il quitte l'écran.
+     */
+    public List<ConversationSummaryDto> getMyConversations(UUID userId, boolean archived) {
         // Deux sources, et c'est voulu. Les lignes de membre donnent les
         // conversations directes ; les fils de diffusion, eux, se dérivent des
         // inscriptions actives — un nouvel inscrit voit le fil sans qu'aucune
@@ -428,6 +602,7 @@ public class ChatService {
         return conversations.stream()
             .map(conv -> toSummaryDto(conv, userId,
                 contexts.getOrDefault(conv.getId(), ConversationContextDto.empty(conv.getId()))))
+            .filter(summary -> summary.archived() == archived)
             .collect(Collectors.toList());
     }
 
@@ -549,6 +724,13 @@ public class ChatService {
 
         boolean broadcast = conv.getType() == ConversationType.PROGRAM_BROADCAST;
 
+        // Ligne absente vaut « ni en sourdine ni archivé » : sur un fil de
+        // diffusion, elle n'est écrite qu'à la première lecture ou au premier
+        // réglage, et son absence ne dit rien d'autre que « jamais touché ».
+        ConversationMember own = conversationMemberRepository
+            .findByConversationIdAndUserId(conv.getId(), currentUserId)
+            .orElse(null);
+
         return new ConversationSummaryDto(
             conv.getId(),
             conv.getType().name(),
@@ -565,7 +747,9 @@ public class ChatService {
                 ? broadcastMemberIds(conv.getProgramId()).size() : null,
             lastMsg != null ? lastMsg.getContent() : null,
             lastMsg != null ? lastMsg.getSentAt() : conv.getCreatedAt(),
-            unreadCount
+            unreadCount,
+            own != null && own.getMutedAt() != null,
+            own != null && own.getArchivedAt() != null
         );
     }
 
@@ -740,6 +924,14 @@ public class ChatService {
     }
 
     private MessageDto toMessageDto(Message msg) {
+        // Un point échu n'est pas servi, même si les colonnes le portent encore.
+        // C'est ici que se joue l'expiration, pas dans le balayage : celui-ci
+        // passe périodiquement et laisse donc une fenêtre pendant laquelle la
+        // base garde un point qu'il ne faut plus rendre. Le balayage nettoie, la
+        // lecture décide.
+        boolean locationLive = msg.getLocationExpiresAt() != null
+            && msg.getLocationExpiresAt().isAfter(Instant.now());
+
         return new MessageDto(
             msg.getId(),
             msg.getConversation().getId(),
@@ -748,7 +940,10 @@ public class ChatService {
             msg.getSender().getAvatarUrl(),
             msg.getContent(),
             msg.getStatus().name(),
-            msg.getSentAt()
+            msg.getSentAt(),
+            locationLive ? msg.getLocationLat() : null,
+            locationLive ? msg.getLocationLng() : null,
+            locationLive ? msg.getLocationExpiresAt() : null
         );
     }
 }

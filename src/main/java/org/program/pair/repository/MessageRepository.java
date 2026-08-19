@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -61,6 +62,21 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
      * participant parti ne garde pas au badge les messages d'un fil qu'il ne
      * peut plus ouvrir, faute de quoi il resterait avec un nombre qu'il lui
      * serait impossible de faire retomber.
+     *
+     * <p><b>Les fils en sourdine et les fils archivés en sont exclus</b>, et
+     * c'est le seul endroit où ce total s'écarte du décompte par fil, qui reste
+     * exact. La raison est la même que celle du paragraphe précédent, appliquée
+     * à un rangement volontaire : un badge d'icône annonce ce qui attend sur
+     * l'écran d'accueil, et pointer vers un fil qu'on a délibérément fait taire
+     * ou rangé hors de vue serait un nombre qu'on ne sait pas d'où faire
+     * retomber.
+     *
+     * <p>L'écart reste vérifiable de l'extérieur : {@code ConversationSummaryDto}
+     * porte {@code muted} et {@code archived}, de sorte que la somme des
+     * {@code unreadCount} des fils qui ne sont ni l'un ni l'autre retombe
+     * exactement sur ce total. La condition porte sur la jointure externe
+     * {@code cm}, donc une ligne absente — fil de diffusion jamais ouvert — ne
+     * fait rien perdre.
      */
     @Query("""
         SELECT COUNT(m) FROM Message m
@@ -70,6 +86,8 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
         WHERE m.sender.id <> :userId
           AND m.deletedAt IS NULL
           AND (cm.lastReadAt IS NULL OR m.sentAt > cm.lastReadAt)
+          AND cm.mutedAt IS NULL
+          AND cm.archivedAt IS NULL
           AND (
             (c.type <> org.program.pair.domain.chat.ConversationType.PROGRAM_BROADCAST
              AND EXISTS (SELECT 1 FROM ConversationMember own
@@ -87,6 +105,29 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
           )
         """)
     long countUnreadByUserId(@Param("userId") UUID userId);
+
+    /**
+     * Efface les coordonnées des partages de position échus.
+     *
+     * <p>Ne touche ni au message ni à son contenu : le fil garde la trace qu'une
+     * position a été partagée à cet instant, ce qui est vrai. Seul le point s'en
+     * va, avec son échéance — les trois colonnes vont ensemble, la base le
+     * contraint.
+     *
+     * <p>La condition sur {@code locationExpiresAt IS NOT NULL} n'est pas
+     * redondante avec la comparaison : elle rend la mise à jour idempotente, sans
+     * quoi chaque passage réécrirait des lignes déjà vidées.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("""
+        UPDATE Message m
+           SET m.locationLat = NULL,
+               m.locationLng = NULL,
+               m.locationExpiresAt = NULL
+         WHERE m.locationExpiresAt IS NOT NULL
+           AND m.locationExpiresAt <= :now
+        """)
+    int eraseExpiredLocations(@Param("now") Instant now);
 
     /**
      * Même compte, restreint à un fil : c'est {@code ConversationSummaryDto.unreadCount}.
