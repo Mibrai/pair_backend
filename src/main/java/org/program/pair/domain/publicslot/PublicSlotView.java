@@ -24,6 +24,20 @@ public record PublicSlotView(
     String activityName,
     String categoryName,
 
+    /**
+     * Couleur de la catégorie ({@code #RRGGBB}). Sert la vignette de repli et
+     * l'habillage de la page ; une couleur ne révèle rien de personne.
+     */
+    String categoryColorRamp,
+
+    /**
+     * Langue annoncée de la séance, si l'organisateur l'a renseignée. Elle fixe
+     * la langue de la page — c'est celle dans laquelle la séance se tiendra, donc
+     * celle du lecteur visé, mieux que l'{@code Accept-Language} d'un appareil
+     * qui n'appartient peut-être pas à quelqu'un du coin.
+     */
+    String primaryLanguage,
+
     Instant startsAt,
     Instant endsAt,
 

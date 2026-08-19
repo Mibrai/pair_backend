@@ -31,45 +31,53 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class AppLinksController {
 
-    @Value("${pair.mobile.apple-app-id:}")
-    private String appleAppId;
+    @Value("${meetdo.links.apple-team-id:}")
+    private String appleTeamId;
 
-    @Value("${pair.mobile.android-package:}")
-    private String androidPackage;
+    @Value("${meetdo.links.bundle-id:}")
+    private String bundleId;
 
-    @Value("${pair.mobile.android-sha256:}")
+    @Value("${meetdo.links.android-sha256:}")
     private String androidSha256;
 
     /**
      * Servi en {@code application/json} et <b>sans redirection</b> : Apple
      * n'accepte ni l'un ni l'autre écart. Les chemins ouverts sont limités à ce
      * que la page publique utilise.
+     *
+     * <p><b>Format {@code appIDs}/{@code components}</b>, celui d'iOS 13 et
+     * au-delà, et non l'ancien couple {@code appID}/{@code paths}. Les deux
+     * fonctionnent encore, mais seul le récent accepte un {@code comment} — un
+     * fichier que personne ne relit jamais et dont les chemins n'ont aucun sens
+     * hors contexte mérite de porter sa propre explication.
      */
     @GetMapping(value = "/.well-known/apple-app-site-association",
         produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> appleAppSiteAssociation() {
-        if (appleAppId.isBlank()) {
+        if (appleTeamId.isBlank() || bundleId.isBlank()) {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok("""
             {
               "applinks": {
-                "apps": [],
                 "details": [
                   {
-                    "appID": "%s",
-                    "paths": ["/s/*", "/public/slots/*"]
+                    "appIDs": ["%s.%s"],
+                    "components": [
+                      { "/": "/s/*", "comment": "Pages publiques de créneau" },
+                      { "/": "/public/slots/*", "comment": "JSON et image d'aperçu" }
+                    ]
                   }
                 ]
               }
             }
-            """.formatted(appleAppId));
+            """.formatted(appleTeamId, bundleId));
     }
 
     @GetMapping(value = "/.well-known/assetlinks.json",
         produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> assetLinks() {
-        if (androidPackage.isBlank() || androidSha256.isBlank()) {
+        if (bundleId.isBlank() || androidSha256.isBlank()) {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok("""
@@ -83,6 +91,6 @@ public class AppLinksController {
                 }
               }
             ]
-            """.formatted(androidPackage, androidSha256));
+            """.formatted(bundleId, androidSha256));
     }
 }

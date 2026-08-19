@@ -5,7 +5,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.media.StorageService;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.shared.exception.ResourceNotFoundException;
+import org.program.pair.shared.i18n.Messages;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -16,6 +18,7 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 
@@ -24,7 +27,11 @@ import java.io.InputStream;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Les trois adresses publiques d'un créneau : la page, son JSON, son image.
@@ -39,15 +46,18 @@ import java.util.Locale;
 @Slf4j
 public class PublicSlotController {
 
-    private static final DateTimeFormatter DAY =
-        DateTimeFormatter.ofPattern("EEEE d MMMM", Locale.FRENCH);
-    private static final DateTimeFormatter HOUR =
-        DateTimeFormatter.ofPattern("H'h'mm", Locale.FRENCH);
+    /**
+     * Les trois langues que le produit sert. Une page dont la langue annoncée
+     * n'en fait pas partie retombe sur le français plutôt que d'être servie dans
+     * une langue dont aucun libellé n'existe.
+     */
+    private static final Set<String> SUPPORTED = Set.of("fr", "en", "de");
 
     private final PublicSlotService publicSlotService;
     private final StorageService storageService;
+    private final Messages messages;
 
-    @Value("${pair.public.base-url:https://meetdo.fun}")
+    @Value("${pair.public.base-url:https://lien.meetdo.fun}")
     private String publicBaseUrl;
 
     /**
@@ -75,7 +85,12 @@ public class PublicSlotController {
      * plus court est celui qui n'a pas d'étape.
      */
     @GetMapping("/s/{token}")
-    public String shortLink(@PathVariable String token, Model model) {
+    public String shortLink(@PathVariable String token, Model model,
+                            @RequestHeader(value = "User-Agent", required = false) String userAgent) {
+        // L'adresse réellement partagée, et la seule qui compte une ouverture :
+        // le JSON sert des clients programmatiques, et /public/slots/{token}/page
+        // n'est jamais collée nulle part.
+        publicSlotService.countView(token, userAgent);
         return page(token, model);
     }
 
@@ -83,24 +98,41 @@ public class PublicSlotController {
     public String page(@PathVariable String token, Model model) {
         PublicSlotView slot = publicSlotService.view(token, Instant.now());
         ZoneId zone = ZoneId.of("Europe/Paris");
+        Locale locale = pageLocale(slot);
 
-        String day = DAY.format(slot.startsAt().atZone(zone));
-        String hour = HOUR.format(slot.startsAt().atZone(zone));
+        DateTimeFormatter dayFormat = DateTimeFormatter
+            .ofPattern(messages.getIn(locale, "public.slot.datePattern"), locale);
+        DateTimeFormatter hourFormat = DateTimeFormatter
+            .ofPattern(messages.getIn(locale, "public.slot.timePattern"), locale);
+
+        String day = dayFormat.format(slot.startsAt().atZone(zone));
+        String hour = hourFormat.format(slot.startsAt().atZone(zone));
 
         model.addAttribute("slot", slot);
+        model.addAttribute("lang", locale.getLanguage());
         model.addAttribute("day", day);
         model.addAttribute("startTime", hour);
-        model.addAttribute("endTime", HOUR.format(slot.endsAt().atZone(zone)));
+        model.addAttribute("endTime", hourFormat.format(slot.endsAt().atZone(zone)));
+
+        // Libellés résolus ici plutôt que par #{...} dans le gabarit : la langue
+        // de cette page n'est pas celle de la requête. Thymeleaf résoudrait ses
+        // clés d'après l'en-tête Accept-Language, ce qui donnerait une page dont
+        // le texte et la date ne parlent pas la même langue.
+        model.addAttribute("t", labels(locale, slot));
 
         // La description de l'aperçu est composée ici, pas dans le gabarit :
         // c'est elle que les messageries affichent sous le titre, et elle doit
         // dire concrètement quoi, quand, où, avec combien de monde — une phrase
         // vague ne convertit pas.
-        model.addAttribute("ogDescription", ogDescription(slot, day, hour));
+        model.addAttribute("ogDescription", ogDescription(slot, day, hour, locale));
         model.addAttribute("ogUrl", publicBaseUrl + "/s/" + token);
-        model.addAttribute("ogImage", slot.hasImage()
-            ? publicBaseUrl + "/public/slots/" + token + "/image"
-            : null);
+        model.addAttribute("calendarUrl", publicBaseUrl + "/s/" + token + "/calendar.ics");
+
+        // Jamais nul, et c'est tout l'objet de la vignette dessinée : un aperçu
+        // sans visuel s'affiche comme deux lignes grises, à peu près
+        // indiscernables d'un lien mort.
+        model.addAttribute("ogImage", publicBaseUrl + "/public/slots/" + token
+            + (slot.hasImage() ? "/image" : "/cover.png"));
         // Le bouton pointait vers l'adresse de cette même page. C'était sans effet
         // dans les deux cas de figure : sans application installée il la
         // rechargeait, et avec — une fois les liens universels actifs — iOS
@@ -151,7 +183,7 @@ public class PublicSlotController {
      * ne la devine dans ce système, et une ville inventée serait pire qu'une
      * ville manquante.
      */
-    private String ogDescription(PublicSlotView slot, String day, String hour) {
+    private String ogDescription(PublicSlotView slot, String day, String hour, Locale locale) {
         StringBuilder description = new StringBuilder()
             .append(Character.toUpperCase(day.charAt(0))).append(day.substring(1))
             .append(", ").append(hour)
@@ -162,11 +194,75 @@ public class PublicSlotController {
             description.append(", ").append(slot.city());
         }
 
+        // Le décompte passe par un choix de catalogue et non par un ternaire :
+        // « 0 inscrit » se dit autrement que « 1 inscrit », et l'allemand ne
+        // découpe pas ses cas comme le français.
         int count = slot.participantCount() == null ? 0 : slot.participantCount();
-        description.append(" · ").append(count)
-            .append(count > 1 ? " inscrits" : " inscrit");
+        description.append(" · ").append(messages.getIn(locale, "public.slot.joined", count));
 
         return description.toString();
+    }
+
+    /**
+     * La langue de la page.
+     *
+     * <p>Celle de la séance d'abord : c'est la langue dans laquelle elle se
+     * tiendra, donc celle du lecteur visé — mieux que l'{@code Accept-Language}
+     * d'un appareil qui n'appartient peut-être pas à quelqu'un du coin. À défaut,
+     * l'en-tête de la requête, que {@code LocaleContextHolder} a déjà résolu. À
+     * défaut encore, le français.
+     */
+    private Locale pageLocale(PublicSlotView slot) {
+        String declared = slot.primaryLanguage();
+        if (declared != null && SUPPORTED.contains(declared.toLowerCase(Locale.ROOT))) {
+            return Locale.forLanguageTag(declared.toLowerCase(Locale.ROOT));
+        }
+        String requested = LocaleContextHolder.getLocale().getLanguage();
+        return SUPPORTED.contains(requested) ? Locale.forLanguageTag(requested) : Locale.FRENCH;
+    }
+
+    /** Les libellés de la page, dans sa langue à elle. */
+    private Map<String, String> labels(Locale locale, PublicSlotView slot) {
+        Map<String, String> t = new LinkedHashMap<>();
+        for (String key : List.of("cta", "hint", "calendar", "about", "when", "where", "who")) {
+            t.put(key, messages.getIn(locale, "public.slot." + key));
+        }
+        int count = slot.participantCount() == null ? 0 : slot.participantCount();
+        t.put("joined", messages.getIn(locale, "public.slot.joined", count));
+        if (slot.organizerGivenName() != null) {
+            t.put("host", messages.getIn(locale, "public.slot.host", slot.organizerGivenName()));
+        }
+        return t;
+    }
+
+    /**
+     * La vignette dessinée, servie quand le créneau n'a pas d'image à lui.
+     *
+     * <p>Route publique aux mêmes conditions que la page : un robot d'aperçu
+     * n'a pas de jeton, et une image refusée vaut une image absente.
+     */
+    @GetMapping(value = "/public/slots/{token}/cover.png", produces = MediaType.IMAGE_PNG_VALUE)
+    @ResponseBody
+    public ResponseEntity<byte[]> cover(@PathVariable String token) {
+        PublicSlotView slot = publicSlotService.view(token, Instant.now());
+        Locale locale = pageLocale(slot);
+        ZoneId zone = ZoneId.of("Europe/Paris");
+
+        String subtitle = DateTimeFormatter
+            .ofPattern(messages.getIn(locale, "public.slot.datePattern"), locale)
+            .format(slot.startsAt().atZone(zone))
+            + " · " + slot.activityName()
+            + (slot.city() == null || slot.city().isBlank() ? "" : " · " + slot.city());
+
+        try {
+            return ResponseEntity.ok()
+                .contentType(MediaType.IMAGE_PNG)
+                .body(PublicSlotCover.render(
+                    slot.categoryColorRamp(), slot.programTitle(), subtitle));
+        } catch (IOException e) {
+            log.warn("Vignette illisible pour le jeton {} : {}", token, e.getMessage());
+            throw new ResourceNotFoundException("Image introuvable.");
+        }
     }
 
     private MediaType contentTypeOf(String filename) {

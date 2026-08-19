@@ -52,7 +52,7 @@ public class SlotSafetyShareService {
     private final UserRepository userRepository;
     private final SlotAudience slotAudience;
 
-    @Value("${pair.public.base-url:https://meetdo.fun}")
+    @Value("${pair.public.base-url:https://lien.meetdo.fun}")
     private String publicBaseUrl;
 
     public SafetyShareLinkDto create(UUID userId, UUID scheduleId) {
