@@ -22,6 +22,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class MapService {
 
+    private final org.program.pair.repository.UserLanguageRepository userLanguageRepository;
     private final UserRepository userRepository;
     private final UserActivityRepository userActivityRepository;
     private final ActivityRepository activityRepository;
@@ -43,6 +44,21 @@ public class MapService {
         // 1. Find visible users in radius
         List<User> nearbyUsers = userRepository.findVisibleUsersInRadius(
             request.lat(), request.lng(), request.radiusMeters(), 100, 0, requesterId);
+
+        // Filtre de langue, appliqué sur la page déjà rapportée — comme celui
+        // d'activité juste en dessous. La limite de 100 est posée en base avant
+        // les deux, si bien qu'un filtre sélectif rend moins de marqueurs qu'il
+        // n'en existe. C'est la dette que porte déjà cette route ; la creuser
+        // n'aurait pas été mieux que la signaler.
+        java.util.Set<String> languages = request.effectiveLanguages();
+        if (!languages.isEmpty() && !nearbyUsers.isEmpty()) {
+            java.util.Set<UUID> speakers = new java.util.HashSet<>(
+                userLanguageRepository.findUserIdsSpeaking(
+                    nearbyUsers.stream().map(User::getId).toList(), languages));
+            nearbyUsers = nearbyUsers.stream()
+                .filter(u -> speakers.contains(u.getId()))
+                .toList();
+        }
 
         // 2. Filter by activity if requested
         if (request.activityId() != null) {

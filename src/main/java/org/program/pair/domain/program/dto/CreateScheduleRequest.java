@@ -28,5 +28,9 @@ public record CreateScheduleRequest(
     String recurrenceRule,
     @Min(1) Integer maxParticipants,
     Boolean isOpenToPartners,
-    @Size(max = 300) String welcomeNote
+    @Size(max = 300) String welcomeNote,
+
+    // Langue principale de la séance. Facultative, et jamais devinée : un
+    // créneau qui n'en déclare pas reste visible de tous.
+    @Size(max = 5) String primaryLanguage
 ) {}

@@ -94,7 +94,10 @@ public class QuickSlotService {
                 null,                       // pas de récurrence : on cherche quelqu'un pour une fois
                 request.maxParticipants(),
                 true,
-                request.welcomeNote()));
+                request.welcomeNote(),
+                // Le chemin court ne demande pas de langue : un écran de
+                // publication en une fois n'a pas la place de tout demander.
+                null));
 
         // Rendu par le même chemin que /api/slots/{id} : le client n'a qu'un seul
         // modèle de créneau à maintenir, et il est identique par construction
