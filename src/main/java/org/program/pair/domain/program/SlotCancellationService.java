@@ -12,6 +12,7 @@ import org.program.pair.repository.UserRepository;
 import org.program.pair.shared.exception.ResourceNotFoundException;
 import org.program.pair.shared.exception.ValidationException;
 import org.program.pair.shared.sanitizer.HtmlSanitizer;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,6 +46,15 @@ public class SlotCancellationService {
     private static final int ALTERNATIVES_WINDOW_DAYS = 14;
     private static final int ALTERNATIVES_RADIUS_METERS = 25_000;
     private static final int MAX_ALTERNATIVES = 3;
+
+    /**
+     * Fuseau de référence pour rapprocher un instant UTC d'une case de
+     * disponibilité. Le même que celui du développement des récurrences : deux
+     * fuseaux différents rangeraient la même séance dans « mardi soir » ici et
+     * « mardi après-midi » là.
+     */
+    @Value("${pair.recurrence.zone:Europe/Paris}")
+    private String zoneId;
 
     private final ScheduleRepository scheduleRepository;
     private final SlotParticipationRepository participationRepository;
@@ -157,7 +167,9 @@ public class SlotCancellationService {
             // et un filtre de blocage résolu pour l'un s'appliquerait aux autres.
             null,
             false, ScheduleRepository.NO_LANGUAGE_FILTER,
-            false, ScheduleRepository.NO_TAG_FILTER, 0L);
+            false, ScheduleRepository.NO_TAG_FILTER, 0L,
+            // Aucun appelant : les créneaux de repli sont comptés, pas classés.
+            zoneId);
 
         return (int) nearby.stream()
             .filter(candidate -> !candidate.getId().equals(slot.getId()))

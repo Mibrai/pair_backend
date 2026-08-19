@@ -40,6 +40,15 @@ import java.util.UUID;
 @Slf4j
 public class SemanticSearchService {
 
+    /**
+     * Fuseau de référence pour rapprocher un instant UTC d'une case de
+     * disponibilité. Le même que celui du développement des récurrences : deux
+     * fuseaux différents rangeraient la même séance dans « mardi soir » ici et
+     * « mardi après-midi » là.
+     */
+    @Value("${pair.recurrence.zone:Europe/Paris}")
+    private String zoneId;
+
     private final BlockFilterService blockFilterService;
     private final RuleBasedIntentExtractor intentExtractor;
     private final Messages messages;
@@ -265,11 +274,15 @@ public class SemanticSearchService {
             request.lat(), request.lng(), radius, window.from(), window.to(), activityId,
             false, ScheduleRepository.NO_CATEGORY_FILTER, null, MAX_SLOT_RESULTS, requesterId,
             false, ScheduleRepository.NO_LANGUAGE_FILTER,
-            filterByTags, filterByTags ? tags : ScheduleRepository.NO_TAG_FILTER, tags.size());
+            filterByTags, filterByTags ? tags : ScheduleRepository.NO_TAG_FILTER, tags.size(),
+            zoneId);
 
+        // L'ordre de la requête est conservé tel quel. Il trie déjà par jour puis
+        // par heure ; le retrier ici par startsAt seul écraserait la pondération
+        // par disponibilité que la requête vient d'appliquer, sans rien changer
+        // d'autre — les deux ordres coïncident pour qui n'a rien déclaré.
         return slots.stream()
             .filter(s -> !s.getProgram().getUserActivity().getUser().getId().equals(requesterId))
-            .sorted(Comparator.comparing(Schedule::getStartsAt))
             .map(s -> toSlotResultDto(s, request.lat(), request.lng(), requesterId))
             .toList();
     }

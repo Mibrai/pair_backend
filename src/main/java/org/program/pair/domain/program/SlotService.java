@@ -28,6 +28,7 @@ import org.program.pair.shared.exception.ResourceNotFoundException;
 import org.program.pair.shared.exception.ScheduleConflictException;
 import org.program.pair.shared.exception.ValidationException;
 import org.program.pair.shared.sanitizer.HtmlSanitizer;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -49,6 +50,15 @@ import java.util.UUID;
 @Transactional
 @RequiredArgsConstructor
 public class SlotService {
+
+    /**
+     * Fuseau de référence pour rapprocher un instant UTC d'une case de
+     * disponibilité. Le même que celui du développement des récurrences : deux
+     * fuseaux différents rangeraient la même séance dans « mardi soir » ici et
+     * « mardi après-midi » là.
+     */
+    @Value("${pair.recurrence.zone:Europe/Paris}")
+    private String zoneId;
 
     private final ScheduleRepository scheduleRepository;
     private final SlotParticipationRepository participationRepository;
@@ -83,7 +93,8 @@ public class SlotService {
             filterByCategory, filterByCategory ? categoryIds : ScheduleRepository.NO_CATEGORY_FILTER,
             request.createdSince(), 100, requesterId,
             filterByLanguage, filterByLanguage ? languages : ScheduleRepository.NO_LANGUAGE_FILTER,
-            filterByTags, filterByTags ? tags : ScheduleRepository.NO_TAG_FILTER, tags.size());
+            filterByTags, filterByTags ? tags : ScheduleRepository.NO_TAG_FILTER, tags.size(),
+            zoneId);
 
         return slots.stream()
             .filter(s -> !s.getProgram().getUserActivity().getUser().getId().equals(requesterId))

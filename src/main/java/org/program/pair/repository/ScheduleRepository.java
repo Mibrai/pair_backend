@@ -228,6 +228,21 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
      * trouvées doit égaler celui des demandées. Qui filtre « fauteuil » ET
      * « sans alcool » a besoin des deux, pas de l'une ou l'autre.
      *
+     * <p><b>Les disponibilités pondèrent, elles n'excluent pas.</b> Le
+     * classement se fait par jour d'abord, puis par « ce créneau tombe-t-il dans
+     * une case cochée », puis par heure et par distance. Deux conséquences
+     * voulues : la chronologie n'est jamais bousculée — un créneau de la semaine
+     * prochaine ne passe pas devant un de demain — et la préférence ne joue
+     * qu'entre créneaux du même jour. Une personne qui n'a rien coché retrouve
+     * exactement l'ordre d'avant, tous les rangs étant alors égaux.
+     *
+     * <p>Le rapprochement entre un {@code starts_at} en UTC et une case
+     * « mardi soir » se fait dans le fuseau applicatif, passé en paramètre. Le
+     * seul fuseau que le système connaisse vraiment est celui de l'appareil, qui
+     * n'est pas disponible ici et peut différer d'un appareil à l'autre pour la
+     * même personne : c'est une approximation, et elle est la même que celle du
+     * développement des récurrences.
+     *
      * <p><b>Aucun commentaire SQL dans le corps de cette requête.</b>
      * L'analyseur de paramètres de Spring Data suit les guillemets simples sans
      * savoir qu'il traverse un commentaire : une apostrophe française y casse le
@@ -263,7 +278,21 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
                 ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
                 :radiusMeters)
         """ + BlockSql.NOT_BLOCKED_U + """
-        ORDER BY s.starts_at ASC,
+        ORDER BY (s.starts_at AT TIME ZONE :zone)::date ASC,
+                 CASE WHEN EXISTS (
+                     SELECT 1 FROM user_availability av
+                     WHERE av.user_id = :viewerId
+                       AND av.day_of_week = EXTRACT(ISODOW FROM (s.starts_at AT TIME ZONE :zone))
+                       AND av.time_slot = CASE
+                             WHEN EXTRACT(HOUR FROM (s.starts_at AT TIME ZONE :zone)) BETWEEN 6 AND 11
+                                  THEN 'MORNING'
+                             WHEN EXTRACT(HOUR FROM (s.starts_at AT TIME ZONE :zone)) BETWEEN 12 AND 17
+                                  THEN 'AFTERNOON'
+                             WHEN EXTRACT(HOUR FROM (s.starts_at AT TIME ZONE :zone)) >= 18
+                                  THEN 'EVENING'
+                             ELSE 'NIGHT' END
+                 ) THEN 0 ELSE 1 END,
+                 s.starts_at ASC,
                  ST_Distance(s.location::geography,
                              ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography)
         LIMIT :limit
@@ -285,7 +314,8 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
         @Param("languages") Collection<String> languages,
         @Param("filterByTags") boolean filterByTags,
         @Param("accessibilityTags") Collection<String> accessibilityTags,
-        @Param("requiredTagCount") long requiredTagCount
+        @Param("requiredTagCount") long requiredTagCount,
+        @Param("zone") String zone
     );
 
     /**
