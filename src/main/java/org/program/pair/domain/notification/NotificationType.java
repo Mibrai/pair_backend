@@ -29,6 +29,7 @@ public enum NotificationType {
     // meetDo — créneaux, présence et alertes
     SLOT_JOINED,             // quelqu'un a rejoint mon créneau
     SLOT_CANCELLED,          // un créneau que j'ai rejoint est annulé
+    WAITLIST_PROMOTED,       // une place s'est libérée, j'y entre
     ATTENDANCE_PROMPT,       // "tu y étais ?" après un créneau
     ACTIVITY_ALERT_MATCH,    // quelqu'un pratique enfin cette activité près de moi
     STREAK_MILESTONE,        // série de N semaines atteinte

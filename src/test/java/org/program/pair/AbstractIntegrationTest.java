@@ -61,7 +61,7 @@ public abstract class AbstractIntegrationTest {
      * dernier par JUnit qui reçoivent les 429 (voir {@link RateLimiter#reset()}).
      */
     @BeforeEach
-    void resetRateLimiter() {
+    protected void resetRateLimiter() {
         rateLimiter.reset();
     }
 

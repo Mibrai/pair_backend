@@ -80,4 +80,36 @@ public class SlotController {
             @PathVariable UUID scheduleId) {
         return slotService.getParticipants(principal.getId(), scheduleId);
     }
+
+    @PostMapping("/{scheduleId}/waitlist")
+    @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Se mettre en liste d'attente.",
+        description = "Accepte les créneaux complets — c'est exactement ceux pour "
+            + "lesquels cette route existe. Attendre n'est pas s'engager : on peut "
+            + "patienter sur plusieurs créneaux qui se chevauchent, et c'est au moment "
+            + "de la promotion que le conflit d'agenda est vérifié.")
+    public SlotFeedItemDto joinWaitlist(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID scheduleId) {
+        return slotService.joinWaitlist(principal.getId(), scheduleId);
+    }
+
+    @DeleteMapping("/{scheduleId}/waitlist")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Quitter la liste d'attente. Les rangs suivants remontent.")
+    public void leaveWaitlist(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID scheduleId) {
+        slotService.leaveWaitlist(principal.getId(), scheduleId);
+    }
+
+    @GetMapping("/{scheduleId}/waitlist")
+    @Operation(summary = "La liste d'attente, réservée à l'organisateur.",
+        description = "404 pour quiconque d'autre, jamais 403 : un refus nommé "
+            + "confirmerait l'existence du créneau.")
+    public List<SlotParticipantDto> getWaitlist(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID scheduleId) {
+        return slotService.getWaitlist(principal.getId(), scheduleId);
+    }
 }
