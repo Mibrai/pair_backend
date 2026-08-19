@@ -66,6 +66,26 @@ public class UserService {
         return toPublicDto(target, requesterId);
     }
 
+    /**
+     * Mon profil tel qu'un inconnu le reçoit.
+     *
+     * <p><b>Le même code, pas un code équivalent.</b> C'est toute la valeur du
+     * lot : un aperçu qui divergerait du profil réel serait pire que pas
+     * d'aperçu du tout — il donnerait confiance dans une réponse fausse. Cette
+     * méthode ne recompose rien ; elle appelle {@code toPublicDto} avec la
+     * relation d'un tiers sans lien.
+     *
+     * <p>Sans lien, précisément : {@code subscribed} vaut faux, ce qui est la
+     * situation la plus restrictive et donc celle qu'il faut montrer. Quelqu'un
+     * qui règle son profil sur « abonnés seulement » doit voir ce que voit un
+     * inconnu, pas ce que voit son abonné.
+     */
+    @Transactional(readOnly = true)
+    public UserPublicDto getMyProfilePreview(UUID userId) {
+        User me = findActiveUser(userId);
+        return toPublicDto(me, subscriptionService.countAuthorSubscribers(userId), false);
+    }
+
     public UserPrivateDto updateProfile(UUID userId, UpdateProfileRequest request) {
         User user = findActiveUser(userId);
 
@@ -258,8 +278,50 @@ public class UserService {
             subscriptionService.isSubscribedToAuthor(requesterId, user.getId()));
     }
 
+    /**
+     * Le profil public, filtré par les réglages de confidentialité de la personne.
+     *
+     * <p><b>Ces réglages étaient morts.</b> {@code profileVisibility} était
+     * stocké, réglable par une route dédiée, relu par une autre — et lu par
+     * aucun code de rendu : un profil réglé « privé » était servi intégralement
+     * à quiconque. Idem pour {@code showLastActive}. Le lot D4 les applique,
+     * parce qu'un aperçu de profil qui n'a rien à filtrer ne prouve rien.
+     *
+     * <p><b>Ce qui reste toujours visible :</b> nom affiché, avatar, badge de
+     * vérification. Ce sont les éléments par lesquels une personne est
+     * identifiée dans une conversation ou sur la liste des participants d'un
+     * créneau, et cinq surfaces internes construisent ce DTO pour cela. Les
+     * masquer ne protégerait personne : ça casserait l'application.
+     *
+     * <p><b>Ce qui se masque :</b> la biographie, les badges, la présence en
+     * ligne, le nombre d'abonnés et le signal de fiabilité. Autrement dit ce qui
+     * relève de la fiche, pas de l'identification.
+     *
+     * <p><b>Sur {@code FRIENDS} :</b> meetDo n'a pas de notion d'amitié. Le seul
+     * lien explicite entre deux personnes est l'abonnement, et c'est donc lui
+     * qui fait foi. Il est en outre déjà calculé pour ce DTO, si bien que le
+     * filtre ne coûte aucune requête supplémentaire — ce qui compte, puisque ce
+     * mapping est appelé une fois par participant sur certaines pages.
+     */
     private UserPublicDto toPublicDto(User user, long subscriberCount, boolean subscribed) {
-        boolean showOnline = Boolean.TRUE.equals(user.getOnlineStatusVisible())
+        PrivacySettings privacy = user.getPrivacySettings() != null
+            ? user.getPrivacySettings()
+            : new PrivacySettings();
+
+        ProfileVisibility visibility = privacy.getProfileVisibility() != null
+            ? privacy.getProfileVisibility()
+            : ProfileVisibility.PUBLIC;
+
+        boolean detailsVisible = visibility == ProfileVisibility.PUBLIC
+            || (visibility == ProfileVisibility.FRIENDS && subscribed);
+
+        // Deux réglages disent la même chose : le champ historique
+        // onlineStatusVisible et showLastActive. On exige les deux — c'est le
+        // seul choix qui ne montre jamais plus qu'avant, et il faudra un jour
+        // n'en garder qu'un.
+        boolean showOnline = detailsVisible
+            && Boolean.TRUE.equals(user.getOnlineStatusVisible())
+            && Boolean.TRUE.equals(privacy.getShowLastActive())
             && user.getLastActiveAt() != null
             && user.getLastActiveAt().isAfter(Instant.now().minusSeconds(300)); // 5 min
 
@@ -281,15 +343,17 @@ public class UserService {
         return new UserPublicDto(
             user.getId(),
             user.getDisplayName(),
-            user.getBio(),
+            detailsVisible ? user.getBio() : null,
             user.getAvatarUrl(),
             user.getVerificationStatus().name(),
-            badgeCodes,
+            detailsVisible ? badgeCodes : List.of(),
             List.of(), // activities — rempli par ActivityService
             showOnline,
-            subscriberCount,
+            detailsVisible ? subscriberCount : null,
             subscribed,
-            ReliabilitySignal.of(user.getJoinedSlotsCount(), user.getAttendanceCount()));
+            detailsVisible
+                ? ReliabilitySignal.of(user.getJoinedSlotsCount(), user.getAttendanceCount())
+                : null);
     }
 
     private UserPrivateDto toPrivateDto(User user) {

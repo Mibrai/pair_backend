@@ -168,6 +168,19 @@ public class UserController {
      * lever une exception transformerait un masquage en erreur serveur chez des
      * appelants qui n'ont rien demandé.
      */
+    @GetMapping("/me/preview")
+    @io.swagger.v3.oas.annotations.Operation(
+        summary = "Mon profil tel qu'un inconnu le reçoit.",
+        description = "Exactement le DTO que rend GET /api/users/{id} à quelqu'un qui "
+            + "n'a aucun lien avec moi — même code, pas un code équivalent. Un aperçu "
+            + "qui divergerait du profil réel serait pire que pas d'aperçu : il donnerait "
+            + "confiance dans une réponse fausse.\n\n"
+            + "Déclaré avant /{id} : sans cela « me » serait interprété comme un "
+            + "identifiant et la route ne serait jamais atteinte.")
+    public UserPublicDto getMyProfilePreview(@AuthenticationPrincipal UserPrincipal principal) {
+        return userService.getMyProfilePreview(principal.getId());
+    }
+
     @GetMapping("/{id}")
     public UserPublicDto getPublicProfile(
             @PathVariable UUID id,
