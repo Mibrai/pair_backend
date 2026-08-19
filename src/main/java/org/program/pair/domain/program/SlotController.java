@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.program.pair.domain.program.dto.CancelSlotRequest;
 import org.program.pair.domain.program.dto.JoinSlotRequest;
 import org.program.pair.domain.program.dto.SlotFeedItemDto;
 import org.program.pair.domain.program.dto.SlotFeedRequest;
@@ -27,6 +28,7 @@ import java.util.UUID;
 public class SlotController {
 
     private final SlotService slotService;
+    private final SlotCancellationService slotCancellationService;
 
     @GetMapping("/feed")
     public List<SlotFeedItemDto> getFeed(
@@ -111,5 +113,19 @@ public class SlotController {
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID scheduleId) {
         return slotService.getWaitlist(principal.getId(), scheduleId);
+    }
+
+    @PostMapping("/{scheduleId}/cancel")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Annule une séance et prévient tout le monde.",
+        description = "Réservé à l'organisateur ; 404 pour quiconque d'autre. Prévient "
+            + "immédiatement les inscrits ET la liste d'attente, par notification et par "
+            + "e-mail — l'un des rares cas où le double canal se justifie : ne pas "
+            + "recevoir une annulation coûte un déplacement pour rien.")
+    public void cancel(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID scheduleId,
+            @Valid @RequestBody(required = false) CancelSlotRequest request) {
+        slotCancellationService.cancel(principal.getId(), scheduleId, request);
     }
 }

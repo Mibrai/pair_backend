@@ -39,4 +39,28 @@ public enum NotificationType {
     // conversation à deux, et le client range les deux dans des rubriques
     // différentes de son catalogue de préférences.
     PROGRAM_BROADCAST
+;
+
+    /**
+     * Les notifications qu'on envoie même quand la personne a demandé le silence.
+     *
+     * <p>La distinction que porte cet ensemble est celle entre <b>information
+     * indispensable</b> et <b>engagement</b>. Une annulation appartient à la
+     * première : quelqu'un s'apprête à traverser la ville pour une séance qui
+     * n'aura pas lieu, et le lui apprendre le lendemain matin ne sert plus à
+     * rien. Une suggestion d'activité appartient à la seconde, et peut attendre.
+     *
+     * <p>Volontairement <b>court</b>. C'est le lot D6 (heures de silence) qui
+     * l'exploitera vraiment, et qui devra trancher les cas ambigus — au premier
+     * rang desquels PROGRAM_BROADCAST, dont le contenu est un message libre
+     * pouvant aussi bien dire « séance annulée » qu'une relance. Y verser des
+     * types par anticipation reviendrait à décider sans le dire.
+     */
+    private static final java.util.Set<NotificationType> CRITICAL =
+        java.util.EnumSet.of(SLOT_CANCELLED, PROGRAM_CANCELLED);
+
+    /** Vrai si cette notification passe outre les heures de silence. */
+    public boolean isCritical() {
+        return CRITICAL.contains(this);
+    }
 }

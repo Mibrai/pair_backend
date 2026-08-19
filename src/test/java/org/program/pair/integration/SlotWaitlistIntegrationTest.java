@@ -154,16 +154,26 @@ class SlotWaitlistIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void lePromu_doitEtreNotifie() {
+    void lePromu_doitEtreNotifie() throws Exception {
         Ctx ctx = fullSlot();
         joinWaitlist(ctx.candidate, ctx.slotId);
 
         leaveSlot(ctx.occupant, ctx.slotId);
 
-        Long notifications = jdbcTemplate.queryForObject("""
-            SELECT COUNT(*) FROM notifications
-            WHERE user_id = ? AND type = 'WAITLIST_PROMOTED'
-            """, Long.class, userId(ctx.candidate));
+        // notify est @Async : la requête HTTP rend la main avant l'écriture de la
+        // ligne. Interroger la base aussitôt lit parfois zéro — un test qui passe
+        // ou échoue selon la charge, ce que le lot 0 a passé du temps à retirer.
+        UUID promotedId = userId(ctx.candidate);
+        long notifications = 0;
+        for (int attempt = 0; attempt < 50 && notifications == 0; attempt++) {
+            notifications = jdbcTemplate.queryForObject("""
+                SELECT COUNT(*) FROM notifications
+                WHERE user_id = ? AND type = 'WAITLIST_PROMOTED'
+                """, Long.class, promotedId);
+            if (notifications == 0) {
+                Thread.sleep(100);
+            }
+        }
         assertThat(notifications).isEqualTo(1);
     }
 

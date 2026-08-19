@@ -131,6 +131,23 @@ public class Schedule {
     @Column(name = "last_occurrence_end")
     private Instant lastOccurrenceEnd;
 
+    // Annulation (V68).
+
+    /** Motif donné par l'organisateur, montré aux participants. */
+    @Column(name = "cancellation_reason", length = 300)
+    private String cancellationReason;
+
+    @Column(name = "cancelled_at")
+    private Instant cancelledAt;
+
+    /**
+     * Qui a annulé. Nul si le compte a disparu depuis — la suppression d'un
+     * compte ne doit pas effacer le fait qu'une séance a été annulée.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "cancelled_by")
+    private org.program.pair.domain.user.User cancelledBy;
+
     // Partage public (V65). Placés avant les collections, jamais entre un champ
     // et l'annotation d'audit qui le précède.
 
