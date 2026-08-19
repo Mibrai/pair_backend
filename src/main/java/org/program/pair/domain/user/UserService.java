@@ -303,7 +303,9 @@ public class UserService {
             user.getVerificationStatus().name(),
             user.getCreatedAt(),
             List.of(), // activities — rempli par ActivityService
-            subscriptionService.countAuthorSubscribers(user.getId())
+            subscriptionService.countAuthorSubscribers(user.getId()),
+            user.getOnboardingCompletedAt(),
+            user.getOnboardingStep() == null ? null : user.getOnboardingStep().name()
         );
     }
 }
