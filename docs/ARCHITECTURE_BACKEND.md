@@ -1,8 +1,13 @@
 # Backend MeetDo / Pair — structure, fonctionnalités et base de données
 
-> État du dépôt au **18 août 2026**, branche `master` (dernier commit `4677d02`).
+> État du dépôt au **20 août 2026**, branche `master` (dernier commit `fb188c8`).
 > Ce document décrit ce que le code fait *aujourd'hui*, pas ce qui est prévu.
-> Schéma de base relevé sur l'instance PostgreSQL locale, **58 migrations Flyway appliquées** (dernière : `V59__user_activity_category_announcement.sql`).
+> **76 migrations Flyway** (dernière : `V77__trigram_search.sql`).
+>
+> Relevé précédent : 18 août 2026, arrêté à `V59`. Les phases A à D du TODO v2 et la
+> spécification des liens publics ont été livrées entre les deux — six tables, une
+> vingtaine de routes, et plusieurs règles de visibilité que ce document doit porter parce
+> qu'elles ne se lisent nulle part ailleurs.
 
 ---
 
@@ -13,15 +18,16 @@
 | Nom Maven | `org.program:Pair` (`0.0.1-SNAPSHOT`) |
 | Framework | Spring Boot **4.1.0** |
 | Langage | Java (`java.version` = 17 dans le POM ; image de build et d'exécution en **Temurin 21**) |
-| Base | PostgreSQL 16 + **PostGIS 3.4** + **pgvector** + `uuid-ossp` |
-| Migrations | Flyway (`db/migration`, V1 → V59) |
+| Base | PostgreSQL 16 + **PostGIS 3.6** + **pgvector** + `uuid-ossp` + **pg_trgm** |
+| Migrations | Flyway (`db/migration`, V1 → V77) |
 | Temps réel | WebSocket / STOMP (SockJS en repli) |
 | Sécurité | Spring Security stateless + JWT (JJWT 0.12.3), BCrypt (force 12) |
 | Recherche | Plein texte PostgreSQL (`tsvector`) + embeddings locaux **DJL / ONNX Runtime** (modèle trilingue FR/EN/DE), plus une taxonomie déterministe |
 | Push | Firebase Admin SDK (activable ; implémentation `NoOp` sinon) |
 | E-mail | SMTP (`spring-boot-starter-mail`) en local, **Resend** via API en production |
 | Docs API | springdoc-openapi (`/swagger-ui.html`, `/v3/api-docs`) |
-| Volume | ~27 700 lignes de Java applicatif, ~16 000 lignes de tests, **179 endpoints HTTP**, **81 classes de test**, **33 tables** |
+| Volume | ~35 000 lignes de Java applicatif, ~21 900 lignes de tests, **218 endpoints HTTP** + 2 destinations STOMP, **104 classes de test** (744 tests), **39 tables** |
+| Pages web | Thymeleaf — page publique de créneau, lien de sécurité, et les deux fichiers d'association d'applications |
 
 Le backend sert une application mobile/web de mise en relation autour d'activités
 pratiquées **au même endroit et au même moment** : un utilisateur déclare ses activités,
@@ -118,9 +124,25 @@ JWT en deux jetons : **access** (15 min) et **refresh** (30 jours), signés HS25
 
 Tout est authentifié **sauf** : `/`, les six routes d'authentification listées ci-dessus,
 `/ws/**`, Swagger, `/actuator/health`, et en lecture seule
-`GET /api/categories`, `GET /api/activities`, `GET /api/map/activities`,
-`GET /api/badges`, `GET /api/badges/users/**`, `GET /api/recommendations/users/**`,
+`GET /api/categories`, `GET /api/activities`, `GET /api/badges`,
+`GET /api/badges/users/**`, `GET /api/recommendations/users/**`,
 `GET /api/recommendations/stats/**`, `GET /api/reviews/programs/**`.
+
+**Les pages web ouvertes**, ajoutées avec le partage : `GET /public/safety/**`,
+`GET /public/slots/**`, `GET /s/**` et `GET /.well-known/**`. Elles n'ont pas d'appelant
+identifié et n'en veulent pas : le destinataire d'un lien de sécurité est un proche qui n'a
+pas de compte meetDo, et lui en demander un viderait la fonctionnalité de son sens. Toute
+la confidentialité repose sur le **jeton**, opaque et périssable. Les fichiers
+`/.well-known` sont ouverts sans condition parce qu'Apple et Google les lisent sans
+identité, et qu'une simple redirection suffirait à faire échouer la validation.
+
+**`GET /api/map/activities` a quitté cette liste le 20 août 2026.** Elle était ouverte,
+héritée d'un temps où la carte servait de vitrine ; l'équipe mobile a vérifié route par
+route qu'aucun écran hors session ne l'appelait. Sans appelant identifié, elle rendait les
+organisateurs bloqués comme les autres — un profil bloqué qui garde ses activités sur la
+carte est un profil qui n'est pas bloqué. `GET /api/users/{id}/programs` était déjà
+authentifiée mais ne consultait pas le blocage, alors que la fiche de profil servie au même
+écran refusait déjà.
 
 ### 3.3 Limitation de débit (Bucket4j, en mémoire)
 
@@ -148,6 +170,19 @@ Dépassement → `TooManyRequestsException` → HTTP 429 avec le code `RATE_LIMI
 - **Statistiques de pratique** : `PracticeStatsService` porte une interdiction explicite
   en commentaire — aucune route de classement ne doit s'en servir pour trier les
   utilisateurs entre eux.
+- **Blocage** (`domain/block`) : la ligne est dirigée, la lecture est **bilatérale**. Le
+  refus est un `404`, jamais un `403` — un code nommé apprendrait le blocage à celui qui
+  l'a subi. Le prédicat vit dans chaque requête et dans son `COUNT` : post-filtrer
+  casserait la pagination et ferait annoncer « Programmes (12) » puis en servir 9.
+- **Signal de fiabilité** (`domain/attendance/ReliabilitySignal`) : rend
+  `USUALLY_SHOWS_UP` ou **rien**, jamais un libellé négatif ni un pourcentage. Exposer les
+  deux compteurs bruts laisserait n'importe quel client afficher un taux, ce que le produit
+  a promis de ne pas faire.
+- **Partage de position** : ponctuel, **30 minutes au maximum**, et c'est un message
+  ordinaire du fil — renouveler suppose une nouvelle bulle, donc suivre quelqu'un reste
+  visible de celui qu'on suit. Une durée supérieure est refusée, jamais rabotée en silence.
+- **Page publique de créneau** : type fermé `PublicSlotView`, sans aucun identifiant
+  interne. Six conditions de refus réunies dans `publiclyVisible`, toutes en `404`.
 
 ### 3.5 Erreurs
 
@@ -176,12 +211,38 @@ GET    /api/users/me/practice-stats     ·  GET /api/users/{userId}/practice-sta
 PUT    /api/users/me/location
 POST   /api/users/me/avatar             ·  DELETE /api/users/me/avatar
 POST   /api/users/me/change-password
-GET    /api/users/{userId}/programs
+GET    /api/users/{userId}/programs     ← 404 entre deux comptes bloqués
 GET    /api/users/me/privacy            ·  PUT /api/users/me/privacy
+GET    /api/users/me/preview            ← ce qu'un inconnu voit de moi
+GET    /api/users/me/onboarding         ·  PATCH /api/users/me/onboarding
+POST   /api/users/me/onboarding/skip
+GET    /api/users/me/languages          ·  PUT /api/users/me/languages
+GET    /api/users/me/availability       ·  PUT /api/users/me/availability
+POST   /api/users/{userId}/block        ·  DELETE /api/users/{userId}/block
+GET    /api/users/me/blocked
 ```
 
 Compteurs dénormalisés recalculés après chaque confirmation de présence :
-`distinct_partners_count`, `attendance_count`, `current_streak_weeks`, `last_attendance_at`.
+`distinct_partners_count`, `attendance_count`, `current_streak_weeks`,
+`last_attendance_at`, `joined_slots_count`.
+
+**Les réglages de confidentialité sont appliqués** *(depuis le 2026-08-19)*. Ils étaient
+stockés, réglables, relus — et lus par aucun code de rendu : un profil « privé » était servi
+intégralement. `toPublicDto` masque désormais bio, badges, nombre d'abonnés, signal de
+fiabilité et présence en ligne ; restent toujours visibles le nom, l'avatar et le badge de
+vérification, par lesquels une personne est reconnue dans une conversation ou une liste de
+participants. Faute de notion d'amitié dans le produit, `FRIENDS` s'appuie sur
+l'**abonnement**, déjà calculé dans ce DTO.
+
+`GET /api/users/me/preview` appelle **exactement le même code** avec la relation d'un
+inconnu : c'est ce qui garantit que l'aperçu dit vrai, et un test compare les deux sorties.
+
+**Le parcours d'accueil décrit les quatre écrans réels** — `ACTIVITIES`, `LEVELS`,
+`LOCATION`, `PREVIEW`. La première version décrivait la spécification et non l'application :
+deux valeurs seulement existaient des deux côtés, **dans l'ordre inverse**, si bien que
+l'étape « position » était acceptée puis ignorée en `200` — un échec silencieux des deux
+côtés. L'ancien vocabulaire reste accepté en entrée et traduit, le temps qu'une version
+publiée du client cesse de le parler.
 
 ### 4.2 Activités et catégories (`domain/activity`)
 
@@ -194,8 +255,28 @@ qui indexait les programmes par *nom d'activité normalisé* — deux « Yoga »
 organisateurs fusionnaient, « Yôga » et « Yoga » se séparaient. La clé est désormais la
 vraie clé étrangère.
 
+**Les filtres sont passés côté serveur** *(nouveau)*. Ils s'appliquaient jusque-là sur les
+pages déjà chargées, ce que les utilisateurs vivaient comme un défaut et non comme une
+limite. `myActivitiesOnly` désigne **ce qui se pratique autour de moi dans mes sports**, et
+non mes propres annonces : l'Explorer est une surface de découverte, et un filtre qui ne
+rendrait que mes trois entrées n'y découvrirait rien. Sans appelant identifié, les deux
+filtres personnels ne s'appliquent pas — les appliquer rendrait une liste vide, soit
+« rien autour de vous » au lieu de « connectez-vous ».
+
+**Les compteurs ignorent les filtres de même nature.** Leur périmètre est la zone, la
+catégorie et l'expiration ; ni le niveau, ni les deux filtres personnels. C'est ce qui fait
+qu'un compteur annonce ce qu'on obtiendrait **en cochant** la case : compter à l'intérieur du
+filtre courant afficherait zéro à côté de chaque case non cochée, et les ferait toutes
+passer pour des impasses. Une seule requête les rend tous, groupée par niveau avec deux
+`FILTER` — une par facette aurait fait sept balayages géographiques par ouverture du panneau.
+
+La route est **séparée** plutôt qu'une enveloppe autour de la page : le
+`Page<BrowsedActivityDto>` est déjà consommé par une version publiée du client.
+
 ```
-GET    /api/activities/browse
+GET    /api/activities/browse           ← + activityLevels, myActivitiesOnly, subscribedOnly
+GET    /api/activities/browse/facets    ← compteurs du panneau de filtres
+GET    /api/activities/suggested        ← premières suggestions, jamais vides
 GET    /api/categories                  ·  POST /api/categories
 GET    /api/activities                  ·  POST /api/activities
 GET    /api/users/me/activities         ·  GET /api/users/{id}/activities
@@ -249,7 +330,28 @@ POST   /api/users/me/programs/{upid}/activities/{aid}/skip
 GET    /api/slots/feed                  ·  GET /api/slots/mine
 GET    /api/slots/{sid}                 ·  GET /api/slots/{sid}/participants
 POST   /api/slots/{sid}/join            ·  DELETE /api/slots/{sid}/join
+POST   /api/quick-slots                 ← créneau rapide, programme QUICK implicite
+POST   /api/slots/{sid}/cancel          ·  GET /api/slots/{sid}/waitlist
+POST   /api/slots/{sid}/safety-share    ·  GET /api/slots/{sid}/share-link
+PATCH  /api/slots/{sid}/shareable       ← organisateur seul
+POST   /api/slots/{sid}/invitations     ·  POST /api/invitations/{code}/accept
+GET    /api/slots/{sid}/calendar.ics    ·  GET /api/slots/mine/calendar.ics
 ```
+
+Quatre mécaniques ajoutées depuis :
+
+- **Créneau rapide** — un programme `created_via = 'QUICK'` est créé implicitement. Sans ce
+  drapeau, il s'affichait comme un programme mal rempli ; le client distingue désormais un
+  vide assumé d'un oubli. La réponse est le **même DTO** que le fil, pour que le client ne
+  maintienne pas deux modèles d'un seul objet.
+- **Liste d'attente** — le rang n'existe que dans l'état `WAITLISTED`, garanti par un unique
+  partiel. Une place libérée promeut le premier, et le conflit d'horaire est revérifié **à
+  la promotion** : celui qui attendait a pu s'inscrire ailleurs entre-temps.
+- **Annulation** — prévient les inscrits *et* la file d'attente, par notification **et** par
+  e-mail. L'un des rares cas où le double canal se justifie : ne pas recevoir une annulation
+  coûte un déplacement pour rien. Un créneau annulé perd aussi sa page publique.
+- **Partage et invitations** — jeton base62 opaque de 22 caractères (`ShareToken`), jamais
+  l'UUID interne, créé à la première demande et jamais régénéré ensuite.
 
 ### 4.4 Présence et statistiques (`domain/attendance`)
 
@@ -265,6 +367,11 @@ GET    /api/attendances/{scheduleId}/co-participants
 
 `AttendancePromptJob` relance **une seule fois**, pour les créneaux terminés entre 1 h et
 3 h auparavant — règle produit assumée : jamais de rappel insistant.
+
+**La fenêtre de présence se referme** (`slot_participations.attendance_closed_at`), et c'est
+ce qui rend le signal de fiabilité honnête : un silence n'est pas une absence. Passé le
+délai, la question ne se pose plus et la ligne **sort du dénominateur** au lieu d'y compter
+comme un « non » — compter un silence, c'est décider qu'il veut dire quelque chose.
 
 ### 4.5 Recaps de créneau (`domain/recap`)
 
@@ -293,16 +400,38 @@ La **diffusion programme** n'ajoute qu'une seule route : le fil créé apparaît
 la messagerie normale avec `type: "PROGRAM_BROADCAST"`, et `POST /api/conversations/{id}/messages`
 refuse en 403 tout expéditeur autre que l'auteur du programme.
 
+**Confort de messagerie** *(nouveau)* : indicateur de saisie, partage de position ponctuel,
+sourdine et archivage par conversation.
+
+L'indicateur de saisie **n'écrit rien nulle part** — un « untel écrit… » ne vaut que dans la
+seconde où il est émis. Il vérifie tout de même l'appartenance : sans ce contrôle, n'importe
+quel compte connecté ferait apparaître son nom dans le fil de n'importe qui, ce qui suffit à
+découvrir qu'une conversation existe. Le serveur ne pose **aucune échéance** et n'émet aucun
+rappel : c'est au client d'effacer l'indicateur après quelques secondes, un émetteur qui perd
+sa connexion ne pouvant jamais annoncer qu'il s'est arrêté.
+
+Sourdine et archivage vivent sur `conversation_members` : deux personnes d'un même fil n'ont
+aucune raison de le classer pareil. La sourdine coupe **l'émission, pas la réception**.
+L'archivage ne se défait pas tout seul — un message reçu ne ressort pas le fil, sinon ranger
+celui dont on veut se débarrasser n'aurait aucun effet.
+
+Les deux sortent du **total** de `unread-count` sans sortir du décompte par fil. L'invariant
+« la somme des fils égale le badge » a donc été redéfini plutôt que rompu en silence :
+`ConversationSummaryDto` porte `muted` et `archived`, et la somme des fils qui ne sont ni
+l'un ni l'autre retombe exactement sur le total.
+
 ```
-POST   /api/conversations               ·  GET /api/conversations
+POST   /api/conversations               ·  GET /api/conversations?archived=
 GET    /api/conversations/unread-count
 GET    /api/conversations/{id}          ·  DELETE /api/conversations/{id}
 POST   /api/conversations/{id}/messages ·  GET /api/conversations/{id}/messages
 POST   /api/conversations/{id}/read     ·  POST /api/conversations/{id}/read-all
 POST   /api/conversations/{id}/images
+POST   /api/conversations/{id}/location      ← partage ponctuel, 30 min au plus
+PATCH  /api/conversations/{id}/settings      ← sourdine, archivage
 PATCH  /api/messages/{id}               ·  DELETE /api/messages/{id}
 POST   /api/programs/{id}/broadcasts
-STOMP  /app/chat.send
+STOMP  /app/chat.send                   ·  STOMP /app/chat.typing
 ```
 
 ### 4.7 Notifications et push (`domain/notification`)
@@ -321,11 +450,32 @@ invalides sont purgés à la réponse de Firebase.
 `UnreadCounter` centralise le total non lu : iOS n'offre **qu'un** badge d'icône, un
 message non lu y compte donc autant qu'une notification non lue.
 
+**Heures de silence** *(nouveau)* — `users.quiet_hours_start` / `_end`, et `QuietHours` pour
+les lire. La fenêtre **traverse minuit** dans le cas courant : « 22 → 7 » n'est pas un
+intervalle croissant, et écrite naïvement elle ne contient rien du tout — le réglage le plus
+courant du produit n'aurait alors aucun effet, sans erreur ni trace.
+
+Le filtrage descend **jusqu'à l'appareil**, avec le fuseau de chacun : un téléphone à Paris
+et une tablette restée à Tokyo ne sont pas dans la nuit au même moment. Ce qui est coupé,
+c'est la push ; la notification est écrite dans tous les cas et attend au réveil.
+
+**Deux classifications distinctes, et non une.** `isCritical()` dit ce qui traverse le
+silence — annulation de créneau ou de programme, changement d'horaire, et le rappel de
+séance, qui part deux heures avant quelque chose qu'on a choisi de rejoindre.
+`warrantsEmail()` dit ce qui part aussi par e-mail, et n'y range pas le rappel : il en
+partirait un par séance rejointe par chacun, ce qui ferait couper le canal entier — y
+compris pour les annulations, qui en sont la raison d'être.
+
+`PROGRAM_BROADCAST` ne traverse **pas** le silence : son contenu est un texte libre que le
+serveur ne sait pas lire, et le classer critique donnerait à tout auteur le moyen de
+réveiller ses participants avec n'importe quel message.
+
 ```
 GET    /api/notifications               ·  GET /api/notifications/unread-count
 PUT    /api/notifications/{id}/read     ·  PUT /api/notifications/read-all
 DELETE /api/notifications/{id}
 GET    /api/notifications/preferences   ·  PUT /api/notifications/preferences
+GET    /api/notifications/quiet-hours   ·  PUT /api/notifications/quiet-hours
 POST   /api/notifications/devices       ·  GET /api/notifications/devices
 DELETE /api/notifications/devices/{token}
 ```
@@ -349,7 +499,7 @@ GET                /api/users/me/subscriptions   ·  GET /api/users/me/subscribe
 
 ### 4.9 Recherche (`domain/search`)
 
-Trois couches complémentaires :
+Quatre couches, et **leur ordre est le contrat** :
 
 1. **`FullTextSearchService`** — `tsvector` PostgreSQL sur `programs.search_vector`
    (index GIN), entretenu de façon asynchrone par `IndexationService`.
@@ -361,6 +511,21 @@ Trois couches complémentaires :
 3. **`ActivityTaxonomy`** — table de correspondance canonique EN/DE/FR garantissant le
    matching déterministe sur les activités connues (« Laufen » → slug `running` → tous les
    programmes de course, quelle que soit la langue de stockage).
+4. **Similarité trigramme** *(nouveau, `pg_trgm`)* — `searchByTrigramSimilarity`, seuil
+   **0,3**, index GIN sur `activities.name` et `programs.title`. Elle ne s'exécute **que si
+   les trois précédentes n'ont rien rendu**.
+
+L'ordre de la quatrième n'est pas négociable : la similarité trigramme ne sait pas ce qu'est
+un mot — « Yoga » et « Toga » partagent trois trigrammes sur quatre — et la fusionner avec
+les autres ferait remonter du vaguement ressemblant au-dessus de l'exact. Placée en dernier,
+elle ne peut que transformer une réponse vide en réponse imparfaite, jamais dégrader une
+réponse qui fonctionnait. Elle ne rattrape que la **faute de frappe**, dans la langue où elle
+a été faite : « Klettern » et « escalade » n'ont aucun trigramme commun, et c'est la
+taxonomie qui les rapproche.
+
+Le seuil est écrit dans la requête plutôt que laissé au réglage de session
+`pg_trgm.similarity_threshold`, qui est global et modifiable par n'importe quelle autre
+requête.
 
 `RuleBasedIntentExtractor` remplace l'appel LLM d'origine par un pipeline de règles et
 mots-clés FR/EN/DE : il ne comprend pas le langage naturel libre, mais il est gratuit,
@@ -383,10 +548,16 @@ Géocodage et géocodage inverse inclus.
 
 ```
 GET    /api/map/users      ·  /api/map/clusters  ·  /api/map/bounds
-GET    /api/map/nearby/{type}  ·  /api/map/activities
+GET    /api/map/nearby/{type}  ·  /api/map/activities   ← authentifiée depuis le 2026-08-19
 GET    /api/map/geocode    ·  /api/map/reverse-geocode
 POST   /api/map/location
 ```
+
+`/map/activities` filtre les organisateurs bloqués **en mémoire**, à contre-courant du reste
+du domaine qui pousse le prédicat dans le SQL. Ce n'est pas une facilité : un marqueur agrège
+plusieurs organisateurs sur une même activité, et `totalInBounds`, les `count` de clusters et
+`truncated` dérivent tous de la liste après agrégation. Écarter les créneaux **avant** de
+construire les marqueurs les laisse exacts ; un post-filtrage les aurait tous faussés.
 
 ### 4.11 Alertes de proximité (`domain/alert`)
 
@@ -486,6 +657,12 @@ POST   /api/indexation/backfill-embeddings
 | `AttendancePromptJob.closeElapsedSlots` | horaire (`:15`) | ferme les créneaux écoulés |
 | `GdprPurgeJob.purgeInactiveAccounts` | quotidien 03 h 00 | purge des comptes inactifs |
 | `GdprPurgeJob.purgeOldAuditLogs` | mensuel, le 1er à 04 h 00 | purge des journaux d'audit anciens |
+| `ExpiredLocationSweepJob` | toutes les 10 min | efface les coordonnées des partages de position échus |
+
+`ExpiredLocationSweepJob` **ne fait pas expirer** les partages : c'est la lecture qui décide,
+et elle ne sert jamais un point échu, y compris entre l'échéance et le passage suivant.
+Le job empêche la base d'accumuler l'historique des déplacements de chacun — sans lui, le
+garde-fou ne serait vrai que du côté de l'API.
 
 ---
 
@@ -494,9 +671,10 @@ POST   /api/indexation/backfill-embeddings
 ### 6.1 Extensions
 
 `uuid-ossp` (identifiants), **PostGIS** (colonnes `geometry`, index GIST),
-**pgvector** (colonnes `vector`, index HNSW cosinus).
+**pgvector** (colonnes `vector`, index HNSW cosinus), **pg_trgm** *(V77 — similarité
+trigramme, index GIN, quatrième couche de recherche)*.
 
-### 6.2 Inventaire des tables (33 tables applicatives)
+### 6.2 Inventaire des tables (39 tables applicatives)
 
 | Domaine | Tables |
 |---|---|
@@ -512,7 +690,9 @@ POST   /api/indexation/backfill-embeddings
 | Alertes | `activity_alerts` |
 | Progression | `progressions`, `progression_entries` |
 | Recherche | `search_logs` |
-| Modération | `reports` |
+| Modération | `reports`, `user_blocks` |
+| Partage | `slot_safety_shares`, `slot_invitations` |
+| Préférences | `user_languages`, `user_availability`, `schedule_accessibility_tags` |
 
 > **Doublon connu** : `progressions` et `progression_entries` coexistent ; seule
 > `progressions` est mappée par l'entité `Progression` (elle ajoute `metric_labels` et
@@ -520,138 +700,16 @@ POST   /api/indexation/backfill-embeddings
 
 ### 6.3 Colonnes, table par table
 
-*(`NN` = NOT NULL)*
+Ce document ne les répète plus. Le détail colonne par colonne — types, contraintes,
+valeurs par défaut, et surtout les **règles que la DDL ne dit pas** — vit dans
+[`DATABASE_SCHEMA.md`](DATABASE_SCHEMA.md), qui est un relevé par **introspection** et non
+une rédaction à la main.
 
-**`users`** — `id uuid NN`, `email varchar(255) NN` **unique**, `password_hash varchar(255) NN`,
-`phone varchar(20)`, `display_name varchar(80) NN`, `bio varchar(1000)`,
-`avatar_url varchar(500)`, `location geometry`, `blur_radius_m int NN`,
-`location_public bool NN`, `online_status_visible bool NN`, `receive_messages bool NN`,
-`verification_status varchar(30) NN`, `verified_at`, `created_at NN`, `last_active_at`,
-`is_active bool NN`, `profile_visibility varchar(20)`, `show_age`, `show_last_active`,
-`show_location`, `allow_messages varchar(20)`, `show_on_map`,
-`distinct_partners_count int NN`, `attendance_count int NN`, `current_streak_weeks int NN`,
-`last_attendance_at`, `allow_subscriptions varchar(20) NN`.
+Les deux listes ont coexisté jusqu'au 20 août 2026, et c'est ainsi que l'une d'elles est
+restée figée à `V59` pendant dix-huit migrations : deux endroits pour une même vérité en
+font toujours un qui se périme, et rien ne dit lequel. Une seule source, refaite par
+introspection à chaque campagne de migrations, coûte dix minutes et ne se trompe pas.
 
-**`categories`** — `id NN`, `name varchar(80) NN` **unique**, `icon varchar(80)`, `color_ramp varchar(30) NN`.
-
-**`activities`** — `id NN`, `parent_id`, `category_id NN`, `name varchar(120) NN`,
-`slug varchar(150) NN` **unique**, `description varchar(500)`, `embedding vector`,
-`created_at NN`, `icon varchar(80) NN`, `image_url varchar(500)`.
-
-**`user_activities`** — `id NN`, `user_id NN`, `activity_id NN`, `visible_on_map bool NN`,
-`custom_description varchar(500)`, `level varchar(20)`, `format varchar(10)`,
-`created_at NN`, `category_notified_at`. Unique `(user_id, activity_id)`.
-
-**`programs`** — `id NN`, `user_activity_id NN`, `title varchar(150) NN`, `description text`,
-`embedding vector`, `status varchar(20) NN`, `is_public bool NN`, `archived_at`,
-`created_at NN`, `updated_at`, `search_vector tsvector`, `organizer_name varchar(80)`,
-`organizer_avatar_url varchar(500)`, `next_session_at`, `duration_weeks int`,
-`sessions_per_week int`, `session_duration_minutes int`, `preferred_days int[]`,
-`preferred_time varchar(20)`, `max_participants int`, `privacy varchar(20)`, `goals text`,
-`prerequisites text`, `location_type varchar(20)`, `image_url varchar(500)`,
-`allow_participant_messages bool NN`, `subscribers_notified_at`.
-
-**`schedules`** — `id NN`, `program_id NN`, `place_name varchar(200) NN`,
-`place_type varchar(10) NN`, `location geometry NN`, `address_public varchar(300)`,
-`show_exact_address bool NN`, `starts_at NN`, `ends_at`, `recurrence_rule varchar(200)`,
-`max_participants int`, `created_at NN`, `is_open_to_partners bool NN`,
-`status varchar(20) NN`, `participant_count int NN`, `welcome_note varchar(300)`,
-`reminder_sent_for`, `city varchar(120)`, `last_occurrence_start`, `last_occurrence_end`.
-
-**`program_media`** — `id NN`, `program_id NN`, `url varchar(500) NN`,
-`media_type varchar(10) NN`, `sort_order int NN`, `created_at NN`.
-
-**`user_programs`** — `id NN`, `user_id NN`, `program_id NN`, `schedule_id`,
-`status varchar(20) NN`, `leave_reason text`, `progress_percentage int NN`,
-`activities_completed int NN`, `activities_skipped int NN`, `last_activity_at`,
-`joined_at NN`, `left_at`. Unique `(user_id, program_id, status)`.
-
-**`program_activities`** — `id NN`, `user_program_id NN`, `activity_id NN`,
-`status varchar(20) NN`, `completed_at`, `skipped_at`, `notes text`.
-Unique `(user_program_id, activity_id)`.
-
-**`slot_participations`** — `id NN`, `schedule_id NN`, `user_id NN`, `status varchar(20) NN`,
-`join_message varchar(300)`, `created_at NN`. Unique `(schedule_id, user_id)`.
-
-**`attendances`** — `id NN`, `schedule_id NN`, `user_id NN`, `was_present bool NN`,
-`attended_at NN`, `confirmed_at NN`, `memory_photo_url varchar(500)`,
-`memory_is_public bool NN`. Unique `(schedule_id, user_id, attended_at)`.
-
-**`slot_recaps`** — `id NN`, `schedule_id NN`, `visibility varchar(20) NN`,
-`host_note varchar(400)`, `attendee_count int NN`, `published_at`, `created_at NN`,
-`updated_at NN`, `occurrence_start NN`, `occurrence_end NN`.
-Unique `(schedule_id, occurrence_start)`.
-
-**`recap_vibe_votes`** — `id NN`, `recap_id NN`, `user_id NN`, `vibe varchar(30) NN`,
-`created_at NN`. Unique `(recap_id, user_id, vibe)`.
-
-**`recap_participant_consents`** — `recap_id NN`, `user_id NN`, `show_identity bool NN`,
-`created_at NN` (clé composite).
-
-**`conversations`** — `id NN`, `type varchar(30) NN`, `activity_context_id`, `created_at NN`,
-`last_message_at`, `program_id`, `schedule_id`. Index unique **partiel** sur `program_id`
-là où `type = 'PROGRAM_BROADCAST'` : un seul fil de diffusion par programme.
-
-**`conversation_members`** — `conversation_id NN`, `user_id NN`, `joined_at NN`,
-`last_read_at` (clé composite).
-
-**`messages`** — `id NN`, `conversation_id NN`, `sender_id NN`, `content varchar(4000) NN`,
-`status varchar(15) NN`, `sent_at NN`, `read_at`, `edited_at`, `deleted_at`,
-`image_url varchar(500)`.
-
-**`message_edit_history`** — `id NN`, `message_id NN`, `previous_content varchar(4000) NN`, `edited_at NN`.
-
-**`reviews`** — `id NN`, `program_id NN`, `reviewer_id NN`, `interaction_proof_id`,
-`score float8 NN`, `comment varchar(1000)`, `created_at NN`, `overall_rating int`,
-`criteria_scores jsonb`, `conversation_id`, `updated_at`, `interaction_proof_type varchar(20)`.
-Unique `(program_id, reviewer_id)`.
-
-**`review_criteria`** — `id NN`, `review_id NN`, `criterion_key varchar(30) NN`, `score float8 NN`.
-
-**`peer_recommendations`** — `id NN`, `recommender_id NN`, `recommended_id NN`,
-`conversation_id`, `comment varchar(500)`, `created_at NN`, `rating int`,
-`activity_context`, `program_context`, `updated_at`, `interaction_proof_type varchar(20)`.
-Unique `(recommender_id, recommended_id)`.
-
-**`badges`** — `id NN`, `code varchar(60) NN` **unique**, `category varchar(20) NN`,
-`label varchar(120) NN`, `condition_type varchar(40) NN`, `condition_threshold int`, `icon varchar(80)`.
-
-**`badge_awards`** — `badge_id NN`, `user_id NN`, `awarded_at NN` (clé composite).
-
-**`notifications`** — `id NN`, `user_id NN`, `type varchar(40) NN`, `channel varchar(10) NN`,
-`payload jsonb`, `is_read bool NN`, `sent_at NN`, `read_at`.
-
-**`notification_prefs`** — `id NN`, `user_id NN`, `notification_type varchar(40) NN`,
-`email_enabled bool NN`, `push_enabled bool NN`, `frequency varchar(20) NN`.
-Unique `(user_id, notification_type)`.
-
-**`device_tokens`** — `id NN`, `user_id NN`, `token varchar(500) NN` **unique**,
-`platform varchar(20) NN`, `device_name varchar(100)`, `created_at NN`, `last_used_at NN`,
-`locale varchar(10)`, `timezone varchar(64)`.
-
-**`subscriptions`** — `id NN`, `subscriber_id NN`, `type varchar(20) NN`, `target_author_id`,
-`target_user_activity_id`, `target_category_id`, `created_at NN`, `level varchar(20) NN`,
-`lat float8`, `lng float8`, `radius_meters int`.
-
-**`activity_alerts`** — `id NN`, `user_id NN`, `activity_id NN`, `location geometry NN`,
-`radius_meters int NN`, `is_active bool NN`, `last_triggered_at`, `created_at NN`.
-Unique `(user_id, activity_id)`.
-
-**`progressions`** — `id NN`, `program_id NN`, `user_id NN`, `title varchar(150)`,
-`content text`, `metrics []`, `metric_labels []`, `is_public bool NN`, `created_at NN`, `updated_at`.
-
-**`search_logs`** — `id NN`, `user_id`, `raw_query varchar(500) NN`, `parsed_intent text`,
-`query_embedding vector`, `results_count int`, `searched_at NN`, `search_method varchar(50)`.
-
-**`reports`** — `id NN`, `reporter_id NN`, `reported_entity_type varchar(20) NN`,
-`reported_entity_id NN`, `reason varchar(30) NN`, `status varchar(20) NN`, `created_at NN`,
-`resolved_at`, `description varchar(500)`, `reviewed_by`, `reviewed_at`,
-`resolution_notes text`, `updated_at`.
-
-**`audit_logs`** — `id NN`, `user_id`, `action_type varchar(50) NN`,
-`entity_type varchar(50) NN`, `entity_id`, `old_value text`, `new_value text`,
-`ip_address varchar(45)`, `user_agent varchar(255)`, `created_at timestamp NN`
-*(seule colonne temporelle sans fuseau de tout le schéma)*.
 
 ### 6.4 Politique des clés étrangères
 
@@ -683,14 +741,20 @@ tous en **`vector(384)`** depuis le passage au modèle local (`V48`).
 
 **Plein texte (GIN)** — `programs(search_vector)`.
 
+**Trigrammes (GIN, `gin_trgm_ops`, V77)** — `activities(name)`, `programs(title)`. Sans eux,
+chaque requête approximative devient un balayage complet des deux tables.
+
 **Partiels** — trois index d'unicité sur `subscriptions`, un par type d'abonnement ;
 `uq_conversations_program_broadcast` sur `conversations(program_id) WHERE type = 'PROGRAM_BROADCAST'` ;
-`idx_schedules_reminder_sweep` sur `schedules(starts_at) WHERE status IN ('OPEN','FULL')`,
-taillé pour le balayage du job de rappel.
+`slot_participations(schedule_id, waitlist_position) WHERE status = 'WAITLISTED'`, le rang
+n'ayant de sens que dans la file ; `idx_schedules_reminder_sweep` sur
+`schedules(starts_at) WHERE status IN ('OPEN','FULL')`, taillé pour le balayage du job de
+rappel ; `idx_messages_location_expires` sur `messages(location_expires_at) WHERE
+location_expires_at IS NOT NULL`, pour celui de l'effacement des positions.
 
 ### 6.6 Historique des migrations
 
-58 fichiers appliqués. Trois périodes se lisent dans la numérotation :
+76 fichiers appliqués. Quatre périodes se lisent dans la numérotation :
 
 - **V1 → V15** — mise en place du schéma (extensions, utilisateurs, catalogue, programmes,
   messagerie, confiance, notifications, modération, audit).
@@ -701,6 +765,13 @@ taillé pour le balayage du job de rappel.
   présences (`V41`), alertes (`V42`), abonnements (`V36`, `V58`), embeddings locaux (`V48`),
   contexte programme des conversations (`V51`), diffusion programme (`V53`), recaps
   (`V54`, `V57`), localisation des appareils (`V49`, `V56`).
+- **V60 → V77** — les phases A à D du TODO v2, puis la spécification des liens publics :
+  parcours d'accueil (`V60`, réaligné sur les écrans réels en `V74`), créneau rapide
+  (`V61`), blocage (`V62`), lien de sécurité (`V63`), règles de communauté (`V64`), partage
+  public (`V65`), invitations (`V66`), liste d'attente (`V67`), annulation (`V68`), signal de
+  fiabilité (`V69`), fermeture de la fenêtre de présence (`V70`), langues (`V71`),
+  accessibilité (`V72`), disponibilités (`V73`), confort de messagerie (`V75`), heures de
+  silence (`V76`), trigrammes (`V77`).
 
 Configuration Flyway notable : `baseline-on-migrate=true`, `validate-on-migrate=false` et
 `repair-on-migrate=true` — tolérant, au prix d'une détection plus faible des dérives.
@@ -718,19 +789,33 @@ Configuration Flyway notable : `baseline-on-migrate=true`, `validate-on-migrate=
 ## 7. Internationalisation
 
 Trois langues : **français** (défaut et repli), **anglais**, **allemand** —
-`messages.properties` (127 lignes), `messages_en.properties` (114),
-`messages_de.properties` (116). La résolution se fait sur `Accept-Language`, avec
+`messages.properties` (145 lignes), `messages_en.properties` (129),
+`messages_de.properties` (131). La résolution se fait sur `Accept-Language`, avec
 rapprochement vers la locale supportée la plus proche. Le push utilise en priorité la
 `locale` enregistrée sur l'appareil.
 
-> Les fichiers `en` et `de` comptent une dizaine de clés de moins que le français : des
+> Les fichiers `en` et `de` comptent une quinzaine de clés de moins que le français : des
 > traductions manquent.
+
+**La page publique de créneau** est servie en FR / EN / DE, et sa langue n'est **pas** celle
+de la requête : c'est celle de la séance (`schedules.primary_language`) qui prime — la langue
+dans laquelle elle se tiendra, donc celle du lecteur visé, mieux que l'`Accept-Language` d'un
+appareil qui n'appartient peut-être pas à quelqu'un du coin. À défaut seulement, l'en-tête,
+puis le français.
+
+Ses libellés sont donc résolus **dans le contrôleur** et non par `#{...}` dans le gabarit :
+Thymeleaf les résoudrait d'après l'en-tête, ce qui donnerait une page dont le texte et la
+date ne parlent pas la même langue. Les **motifs de date** eux-mêmes viennent du catalogue
+(`public.slot.datePattern`) : l'ordre des éléments et le séparateur diffèrent d'une langue à
+l'autre. Le décompte passe par un choix de catalogue et non par un ternaire — à zéro il dit
+« Personne encore, soyez le premier » plutôt que « 0 inscrit », qui se lit comme un aveu
+d'échec sur la seule page censée donner envie.
 
 ---
 
 ## 8. Tests
 
-**81 classes de test**, ~16 000 lignes.
+**104 classes de test**, ~21 900 lignes, **744 tests**.
 
 - **Tests unitaires** — un par service dans `domain/<domaine>/`, sur Mockito.
 - **Tests d'intégration** — `src/test/.../integration/`, adossés à
@@ -738,7 +823,8 @@ rapprochement vers la locale supportée la plus proche. Le push utilise en prior
   une vraie base avec les vraies migrations. Ils couvrent les parcours transverses :
   authentification, chat WebSocket, carte, recherche sémantique et multilingue,
   pagination, contrat OpenAPI, injections, RGPD, codes d'erreur métier, conflits d'agenda,
-  recaps, abonnements, diffusion programme, service de fichiers médias.
+  recaps, abonnements, diffusion programme, service de fichiers médias, blocage, partage
+  public, liste d'attente, annulation, heures de silence, tolérance aux fautes de frappe.
 - Un faux `com.google.firebase.messaging.FcmResponses` permet de tester le push sans
   Firebase réel.
 
@@ -799,6 +885,25 @@ Relevés à la lecture du code, sans jugement sur leur priorité :
    des documents de mise en production y sont versionnés.
 7. **Six migrations consécutives** (`V29`–`V34`) pour un même correctif de hachage : le
    coût d'une correction de données passée par le mécanisme de migration.
+8. **L'empreinte SHA-256 Android manque**, donc `/.well-known/assetlinks.json` répond `404`.
+   C'est délibéré : Apple et Google mettent ces fichiers en cache agressivement, et une
+   association fausse mémorisée par un appareil est plus longue à corriger qu'une absente.
+   Elle dépend d'une décision non prise — signature locale ou Play App Signing.
+9. **Le domaine public est `lien.meetdo.fun`**, et l'infrastructure n'existe pas encore :
+   `PUBLIC_BASE_URL` doit être posé sur Railway et le sous-domaine créé côté DNS.
+   `meetdo.fun` reste le site vitrine. Ni proxy ni redirection ne permettaient de servir les
+   deux depuis le même nom — `mod_proxy` est absent de l'offre d'hébergement, et une
+   redirection `302` aurait cassé l'aperçu, plusieurs robots ne la suivant pas.
+10. **Le domaine de l'UID iCalendar ne suit pas `PUBLIC_BASE_URL`**, et ne doit pas le
+    suivre. Un UID est une identité, pas une adresse : c'est par lui qu'un agenda reconnaît
+    un événement déjà importé et le met à jour au lieu de le dupliquer. Le faire dépendre de
+    l'URL publique transformerait un changement de domaine en duplication silencieuse de
+    tous les événements déjà présents dans les agendas — sans qu'aucun test ne s'en
+    aperçoive, les deux fichiers étant valides.
+11. **Deux points restent à arbitrer avec l'équipe mobile** : la lecture de « Mes
+    activités » dans l'Explorer, et les réglages e-mail, qui laissent croire à un choix par
+    type que le serveur ne tient pas — `warrantsEmail()` ne poste que les faits rendant un
+    déplacement inutile.
 
 ---
 
@@ -806,7 +911,9 @@ Relevés à la lecture du code, sans jugement sur leur priorité :
 
 | Sujet | Document |
 |---|---|
-| Schéma détaillé colonne par colonne | `docs/DATABASE_SCHEMA.md` |
+| Schéma détaillé colonne par colonne | `docs/DATABASE_SCHEMA.md` — **seule source**, relevée par introspection |
+| Feuille de route livrée | `docs/specs/backend-todo-v2.md` (phases A à D) |
+| Liens publics et Universal Links | `docs/specs/meetdo-public-links-backend-spec.md` |
 | Contrats et échanges avec le client | `docs/specs/PROMPT_*.md`, `docs/specs/REPONSE_*.md` |
 | Guide frontend | `docs/FRONTEND_SPEC.md`, `docs/FRONTEND_DATABASE_GUIDE.md` |
 | Déploiement Railway | `RAILWAY_ENV_VARS.md`, `QUICK_START_RAILWAY.md`, `docs/deployment/` |
