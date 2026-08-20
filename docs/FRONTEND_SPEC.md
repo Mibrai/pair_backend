@@ -420,11 +420,18 @@ Deux différences avec les créneaux :
   page, qui dit « aucune séance annoncée » : son auteur peut en reprogrammer une. Ce qui
   éteint la page, c'est l'archivage, la dépublication, ou `shareable = false`.
 
-> ⚠️ **Un point à vérifier de votre côté.** Le bouton de la page vise
-> `meetdo://programs/{jeton}`, alors que `deep_links.dart` traite aujourd'hui
-> `meetdo://programs/42` — un **identifiant**, pas un jeton. Le bouton n'ouvrira
-> correctement l'application que si cet hôte accepte aussi un jeton. C'est le seul point de
-> la livraison qui dépend de vous.
+**Les deux réponses publiques portent l'identifiant de la ressource partagée** :
+`GET /public/programs/{jeton}` rend `programId`, `GET /public/slots/{jeton}` rend
+`scheduleId`. C'est ce qui permet d'ouvrir la fiche interne après avoir résolu le jeton ;
+sans lui, le lien ouvrait l'application et la laissait où elle était.
+
+Ce que ces réponses ne portent pas, et ne porteront pas : les identifiants de **tiers** —
+organisateur, participants, conversation. Et l'identifiant n'apparaît **jamais dans une
+adresse** : `/p/{uuid}` et `/s/{uuid}` rendent `404`, c'est le jeton qui adresse.
+
+> **`shortUrl` est l'adresse à partager.** `pageUrl` désigne la même page à son adresse
+> longue, et rend du HTML dans les deux cas — une version antérieure pointait, pour les
+> programmes, sur la route JSON.
 
 Les motifs `/p/*` et `/public/programs/*` ont été ajoutés à
 `apple-app-site-association` **dans le même commit** : iOS ignore en silence ce que ce
