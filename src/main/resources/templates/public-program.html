@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html th:lang="${lang}" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title th:text="${program.title} + ' — meetDo'">meetDo</title>
+
+    <!-- Les métadonnées d'aperçu sont la raison d'être de cette page. Sans
+         elles, un lien collé dans une messagerie reste une URL nue et ne
+         convertit pas. th:content échappe les valeurs saisies par
+         l'utilisateur : un titre contenant une apostrophe casserait sinon
+         l'attribut, et avec lui tout l'aperçu. -->
+    <meta property="og:type"        content="website">
+    <meta property="og:site_name"   content="meetDo">
+    <meta property="og:title"       th:content="${program.title}">
+    <meta property="og:description" th:content="${ogDescription}">
+    <meta property="og:url"         th:content="${ogUrl}">
+    <!-- og:image n'est jamais nul : à défaut de photo, la vignette dessinée par
+         PublicSlotCover. Un aperçu sans visuel s'affiche comme deux lignes
+         grises, à peu près indiscernables d'un lien mort — et cet aperçu est la
+         seule raison d'être de cette page. -->
+    <meta property="og:image"       th:content="${ogImage}">
+    <meta property="og:image:width"  content="1200">
+    <meta property="og:image:height" content="630">
+    <meta property="og:locale"      th:content="${lang}">
+    <meta name="twitter:card"       content="summary_large_image">
+    <meta name="twitter:title"      th:content="${program.title}">
+    <meta name="twitter:description" th:content="${ogDescription}">
+    <meta name="twitter:image"      th:content="${ogImage}">
+
+    <!-- Le canonique désigne l'adresse courte, celle qu'on partage réellement :
+         la même page est joignable par /public/slots/{token}/page, et deux URL
+         pour un même contenu divisent les signaux d'un moteur de recherche. -->
+    <link rel="canonical" th:href="${ogUrl}">
+
+    <style>
+        :root { color-scheme: light dark; }
+        body {
+            margin: 0; padding: 2rem 1.25rem;
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            line-height: 1.55; color: #16191c; background: #f5f6f7;
+        }
+        .card {
+            max-width: 32rem; margin: 0 auto; background: #fff;
+            border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.09);
+        }
+        .cover { display: block; width: 100%; height: auto; }
+        .body { padding: 1.75rem; }
+        .eyebrow {
+            font-size: .75rem; text-transform: uppercase; letter-spacing: .07em;
+            color: #6b757d; margin: 0 0 .4rem;
+        }
+        h1 { font-size: 1.3rem; margin: 0 0 1rem; font-weight: 600; }
+        dl { margin: 0 0 1.5rem; display: grid; grid-template-columns: auto 1fr; gap: .55rem 1.25rem; }
+        dt { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: #6b757d; }
+        dd { margin: 0; font-weight: 500; }
+        .welcome { margin: 0 0 1.5rem; color: #3d474e; font-style: italic; }
+        .cta {
+            display: block; text-align: center; text-decoration: none;
+            background: #14607f; color: #fff; font-weight: 600;
+            padding: .85rem 1rem; border-radius: 8px;
+        }
+        .cta:focus-visible { outline: 3px solid #14607f; outline-offset: 3px; }
+        .hint {
+            margin: .75rem 0 0; text-align: center;
+            font-size: .8rem; color: #6b757d;
+        }
+        .links {
+            margin: 1.25rem 0 0; text-align: center;
+            font-size: .85rem; color: #6b757d;
+        }
+        .links a { color: #14607f; }
+        @media (prefers-color-scheme: dark) {
+            body { background: #101315; color: #e6e9ea; }
+            .card { background: #181c1f; box-shadow: none; }
+            .eyebrow, dt, .hint, .links { color: #8d979e; }
+            .links a { color: #6eb4d2; }
+            .welcome { color: #b3bdc3; }
+            .cta { background: #6eb4d2; color: #0e1113; }
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <img class="cover" th:src="${ogImage}" alt="">
+    <div class="body">
+        <p class="eyebrow">
+            <span th:text="${program.activityName}">Yoga</span><span
+                th:if="${program.categoryName}" th:text="' · ' + ${program.categoryName}"></span>
+        </p>
+        <h1 th:text="${program.title}">Yoga du samedi</h1>
+
+        <dl>
+            <dt th:text="${t.when}">Quand</dt>
+            <!-- Un programme peut n'avoir aucune séance à venir sans être périmé :
+                 son auteur peut en reprogrammer une. La page le dit honnêtement
+                 plutôt que de faire disparaître le lien. -->
+            <dd th:if="${when}" th:text="${when}">samedi 14 juin, 9h00</dd>
+            <dd th:unless="${when}" th:text="${t.sessions}">Aucune séance annoncée</dd>
+
+            <dt th:if="${program.placeName}" th:text="${t.where}">Où</dt>
+            <dd th:if="${program.placeName}">
+                <span th:text="${program.placeName}">Studio Lumière</span><span
+                    th:if="${program.city}" th:text="', ' + ${program.city}"></span></dd>
+
+            <dt th:text="${t.who}">Participants</dt>
+            <dd><span th:text="${t.enrolled}">3 inscrits</span><span
+                    th:if="${program.maxParticipants}" th:text="' / ' + ${program.maxParticipants}"></span>
+                <span th:if="${t.host}" th:text="' — ' + ${t.host}"></span><span
+                    th:if="${program.organizerVerified}" title="Compte vérifié"> ✓</span></dd>
+        </dl>
+
+        <p class="welcome" th:if="${program.description}" th:text="${program.description}"></p>
+
+        <!-- Même bouton que la page de créneau, et pour la même raison : il vise
+             le schéma propre à l'application, qui fonctionne aujourd'hui, et non
+             l'adresse de cette page — un lien vers le domaine où le navigateur se
+             trouve déjà n'ouvre pas l'application. -->
+        <a class="cta" th:href="${appLink}" th:text="${t.cta}">Ouvrir dans meetDo</a>
+        <p class="hint" th:text="${t.hint}"></p>
+
+        <p class="links">
+            <a href="https://meetdo.fun" th:text="${t.about}">Qu'est-ce que meetDo ?</a>
+        </p>
+    </div>
+</div>
+</body>
+</html>

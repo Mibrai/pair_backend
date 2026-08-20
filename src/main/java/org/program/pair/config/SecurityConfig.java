@@ -79,10 +79,29 @@ public class SecurityConfig {
                 // courte qu'on partage réellement.
                 .requestMatchers(HttpMethod.GET, "/public/slots/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/s/**").permitAll()
+                // Page publique de programme : mêmes adresses, même contrat.
+                // Un programme partagé arrivait sinon en « meetdo://programs/42 »,
+                // qu'aucune messagerie ne rend cliquable.
+                .requestMatchers(HttpMethod.GET, "/public/programs/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/p/**").permitAll()
                 // Fichiers d'association des liens universels. Ouverts sans
                 // condition : Apple et Google les lisent sans identité, et une
                 // redirection suffirait à faire échouer la validation.
                 .requestMatchers(HttpMethod.GET, "/.well-known/**").permitAll()
+                // HEAD, sur tout ce qui précède.
+                //
+                // Signalé par l'équipe mobile le 2026-08-20 : HEAD retombait sur
+                // anyRequest().authenticated() et rendait 401 là où GET rend 200,
+                // les règles ci-dessus ne nommant que GET. Rien n'était cassé —
+                // Apple et les robots d'aperçu font des GET — mais tout diagnostic
+                // mené en « curl -I » concluait que la page était protégée, et
+                // faisait chercher au mauvais endroit. Leur propre document en
+                // donne la preuve : il déduisait d'un 401 que la route de
+                // programme était absente, alors qu'elle aurait rendu 401 même en
+                // existant.
+                .requestMatchers(HttpMethod.HEAD,
+                    "/", "/public/safety/**", "/public/slots/**", "/s/**",
+                    "/public/programs/**", "/p/**", "/.well-known/**").permitAll()
                 // Tout le reste : authentifié
                 .anyRequest().authenticated()
             )

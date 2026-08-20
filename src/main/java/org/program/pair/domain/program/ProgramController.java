@@ -35,6 +35,7 @@ public class ProgramController {
     private final StorageService storageService;
     private final MediaValidator mediaValidator;
     private final ImageProcessor imageProcessor;
+    private final org.program.pair.domain.publicslot.PublicProgramService publicProgramService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -193,5 +194,42 @@ public class ProgramController {
         @Override public byte[] getBytes() throws IOException { return inputStream.readAllBytes(); }
         @Override public InputStream getInputStream() { return inputStream; }
         @Override public void transferTo(java.io.File dest) throws IOException { throw new UnsupportedOperationException(); }
+    }
+
+    /**
+     * L'adresse publique de ce programme, créée à la première demande.
+     *
+     * <p>Réservée à l'organisateur, là où celle d'un créneau s'ouvre à tous ses
+     * participants : partager une séance qu'on a rejointe est un geste ordinaire,
+     * mais un programme n'appartient qu'à son auteur, et c'est lui qui décide
+     * s'il existe sur le web ouvert.
+     *
+     * <p>{@code 404} pour quiconque d'autre, jamais {@code 403}.
+     */
+    @GetMapping("/{programId}/share-link")
+    @io.swagger.v3.oas.annotations.Operation(
+        summary = "L'adresse publique de ce programme.",
+        description = "Créée à la première demande — un programme que personne n'a jamais "
+            + "partagé n'a pas besoin d'adresse publique. pageUrl est à lire tel quel, "
+            + "sans le recomposer.")
+    public org.program.pair.domain.publicslot.dto.PublicShareLinkDto shareLink(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID programId) {
+        return publicProgramService.shareLink(principal.getId(), programId);
+    }
+
+    @PatchMapping("/{programId}/shareable")
+    @io.swagger.v3.oas.annotations.Operation(
+        summary = "Ouvre ou ferme le partage public de ce programme.",
+        description = "Le jeton n'est jamais effacé ni régénéré : refermer suffit à ce que "
+            + "le lien ne mène plus nulle part, et rouvrir rend valides les liens déjà "
+            + "partagés. 404 pour qui n'est pas l'organisateur.")
+    public org.program.pair.domain.publicslot.dto.PublicShareLinkDto setShareable(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID programId,
+            @Valid @RequestBody
+                org.program.pair.domain.publicslot.dto.SetShareableRequest request) {
+        return publicProgramService.setShareable(
+            principal.getId(), programId, request.isPubliclyShareable());
     }
 }

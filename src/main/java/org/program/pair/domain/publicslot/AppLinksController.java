@@ -45,6 +45,15 @@ public class AppLinksController {
      * n'accepte ni l'un ni l'autre écart. Les chemins ouverts sont limités à ce
      * que la page publique utilise.
      *
+     * <p><b>Tout motif absent de ce fichier est ignoré en silence par iOS.</b>
+     * Livrer une adresse publique sans l'y déclarer donne une route qui répond,
+     * une page qui s'affiche, et un lien qui n'ouvre jamais l'application — une
+     * livraison qui paraît faite. Les motifs de programme y ont été ajoutés le
+     * 2026-08-20, en même temps que les routes.
+     *
+     * <p>Apple sert ce fichier depuis son propre CDN et les appareils le gardent :
+     * une mise à jour n'est pas instantanée pour les installations existantes.
+     *
      * <p><b>Format {@code appIDs}/{@code components}</b>, celui d'iOS 13 et
      * au-delà, et non l'ancien couple {@code appID}/{@code paths}. Les deux
      * fonctionnent encore, mais seul le récent accepte un {@code comment} — un
@@ -65,7 +74,9 @@ public class AppLinksController {
                     "appIDs": ["%s.%s"],
                     "components": [
                       { "/": "/s/*", "comment": "Pages publiques de créneau" },
-                      { "/": "/public/slots/*", "comment": "JSON et image d'aperçu" }
+                      { "/": "/p/*", "comment": "Pages publiques de programme" },
+                      { "/": "/public/slots/*", "comment": "JSON et image d'aperçu, créneau" },
+                      { "/": "/public/programs/*", "comment": "JSON et image d'aperçu, programme" }
                     ]
                   }
                 ]
