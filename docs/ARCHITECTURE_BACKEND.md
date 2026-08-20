@@ -938,6 +938,7 @@ Relevés à la lecture du code, sans jugement sur leur priorité :
 |---|---|
 | Schéma détaillé colonne par colonne | `docs/DATABASE_SCHEMA.md` — **seule source**, relevée par introspection |
 | Feuille de route livrée | `docs/specs/backend-todo-v2.md` (phases A à D) |
+| Ce qui a été livré les 19–20 août, et **ce qui a été trouvé** | [`JOURNAL_2026-08-19_20.md`](JOURNAL_2026-08-19_20.md) |
 | Liens publics et Universal Links | `docs/specs/meetdo-public-links-backend-spec.md` |
 | Contrats et échanges avec le client | `docs/specs/PROMPT_*.md`, `docs/specs/REPONSE_*.md` |
 | Guide frontend | `docs/FRONTEND_SPEC.md`, `docs/FRONTEND_DATABASE_GUIDE.md` |
