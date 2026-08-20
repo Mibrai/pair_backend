@@ -1,18 +1,23 @@
 # Schéma de la base de données — Pair / MeetDo
 
-> **Relevé le 18 août 2026** par introspection de l'instance PostgreSQL, et non déduit des
-> fichiers de migration : ce document décrit les tables telles qu'elles existent après
-> application des **58 migrations Flyway** (jusqu'à `V59__user_activity_category_announcement.sql`).
+> **Relevé le 20 août 2026** par introspection, et non déduit des fichiers de migration :
+> ce document décrit les tables telles qu'elles existent après application des
+> **76 migrations Flyway** (jusqu'à `V77__trigram_search.sql`).
 > Vue d'ensemble de l'application : [`ARCHITECTURE_BACKEND.md`](ARCHITECTURE_BACKEND.md).
+>
+> Relevé précédent : 18 août 2026, arrêté à `V59`. Les dix-huit migrations posées depuis
+> — phases A à D du TODO v2, puis la spécification des liens publics — ajoutent six tables
+> et une trentaine de colonnes. Les sections marquées *(nouveau)* n'existaient pas dans la
+> version précédente de ce document.
 
-Extensions activées : **uuid-ossp**, **PostGIS 3.4** (géolocalisation), **pgvector**
-(recherche sémantique). Toutes les clés primaires sont des `UUID` avec
-`DEFAULT gen_random_uuid()`, et toutes les colonnes temporelles sont des `TIMESTAMPTZ` —
-à une exception près, signalée en section 14.
+Extensions activées : **uuid-ossp**, **PostGIS 3.6** (géolocalisation), **pgvector**
+(recherche sémantique) et **pg_trgm** *(nouveau, V77 — tolérance aux fautes de frappe)*.
+Toutes les clés primaires sont des `UUID` avec `DEFAULT gen_random_uuid()`, et toutes les
+colonnes temporelles sont des `TIMESTAMPTZ` — à une exception près, signalée en section 23.
 
 ---
 
-## Vue d'ensemble — les 33 tables applicatives
+## Vue d'ensemble — les 39 tables applicatives
 
 | Table | Rôle |
 |---|---|
@@ -49,6 +54,12 @@ Extensions activées : **uuid-ossp**, **PostGIS 3.4** (géolocalisation), **pgve
 | `search_logs` | Historique des recherches |
 | `reports` | Signalements (utilisateur, programme, message) |
 | `audit_logs` | Traçabilité RGPD |
+| `user_blocks` | Blocages entre comptes, bilatéraux à la lecture *(nouveau, V62)* |
+| `slot_safety_shares` | Liens de sécurité vers un proche, périssables *(nouveau, V63)* |
+| `slot_invitations` | Invitations nominatives ou par code à un créneau *(nouveau, V66)* |
+| `user_languages` | Langues parlées et niveau déclaré *(nouveau, V71)* |
+| `schedule_accessibility_tags` | Conditions d'accueil annoncées d'un créneau *(nouveau, V72)* |
+| `user_availability` | Grille des disponibilités habituelles *(nouveau, V73)* |
 
 ---
 
@@ -62,6 +73,9 @@ categories
     │       │       │       ├── schedules                         │
     │       │       │       │       ├── slot_participations       │
     │       │       │       │       ├── attendances               │
+    │       │       │       │       ├── slot_safety_shares        │
+    │       │       │       │       ├── slot_invitations          │
+    │       │       │       │       ├── schedule_accessibility_tags
     │       │       │       │       └── slot_recaps               │
     │       │       │       │               ├── recap_vibe_votes  │
     │       │       │       │               └── recap_participant_consents
@@ -82,6 +96,8 @@ users ────────────────────────�
     ├── notifications · notification_prefs · device_tokens
     ├── subscriptions (cible AUTHOR)
     ├── activity_alerts · progressions · search_logs
+    ├── user_blocks (blocker_id et blocked_id, deux fois vers users)
+    ├── user_languages · user_availability
     └── reports · audit_logs
 ```
 
@@ -124,17 +140,41 @@ users
 ├── show_on_map             BOOLEAN DEFAULT FALSE
 ├── allow_subscriptions     VARCHAR(20) NOT NULL DEFAULT 'OPEN'  CHECK OPEN|NOBODY   (V58)
 │
-│   ── compteurs de confiance, dénormalisés (V41) ──
+│   ── compteurs de confiance, dénormalisés (V41 · V69) ──
 ├── distinct_partners_count INTEGER NOT NULL DEFAULT 0   ← partenaires différents rencontrés
 ├── attendance_count        INTEGER NOT NULL DEFAULT 0   ← présences confirmées
 ├── current_streak_weeks    INTEGER NOT NULL DEFAULT 0   ← série de semaines actives
-└── last_attendance_at      TIMESTAMPTZ
+├── last_attendance_at      TIMESTAMPTZ
+├── joined_slots_count      INTEGER NOT NULL DEFAULT 0   ← dénominateur du signal (V69)
+│
+│   ── parcours d'accueil (V60 · V74) ──
+├── onboarding_step         VARCHAR(30)        ACTIVITIES|LEVELS|LOCATION|PREVIEW
+├── onboarding_completed_at TIMESTAMPTZ                  ← une date, jamais un booléen
+│
+│   ── règles de communauté (V64) ──
+├── guidelines_version      VARCHAR(10)
+├── guidelines_accepted_at  TIMESTAMPTZ
+│
+│   ── heures de silence (V76) ──
+├── quiet_hours_start       SMALLINT   0–23, NULL = désactivé
+└── quiet_hours_end         SMALLINT   0–23  CHECK les deux ou aucun, et différents
 ```
 
-Les quatre compteurs sont recalculés par `PracticeStatsService` après chaque confirmation
-de présence. **Trois contraintes `CHECK`** verrouillent `profile_visibility`,
-`allow_messages` et `allow_subscriptions` : ce sont les seules colonnes « enum » du schéma
-protégées au niveau base.
+Les cinq compteurs sont recalculés par `PracticeStatsService` après chaque confirmation
+de présence. `joined_slots_count` est le **dénominateur** du signal de fiabilité, et
+`attendance_count` son numérateur ; le rapport n'est jamais exposé, seul un libellé
+qualitatif l'est.
+
+**Quatre contraintes `CHECK`** verrouillent `profile_visibility`, `allow_messages`,
+`allow_subscriptions` et les heures de silence : ce sont les seules colonnes « enum » ou
+bornées du schéma protégées au niveau base. Celle des heures de silence impose que les deux
+bornes soient posées ensemble et différentes — une fenêtre à moitié définie ne décrit rien,
+et deux bornes égales se lisent aussi bien « une minute » que « toute la journée ».
+
+**Pas de fuseau sur les heures de silence** : c'est celui de l'appareil
+(`device_tokens.timezone`) qui décide, appareil par appareil, au moment de l'envoi. La
+fenêtre traverse minuit dans le cas courant — « 22 → 7 » — et se lit par
+`QuietHours`, jamais par une comparaison écrite à la main.
 
 **Index :** `idx_users_email`, `idx_users_last_active`, `idx_users_profile_visibility`,
 `idx_users_location` (GIST).
@@ -236,7 +276,8 @@ programs
 ├── image_url                 VARCHAR(500)                          (V37)
 │
 ├── allow_participant_messages BOOLEAN NOT NULL DEFAULT TRUE        (V52)
-└── subscribers_notified_at   TIMESTAMPTZ                           (V55)
+├── subscribers_notified_at   TIMESTAMPTZ                           (V55)
+└── created_via               VARCHAR(20) NOT NULL DEFAULT 'FULL'   ← FULL | QUICK   (V61)
 ```
 
 **Règle de navigation :** l'organisateur d'un programme s'obtient en remontant
@@ -247,8 +288,14 @@ programs
 programme ; `subscribers_notified_at` évite qu'un même programme notifie deux fois les
 abonnés de son auteur.
 
+`created_via` *(nouveau, V61)* distingue un programme rempli écran par écran d'un programme
+né d'un **créneau rapide**. Le second n'a ni description ni cadrage : sans ce drapeau, il
+s'affichait comme un programme mal rempli, et le client n'avait aucun moyen de distinguer un
+vide assumé d'un oubli.
+
 **Index :** `idx_programs_user_activity`, `idx_programs_status`, `idx_programs_archived`,
-`idx_programs_search_vector` (GIN), `idx_programs_embedding` (HNSW).
+`idx_programs_search_vector` (GIN), `idx_programs_embedding` (HNSW),
+`idx_programs_title_trgm` (GIN trigrammes, V77).
 
 ---
 
@@ -262,7 +309,7 @@ schedules
 ├── program_id            UUID → programs(id) CASCADE NOT NULL
 ├── place_name            VARCHAR(200) NOT NULL
 ├── place_type            VARCHAR(10) NOT NULL        ← PUBLIC | PRIVATE | ONLINE
-├── location              GEOMETRY(Point, 4326) NOT NULL   ← index GIST
+├── location              GEOMETRY(Point, 4326)            ← index GIST ; nullable depuis V61
 ├── address_public        VARCHAR(300)
 ├── city                  VARCHAR(120)                          (V40)
 ├── show_exact_address    BOOLEAN NOT NULL DEFAULT FALSE
@@ -280,7 +327,19 @@ schedules
 │
 ├── reminder_sent_for     TIMESTAMPTZ      ← occurrence déjà rappelée   (V50)
 ├── last_occurrence_start TIMESTAMPTZ      ← rollover récurrent          (V57)
-└── last_occurrence_end   TIMESTAMPTZ
+├── last_occurrence_end   TIMESTAMPTZ
+│
+│   ── partage public (V65) ──
+├── public_share_token    VARCHAR(22) UNIQUE   ← base62 opaque, jamais l'UUID interne
+├── is_publicly_shareable BOOLEAN NOT NULL DEFAULT TRUE
+├── public_view_count     INTEGER NOT NULL DEFAULT 0   ← robots d'aperçu exclus
+│
+│   ── annulation (V68) ──
+├── cancelled_at          TIMESTAMPTZ
+├── cancelled_by          UUID → users(id) SET NULL
+├── cancellation_reason   VARCHAR(300)
+│
+└── primary_language      VARCHAR(5)       ← langue annoncée de la séance   (V71)
 
 program_media
 ├── id          UUID PK
@@ -297,10 +356,26 @@ avancer `starts_at`/`ends_at` vers l'occurrence suivante toutes les 10 minutes, 
 `last_occurrence_start`/`last_occurrence_end` gardent la trace de celle qui vient de
 passer — c'est cette paire qui rattache une présence ou un recap à la bonne séance.
 
+**`location` est devenue nullable en V61**, pour le créneau en ligne, et une contrainte
+`CHECK (place_type = 'ONLINE' OR location IS NOT NULL)` a pris le relais de `NOT NULL` :
+une séance à distance n'a pas de point, tout le reste en a un.
+
+**Le jeton de partage n'est jamais rétro-rempli.** Un créneau que personne n'a partagé n'a
+pas d'adresse publique ; il en obtient une à la première demande. Refermer le partage
+(`is_publicly_shareable = FALSE`) **n'efface pas** le jeton : rouvrir doit rendre valides
+les liens déjà collés ailleurs, et un jeton neuf transformerait une pause en rupture
+définitive.
+
+**`public_view_count` exclut les robots d'aperçu**, reconnus au `User-Agent`. Ils sont la
+raison d'être de la page publique — leur visite fabrique la vignette — et un seul lien
+partagé dans un groupe en déclenche plusieurs avant que quiconque n'ait cliqué. L'incrément
+est un `UPDATE` atomique : deux ouvertures simultanées n'en comptaient qu'une.
+
 **Index :** `idx_schedules_program`, `idx_schedules_starts_at`, `idx_schedules_status`,
-`idx_schedules_open (is_open_to_partners, starts_at)`, `idx_schedules_location` (GIST), et
-l'index partiel `idx_schedules_reminder_sweep ON (starts_at) WHERE status IN ('OPEN','FULL')`,
-taillé pour le balayage du job de rappel.
+`idx_schedules_open (is_open_to_partners, starts_at)`, `idx_schedules_location` (GIST),
+`schedules_public_share_token_key` (unique), et l'index partiel
+`idx_schedules_reminder_sweep ON (starts_at) WHERE status IN ('OPEN','FULL')`, taillé pour
+le balayage du job de rappel.
 
 ---
 
@@ -350,7 +425,15 @@ slot_participations                    ← qui a rejoint quel créneau      (V40
 ├── status       VARCHAR(20) NOT NULL DEFAULT 'INTERESTED'
 │                  ← INTERESTED | CONFIRMED | DECLINED | WITHDRAWN
 ├── join_message VARCHAR(300)
-└── created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+├── created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+│
+│   ── liste d'attente (V67) ──
+├── status         … | WAITLISTED   ← le rang n'existe que dans cet état
+├── waitlist_position INTEGER
+├── promoted_at    TIMESTAMPTZ      ← passage de la file à la place
+├── withdrawn_at   TIMESTAMPTZ      ← désistement volontaire
+│
+└── attendance_closed_at TIMESTAMPTZ  ← fenêtre de présence refermée   (V70)
 
 attendances                            ← présence confirmée après coup   (V41)
 ├── id                UUID PK
@@ -366,6 +449,14 @@ attendances                            ← présence confirmée après coup   (V
 **Unique :** `slot_participations (schedule_id, user_id)` — une seule ligne par personne et
 par créneau ; `attendances (schedule_id, user_id, attended_at)` — **une par occurrence**,
 ce qui rend un créneau récurrent confirmable semaine après semaine.
+
+**Unique partiel *(nouveau, V67)* :** `(schedule_id, waitlist_position) WHERE status =
+'WAITLISTED'`. Le rang n'a de sens que dans la file : un partiel plutôt qu'un unique complet,
+sinon deux personnes promues garderaient des rangs qui se disputeraient la contrainte.
+
+**`attendance_closed_at` referme la fenêtre de présence** *(nouveau, V70)*. Un silence n'est
+pas une absence : passé le délai, la question ne se pose plus, et la ligne sort du
+dénominateur du signal de fiabilité au lieu d'y compter comme un « non ».
 
 Une double confirmation de présence sur le même créneau constitue la preuve d'interaction
 `SHARED_ATTENDANCE`, qui débloque la recommandation entre pairs (section 9).
@@ -440,7 +531,11 @@ conversation_members                   ← PK composite (conversation_id, user_i
 ├── conversation_id UUID → conversations(id) CASCADE NOT NULL
 ├── user_id         UUID → users(id) CASCADE NOT NULL
 ├── joined_at       TIMESTAMPTZ NOT NULL DEFAULT now()
-└── last_read_at    TIMESTAMPTZ        ← base du compteur « non lu »
+├── last_read_at    TIMESTAMPTZ        ← base du compteur « non lu »
+│
+│   ── confort de messagerie (V75) ──
+├── muted_at        TIMESTAMPTZ        ← en sourdine depuis cette date
+└── archived_at     TIMESTAMPTZ        ← rangé depuis cette date
 
 messages
 ├── id              UUID PK
@@ -452,7 +547,12 @@ messages
 ├── read_at         TIMESTAMPTZ
 ├── edited_at       TIMESTAMPTZ                           (V17)
 ├── deleted_at      TIMESTAMPTZ    ← suppression douce    (V17)
-└── image_url       VARCHAR(500)                          (V17)
+├── image_url       VARCHAR(500)                          (V17)
+│
+│   ── partage de position ponctuel (V75) ──
+├── location_lat        DOUBLE PRECISION
+├── location_lng        DOUBLE PRECISION
+└── location_expires_at TIMESTAMPTZ    ← 30 minutes au plus ; les trois ou aucune
 
 message_edit_history                                      (V17)
 ├── id               UUID PK
@@ -466,7 +566,27 @@ message_edit_history                                      (V17)
 — **un seul fil de diffusion par programme**, garanti en base et non par le code.
 
 **Index :** `idx_conv_last_message`, `idx_conversations_program`,
-`idx_messages_conversation|sender|sent_at`, `idx_edit_history_message|edited_at`.
+`idx_messages_conversation|sender|sent_at`, `idx_edit_history_message|edited_at`, et
+l'index partiel `idx_messages_location_expires ON (location_expires_at) WHERE
+location_expires_at IS NOT NULL`, taillé pour le balayage d'effacement.
+
+**Sourdine et archivage vivent sur l'appartenance**, pas sur la conversation : deux
+personnes d'un même fil n'ont aucune raison de le classer pareil. La sourdine coupe
+l'émission, pas la réception — le message arrive et compte dans le décompte du fil, il ne
+sonne plus. L'archivage ne se défait pas tout seul : un message reçu ne ressort pas le fil
+de l'archive, sinon ranger celui dont on veut se débarrasser n'aurait aucun effet.
+
+Les deux sortent du **total** de `/api/conversations/unread-count` sans sortir du décompte
+par fil : un badge d'icône annonce ce qui attend sur l'écran d'accueil, et pointer vers un
+fil délibérément tu ou rangé serait un nombre qu'on ne saurait pas d'où faire retomber.
+
+**Le partage de position est un message ordinaire**, et c'est toute la protection : il
+apparaît dans le fil, donc suivre quelqu'un reste visible de celui qu'on suit. Les
+coordonnées sont des flottants et non un point PostGIS — ce point n'est jamais interrogé
+spatialement, et lui donner un type géographique l'aurait rangé avec les données que le
+système interroge. **Un balayage efface les coordonnées échues** ; mais c'est la lecture qui
+fait foi, elle ne sert jamais un point expiré, y compris entre l'échéance et le passage
+suivant du job.
 
 ---
 
@@ -709,6 +829,146 @@ audit_logs
 
 ---
 
+### 16. Blocage entre comptes *(nouveau, V62)*
+
+**Table :** `user_blocks`
+
+```
+user_blocks
+├── id         UUID PK
+├── blocker_id UUID → users(id) CASCADE NOT NULL
+├── blocked_id UUID → users(id) CASCADE NOT NULL
+├── reason     VARCHAR(30)      ← facultatif, jamais montré au bloqué
+└── created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+```
+
+**Unique :** `(blocker_id, blocked_id)`, plus un `CHECK (blocker_id <> blocked_id)` : on ne
+se bloque pas soi-même.
+
+**La ligne est dirigée, la lecture est bilatérale.** Une seule ligne suffit à rendre les deux
+personnes invisibles l'une à l'autre — un masquage qui dépendrait du sens rendrait le
+blocage détectable par comparaison. Le prédicat est un `NOT EXISTS` sur les deux sens, écrit
+une fois dans `BlockSql` et concaténé dans les requêtes concernées.
+
+**Il n'y a pas de point de passage unique.** Le dépôt n'a ni aspect ni intercepteur métier,
+et un filtre Hibernate global serait inopérant, la plupart des requêtes concernées étant en
+SQL natif. Le filtrage descend donc dans chaque requête et **dans son `COUNT`** :
+post-filtrer casserait la pagination et ferait annoncer « Programmes (12) » puis en servir 9.
+
+---
+
+### 17. Lien de sécurité *(nouveau, V63)*
+
+**Table :** `slot_safety_shares`
+
+```
+slot_safety_shares
+├── id                   UUID PK
+├── user_id              UUID → users(id) CASCADE NOT NULL
+├── schedule_id          UUID → schedules(id) CASCADE NOT NULL
+├── share_token          VARCHAR(22) UNIQUE NOT NULL   ← base62 opaque
+├── expires_at           TIMESTAMPTZ NOT NULL
+├── occurrence_starts_at TIMESTAMPTZ NOT NULL          ← figée à la création
+├── occurrence_ends_at   TIMESTAMPTZ NOT NULL
+├── viewed_at            TIMESTAMPTZ
+└── created_at           TIMESTAMPTZ NOT NULL DEFAULT now()
+```
+
+**Les deux colonnes d'occurrence ne figuraient pas dans la spécification, et elles sont
+indispensables.** `RecurringSlotRolloverJob` fait avancer `schedules.starts_at` toutes les
+dix minutes : un lien qui lirait le créneau annoncerait la séance de la semaine suivante à
+un proche qui attend celle de ce soir. La date est donc **gelée** au moment du partage.
+
+La page est lisible **sans compte** : son destinataire est un proche qui n'a pas meetDo, et
+lui en demander un viderait la fonctionnalité de son sens. Toute la confidentialité repose
+sur le jeton, opaque et périssable.
+
+---
+
+### 18. Invitations à un créneau *(nouveau, V66)*
+
+**Table :** `slot_invitations`
+
+```
+slot_invitations
+├── id           UUID PK
+├── inviter_id   UUID → users(id) CASCADE NOT NULL
+├── schedule_id  UUID → schedules(id) CASCADE       ← nullable : invitation hors créneau
+├── invite_code  VARCHAR(22) UNIQUE NOT NULL
+├── invitee_id   UUID → users(id) SET NULL          ← renseigné à l'inscription
+├── created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+├── joined_at    TIMESTAMPTZ                        ← a rejoint le créneau
+└── converted_at TIMESTAMPTZ                        ← a créé un compte
+```
+
+Deux dates plutôt qu'un statut : rejoindre un créneau et créer un compte sont deux événements
+distincts, et l'un peut arriver sans l'autre. Le badge `HOST_INVITER` est semé par la même
+migration.
+
+---
+
+### 19. Langues parlées *(nouveau, V71)*
+
+**Table :** `user_languages` — PK composite `(user_id, language)`
+
+```
+user_languages
+├── user_id     UUID → users(id) CASCADE NOT NULL
+├── language    VARCHAR(5) NOT NULL     ← étiquette courte : fr, en, de
+└── proficiency VARCHAR(20) NOT NULL    ← NATIVE | FLUENT | CONVERSATIONAL | BASIC
+```
+
+**Le filtre de langue n'exclut jamais faute d'information.** Une langue non déclarée veut
+dire « on ne sait pas » : écarter le créneau punirait ceux qui n'ont rien rempli, qui sont la
+majorité. À comparer avec la section suivante, où le choix est inverse — et délibérément.
+
+---
+
+### 20. Accessibilité d'un créneau *(nouveau, V72)*
+
+**Table :** `schedule_accessibility_tags` — PK composite `(schedule_id, tag)`
+
+```
+schedule_accessibility_tags
+├── schedule_id UUID → schedules(id) CASCADE NOT NULL
+└── tag         VARCHAR(40) NOT NULL    ← étiquette de AccessibilityTag
+```
+
+**Ce filtre est restrictif, à l'inverse de celui des langues.** Une étiquette non déclarée
+veut dire « rien ne permet de l'affirmer », et afficher quand même le créneau enverrait
+quelqu'un en fauteuil vers un lieu dont personne n'a garanti l'accueil. Le coût de l'erreur
+n'est pas du même ordre dans les deux sens.
+
+Plusieurs étiquettes demandées **se cumulent** : qui filtre « accessible en fauteuil » ET
+« sans alcool » a besoin des deux.
+
+**Index :** `idx_schedule_accessibility_tag` — le filtre entre par l'étiquette, pas par le
+créneau.
+
+---
+
+### 21. Disponibilités habituelles *(nouveau, V73)*
+
+**Table :** `user_availability` — PK composite `(user_id, day_of_week, time_slot)`
+
+```
+user_availability
+├── user_id     UUID → users(id) CASCADE NOT NULL
+├── day_of_week SMALLINT NOT NULL  CHECK 1–7    ← numérotation ISO, celle d'EXTRACT(ISODOW)
+└── time_slot   VARCHAR(20) NOT NULL            ← MORNING | AFTERNOON | EVENING | NIGHT
+```
+
+**Cette table ne filtre rien.** Une disponibilité déclarée est une habitude, pas un
+engagement : qui a coché « mardi soir » peut vouloir un samedi matin, et masquer le reste lui
+cacherait ce qu'il cherchait ce jour-là. La pondération vit dans l'`ORDER BY` du fil, jamais
+dans son `WHERE`, et ne joue **qu'entre créneaux du même jour** — la chronologie n'est jamais
+bousculée.
+
+Aucun index supplémentaire : la requête entre toujours par utilisateur, et la clé primaire
+suffit.
+
+---
+
 ## Clés étrangères — politique de suppression
 
 La règle générale est **`ON DELETE CASCADE`** : supprimer un utilisateur emporte ses
@@ -755,12 +1015,13 @@ suppression en cascade. La suppression de compte passe donc par l'anonymisation
 | **GIST** (spatial) | `users(location)`, `schedules(location)`, `activity_alerts(location)` |
 | **HNSW** (`vector_cosine_ops`, `m=16`, `ef_construction=64`) | `activities(embedding)`, `programs(embedding)`, `search_logs(query_embedding)` |
 | **GIN** (plein texte) | `programs(search_vector)` |
-| **Uniques partiels** | `uq_sub_author`, `uq_sub_user_activity`, `uq_sub_category`, `uq_conversations_program_broadcast` |
-| **Partiel de balayage** | `idx_schedules_reminder_sweep ON schedules(starts_at) WHERE status IN ('OPEN','FULL')` |
+| **GIN** (trigrammes, V77) | `activities(name gin_trgm_ops)`, `programs(title gin_trgm_ops)` |
+| **Uniques partiels** | `uq_sub_author`, `uq_sub_user_activity`, `uq_sub_category`, `uq_conversations_program_broadcast`, `slot_participations(schedule_id, waitlist_position) WHERE status='WAITLISTED'` |
+| **Partiel de balayage** | `idx_schedules_reminder_sweep ON schedules(starts_at) WHERE status IN ('OPEN','FULL')`, `idx_messages_location_expires ON messages(location_expires_at) WHERE location_expires_at IS NOT NULL` |
 
 ---
 
-## 16. Valeurs d'énumération
+## 22. Valeurs d'énumération
 
 Toutes stockées en `VARCHAR` avec `@Enumerated(EnumType.STRING)` côté JPA. Sauf mention
 « CHECK », **aucune contrainte base ne les valide** : la source de vérité est l'énumération Java.
@@ -778,6 +1039,13 @@ Toutes stockées en `VARCHAR` avec `@Enumerated(EnumType.STRING)` côté JPA. Sa
 | `programs.preferred_time` | `MORNING` `AFTERNOON` `EVENING` `FLEXIBLE` | — |
 | `programs.location_type` | `REMOTE` `ONLINE` `IN_PERSON` `HYBRID` | — |
 | `program_media.media_type` | `IMAGE` `VIDEO` | — |
+| `programs.created_via` *(V61)* | `FULL` `QUICK` | `FULL` |
+| `users.onboarding_step` *(V60 · V74)* | `ACTIVITIES` `LEVELS` `LOCATION` `PREVIEW` | — |
+| `schedules.primary_language` *(V71)* | `fr` `en` `de` — étiquette courte, minuscules | — |
+| `user_languages.proficiency` *(V71)* | `NATIVE` `FLUENT` `CONVERSATIONAL` `BASIC` | — |
+| `user_availability.time_slot` *(V73)* | `MORNING` `AFTERNOON` `EVENING` `NIGHT` | — |
+| `schedule_accessibility_tags.tag` *(V72)* | `WHEELCHAIR_ACCESSIBLE` `NO_ALCOHOL` `FAMILY_FRIENDLY` `FREE_OF_CHARGE` `BEGINNER_WELCOME` … | — |
+| `user_blocks.reason` *(V62)* | libre, facultatif — jamais montré au bloqué | — |
 | `schedules.place_type` | `PUBLIC` `PRIVATE` `ONLINE` | — |
 | `schedules.status` | `OPEN` `FULL` `CANCELLED` `PAST` | `OPEN` |
 | `slot_participations.status` | `INTERESTED` `CONFIRMED` `DECLINED` `WITHDRAWN` | `INTERESTED` |
@@ -811,7 +1079,7 @@ Toutes stockées en `VARCHAR` avec `@Enumerated(EnumType.STRING)` côté JPA. Sa
 
 ---
 
-## 17. Divergences relevées entre la base et le code
+## 23. Divergences relevées entre la base et le code
 
 Constatées en comparant les valeurs réellement stockées aux énumérations Java. Aucune n'est
 bloquante aujourd'hui, mais chacune est un piège pour qui écrit une requête directe.
@@ -828,7 +1096,11 @@ bloquante aujourd'hui, mais chacune est un piège pour qui écrit une requête d
 
 ---
 
-## 18. Reproduire ce relevé
+## 24. Reproduire ce relevé
+
+Deux voies, et la seconde ne demande aucune instance à part.
+
+**Sur une base démarrée** — les requêtes qui ont servi aux deux relevés :
 
 ```bash
 # Tables et colonnes
@@ -856,6 +1128,17 @@ docker exec pair-postgres psql -U pair_user -d pair_db -c "
   SELECT version, description, installed_on FROM flyway_schema_history
   ORDER BY installed_rank DESC LIMIT 5;"
 ```
+
+**Sans instance démarrée**, ce qui est le cas courant en développement : les mêmes requêtes
+depuis un test d'intégration jetable étendant `AbstractIntegrationTest`, dont le conteneur
+vient d'appliquer toutes les migrations. C'est la méthode utilisée pour le relevé du
+20 août 2026 — un `JdbcTemplate`, les cinq requêtes ci-dessus, une écriture sur disque, puis
+suppression du test. Elle a l'avantage de décrire ce que les migrations produisent
+réellement, et non ce qu'une instance particulière a accumulé.
+
+> Ce document se périme à chaque migration. Le refaire coûte dix minutes ; le déduire à la
+> main des fichiers de migration coûte plus cher et se trompe — c'est ainsi que le relevé
+> précédent est resté figé à `V59` pendant dix-huit migrations.
 
 ---
 
