@@ -1,8 +1,8 @@
 # Backend MeetDo / Pair — structure, fonctionnalités et base de données
 
-> État du dépôt au **20 août 2026**, branche `master` (dernier commit `fb188c8`).
+> État du dépôt au **20 août 2026**, branche `master` (dernier commit `e2a1a95`).
 > Ce document décrit ce que le code fait *aujourd'hui*, pas ce qui est prévu.
-> **76 migrations Flyway** (dernière : `V77__trigram_search.sql`).
+> **77 migrations Flyway** (dernière : `V78__public_program_sharing.sql`).
 >
 > Relevé précédent : 18 août 2026, arrêté à `V59`. Les phases A à D du TODO v2 et la
 > spécification des liens publics ont été livrées entre les deux — six tables, une
@@ -19,15 +19,15 @@
 | Framework | Spring Boot **4.1.0** |
 | Langage | Java (`java.version` = 17 dans le POM ; image de build et d'exécution en **Temurin 21**) |
 | Base | PostgreSQL 16 + **PostGIS 3.6** + **pgvector** + `uuid-ossp` + **pg_trgm** |
-| Migrations | Flyway (`db/migration`, V1 → V77) |
+| Migrations | Flyway (`db/migration`, V1 → V78) |
 | Temps réel | WebSocket / STOMP (SockJS en repli) |
 | Sécurité | Spring Security stateless + JWT (JJWT 0.12.3), BCrypt (force 12) |
 | Recherche | Plein texte PostgreSQL (`tsvector`) + embeddings locaux **DJL / ONNX Runtime** (modèle trilingue FR/EN/DE), plus une taxonomie déterministe |
 | Push | Firebase Admin SDK (activable ; implémentation `NoOp` sinon) |
 | E-mail | SMTP (`spring-boot-starter-mail`) en local, **Resend** via API en production |
 | Docs API | springdoc-openapi (`/swagger-ui.html`, `/v3/api-docs`) |
-| Volume | ~35 000 lignes de Java applicatif, ~21 900 lignes de tests, **218 endpoints HTTP** + 2 destinations STOMP, **104 classes de test** (744 tests), **39 tables** |
-| Pages web | Thymeleaf — page publique de créneau, lien de sécurité, et les deux fichiers d'association d'applications |
+| Volume | ~35 600 lignes de Java applicatif, ~22 200 lignes de tests, **225 endpoints HTTP** + 2 destinations STOMP, **105 classes de test** (758 tests), **39 tables** |
+| Pages web | Thymeleaf — pages publiques de créneau et de programme, lien de sécurité, et les deux fichiers d'association d'applications |
 
 Le backend sert une application mobile/web de mise en relation autour d'activités
 pratiquées **au même endroit et au même moment** : un utilisateur déclare ses activités,
@@ -129,12 +129,21 @@ Tout est authentifié **sauf** : `/`, les six routes d'authentification listées
 `GET /api/recommendations/stats/**`, `GET /api/reviews/programs/**`.
 
 **Les pages web ouvertes**, ajoutées avec le partage : `GET /public/safety/**`,
-`GET /public/slots/**`, `GET /s/**` et `GET /.well-known/**`. Elles n'ont pas d'appelant
+`GET /public/slots/**`, `GET /s/**`, `GET /public/programs/**`, `GET /p/**` et
+`GET /.well-known/**` — plus **`HEAD` sur les mêmes**, voir ci-dessous. Elles n'ont pas d'appelant
 identifié et n'en veulent pas : le destinataire d'un lien de sécurité est un proche qui n'a
 pas de compte meetDo, et lui en demander un viderait la fonctionnalité de son sens. Toute
 la confidentialité repose sur le **jeton**, opaque et périssable. Les fichiers
 `/.well-known` sont ouverts sans condition parce qu'Apple et Google les lisent sans
 identité, et qu'une simple redirection suffirait à faire échouer la validation.
+
+**`HEAD` a été ajouté le 20 août 2026**, et l'omission valait pour toutes ces routes. Les
+règles ne nommaient que `GET`, donc `HEAD` retombait sur `anyRequest().authenticated()` et
+rendait `401` là où `GET` rend `200`. Rien n'était cassé — Apple et les robots d'aperçu font
+des `GET` — mais tout diagnostic mené en `curl -I` concluait que la page était protégée. Le
+défaut a été signalé par l'équipe mobile, dont le document en portait lui-même la
+conséquence : il déduisait d'un `401` qu'une route était absente, alors qu'elle aurait rendu
+`401` même en existant.
 
 **`GET /api/map/activities` a quitté cette liste le 20 août 2026.** Elle était ouverte,
 héritée d'un temps où la carte servait de vitrine ; l'équipe mobile a vérifié route par
@@ -314,6 +323,7 @@ Trois mécaniques valent d'être signalées :
 
 ```
 POST   /api/programs                    ·  GET /api/programs   ·  GET /api/programs/new
+GET    /api/programs/{id}/share-link    ·  PATCH /api/programs/{id}/shareable
 GET    /api/programs/{id}               ·  PUT/PATCH/DELETE /api/programs/{id}
 POST   /api/programs/{id}/duplicate
 POST   /api/programs/{id}/image/upload  ·  DELETE /api/programs/{id}/image
@@ -352,6 +362,16 @@ Quatre mécaniques ajoutées depuis :
   coûte un déplacement pour rien. Un créneau annulé perd aussi sa page publique.
 - **Partage et invitations** — jeton base62 opaque de 22 caractères (`ShareToken`), jamais
   l'UUID interne, créé à la première demande et jamais régénéré ensuite.
+
+**Les programmes se partagent aussi** *(V78)*, sur exactement le même contrat : mêmes jetons,
+même `PublicShareLinkDto`, même refus en `404`, même page rendue par le serveur. Un programme
+partagé arrivait sinon en `meetdo://programs/42`, qu'aucune messagerie ne rend cliquable.
+
+Deux écarts assumés avec les créneaux. Les conditions de visibilité n'ont **pas** de borne de
+temps — un programme n'est pas une occurrence, et sans séance à venir sa page dit « aucune
+séance annoncée » plutôt que de disparaître. Et le lien est réservé à l'**organisateur**, là
+où celui d'un créneau s'ouvre à ses participants : partager une séance qu'on a rejointe est un
+geste ordinaire, décider qu'un programme existe sur le web ouvert ne l'est pas.
 
 ### 4.4 Présence et statistiques (`domain/attendance`)
 
@@ -754,7 +774,7 @@ location_expires_at IS NOT NULL`, pour celui de l'effacement des positions.
 
 ### 6.6 Historique des migrations
 
-76 fichiers appliqués. Quatre périodes se lisent dans la numérotation :
+77 fichiers appliqués. Quatre périodes se lisent dans la numérotation :
 
 - **V1 → V15** — mise en place du schéma (extensions, utilisateurs, catalogue, programmes,
   messagerie, confiance, notifications, modération, audit).
@@ -771,7 +791,7 @@ location_expires_at IS NOT NULL`, pour celui de l'effacement des positions.
   public (`V65`), invitations (`V66`), liste d'attente (`V67`), annulation (`V68`), signal de
   fiabilité (`V69`), fermeture de la fenêtre de présence (`V70`), langues (`V71`),
   accessibilité (`V72`), disponibilités (`V73`), confort de messagerie (`V75`), heures de
-  silence (`V76`), trigrammes (`V77`).
+  silence (`V76`), trigrammes (`V77`), partage public de programme (`V78`).
 
 Configuration Flyway notable : `baseline-on-migrate=true`, `validate-on-migrate=false` et
 `repair-on-migrate=true` — tolérant, au prix d'une détection plus faible des dérives.
@@ -815,7 +835,7 @@ d'échec sur la seule page censée donner envie.
 
 ## 8. Tests
 
-**104 classes de test**, ~21 900 lignes, **744 tests**.
+**105 classes de test**, ~22 200 lignes, **758 tests**.
 
 - **Tests unitaires** — un par service dans `domain/<domaine>/`, sur Mockito.
 - **Tests d'intégration** — `src/test/.../integration/`, adossés à

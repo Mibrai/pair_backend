@@ -6,6 +6,9 @@
 > conversations closes n'y figurent plus : ce fichier ne contient que ce qui est **encore
 > ouvert** au 20 août 2026.
 >
+> **Mis à jour le 20 août au soir**, après la livraison du partage public de programme : un
+> point s'ajoute (n° 5), un autre se referme (le verbe `HEAD`).
+>
 > **Trois niveaux.** ⛔ bloque une fonctionnalité livrée · ⚠️ décidé par défaut, à confirmer
 > ou à renverser · ℹ️ à intégrer, sans décision à prendre.
 
@@ -19,11 +22,12 @@
 | 2 | Entitlement iOS + intent-filter Android sur `lien.meetdo.fun` | ⛔ | mobile |
 | 3 | Sous-domaine `lien.meetdo.fun` : DNS + Railway | ⛔ | qui tient l'infrastructure |
 | 4 | Identifiants de store, pour le lien de téléchargement | ⚠️ | à la publication |
-| 5 | Onboarding : émettre les quatre vrais noms d'étapes | ⚠️ | mobile |
-| 6 | « Mes activités » : quelle lecture ? | ⚠️ | mobile |
-| 7 | Réglages e-mail : ouvrir le champ, ou l'afficher tel quel ? | ⚠️ | les deux |
-| 8 | `first_name` : toujours différé | ⚠️ | les deux |
-| 9 | Onze comportements à intégrer sans décision | ℹ️ | mobile |
+| 5 | `meetdo://programs/{jeton}` : le routage accepte-t-il un jeton ? | ⛔ | mobile |
+| 6 | Onboarding : émettre les quatre vrais noms d'étapes | ⚠️ | mobile |
+| 7 | « Mes activités » : quelle lecture ? | ⚠️ | mobile |
+| 8 | Réglages e-mail : ouvrir le champ, ou l'afficher tel quel ? | ⚠️ | les deux |
+| 9 | `first_name` : toujours différé | ⚠️ | les deux |
+| 10 | Treize comportements à intégrer sans décision | ℹ️ | mobile |
 
 ---
 
@@ -40,7 +44,15 @@ dans la console — celle du keystore local ne sert alors qu'à l'upload.
 
 Tant qu'elle manque, **les App Links Android ne se vérifient pas**. Les liens universels iOS,
 eux, ne dépendent pas d'elle : `apple-app-site-association` est servi depuis le 19 août avec
-`97727T64DH.com.meetdo.app`, au format `appIDs`/`components`.
+`97727T64DH.com.meetdo.app`, au format `appIDs`/`components`, et déclare désormais **quatre**
+motifs — `/s/*`, `/p/*`, `/public/slots/*`, `/public/programs/*`.
+
+> Rappel que vous nous aviez fait, et qui vaut ici : Apple sert ce fichier depuis son propre
+> CDN et les appareils le gardent. Les motifs de programme ajoutés aujourd'hui ne seront pas
+> visibles instantanément des installations existantes.
+
+Le jour où l'empreinte existera, `assetlinks.json` couvrira les mêmes chemins sans autre
+changement : il ne déclare pas de motifs, seulement le paquet et l'empreinte.
 
 Une fois connue, elle se pose par la variable d'environnement `ANDROID_SHA256` — aucun
 déploiement de code n'est nécessaire.
@@ -101,7 +113,27 @@ Cette ligne devient un lien de téléchargement dès que les identifiants existe
 
 ---
 
-## ⚠️ 5. Onboarding — émettre les quatre vrais noms
+## ⛔ 5. Le bouton de la page de programme vise un jeton, pas un identifiant
+
+Le partage public de programme est livré. Le bouton de sa page vise
+**`meetdo://programs/{jeton}`** — le jeton opaque de 22 caractères, jamais l'identifiant
+interne, une adresse bâtie sur la clé primaire se laissant énumérer.
+
+Or votre document annonce que `deep_links.dart` traite `meetdo://programs/42`, c'est-à-dire
+un **identifiant**. Si cet hôte n'accepte qu'un entier ou un UUID, le bouton ne mènera nulle
+part.
+
+**Deux issues, et le choix vous revient** : accepter un jeton sur cet hôte — le backend le
+résout par `GET /public/programs/{jeton}` —, ou nous dire quelle forme d'adresse vous
+attendez. C'est le seul point de cette livraison qui dépend de vous, et il ne se voit à
+l'exécution que sur un appareil où l'application est installée.
+
+Le même doute ne se pose pas pour les créneaux : `meetdo://slot/{jeton}` était déjà le
+contrat que vous nous aviez décrit.
+
+---
+
+## ⚠️ 6. Onboarding — émettre les quatre vrais noms
 
 `PATCH /api/users/me/onboarding` accepte désormais les **quatre écrans réels**, dans l'ordre
 réel : `ACTIVITIES`, `LEVELS`, `LOCATION`, `PREVIEW`. `WELCOME` et `DONE` ont disparu — le
@@ -132,7 +164,7 @@ lever.
 
 ---
 
-## ⚠️ 6. « Mes activités » — quelle lecture ?
+## ⚠️ 7. « Mes activités » — quelle lecture ?
 
 `GET /api/activities/browse?myActivitiesOnly=true` retient aujourd'hui **les entrées portant
 une activité que l'appelant a déclarée** — ce qui se pratique autour de lui dans ses sports.
@@ -147,7 +179,7 @@ changer, pas une refonte.
 
 ---
 
-## ⚠️ 7. Réglages e-mail — une promesse que le serveur ne tient pas
+## ⚠️ 8. Réglages e-mail — une promesse que le serveur ne tient pas
 
 La préférence par défaut est `emailEnabled = true` pour les **trente et un** types de
 notification. Mais `EmailService` ne poste que les types qui **méritent un e-mail** :
@@ -168,7 +200,7 @@ en sont la raison d'être.
 
 ---
 
-## ⚠️ 8. `first_name` — toujours différé
+## ⚠️ 9. `first_name` — toujours différé
 
 La page publique réduit le nom d'affichage à son **premier segment** (`GivenName`), faute
 d'un champ dédié. Vous aviez confirmé cette réduction avec la même réserve que nous : elle se
@@ -180,7 +212,7 @@ c'est une colonne, un écran de saisie et une reprise des comptes existants.
 
 ---
 
-## ℹ️ 9. Onze comportements à intégrer, sans décision à prendre
+## ℹ️ 10. Treize comportements à intégrer, sans décision à prendre
 
 Aucun de ces points n'attend une réponse ; chacun change ce que le client doit afficher ou
 cesser de faire.
@@ -233,6 +265,19 @@ cesser de faire.
     niveau déclaré — elles comptent dans le total, et les ranger sous « ANY » inventerait une
     déclaration que personne n'a faite.
 
+12. **Un programme se partage désormais**, sur le même contrat qu'un créneau. Le lien est
+    réservé à l'**organisateur** — `404` pour quiconque d'autre — et la page **ne se périme
+    pas** : un programme sans séance à venir la garde, et elle dit « aucune séance annoncée »
+    plutôt que de disparaître. Ce qui l'éteint, c'est l'archivage, la dépublication, ou
+    `shareable = false`.
+
+13. **`HEAD` répond comme `GET` sur toutes les pages publiques** — point refermé. Il rendait
+    `401` là où `GET` rend `200`, les règles de sécurité ne nommant que `GET`, et cela valait
+    pour l'ensemble des routes ouvertes, pas seulement l'AASA. Rien n'était cassé, mais tout
+    diagnostic mené en `curl -I` concluait à tort que la page était protégée — votre propre
+    document en portait la conséquence, en déduisant d'un `401` qu'une route était absente
+    alors qu'elle aurait rendu `401` même en existant.
+
 Deux ajouts mineurs au passage : la recherche tolère désormais les **fautes de frappe**, en
 repli seulement — il n'y a pas de « vouliez-vous dire… ? » à afficher, le serveur rend
 directement ce qui ressemble. Et `createdVia: "QUICK"` distingue un programme volontairement
@@ -247,6 +292,7 @@ nu d'un programme mal rempli.
 | `assetlinks.json` en `200` | l'empreinte SHA-256 |
 | Lien de téléchargement sur la page publique | les identifiants de store |
 | `first_name` réel | une décision commune |
-| Réglages e-mail par type | la réponse au point 7 |
+| Réglages e-mail par type | la réponse au point 8 |
+| Bouton de la page de programme opérant | la réponse au point 5 |
 
-Le reste est livré : 744 tests, zéro échec.
+Le reste est livré : **758 tests, zéro échec**.

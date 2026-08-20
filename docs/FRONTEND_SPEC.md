@@ -401,7 +401,39 @@ une réserve.
 
 ---
 
-### 3.7 Page publique de créneau *(nouveau)*
+### 3.7 Page publique de programme *(nouveau)*
+
+**Routes** : `GET /api/programs/{id}/share-link`, `PATCH /api/programs/{id}/shareable`
+
+Le partage public existait pour les créneaux et pour eux seuls : un programme partagé
+arrivait chez son destinataire en `meetdo://programs/42`, qu'aucune messagerie ne rend
+cliquable. Le contrat est le même que celui des créneaux, décliné.
+
+`PublicShareLinkDto` porte `token`, `shortUrl` (`https://lien.meetdo.fun/p/{jeton}`),
+`pageUrl` et `shareable`. **`pageUrl` est à lire tel quel**, sans le recomposer.
+
+Deux différences avec les créneaux :
+
+- **Le lien est réservé à l'organisateur**, là où celui d'un créneau s'ouvre à tous ses
+  participants. `404` pour quiconque d'autre.
+- **Il n'y a pas de péremption dans le temps.** Un programme sans séance à venir garde sa
+  page, qui dit « aucune séance annoncée » : son auteur peut en reprogrammer une. Ce qui
+  éteint la page, c'est l'archivage, la dépublication, ou `shareable = false`.
+
+> ⚠️ **Un point à vérifier de votre côté.** Le bouton de la page vise
+> `meetdo://programs/{jeton}`, alors que `deep_links.dart` traite aujourd'hui
+> `meetdo://programs/42` — un **identifiant**, pas un jeton. Le bouton n'ouvrira
+> correctement l'application que si cet hôte accepte aussi un jeton. C'est le seul point de
+> la livraison qui dépend de vous.
+
+Les motifs `/p/*` et `/public/programs/*` ont été ajoutés à
+`apple-app-site-association` **dans le même commit** : iOS ignore en silence ce que ce
+fichier ne déclare pas, et livrer la route sans le motif aurait donné une page qui s'affiche
+et un lien qui n'ouvre jamais l'application.
+
+---
+
+### 3.8 Page publique de créneau *(nouveau)*
 
 L'adresse partagée est `https://lien.meetdo.fun/s/{jeton}` — **`lien.meetdo.fun`**, pas
 `meetdo.fun` : le second est le site vitrine, le premier ce backend.
@@ -946,7 +978,8 @@ deux écrans différents.
 | **Invitations** | `POST /api/slots/{id}/invitations`, `POST /api/invitations/{code}/accept` |
 | **Agenda** | `GET /api/slots/{id}/calendar.ics`, `GET /api/slots/mine/calendar.ics` |
 | **Messagerie (confort)** | `PATCH /api/conversations/{id}/settings`, `POST /api/conversations/{id}/location`, STOMP `/app/chat.typing` |
-| **Page publique** | `GET /s/{jeton}` *(web, sans compte)* |
+| **Page publique** | `GET /s/{jeton}`, `GET /p/{jeton}` *(web, sans compte)* |
+| **Partage de programme** | `GET /api/programs/{id}/share-link`, `PATCH /api/programs/{id}/shareable` |
 
 ---
 
