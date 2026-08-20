@@ -248,6 +248,7 @@ public class PublicSlotService {
         User organizer = userActivity.getUser();
 
         return new PublicSlotView(
+            slot.getId(),
             program.getTitle(),
             activity.getName(),
             activity.getCategory() != null ? activity.getCategory().getName() : null,

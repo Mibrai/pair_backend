@@ -186,6 +186,7 @@ public class PublicProgramService {
         Schedule next = upcoming.isEmpty() ? null : upcoming.get(0);
 
         return new PublicProgramView(
+            program.getId(),
             program.getTitle(),
             program.getDescription(),
             activity != null ? activity.getName() : null,
@@ -214,7 +215,12 @@ public class PublicProgramService {
         return new PublicShareLinkDto(
             token,
             token == null ? null : publicBaseUrl + "/p/" + token,
-            token == null ? null : publicBaseUrl + "/public/programs/" + token,
+            // La PAGE, pas la route JSON — défaut relevé par l'équipe mobile le
+            // 2026-08-20, et livré une heure chez eux avant qu'ils ne s'en
+            // aperçoivent : un champ nommé « URL de page » qui rendait
+            // /public/programs/{jeton}, c'est-à-dire les données brutes. Collé
+            // dans un message, il ouvrait un navigateur sur du JSON.
+            token == null ? null : publicBaseUrl + "/public/programs/" + token + "/page",
             Boolean.TRUE.equals(program.getIsPubliclyShareable()));
     }
 
