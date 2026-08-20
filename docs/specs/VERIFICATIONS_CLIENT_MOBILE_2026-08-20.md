@@ -6,8 +6,9 @@
 > conversations closes n'y figurent plus : ce fichier ne contient que ce qui est **encore
 > ouvert** au 20 août 2026.
 >
-> **Mis à jour le 20 août au soir**, après la livraison du partage public de programme : un
-> point s'ajoute (n° 5), un autre se referme (le verbe `HEAD`).
+> **Mis à jour le 20 août au soir**, puis après votre réponse sur les liens de programme :
+> le point n° 5 s'est ouvert et refermé dans la même journée, et deux défauts de notre côté
+> qu'il a mis au jour sont corrigés.
 >
 > **Trois niveaux.** ⛔ bloque une fonctionnalité livrée · ⚠️ décidé par défaut, à confirmer
 > ou à renverser · ℹ️ à intégrer, sans décision à prendre.
@@ -22,7 +23,7 @@
 | 2 | Entitlement iOS + intent-filter Android sur `lien.meetdo.fun` | ⛔ | mobile |
 | 3 | Sous-domaine `lien.meetdo.fun` : DNS + Railway | ⛔ | qui tient l'infrastructure |
 | 4 | Identifiants de store, pour le lien de téléchargement | ⚠️ | à la publication |
-| 5 | `meetdo://programs/{jeton}` : le routage accepte-t-il un jeton ? | ⛔ | mobile |
+| 5 | ~~`meetdo://programs/{jeton}` : le routage accepte-t-il un jeton ?~~ | ✅ | **réglé** |
 | 6 | Onboarding : émettre les quatre vrais noms d'étapes | ⚠️ | mobile |
 | 7 | « Mes activités » : quelle lecture ? | ⚠️ | mobile |
 | 8 | Réglages e-mail : ouvrir le champ, ou l'afficher tel quel ? | ⚠️ | les deux |
@@ -113,23 +114,52 @@ Cette ligne devient un lien de téléchargement dès que les identifiants existe
 
 ---
 
-## ⛔ 5. Le bouton de la page de programme vise un jeton, pas un identifiant
+## ✅ 5. Le jeton dans le lien profond — réglé des deux côtés
 
-Le partage public de programme est livré. Le bouton de sa page vise
-**`meetdo://programs/{jeton}`** — le jeton opaque de 22 caractères, jamais l'identifiant
-interne, une adresse bâtie sur la clé primaire se laissant énumérer.
+**Vous acceptez le jeton**, un segment en UUID restant l'identifiant interne. Le point est
+clos de votre côté.
 
-Or votre document annonce que `deep_links.dart` traite `meetdo://programs/42`, c'est-à-dire
-un **identifiant**. Si cet hôte n'accepte qu'un entier ou un UUID, le bouton ne mènera nulle
-part.
+**Et il manquait quelque chose du nôtre**, que votre réponse a mis au jour : les deux
+réponses publiques n'exposaient **aucun identifiant**. Le jeton se résolvait donc en une
+description qu'aucun client ne pouvait afficher, faute d'adresse où aller. Le lien ouvrait
+l'application et la laissait où elle était — sans erreur, sans journal, sans test rouge
+d'aucun côté.
 
-**Deux issues, et le choix vous revient** : accepter un jeton sur cet hôte — le backend le
-résout par `GET /public/programs/{jeton}` —, ou nous dire quelle forme d'adresse vous
-attendez. C'est le seul point de cette livraison qui dépend de vous, et il ne se voit à
-l'exécution que sur un appareil où l'application est installée.
+Cela valait aussi pour les **créneaux**, livrés la veille et documentés toute la journée
+comme fonctionnels. Vous l'aviez vu ; nous ne l'avions pas.
 
-Le même doute ne se pose pas pour les créneaux : `meetdo://slot/{jeton}` était déjà le
-contrat que vous nous aviez décrit.
+`GET /public/slots/{jeton}` porte désormais **`scheduleId`**, et
+`GET /public/programs/{jeton}` porte **`programId`**.
+
+### Notre garde-fou était trop large, et vous aviez raison de le dire
+
+Il interdisait « tout identifiant interne ». Il visait l'**énumération** — une adresse bâtie
+sur la clé primaire se remonte en incrémentant — mais interdisait du même geste l'identifiant
+dans le **corps** d'une réponse qu'on n'obtient qu'en présentant un jeton valide, donc
+lisible seulement par qui détient déjà le lien.
+
+La règle est corrigée dans le code et dans ses commentaires : elle distingue l'identifiant de
+la **ressource partagée**, qui est l'objet même du lien, de ceux des **tiers** —
+organisateur, participants, conversation — qui restent exclus parce qu'ils donnent prise sur
+des personnes que l'organisateur n'a pas partagées.
+
+Ce que le garde-fou visait reste entier, et un test le verrouille : l'identifiant n'apparaît
+**jamais dans une adresse**. `/s/{uuid}` et `/p/{uuid}` rendent `404`.
+
+### `pageUrl` rendait une route de données — corrigé
+
+Vous avez raison, et c'était une bourde : pour un programme, `pageUrl` valait
+`/public/programs/{jeton}`, c'est-à-dire le JSON. Elle vaut désormais
+`/public/programs/{jeton}/page`, comme la variante créneau depuis toujours.
+
+Le contrat du champ le dit maintenant explicitement : les deux formes rendent du **HTML**, et
+**c'est `shortUrl` qu'on partage** — `pageUrl` n'existe que pour les contextes où une adresse
+courte serait mal supportée. Vous pouvez donc cesser de composer `/p/{jeton}` vous-mêmes, ou
+le garder : les deux valeurs sont désormais correctes.
+
+Merci enfin pour les deux défauts que vous signalez chez vous — le moteur Flutter qui doublait
+votre routeur, et l'hôte `programs` qui ne distinguait pas jeton et identifiant. Les avoir
+écrits nous a évité de chercher le nôtre au mauvais endroit.
 
 ---
 
@@ -293,6 +323,4 @@ nu d'un programme mal rempli.
 | Lien de téléchargement sur la page publique | les identifiants de store |
 | `first_name` réel | une décision commune |
 | Réglages e-mail par type | la réponse au point 8 |
-| Bouton de la page de programme opérant | la réponse au point 5 |
-
-Le reste est livré : **758 tests, zéro échec**.
+Le reste est livré : **763 tests, zéro échec**.
