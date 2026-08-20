@@ -1,5 +1,22 @@
-# Pair Frontend Specification
-**Version 1.0 | Complete View Architecture**
+# Spécification frontend — meetDo / Pair
+**Version 2.0 — 20 août 2026**
+
+> **Ce que ce document est.** L'architecture des écrans et leur correspondance avec les
+> routes du backend. La partie « design » (§ Design Philosophy à §17) date de la version 1.0
+> et est conservée telle quelle : elle décrit une intention graphique, pas un contrat.
+>
+> **Ce qu'il n'est pas.** Ni la liste des routes — elle vit dans
+> [`ARCHITECTURE_BACKEND.md`](ARCHITECTURE_BACKEND.md) §4, contrôleur par contrôleur —, ni
+> la référence exécutable, qui est `/swagger-ui.html` sur une instance démarrée.
+>
+> Les deux audits d'alignement du 3 juillet 2026 qui suivaient ce document ont été
+> **archivés** dans [`archived/FRONTEND_API_AUDIT_2026-07-03.md`](archived/FRONTEND_API_AUDIT_2026-07-03.md).
+> Ils annonçaient 47 % d'alignement et des routes manquantes — `logout`, `join`/`leave`,
+> la messagerie — qui existent toutes depuis : les laisser ici donnait une image fausse du
+> backend à quiconque ouvrait le fichier.
+>
+> Ce qui reste à vérifier ou à trancher côté client est réuni dans
+> [`specs/VERIFICATIONS_CLIENT_MOBILE_2026-08-20.md`](specs/VERIFICATIONS_CLIENT_MOBILE_2026-08-20.md).
 
 ## Design Philosophy
 
@@ -48,6 +65,48 @@
 
 ---
 
+### 1.6 Parcours d'accueil *(nouveau — août 2026)*
+
+**Routes** : `GET`/`PATCH /api/users/me/onboarding`, `POST /api/users/me/onboarding/skip`
+
+**Quatre écrans, dans cet ordre** — et cet ordre *est* le contrat :
+
+| # | Étape | Question posée |
+|---|---|---|
+| 1 | `ACTIVITIES` | « Qu'est-ce que tu aimes faire ? » |
+| 2 | `LEVELS` | « À quel niveau ? » |
+| 3 | `LOCATION` | « Où cherches-tu ? » |
+| 4 | `PREVIEW` | « Voilà ce qui se passe autour de toi » |
+
+Le `PATCH` enregistre une étape **franchie** et est idempotent : rejouer une étape déjà
+enregistrée, ou en annoncer une antérieure, répond `200` sans rien changer — le réseau
+mobile double les requêtes et les livre parfois dans le désordre, et **un parcours ne
+recule jamais**.
+
+Il n'y a **pas d'étape « terminé »** : franchir le dernier écran pose
+`onboardingCompletedAt`, et c'est cette date qui dit que l'accueil est fait. `skip` referme
+le parcours en **conservant** l'étape atteinte — c'est la seule information qu'un abandon
+apporte, et l'écraser effacerait où les gens décrochent.
+
+> **Un piège documenté.** La première version de cette énumération décrivait la
+> spécification et non l'application : deux valeurs seulement existaient des deux côtés, et
+> **dans l'ordre inverse**. L'étape « position » était acceptée puis ignorée en `200` — un
+> échec silencieux des deux côtés, visible du seul utilisateur qui reprenait au premier
+> écran. L'ancien vocabulaire (`WELCOME`, `DISCOVERY`, `DONE`) reste accepté en entrée et
+> traduit, le temps qu'une version publiée cesse de le parler ; il perd en revanche la
+> distinction entre les deux premiers écrans, donc **envoyer les vrais noms dès que
+> possible**.
+
+L'état voyage aussi sur `GET /api/users/me` (`onboardingStep`, `onboardingCompletedAt`) :
+le client n'a pas besoin d'un second appel au lancement pour savoir où atterrir.
+
+**Premières suggestions** : `GET /api/activities/suggested?lat=&lng=&limit=` — **ne rend
+jamais une liste vide** tant que le catalogue n'est pas vide. Le drapeau `fallback`
+distingue « près de chez toi » de « populaire sur meetDo » ; une suggestion lointaine
+présentée comme voisine est la meilleure façon de faire douter de toutes les autres.
+
+---
+
 ### 1.3 Login
 **Endpoint**: `POST /api/auth/login`
 
@@ -86,6 +145,88 @@
 - Recommendations
 
 **Actions**: Edit, Settings, Message (self-note)
+
+---
+
+### 2.0 Ce qui a changé côté confidentialité *(août 2026)*
+
+**Les réglages sont désormais appliqués.** Ils étaient stockés, réglables, relus — et lus
+par aucun code de rendu : un profil « privé » était servi intégralement. Un client qui
+supposait que le serveur ne filtrait pas doit cesser de filtrer lui-même.
+
+| `profileVisibility` | Ce que reçoit un tiers |
+|---|---|
+| `PUBLIC` | tout |
+| `FRIENDS` | tout **si abonné**, sinon la fiche masquée |
+| `PRIVATE` | fiche masquée |
+
+**Fiche masquée** = `bio`, `badgeCodes`, `subscriberCount`, `reliabilitySignal` et
+`isOnline` nuls ou vides. Restent **toujours** visibles `id`, `displayName`, `avatarUrl` et
+`verificationStatus` : ce sont les éléments par lesquels une personne est reconnue dans une
+conversation ou une liste de participants, et les masquer casserait l'application sans
+protéger personne.
+
+`FRIENDS` s'appuie sur l'**abonnement**, faute de notion d'amitié dans le produit.
+
+**`GET /api/users/me/preview`** rend ce qu'un inconnu voit du profil de l'appelant — le même
+code, avec la relation d'un inconnu. Sur un profil réglé `FRIENDS`, l'aperçu montre la vue
+**la plus restrictive** : c'est celle qui intéresse la personne qui règle.
+
+---
+
+### 2.6 Blocage *(nouveau)*
+
+**Routes** : `POST`/`DELETE /api/users/{userId}/block`, `GET /api/users/me/blocked`
+
+Le masquage est **bilatéral** : peu importe qui a bloqué, les deux personnes cessent de se
+voir — profil, programmes, fil de créneaux, carte, recherche, conversations, abonnements.
+
+**Le refus est un `404`, jamais un `403`**, et le client ne doit pas chercher à le rendre
+plus explicite : un code nommé apprendrait le blocage à celui qui l'a subi, ce que toute la
+règle cherche à éviter. Une ressource qui « n'existe plus » est le message attendu.
+
+Bloquer **rompt les abonnements** dans les deux sens et **supprime la conversation** : ces
+effets sont immédiats et non réversibles par un déblocage.
+
+---
+
+### 2.7 Langues et disponibilités *(nouveau)*
+
+**Routes** : `GET`/`PUT /api/users/me/languages`, `GET`/`PUT /api/users/me/availability`
+
+Les deux sont des **remplacements complets** : le `PUT` porte la grille entière, pas un
+delta. Cocher deux fois la même case n'est pas une erreur et ne doit pas échouer.
+
+Disponibilités : `dayOfWeek` en numérotation **ISO** (1 = lundi … 7 = dimanche) et
+`timeSlot` parmi `MORNING`, `AFTERNOON`, `EVENING`, `NIGHT`.
+
+> **Une disponibilité déclarée pondère, elle ne filtre jamais.** Le fil fait remonter ce qui
+> tombe bien au sein d'un même jour, sans jamais bousculer la chronologie et sans jamais
+> masquer un créneau hors des cases cochées. L'interface ne doit donc pas la présenter comme
+> un filtre : quelqu'un qui a coché « mardi soir » peut très bien vouloir un samedi matin.
+
+---
+
+### 2.8 Heures de silence *(nouveau)*
+
+**Routes** : `GET`/`PUT /api/notifications/quiet-hours`
+
+`start` et `end` en heures pleines (0–23) **dans le fuseau de l'appareil**. Les deux vont
+ensemble : deux valeurs nulles retirent le silence, **une seule est refusée** en `400`.
+Deux bornes égales aussi — « 22 → 22 » se lit aussi bien « une minute » que « toute la
+journée ».
+
+La fenêtre **traverse minuit** dans le cas courant : « 22 → 7 » est valide et normal.
+
+**Ce que le silence coupe, et ce qu'il ne coupe pas** : il coupe la notification push, pas
+la notification elle-même, qui est écrite et attend au réveil. L'interface doit le dire
+ainsi — « ne pas être dérangé », pas « ne pas recevoir ».
+
+**Ce qui passe outre** : annulation d'un créneau ou d'un programme, changement d'horaire, et
+le rappel de séance — il part deux heures avant quelque chose qu'on a choisi de rejoindre, et
+l'étouffer transformerait un réglage de confort en séance manquée. Une **diffusion de
+programme** ne passe pas : son contenu est libre, et la laisser passer donnerait à tout
+auteur le moyen de réveiller ses participants avec n'importe quel message.
 
 ---
 
@@ -205,6 +346,78 @@ Same as Create, pre-filled. Additional: Delete, pause
 
 ---
 
+### 3.6 Créneaux — ce qui s'est ajouté *(août 2026)*
+
+**Créneau rapide** — `POST /api/quick-slots` crée le créneau *et* son programme, en un
+appel. La réponse est le **même DTO que le fil** (`SlotFeedItemDto`), pour que le client ne
+maintienne pas deux modèles d'un seul objet. Le programme porte `createdVia: "QUICK"` : sans
+description ni cadrage, il n'est pas mal rempli, il est **volontairement nu** — l'interface
+ne doit pas afficher un vide comme un oubli.
+
+**Liste d'attente** — `GET /api/slots/{id}/waitlist`. Rejoindre un créneau complet place en
+file ; une place libérée promeut le premier et notifie (`WAITLIST_PROMOTED`).
+
+> Le conflit d'horaire est revérifié **à la promotion**, pas seulement à l'entrée dans la
+> file : celui qui attendait a pu s'inscrire ailleurs entre-temps. Une promotion peut donc
+> être refusée, et la file passe au suivant.
+
+**Annulation** — `POST /api/slots/{id}/cancel` `{ reason? }`, réservé à l'organisateur.
+Prévient inscrits **et** file d'attente, par notification **et** e-mail. Le motif est
+facultatif, mais un fait brut sans explication laisse chacun imaginer le pire.
+
+L'e-mail part **en plus** du push, jamais à sa place : les canaux sont indépendants, et le
+serveur ne sait pas si un push est arrivé. À dire ainsi dans les réglages de notification.
+
+**Lien de sécurité** — `POST /api/slots/{id}/safety-share` rend un lien pour un proche.
+La page est lisible **sans compte** : en exiger un viderait la fonctionnalité de son sens.
+
+**Partage public** — `GET /api/slots/{id}/share-link` crée l'adresse à la première demande ;
+`PATCH /api/slots/{id}/shareable` `{ isPubliclyShareable }` l'ouvre ou la referme, et
+**seul l'organisateur** peut la refermer — cela retire à tous les autres un lien qu'ils ont
+peut-être déjà collé quelque part.
+
+> Le jeton n'est **jamais** effacé ni régénéré : rouvrir rend valides les liens déjà
+> partagés. L'interface peut donc présenter la bascule comme une pause, pas comme une
+> rupture.
+
+**Invitations** — `POST /api/slots/{id}/invitations`, puis
+`POST /api/invitations/{code}/accept`. Deux dates distinctes sont suivies : avoir rejoint le
+créneau, et avoir créé un compte. L'un peut arriver sans l'autre.
+
+**Agenda** — `GET /api/slots/{id}/calendar.ics`, `GET /api/slots/mine/calendar.ics`, et
+`GET /s/{jeton}/calendar.ics` pour la page publique. Alarme de rappel à **−2 h**. Un créneau
+rejoint puis oublié est une rencontre qui n'a pas lieu : c'est l'un des rares ajouts qui agit
+directement sur la présence réelle.
+
+**Accessibilité** — les créneaux portent des étiquettes (`accessibilityTags`), filtrables sur
+le fil. Le filtre est **restrictif** : un créneau qui ne déclare rien est écarté dès qu'on
+filtre, parce que rien ne permet d'affirmer son accueil. C'est l'inverse du filtre de langue,
+et l'interface doit le dire — « seulement les créneaux qui l'annoncent », pas « accessibles ».
+
+**Signal de fiabilité** — `reliabilitySignal` vaut `"USUALLY_SHOWS_UP"` ou **`null`**, jamais
+un libellé négatif ni un pourcentage. Un signal absent n'est **pas** un mauvais signal : il
+signifie « pas assez de données », et l'interface ne doit rien afficher plutôt qu'afficher
+une réserve.
+
+---
+
+### 3.7 Page publique de créneau *(nouveau)*
+
+L'adresse partagée est `https://lien.meetdo.fun/s/{jeton}` — **`lien.meetdo.fun`**, pas
+`meetdo.fun` : le second est le site vitrine, le premier ce backend.
+
+La page est rendue par le serveur, avec ses métadonnées OpenGraph : c'est ce qui fabrique
+l'aperçu dans une messagerie, et un robot d'aperçu n'exécute pas de JavaScript. Elle est
+servie en **FR / EN / DE**, et sa langue est celle de la **séance** avant celle de la
+requête.
+
+Son bouton vise `meetdo://slot/{jeton}` — le schéma d'URI de l'application, qui fonctionne
+sans attendre les liens universels. Ceux-ci demandent, en plus des fichiers `/.well-known`
+servis par le backend, l'entitlement `associated-domains` côté iOS et l'intent-filter App
+Links côté Android : **deux moitiés qui échouent silencieusement l'une sans l'autre**.
+
+---
+
 ## 4. DISCOVERY
 
 ### 4.1 Search
@@ -230,6 +443,63 @@ Same as Create, pre-filled. Additional: Delete, pause
 - Bottom sheet: User card on marker tap
 
 **Privacy**: Approximate locations only
+
+> **`GET /api/map/activities` exige désormais un jeton** *(depuis le 2026-08-19)*. Elle était
+> ouverte sans authentification ; aucun écran hors session ne l'appelait, et sans appelant
+> identifié elle rendait les organisateurs bloqués comme les autres. Un `401` sur cet appel
+> signifie que le jeton manque, pas que la carte est vide.
+
+---
+
+### 4.3 L'Explorer — filtres serveur *(nouveau)*
+
+**Routes** : `GET /api/activities/browse`, `GET /api/activities/browse/facets`
+
+Les trois filtres appliqués jusqu'ici **sur les pages déjà chargées** sont passés en
+paramètres de requête : `activityLevels`, `myActivitiesOnly`, `subscribedOnly`. Filtrer sur
+les pages chargées donnait des listes qui rétrécissaient en défilant — vécu comme un défaut,
+pas comme une limite.
+
+| Paramètre | Sens |
+|---|---|
+| `activityLevels` | niveaux retenus ; vide ou absent : tous |
+| `myActivitiesOnly` | ce qui se pratique **dans mes sports**, pas mes propres annonces |
+| `subscribedOnly` | ce à quoi je suis abonné |
+
+> **`myActivitiesOnly` mérite d'être confirmé.** La lecture retenue est « ce qui se pratique
+> autour de moi dans les activités que j'ai déclarées » — l'Explorer étant une surface de
+> découverte, un filtre ne rendant que mes trois entrées n'y découvrirait rien. Si le libellé
+> « Mes activités » désigne chez vous *mes propres entrées*, dites-le : c'est une ligne de
+> `WHERE` à changer, pas une refonte.
+
+Sans appelant identifié, les deux filtres personnels **ne s'appliquent pas** : les appliquer
+rendrait une liste vide, soit « rien autour de vous » au lieu de « connectez-vous ».
+
+**Les compteurs** (`/facets`) annoncent ce qu'une case rendrait **si on la cochait** : ils
+ignorent délibérément les filtres de même nature. Compter à l'intérieur du filtre courant
+afficherait zéro à côté de chaque case non cochée et les ferait passer pour des impasses.
+
+```json
+{ "total": 42, "byLevel": { "BEGINNER": 12, "UNSPECIFIED": 8 },
+  "myActivities": 4, "subscribed": 2 }
+```
+
+`UNSPECIFIED` regroupe les entrées sans niveau déclaré ; elles comptent dans le total, et les
+ranger sous « ANY » inventerait une déclaration que personne n'a faite.
+
+---
+
+### 4.4 Recherche tolérante aux fautes *(nouveau)*
+
+`POST /api/search` gagne une **quatrième couche**, en repli seulement : si la taxonomie, le
+sémantique et le plein texte ne rendent rien, une similarité trigramme rattrape la faute de
+frappe — « yoag », « escallade ».
+
+Deux conséquences pour l'interface : une réponse vide est désormais **plus rarement** une
+absence réelle, et il n'y a **pas** de « vouliez-vous dire… ? » à afficher — le serveur ne
+propose pas une correction, il rend directement ce qui ressemble. Le repli ne rattrape que la
+faute dans la langue où elle a été faite ; « Klettern » → « escalade » reste l'affaire de la
+taxonomie.
 
 ---
 
@@ -261,6 +531,55 @@ Same as Create, pre-filled. Additional: Delete, pause
 - Typing indicator
 
 **Safety**: Report, block
+
+---
+
+### 5.2 bis Confort de messagerie *(nouveau)*
+
+**Indicateur de saisie** — `STOMP /app/chat.typing`, corps
+`{ "conversationId": "…", "typing": true }`. Ce qui revient aux autres membres arrive sur
+`/user/queue/typing` : `{ conversationId, userId, typing }`.
+
+> **Le serveur ne pose aucune échéance et n'émet aucun rappel.** C'est au client d'effacer
+> l'indicateur après quelques secondes sans nouvelle : un émetteur qui perd sa connexion
+> juste après avoir annoncé qu'il écrivait ne pourra jamais annoncer le contraire, et
+> l'indicateur resterait allumé pour toujours.
+>
+> Rien n'est conservé, et l'auteur ne se reçoit jamais lui-même. Une trame envoyée sur un fil
+> auquel on n'appartient pas produit un **silence** — le protocole n'a pas de réponse à une
+> trame entrante, et un refus nommé apprendrait que la conversation existe.
+
+**Partage de position ponctuel** — `POST /api/conversations/{id}/location`
+`{ lat, lng, expiresInMinutes?, note? }` → un `MessageDto` ordinaire.
+
+C'est **un message du fil**, et c'est toute la protection : renouveler suppose une nouvelle
+bulle, donc suivre quelqu'un reste visible de celui qu'on suit. Il n'existe **pas** de suivi
+continu, pas de dernière position connue, pas de mise à jour.
+
+`expiresInMinutes` vaut 30 par défaut et **30 au maximum** ; au-delà la requête est
+**refusée** en `400`, jamais rabotée en silence.
+
+Un partage échu rend `locationLat`, `locationLng` et `locationExpiresAt` **nuls**, y compris
+sur un message qui en portait un — le message reste dans le fil, sa position n'y est plus. Le
+client n'a donc pas à comparer une échéance à l'heure courante pour savoir s'il doit
+afficher le point ; il lui reste à le faire disparaître de lui-même à l'échéance, sur un fil
+resté ouvert.
+
+**Sourdine et archivage** — `PATCH /api/conversations/{id}/settings`
+`{ muted?, archived? }`. Un champ absent reste **inchangé** : les deux commandes vivent sur
+deux écrans différents.
+
+- La sourdine coupe **l'émission, pas la réception** : le message arrive, s'affiche et compte
+  dans le décompte du fil ; il ne sonne plus.
+- L'archivage sort le fil de `GET /api/conversations`, qui accepte `?archived=true` pour la
+  seconde liste. **Un message reçu ne désarchive pas** — ranger le fil dont on veut se
+  débarrasser n'aurait sinon aucun effet, puisque c'est justement celui qui reçoit.
+
+> **Un invariant a changé de forme.** Le total de `GET /api/conversations/unread-count`
+> **exclut** désormais les fils en sourdine et archivés, alors que leur `unreadCount`
+> individuel reste exact. Un client qui vérifiait « la somme des fils = le badge » doit
+> désormais sommer les fils **ni `muted` ni `archived`** — les deux drapeaux sont sur
+> `ConversationSummaryDto` précisément pour cela.
 
 ---
 
@@ -614,354 +933,32 @@ Same as Create, pre-filled. Additional: Delete, pause
 | Recommendations | `/api/recommendations/*` endpoints |
 | Reports | `/api/reports/*` endpoints |
 | GDPR | `GET /api/gdpr/export`, `DELETE /api/gdpr/delete-account` |
+| **Onboarding** | `GET`/`PATCH /api/users/me/onboarding`, `POST /api/users/me/onboarding/skip`, `GET /api/activities/suggested` |
+| **Aperçu de mon profil** | `GET /api/users/me/preview` |
+| **Blocage** | `POST`/`DELETE /api/users/{userId}/block`, `GET /api/users/me/blocked` |
+| **Langues / disponibilités** | `GET`/`PUT /api/users/me/languages`, `GET`/`PUT /api/users/me/availability` |
+| **Heures de silence** | `GET`/`PUT /api/notifications/quiet-hours` |
+| **Explorer** | `GET /api/activities/browse`, `GET /api/activities/browse/facets` |
+| **Créneau rapide** | `POST /api/quick-slots` |
+| **Liste d'attente** | `GET /api/slots/{id}/waitlist` |
+| **Annulation** | `POST /api/slots/{id}/cancel` |
+| **Partage** | `GET /api/slots/{id}/share-link`, `PATCH /api/slots/{id}/shareable`, `POST /api/slots/{id}/safety-share` |
+| **Invitations** | `POST /api/slots/{id}/invitations`, `POST /api/invitations/{code}/accept` |
+| **Agenda** | `GET /api/slots/{id}/calendar.ics`, `GET /api/slots/mine/calendar.ics` |
+| **Messagerie (confort)** | `PATCH /api/conversations/{id}/settings`, `POST /api/conversations/{id}/location`, STOMP `/app/chat.typing` |
+| **Page publique** | `GET /s/{jeton}` *(web, sans compte)* |
 
 ---
-
-**END OF SPECIFICATION**
 
 **Signature Design Element**: Schedule rhythm bars make time commitments visible at a glance—the one distinctive element that makes Pair memorable while keeping everything else disciplined and familiar.
 
 ---
 
-# ✅ VÉRIFICATION COMPLÈTE - Frontend API vs Backend (2026-07-03)
+## Ce qui reste à vérifier ou à trancher
 
-**Status**: Vérification complète terminée
-**Résultat**: 89 endpoints frontend analysés, 34 problèmes identifiés
+Rassemblé dans un seul document, plutôt que dispersé en notes :
+[`specs/VERIFICATIONS_CLIENT_MOBILE_2026-08-20.md`](specs/VERIFICATIONS_CLIENT_MOBILE_2026-08-20.md).
 
-## 📊 Vue d'ensemble
-
-| Catégorie | Total Frontend | Aligné | Problèmes | Taux |
-|-----------|----------------|--------|-----------|------|
-| Auth | 8 | 5 | 3 | 62% |
-| User | 8 | 5 | 3 | 62% |
-| Activity/Category | 22 | 9 | 13 | 41% |
-| Badge | 3 | 2 | 1 | 67% |
-| Chat | 11 | 5 | 6 | 45% |
-| Program | 18 | 8 | 10 | 44% |
-| Map | 10 | 1 | 9 | 10% |
-| Search | 6 | 1 | 5 | 17% |
-| Notification | 10 | 9 | 1 | 90% |
-| Settings | 10 | 5 | 5 | 50% |
-| **TOTAL** | **106** | **50** | **56** | **47%** |
-
-## 🚨 Problèmes Critiques Identifiés
-
-### 1. Auth - Méthodes HTTP non alignées
-- `verify-email`: Frontend POST ≠ Backend GET ❌
-- `confirm-reset-password`: Endpoint manquant backend ❌
-- `logout`: Endpoint manquant backend ❌
-
-### 2. Activity - Confusion architecturale majeure
-- Frontend attend des "Activities" (événements) ❌
-- Backend fournit des "UserActivities" (préférences) ❌
-- 11 endpoints manquants (like, favorite, photos, CRUD complet) ❌
-
-### 3. Program - Fonctionnalités d'enrollment manquantes
-- `join/leave`: Manquants ❌
-- `/users/me/programs`: Manquant ❌
-- Progress tracking: Manquant ❌
-- Reviews system: Manquant (4 endpoints) ❌
-- Draft system: Manquant ❌
-
-### 4. Map - Seulement 10% implémenté
-- Bounds queries: Manquants (3 endpoints) ❌
-- Clustering: Manquant ❌
-- Geocoding: Manquant (2 endpoints) ❌
-- Location update: Manquant ❌
-
-### 5. Chat - Fonctionnalités d'édition manquantes
-- Message edit/delete: Manquants ❌
-- Conversation detail/delete: Manquants ❌
-- Image upload: Manquant ❌
-
-## ✅ APIs Bien Alignées
-
-### Notification API - 90% ✅
-Meilleure implémentation, presque tous les endpoints alignés sauf:
-- `DELETE /notifications/read` (minor)
-
-### User API - 62% ✅
-Base solide, manque:
-- Avatar upload
-- User search
-- Privacy settings
-
-### Badge API - 67% ✅
-Fonctionnel mais manque:
-- Badge progress endpoint
+**FIN DE LA SPÉCIFICATION**
 
 ---
-
-# ANALYSE DES APPELS D'API FRONTEND vs BACKEND
-
-## ✅ APIs correctement implémentées
-
-### Auth API
-- ✅ `/api/auth/login` (POST)
-- ✅ `/api/auth/register` (POST)
-- ✅ `/api/auth/refresh` (POST)
-- ⚠️ **PROBLÈME CRITIQUE**: Frontend `verifyEmail` utilise POST mais backend utilise GET
-  - Frontend: `POST /auth/verify-email` avec body `{token}` (auth.api.ts:74-78)
-  - Backend: `GET /auth/verify-email?token={token}` (AuthController.java:47-51)
-  - **FIX REQUIS**: Modifier frontend pour utiliser GET avec query param
-- ⚠️ **PROBLÈME**: Endpoints password reset non alignés
-  - Frontend `resetPassword`: `POST /auth/reset-password` avec `{email}` (auth.api.ts:81-85)
-  - Frontend `confirmResetPassword`: `POST /auth/confirm-reset-password` avec `{token, newPassword}` (auth.api.ts:88-96)
-  - Backend `forgotPassword`: `POST /auth/forgot-password` avec `{email}` (AuthController.java:53-61)
-  - Backend `resetPassword`: `POST /auth/reset-password` avec `{token, newPassword}` (AuthController.java:63-67)
-  - **FIX REQUIS**: Renommer les fonctions frontend ou créer des alias
-
-### User API
-- ✅ `/api/users/me` (GET)
-- ✅ `/api/users/me` (PUT)
-- ✅ `/api/users/me/location` (PUT)
-- ✅ `/api/users/{id}` (GET)
-- ✅ `/api/users/me` (DELETE)
-- ❌ `/api/users/me/avatar` (POST) - Frontend l'appelle mais backend utilise `/api/media/upload/avatar`
-- ❌ `/api/users` (GET pour search) - Frontend l'appelle avec params mais backend UserController n'a pas de search
-- ❌ `/api/users/me/preferences` (PUT) - Frontend settings.api.ts l'appelle mais backend ne l'a pas
-- ❌ `/api/users/me/privacy` (GET/PUT) - Frontend settings.api.ts l'appelle mais backend ne l'a pas
-- ❌ `/api/users/me/change-password` (POST) - Frontend settings.api.ts l'appelle mais backend ne l'a pas
-
-### Activity/Category API
-- ✅ `/api/categories` (GET)
-- ⚠️ **STRUCTURE PROBLEMATIQUE**: Frontend confond "Activities" (événements) et "UserActivities" (préférences)
-  
-**Frontend activity.api.ts appelle**:
-- ❌ `GET /activities` - Liste d'événements/activités réelles (activity.api.ts:29)
-- ❌ `GET /activities/{activityId}` - Détail d'une activité (activity.api.ts:36)
-- ❌ `GET /users/{userId}/activities` - Activités d'un user (activity.api.ts:44)
-- ❌ `POST /activities` - Créer une activité (activity.api.ts:62)
-- ❌ `PATCH /activities/{activityId}` - Modifier une activité (activity.api.ts:67)
-- ❌ `DELETE /activities/{activityId}` - Supprimer une activité (activity.api.ts:72)
-- ❌ `POST /activities/{activityId}/like` - Liker (activity.api.ts:77)
-- ❌ `DELETE /activities/{activityId}/like` - Unlike (activity.api.ts:86)
-- ❌ `POST /activities/{activityId}/favorite` - Favoriser (activity.api.ts:93)
-- ❌ `DELETE /activities/{activityId}/favorite` - Défavoriser (activity.api.ts:100)
-- ❌ `POST /activities/{activityId}/photos` - Upload photos (activity.api.ts:107)
-
-**Backend ActivityController a**:
-- ✅ `GET /api/activities` - Recherche de categories (ActivityController.java:30-38)
-- ✅ `GET /api/users/me/activities` - Mes préférences d'activités (ActivityController.java:40-44)
-- ✅ `POST /api/users/me/activities` - Ajouter préférence (ActivityController.java:46-52)
-- ✅ `PUT /api/users/me/activities/{userActivityId}` - Modifier préférence (ActivityController.java:54-60)
-- ✅ `DELETE /api/users/me/activities/{userActivityId}` - Supprimer préférence (ActivityController.java:62-68)
-- ✅ `PATCH /api/users/me/activities/{userActivityId}/visibility` - Toggle visibilité (ActivityController.java:70-77)
-
-**Frontend category.api.ts appelle correctement**:
-- ✅ `GET /categories` (category.api.ts:27)
-- ❌ `GET /categories/{categoryId}` (category.api.ts:32) - Backend ne l'a pas
-- ❌ `GET /categories?search=query` (category.api.ts:37) - Backend ne l'a pas
-- ✅ `GET /users/me/activities` (category.api.ts:44)
-- ✅ `POST /users/me/activities` (category.api.ts:49)
-- ✅ `PUT /users/me/activities/{userActivityId}` (category.api.ts:57)
-- ✅ `DELETE /users/me/activities/{userActivityId}` (category.api.ts:65)
-
-**DÉCISION ARCHITECTURE REQUISE**: Clarifier si "Activity" = événement réel ou préférence profil
-
-### Badge API
-- ✅ `/api/badges` (GET) - Liste tous les badges (BadgeController.java:28-33)
-- ✅ `/api/badges/me` (GET) - Mes badges (BadgeController.java:35-43)
-- ✅ `/api/badges/users/{userId}` (GET) - Badges d'un user (BadgeController.java:45-52)
-- ❌ `/api/badges/{badgeId}/progress` (GET) - Frontend badge.api.ts:223 l'appelle mais backend ne l'a pas
-- ❌ `/api/badges/{badgeId}/claim` (POST) - Frontend badge.api.ts:244 l'appelle mais backend a `/badges/me/evaluate`
-
-### Chat API
-- ✅ `/api/conversations` (POST) - Créer conversation (ChatController.java:28-35)
-- ✅ `/api/conversations` (GET) - Liste conversations (ChatController.java:37-42)
-- ✅ `/api/conversations/{conversationId}/messages` (POST) - Envoyer message (ChatController.java:44-52)
-- ✅ `/api/conversations/{conversationId}/messages` (GET) - Récupérer messages (ChatController.java:54-61)
-- ✅ `/api/conversations/{conversationId}/read` (POST) - Marquer comme lu (ChatController.java:63-70)
-- ❌ `/api/conversations/{conversationId}` (GET) - Frontend chat.api.ts:30 l'appelle mais backend ne l'a pas
-- ❌ `/api/conversations/{conversationId}` (DELETE) - Frontend chat.api.ts:40 l'appelle mais backend ne l'a pas
-- ❌ `/api/messages/{messageId}` (PATCH) - Frontend chat.api.ts:70 pour éditer mais backend ne l'a pas
-- ❌ `/api/messages/{messageId}` (DELETE) - Frontend chat.api.ts:75 l'appelle mais backend ne l'a pas
-- ❌ `/api/conversations/{conversationId}/read-all` (POST) - Frontend chat.api.ts:89 l'appelle mais backend ne l'a pas
-- ❌ `/api/conversations/{conversationId}/images` (POST) - Frontend chat.api.ts:95 l'appelle mais backend ne l'a pas
-
-### Program API
-- ✅ `/api/programs` (GET) - Backend retourne myPrograms (ProgramController.java:32-36)
-- ✅ `/api/programs` (POST) - Créer (ProgramController.java:24-30)
-- ✅ `/api/programs/{programId}` (GET) - Détail (ProgramController.java:44-49)
-- ✅ `/api/programs/{programId}` (PUT) - Modifier (ProgramController.java:51-57)
-- ✅ `/api/programs/{programId}` (DELETE) - Supprimer (ProgramController.java:59-65)
-- ✅ `/api/programs/{programId}/schedules` (POST) - Ajouter schedule (ProgramController.java:67-74)
-- ✅ `/api/programs/{programId}/schedules/{scheduleId}` (PUT) - Modifier schedule (ProgramController.java:76-83)
-- ✅ `/api/programs/{programId}/schedules/{scheduleId}` (DELETE) - Supprimer schedule (ProgramController.java:85-92)
-
-**Frontend program.api.ts appelle des endpoints manquants**:
-- ⚠️ `GET /programs` avec filtres - Backend retourne seulement myPrograms, pas une liste filtrée publique
-- ❌ `PATCH /programs/drafts/{draftId}` (program.api.ts:60) - Backend ne gère pas les drafts
-- ❌ `POST /programs/{programId}/join` (program.api.ts:75)
-- ❌ `POST /programs/{programId}/leave` (program.api.ts:85)
-- ❌ `POST /programs/{programId}/report` (program.api.ts:96)
-- ❌ `GET /users/me/programs` (program.api.ts:112) - Conflit avec GET /programs
-- ❌ `POST /users/me/programs` (program.api.ts:119) - Enrollment
-- ❌ `PATCH /users/me/programs/{userProgramId}` (program.api.ts:127) - Progress update
-- ❌ `DELETE /users/me/programs/{userProgramId}` (program.api.ts:135) - Unenroll
-- ❌ `POST /users/me/programs/{userProgramId}/activities/{activityId}/complete` (program.api.ts:144)
-- ❌ `POST /users/me/programs/{userProgramId}/activities/{activityId}/skip` (program.api.ts:152)
-- ❌ `GET /programs/{programId}/reviews` (program.api.ts:162)
-- ❌ `POST /programs/{programId}/reviews` (program.api.ts:173)
-- ❌ `PATCH /programs/reviews/{reviewId}` (program.api.ts:184)
-- ❌ `DELETE /programs/reviews/{reviewId}` (program.api.ts:189)
-
-### Map API
-- ✅ `/api/map/users` (GET) - MapController.java:22-27
-- ❌ Tous les autres endpoints map du frontend map.api.ts ne sont pas implémentés:
-  - `GET /map/users/bounds` (map.api.ts:34)
-  - `GET /map/activities/bounds` (map.api.ts:54)
-  - `GET /map/programs/bounds` (map.api.ts:74)
-  - `GET /map/markers` (map.api.ts:99)
-  - `GET /map/clusters` (map.api.ts:123)
-  - `GET /map/nearby/{type}` (map.api.ts:147)
-  - `GET /map/geocode` (map.api.ts:159)
-  - `GET /map/reverse-geocode` (map.api.ts:167)
-  - `POST /map/location` (map.api.ts:175) - Utiliser `/users/me/location` à la place
-
-### Search API
-- ✅ `/api/search` (POST) - SearchController.java:40-44
-- ❌ Frontend search.api.ts appelle des endpoints manquants:
-  - `GET /search/tags` (search.api.ts:117)
-  - `GET /search/tags/popular` (search.api.ts:127)
-  - `GET /search/popular` (search.api.ts:137)
-  - `GET /search/recent` (search.api.ts:144)
-  - `DELETE /search/recent` (search.api.ts:149)
-
-### Notification API
-- ✅ `/api/notifications` (GET) - NotificationController.java:34-46
-- ✅ `/api/notifications/unread-count` (GET) - NotificationController.java:48-55
-- ✅ `/api/notifications/{id}/read` (PUT) - NotificationController.java:57-65
-- ✅ `/api/notifications/read-all` (PUT) - NotificationController.java:67-74
-- ✅ `/api/notifications/{id}` (DELETE) - NotificationController.java:76-84
-- ✅ `/api/notifications/preferences` (GET) - NotificationController.java:86-93
-- ✅ `/api/notifications/preferences` (PUT) - NotificationController.java:95-110
-- ✅ `/api/notifications/devices` (POST) - NotificationController.java:112-126
-- ✅ `/api/notifications/devices/{token}` (DELETE) - NotificationController.java:128-133
-- ✅ `/api/notifications/devices` (GET) - NotificationController.java:135-142
-- ❌ `/api/notifications/read` (DELETE) - Frontend notification.api.ts:59 pour deleteAllRead
-- ⚠️ Frontend notification.api.ts utilise `/notifications/push/register` et `/push/unregister` (lignes 78-90) mais backend utilise `/notifications/devices`
-
-### Settings API
-- ✅ `/api/notifications/preferences` (GET/PUT)
-- ✅ `/api/notifications/devices` (GET)
-- ✅ `/api/notifications/devices/{deviceId}` (DELETE)
-- ✅ `/api/gdpr/export` (GET) - GdprController.java:31-40
-- ⚠️ `/api/gdpr/delete-account` (DELETE) - GdprController.java:46-58
-  - Frontend settings.api.ts:62 envoie `{data}` dans body mais backend ne l'attend pas
-- ❌ `/api/users/me/privacy` (GET/PUT) - Frontend settings.api.ts:31-40 mais backend ne l'a pas
-- ❌ `/api/users/me/change-password` (POST) - Frontend settings.api.ts:70-77 mais backend ne l'a pas
-
-### Media API
-- ✅ `/api/media/upload/image` (POST) - MediaController.java:30-63
-- ✅ `/api/media/upload/avatar` (POST) - MediaController.java:65-85
-- ✅ `/api/media/files/**` (GET) - MediaController.java:87-105
-- ✅ `/api/media/files/**` (DELETE) - MediaController.java:107-118
-
-## 📊 Résumé par Priorité
-
-### 🔴 PRIORITÉ CRITIQUE - Bugs bloquants
-
-1. **Auth verify-email**: Frontend POST vs Backend GET
-2. **Auth password reset**: Noms d'endpoints non alignés
-3. **Activity structure**: Confusion Activities vs UserActivities
-4. **Program join/leave/enroll**: Fonctionnalités core manquantes
-5. **Notification push endpoints**: `/push/register` vs `/devices`
-
-### 🟡 PRIORITÉ HAUTE - Fonctionnalités importantes
-
-6. Chat message edit/delete
-7. Map bounds et clustering
-8. Program reviews (CRUD complet)
-9. User search endpoint
-10. Privacy settings endpoints
-11. Change password endpoint
-
-### 🟢 PRIORITÉ MOYENNE - Améliorations UX
-
-12. Badge progress et claim
-13. Search tags et popular
-14. Categories search et detail
-15. Notification deleteAllRead
-16. Chat conversation detail et delete
-17. Chat images upload
-
-### 🔵 PRIORITÉ BASSE - Nice to have
-
-18. Activity likes/favorites
-19. Activity photos upload
-20. Map geocoding
-21. Program drafts
-
-## 🔧 Actions Recommandées
-
-### Corrections Immédiates (Sprint actuel)
-
-1. **AuthController & Frontend auth.api.ts**
-   - Modifier frontend `verifyEmail` pour utiliser GET avec query param
-   - Renommer `resetPassword` → `forgotPassword` et `confirmResetPassword` → `resetPassword`
-
-2. **NotificationController & Frontend notification.api.ts**
-   - Unifier: soit tout en `/devices`, soit tout en `/push/*`
-   - Recommandation: garder `/devices` (plus RESTful)
-
-3. **ActivityController**
-   - Décider: "Activity" = événement réel ou préférence?
-   - Si événement: créer nouveau controller `EventController`
-   - Si préférence: renommer frontend `activity.api.ts` → `category.api.ts`
-
-### Développement Sprint +1
-
-4. **ProgramController**
-   - Ajouter `/programs/{id}/join` (POST)
-   - Ajouter `/programs/{id}/leave` (POST)
-   - Ajouter `/users/me/programs` (GET) avec filtres
-   - Ajouter `/users/me/programs/{id}` (PATCH/DELETE)
-
-5. **ChatController**
-   - Ajouter `/conversations/{id}` (GET/DELETE)
-   - Ajouter `/messages/{id}` (PATCH/DELETE)
-
-6. **UserController**
-   - Ajouter `/users/me/privacy` (GET/PUT)
-   - Ajouter `/users/me/change-password` (POST)
-   - Ajouter `/users` (GET) avec search
-
-### Développement Sprint +2
-
-7. **MapController**
-   - Implémenter bounds/clustering/geocoding
-
-8. **ReviewController** (nouveau)
-   - Créer controller pour program reviews
-
-9. **SearchController**
-   - Ajouter tags/popular/recent endpoints
-
-## 📝 Conventions à Adopter
-
-### Naming
-- Ressources au pluriel: `/users`, `/programs`, `/activities`
-- Actions: POST (create), GET (read), PUT/PATCH (update), DELETE (delete)
-- Sous-ressources: `/programs/{id}/schedules`, `/users/{id}/activities`
-- Actions custom: POST `/programs/{id}/join`, POST `/notifications/read-all`
-
-### Réponses
-- Success: `200 OK`, `201 Created`, `204 No Content`
-- Erreurs: `400 Bad Request`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`, `500 Internal Server Error`
-- Body JSON standard: `{message, data, errors?}`
-
-### Documentation
-- Swagger/OpenAPI sur tous les endpoints
-- Tests de contrats API (Pact ou Spring Cloud Contract)
-- Documentation dans `docs/api/`
-
-## ✅ Checklist Validation
-
-- [ ] Tous les endpoints frontend ont un équivalent backend
-- [ ] Les méthodes HTTP correspondent (GET/POST/PUT/PATCH/DELETE)
-- [ ] Les noms de paramètres sont identiques (camelCase frontend, snake_case ou camelCase backend)
-- [ ] Les structures de réponse sont documentées
-- [ ] Les codes d'erreur sont cohérents
-- [ ] Tests d'intégration frontend ↔ backend en place
-- [ ] Documentation OpenAPI à jour
