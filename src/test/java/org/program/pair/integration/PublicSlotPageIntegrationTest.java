@@ -170,6 +170,13 @@ class PublicSlotPageIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void leJson_doitEtreDisponible_etFerme() {
+        // Ce test affirmait que scheduleId était absent, et il avait raison de la
+        // règle telle qu'elle avait d'abord été écrite — « aucun identifiant
+        // interne ». Cette règle était trop large : elle rendait le lien
+        // inopérant, le client n'ayant aucune adresse où aller après avoir résolu
+        // le jeton. La règle corrigée distingue l'identifiant de la ressource
+        // PARTAGÉE, qui est l'objet même du lien, de ceux des TIERS, qui donnent
+        // prise sur des personnes que l'organisateur n'a pas partagées.
         String host = registerAndLogin();
         String token = shareLink(host, publishSlot(host)).token();
 
@@ -178,9 +185,11 @@ class PublicSlotPageIntegrationTest extends AbstractIntegrationTest {
             .expectBody()
             .jsonPath("$.programTitle").exists()
             .jsonPath("$.organizerGivenName").exists()
-            // Ce que le DTO fermé n'expose pas
+            // Ce que le lien partage : le créneau lui-même.
+            .jsonPath("$.scheduleId").exists()
+            // Ce que le DTO fermé continue de ne pas exposer.
             .jsonPath("$.host").doesNotExist()
-            .jsonPath("$.scheduleId").doesNotExist()
+            .jsonPath("$.organizerId").doesNotExist()
             .jsonPath("$.lat").doesNotExist();
     }
 
@@ -206,6 +215,51 @@ class PublicSlotPageIntegrationTest extends AbstractIntegrationTest {
         // agressivement, et une association fausse mémorisée par un appareil est
         // plus longue à corriger qu'une association absente.
         assertThat(status("/.well-known/assetlinks.json")).isEqualTo(404);
+    }
+
+    @Test
+    void leJson_doitPorterLidentifiantDuCreneau_pourQueLeLienAboutisse() {
+        // Le défaut le plus coûteux de ce lot, et le plus silencieux : la vue
+        // fermée n'exposait aucun identifiant, donc le client résolvait le jeton
+        // en une description qu'il ne pouvait afficher nulle part. Le lien
+        // ouvrait l'application et la laissait où elle était — sans erreur, sans
+        // que rien ne s'en plaigne. Relevé par l'équipe mobile le 2026-08-20.
+        String host = registerAndLogin();
+        UUID slotId = publishSlot(host);
+        String token = shareLink(host, slotId).token();
+
+        webTestClient.get().uri("/public/slots/{t}", token)
+            .exchange().expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.scheduleId").isEqualTo(slotId.toString())
+            // Ce que la vue fermée continue de ne pas dire : les tiers.
+            .jsonPath("$.organizerId").doesNotExist()
+            .jsonPath("$.conversationId").doesNotExist();
+    }
+
+    @Test
+    void lidentifiant_neDoitJamaisApparaitreDansUneAdresse() {
+        // Le garde-fou reste entier : l'identifiant vit dans le corps, jamais
+        // dans l'URL. Une adresse bâtie sur la clé primaire s'énumère.
+        String host = registerAndLogin();
+        UUID slotId = publishSlot(host);
+        PublicShareLinkDto link = shareLink(host, slotId);
+
+        assertThat(link.shortUrl()).doesNotContain(slotId.toString());
+        assertThat(link.pageUrl()).doesNotContain(slotId.toString());
+        assertThat(status("/s/" + slotId)).isEqualTo(404);
+    }
+
+    @Test
+    void pageUrl_doitRendreDuHtml_jamaisDesDonnees() {
+        // Un champ nommé « URL de page » qui rend du JSON fait trébucher son
+        // lecteur — c'est arrivé côté client sur la variante programme.
+        String host = registerAndLogin();
+        String token = shareLink(host, publishSlot(host)).token();
+
+        webTestClient.get().uri("/public/slots/{t}/page", token)
+            .exchange().expectStatus().isOk()
+            .expectHeader().contentTypeCompatibleWith(MediaType.TEXT_HTML);
     }
 
     @Test

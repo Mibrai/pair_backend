@@ -380,6 +380,11 @@ passer — c'est cette paire qui rattache une présence ou un recap à la bonne 
 `CHECK (place_type = 'ONLINE' OR location IS NOT NULL)` a pris le relais de `NOT NULL` :
 une séance à distance n'a pas de point, tout le reste en a un.
 
+**L'identifiant du créneau n'est jamais dans l'adresse**, mais il est dans la réponse
+publique (`scheduleId`). Ce sont deux choses différentes : une URL bâtie sur la clé primaire
+s'énumère, un identifiant lisible seulement en présentant un jeton valide ne s'énumère pas —
+et sans lui, un lien partagé n'a nulle part où mener.
+
 **Le jeton de partage n'est jamais rétro-rempli.** Un créneau que personne n'a partagé n'a
 pas d'adresse publique ; il en obtient une à la première demande. Refermer le partage
 (`is_publicly_shareable = FALSE`) **n'efface pas** le jeton : rouvrir doit rendre valides

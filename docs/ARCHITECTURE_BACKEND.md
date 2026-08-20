@@ -1,6 +1,6 @@
 # Backend MeetDo / Pair — structure, fonctionnalités et base de données
 
-> État du dépôt au **20 août 2026**, branche `master` (dernier commit `e2a1a95`).
+> État du dépôt au **20 août 2026**, branche `master` (dernier commit `identifiant-public`).
 > Ce document décrit ce que le code fait *aujourd'hui*, pas ce qui est prévu.
 > **77 migrations Flyway** (dernière : `V78__public_program_sharing.sql`).
 >
@@ -26,7 +26,7 @@
 | Push | Firebase Admin SDK (activable ; implémentation `NoOp` sinon) |
 | E-mail | SMTP (`spring-boot-starter-mail`) en local, **Resend** via API en production |
 | Docs API | springdoc-openapi (`/swagger-ui.html`, `/v3/api-docs`) |
-| Volume | ~35 600 lignes de Java applicatif, ~22 200 lignes de tests, **225 endpoints HTTP** + 2 destinations STOMP, **105 classes de test** (758 tests), **39 tables** |
+| Volume | ~35 600 lignes de Java applicatif, ~22 200 lignes de tests, **225 endpoints HTTP** + 2 destinations STOMP, **105 classes de test** (763 tests), **39 tables** |
 | Pages web | Thymeleaf — pages publiques de créneau et de programme, lien de sécurité, et les deux fichiers d'association d'applications |
 
 Le backend sert une application mobile/web de mise en relation autour d'activités
@@ -190,8 +190,13 @@ Dépassement → `TooManyRequestsException` → HTTP 429 avec le code `RATE_LIMI
 - **Partage de position** : ponctuel, **30 minutes au maximum**, et c'est un message
   ordinaire du fil — renouveler suppose une nouvelle bulle, donc suivre quelqu'un reste
   visible de celui qu'on suit. Une durée supérieure est refusée, jamais rabotée en silence.
-- **Page publique de créneau** : type fermé `PublicSlotView`, sans aucun identifiant
-  interne. Six conditions de refus réunies dans `publiclyVisible`, toutes en `404`.
+- **Pages publiques** : types fermés `PublicSlotView` et `PublicProgramView`. Ils portent
+  l'identifiant de la **ressource partagée** — c'est l'objet même du lien, et sans lui le
+  client résout le jeton en une description qu'il ne peut afficher nulle part — mais jamais
+  ceux des **tiers**, qui donneraient prise sur des personnes que l'organisateur n'a pas
+  partagées. L'identifiant n'apparaît **jamais dans une adresse** : c'est le jeton opaque
+  qui adresse, une URL bâtie sur la clé primaire se laissant énumérer. Les conditions de
+  refus sont réunies dans `publiclyVisible`, toutes en `404`.
 
 ### 3.5 Erreurs
 
@@ -835,7 +840,7 @@ d'échec sur la seule page censée donner envie.
 
 ## 8. Tests
 
-**105 classes de test**, ~22 200 lignes, **758 tests**.
+**105 classes de test**, ~22 400 lignes, **763 tests**.
 
 - **Tests unitaires** — un par service dans `domain/<domaine>/`, sur Mockito.
 - **Tests d'intégration** — `src/test/.../integration/`, adossés à

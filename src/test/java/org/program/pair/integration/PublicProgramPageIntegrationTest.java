@@ -117,18 +117,49 @@ class PublicProgramPageIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void leJson_neDoitPorterAucunIdentifiantInterne() {
+    void leJson_doitPorterLidentifiantDuProgramme_etRienDesTiers() {
+        // L'identifiant du programme EST l'objet du partage : sans lui, le jeton
+        // se résout en une description qu'aucun client ne peut afficher, faute
+        // d'adresse où aller. Ceux des tiers restent exclus — ils donnent prise
+        // sur des personnes que l'organisateur n'a pas partagées.
         String host = registerAndLogin("prog-g");
-        String token = shareLink(host, activeProgram(host, "Yoga du samedi")).token();
+        UUID programId = activeProgram(host, "Yoga du samedi");
+        String token = shareLink(host, programId).token();
 
         webTestClient.get().uri("/public/programs/{t}", token)
             .exchange().expectStatus().isOk()
             .expectBody()
+            .jsonPath("$.programId").isEqualTo(programId.toString())
             .jsonPath("$.title").isEqualTo("Yoga du samedi")
             .jsonPath("$.organizerGivenName").exists()
-            .jsonPath("$.id").doesNotExist()
             .jsonPath("$.userActivityId").doesNotExist()
             .jsonPath("$.organizerId").doesNotExist();
+    }
+
+    @Test
+    void lidentifiant_neDoitJamaisApparaitreDansUneAdresse() {
+        String host = registerAndLogin("prog-g2");
+        UUID programId = activeProgram(host, "Yoga du samedi");
+        PublicShareLinkDto link = shareLink(host, programId);
+
+        assertThat(link.shortUrl()).doesNotContain(programId.toString());
+        assertThat(link.pageUrl()).doesNotContain(programId.toString());
+        assertThat(status("/p/" + programId)).isEqualTo(404);
+    }
+
+    @Test
+    void pageUrl_doitRendreDuHtml_jamaisDesDonnees() {
+        // Elle valait /public/programs/{jeton}, la route JSON. Collée dans un
+        // message, elle ouvrait un navigateur sur du texte brut — livré une heure
+        // côté client avant qu'ils ne s'en aperçoivent.
+        String host = registerAndLogin("prog-g3");
+        PublicShareLinkDto link = shareLink(host, activeProgram(host, "Yoga du samedi"));
+
+        assertThat(link.pageUrl()).endsWith("/page");
+
+        webTestClient.get().uri(link.pageUrl().replaceFirst("^https://[^/]+", ""))
+            .exchange().expectStatus().isOk()
+            .expectHeader().contentTypeCompatibleWith(MediaType.TEXT_HTML);
     }
 
     @Test
