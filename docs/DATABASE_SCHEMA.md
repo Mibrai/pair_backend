@@ -2,10 +2,10 @@
 
 > **Relevé le 20 août 2026** par introspection, et non déduit des fichiers de migration :
 > ce document décrit les tables telles qu'elles existent après application des
-> **76 migrations Flyway** (jusqu'à `V77__trigram_search.sql`).
+> **77 migrations Flyway** (jusqu'à `V78__public_program_sharing.sql`).
 > Vue d'ensemble de l'application : [`ARCHITECTURE_BACKEND.md`](ARCHITECTURE_BACKEND.md).
 >
-> Relevé précédent : 18 août 2026, arrêté à `V59`. Les dix-huit migrations posées depuis
+> Relevé précédent : 18 août 2026, arrêté à `V59`. Les dix-neuf migrations posées depuis
 > — phases A à D du TODO v2, puis la spécification des liens publics — ajoutent six tables
 > et une trentaine de colonnes. Les sections marquées *(nouveau)* n'existaient pas dans la
 > version précédente de ce document.
@@ -277,7 +277,12 @@ programs
 │
 ├── allow_participant_messages BOOLEAN NOT NULL DEFAULT TRUE        (V52)
 ├── subscribers_notified_at   TIMESTAMPTZ                           (V55)
-└── created_via               VARCHAR(20) NOT NULL DEFAULT 'FULL'   ← FULL | QUICK   (V61)
+├── created_via               VARCHAR(20) NOT NULL DEFAULT 'FULL'   ← FULL | QUICK   (V61)
+│
+│   ── partage public (V78) ──
+├── public_share_token        VARCHAR(22) UNIQUE   ← base62 opaque, jamais l'UUID interne
+├── is_publicly_shareable     BOOLEAN NOT NULL DEFAULT TRUE
+└── public_view_count         INTEGER NOT NULL DEFAULT 0   ← robots d'aperçu exclus
 ```
 
 **Règle de navigation :** l'organisateur d'un programme s'obtient en remontant
@@ -293,9 +298,24 @@ né d'un **créneau rapide**. Le second n'a ni description ni cadrage : sans ce 
 s'affichait comme un programme mal rempli, et le client n'avait aucun moyen de distinguer un
 vide assumé d'un oubli.
 
+**Les trois colonnes de partage sont celles de `schedules`**, transposées telles quelles
+(V65 → V78). Un programme partagé arrivait sinon en `meetdo://programs/42`, qu'aucune
+messagerie ne rend cliquable : le destinataire recevait une chaîne à recopier à la main, et
+la recopier ne donnait rien à qui n'a pas encore l'application.
+
+Mêmes règles que pour un créneau, et pour les mêmes raisons : **aucun rétro-remplissage** —
+le jeton naît à la première demande de lien —, et **jamais de régénération** — refermer le
+partage suffit à éteindre le lien, et rouvrir doit rendre valides ceux déjà collés ailleurs.
+
+**Ce qui diffère du créneau, et c'est délibéré** : les conditions de visibilité n'ont **pas**
+de borne de temps. Un programme n'est pas une occurrence — sans séance à venir il n'est pas
+périmé, son auteur peut en reprogrammer une. Ce qui le retire du web ouvert est ce qui le
+retire du fil : `status ≠ ACTIVE`, `is_public = false`, ou `archived_at` posé.
+
 **Index :** `idx_programs_user_activity`, `idx_programs_status`, `idx_programs_archived`,
 `idx_programs_search_vector` (GIN), `idx_programs_embedding` (HNSW),
-`idx_programs_title_trgm` (GIN trigrammes, V77).
+`idx_programs_title_trgm` (GIN trigrammes, V77), et l'unique
+`programs_public_share_token_key` (V78).
 
 ---
 
