@@ -144,6 +144,28 @@ public class Program {
     private LocationType locationType;
 
     /**
+     * Partage public du programme, calqué sur celui des créneaux (V65 → V78).
+     *
+     * <p>Le jeton est <b>opaque</b> et n'est jamais l'identifiant interne : une
+     * adresse bâtie sur la clé primaire se laisse énumérer, et lierait l'URL
+     * publique à une structure interne qui a le droit de changer.
+     *
+     * <p>Il est créé à la première demande de lien et <b>jamais régénéré</b> :
+     * refermer le partage suffit à ce que le lien ne mène plus nulle part, et le
+     * rouvrir doit rendre valides les liens déjà collés ailleurs.
+     */
+    @Column(name = "public_share_token", length = 22, unique = true)
+    private String publicShareToken;
+
+    @Column(name = "is_publicly_shareable", nullable = false)
+    @Builder.Default
+    private Boolean isPubliclyShareable = true;
+
+    @Column(name = "public_view_count", nullable = false)
+    @Builder.Default
+    private Integer publicViewCount = 0;
+
+    /**
      * Par quel chemin ce programme est né (V61). Le {@code @Builder.Default} n'est
      * pas décoratif : plusieurs tests construisent un {@code Program.builder()}
      * sans ce champ, et il arriverait nul là où la colonne est {@code NOT NULL}.
