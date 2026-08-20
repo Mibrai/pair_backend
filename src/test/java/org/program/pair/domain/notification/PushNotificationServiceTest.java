@@ -690,9 +690,21 @@ class PushNotificationServiceTest {
         // un téléphone resté à Tokyo dort et un téléphone parisien non. Trancher
         // pour le compte entier aurait fait taire l'un ou réveillé l'autre.
         UUID userId = UUID.randomUUID();
-        // Silence de minuit à 8 h. À l'instant fixé du test (19 h à Paris), Paris
-        // est éveillé et Tokyo est à 2 h du matin.
-        PushNotificationService service = serviceFor(userId, quiet(0, 8));
+
+        // La fenêtre est calculée à partir de l'heure de Tokyo MAINTENANT, et
+        // non écrite en dur.
+        //
+        // sendPush lit Instant.now() — l'horloge fixée d'AndroidPushText ne
+        // gouverne que la composition des textes. Une fenêtre écrite en dur
+        // (« minuit à 8 h ») ne séparait donc les deux fuseaux que pendant sept
+        // heures par jour, et ce test passait ou échouait selon l'heure à
+        // laquelle on le lançait. Il a été écrit ainsi, et la suite complète l'a
+        // pris en défaut le jour même.
+        //
+        // Une fenêtre d'une heure sur l'heure de Tokyo exclut nécessairement
+        // Paris : les deux fuseaux sont séparés de sept heures.
+        int tokyoHour = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Tokyo")).getHour();
+        PushNotificationService service = serviceFor(userId, quiet(tokyoHour, (tokyoHour + 1) % 24));
         when(deviceTokenRepository.findByUserId(userId)).thenReturn(List.of(
             device("token-paris", "fr", DevicePlatform.IOS, "Europe/Paris"),
             device("token-tokyo", "fr", DevicePlatform.IOS, "Asia/Tokyo")));
@@ -702,7 +714,8 @@ class PushNotificationServiceTest {
 
         service.sendPush(userId, NotificationType.NEW_FOLLOWER, Map.of(), 1);
 
-        // Deux fuseaux font deux groupes de texte ; un seul survit au silence.
+        // Deux fuseaux font deux groupes de texte ; un seul survit au silence —
+        // celui de Paris, où il n'est pas l'heure qu'il est à Tokyo.
         verify(firebaseMessaging, times(1)).sendEachForMulticast(any(MulticastMessage.class));
     }
 

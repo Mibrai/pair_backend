@@ -16,6 +16,30 @@ import java.util.UUID;
 @Repository
 public interface ProgramRepository extends JpaRepository<Program, UUID> {
 
+    /**
+     * Le programme désigné par son jeton public, ou rien.
+     *
+     * <p>C'est la seule recherche que fait le partage public, et elle passe par
+     * l'index d'unicité de la colonne — jamais par l'identifiant interne, qu'une
+     * adresse publique ne doit pas exposer.
+     */
+    java.util.Optional<Program> findByPublicShareToken(String publicShareToken);
+
+    boolean existsByPublicShareToken(String publicShareToken);
+
+    /**
+     * Incrémente le compteur d'ouvertures d'une page publique de programme.
+     *
+     * <p>Un {@code UPDATE} atomique, et non une lecture suivie d'une écriture :
+     * deux ouvertures simultanées du même lien — ce que le partage dans un groupe
+     * produit précisément — n'en compteraient qu'une.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE Program p SET p.publicViewCount = p.publicViewCount + 1 "
+        + "WHERE p.publicShareToken = :token")
+    int incrementPublicViewCount(@Param("token") String token);
+
+
     @Query("SELECT COUNT(p) FROM Program p WHERE p.userActivity.user.id = :userId")
     long countProgramsByUser(@Param("userId") UUID userId);
 
