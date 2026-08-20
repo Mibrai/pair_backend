@@ -1,20 +1,31 @@
 package org.program.pair.domain.publicslot;
 
 import java.time.Instant;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * Ce qu'une page publique de programme montre — et rien d'autre.
  *
  * <p>Type fermé, exactement pour la raison de {@link PublicSlotView} : réutiliser
- * {@code ProgramDto} publierait des identifiants internes et un
- * {@code UserPublicDto} portant l'UUID de l'organisateur. Sur une page ouverte
- * sans compte, ce serait donner à quiconque reçoit un lien la clé d'objets qu'il
- * n'a pas le droit de manipuler.
+ * {@code ProgramDto} publierait l'identifiant de l'organisateur et un
+ * {@code UserPublicDto} qui porte le sien. Sur une page ouverte sans compte, ce
+ * serait donner à quiconque reçoit un lien la clé de personnes qu'il n'a pas
+ * choisi de recevoir.
  *
- * <p>Interdit, et absent : e-mail, téléphone, UUID d'utilisateur ou de programme,
- * adresse exacte, liste des inscrits, identifiants de conversation.
+ * <p>L'identifiant du programme, lui, <b>est présent</b> : c'est l'objet même du
+ * partage, et sans lui le jeton se résout en une description qu'aucun client ne
+ * peut afficher, faute d'adresse où aller. Voir {@link PublicSlotView} pour la
+ * règle complète et la raison de sa correction.
+ *
+ * <p>Interdit, et absent : e-mail, téléphone, identifiant d'utilisateur ou de
+ * conversation, adresse exacte, liste des inscrits.
  */
 public record PublicProgramView(
+
+    @Schema(description = "Identifiant du programme partagé, pour ouvrir sa fiche dans "
+        + "l'application. Il n'adresse rien sur le web ouvert — c'est le jeton qui "
+        + "adresse — et n'est lisible qu'en présentant ce jeton.")
+    java.util.UUID programId,
 
     String title,
     String description,

@@ -1,24 +1,43 @@
 package org.program.pair.domain.publicslot;
 
 import java.time.Instant;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * Ce qu'une page publique de créneau montre — et rien d'autre.
  *
  * <p>Type fermé, pour la même raison que {@code SafetyShareView} : réutiliser
- * {@code SlotFeedItemDto} publierait quatre identifiants internes et un
- * {@code UserPublicDto}, lequel porte l'UUID de l'organisateur. Sur une page
- * ouverte sans compte, ce serait donner à qui reçoit un lien la clé d'objets
- * qu'il n'a pas le droit de manipuler.
+ * {@code SlotFeedItemDto} publierait les identifiants de l'organisateur, de son
+ * activité et de sa conversation. Sur une page ouverte sans compte, ce serait
+ * donner à qui reçoit un lien la clé d'objets — et de personnes — qu'il n'a pas
+ * choisi de recevoir.
  *
- * <p>Autorisé par la spécification, et présent ici : titre, activité, catégorie,
- * date, nom du lieu, ville, nombre de participants, mot d'accueil, prénom et
- * avatar de l'organisateur, badge vérifié, image.
+ * <p><b>La règle, précisée le 2026-08-20.</b> Elle a d'abord été écrite « aucun
+ * identifiant interne », ce qui était trop large et rendait la fonctionnalité
+ * inopérante : le client résolvait le jeton en une description qu'il ne pouvait
+ * afficher nulle part, faute d'adresse où aller. Le lien ouvrait l'application et
+ * la laissait où elle était — sans erreur, donc sans que rien ne s'en plaigne.
  *
- * <p>Interdit, et absent : e-mail, téléphone, UUID utilisateur, coordonnées
- * exactes d'un lieu privé, liste des participants.
+ * <p>La bonne règle distingue <b>ce que le lien partage</b> de <b>ce qu'il ne
+ * partage pas</b> : l'identifiant du créneau est précisément l'objet du partage,
+ * et il n'est lisible qu'en présentant un jeton valide — donc par quelqu'un qui
+ * voit déjà tout ce que la page montre. Ceux des tiers restent exclus, car ils
+ * donnent prise sur des personnes que l'organisateur n'a pas partagées.
+ *
+ * <p>Ce que le garde-fou visait reste entier : l'identifiant n'apparaît
+ * <b>jamais dans l'URL</b>. Une adresse bâtie sur la clé primaire s'énumère, et
+ * l'on remonte la base en incrémentant ; c'est le jeton opaque qui adresse.
+ *
+ * <p>Interdit, et toujours absent : e-mail, téléphone, identifiant d'utilisateur
+ * ou de conversation, coordonnées exactes d'un lieu privé, liste des participants.
  */
 public record PublicSlotView(
+
+    @Schema(description = "Identifiant du créneau partagé, pour ouvrir sa fiche dans "
+        + "l'application. Présent depuis le 2026-08-20 : sans lui, un lien ouvrait "
+        + "l'application sans pouvoir la mener nulle part. Il n'adresse rien sur le web "
+        + "ouvert — c'est le jeton qui adresse — et n'est lisible qu'en présentant ce jeton.")
+    java.util.UUID scheduleId,
 
     String programTitle,
     String activityName,
