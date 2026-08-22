@@ -144,7 +144,9 @@ class SlotServiceTest {
         when(userRepository.findById(joinerId)).thenReturn(Optional.of(joiner));
         when(userService.getPublicProfile(any(), any())).thenReturn(UserPublicDto.identity(
             UUID.randomUUID(), "Host", null, null, "UNVERIFIED"));
-        when(participationRepository.findByScheduleIdAndUserId(any(), any())).thenReturn(Optional.empty());
+        // Le rendu d'un créneau lit désormais les participations par lot, même
+        // quand le lot n'a qu'un élément : une seule écriture de la règle.
+        when(participationRepository.findByUserIdAndScheduleIdIn(any(), any())).thenReturn(List.of());
     }
 
     private Schedule buildOpenSlot(UUID hostId, Instant startsAt) {

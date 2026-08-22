@@ -17,6 +17,7 @@ import org.program.pair.domain.program.dto.SlotParticipantDto;
 import org.program.pair.domain.block.BlockFilterService;
 import org.program.pair.domain.user.User;
 import org.program.pair.domain.user.UserService;
+import org.program.pair.domain.user.dto.UserPublicDto;
 import org.program.pair.repository.ScheduleRepository;
 import org.program.pair.repository.SlotParticipationRepository;
 import org.program.pair.repository.UserRepository;
@@ -36,8 +37,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Rejoindre un créneau ouvert — le coeur du produit meetDo. Distinct de
@@ -87,7 +92,12 @@ public class SlotService {
         Set<String> tags = request.effectiveAccessibilityTags();
         boolean filterByTags = !tags.isEmpty();
 
-        List<Schedule> slots = scheduleRepository.findOpenSlotsInRadius(
+        // Des ids, puis un rechargement avec les LEFT JOIN FETCH : la requête
+        // native ne peut pas en porter, et les entités qu'elle rendrait
+        // directement arriveraient avec toutes leurs associations paresseuses.
+        // Le mapping paierait alors, par créneau, la cascade program →
+        // userActivity → activity → category.
+        List<UUID> ids = scheduleRepository.findOpenSlotIdsInRadius(
             request.lat(), request.lng(), request.radiusMeters(),
             from, to, request.activityId(),
             filterByCategory, filterByCategory ? categoryIds : ScheduleRepository.NO_CATEGORY_FILTER,
@@ -96,9 +106,28 @@ public class SlotService {
             filterByTags, filterByTags ? tags : ScheduleRepository.NO_TAG_FILTER, tags.size(),
             zoneId);
 
-        return slots.stream()
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+
+        Map<UUID, Schedule> parId = scheduleRepository.findWithActivityDetailsByIds(ids).stream()
+            .collect(Collectors.toMap(Schedule::getId, Function.identity()));
+
+        // L'ordre est repris depuis la liste d'ids, et c'est essentiel :
+        // findWithActivityDetailsByIds interroge par IN et ne garantit rien,
+        // alors que le SQL natif porte le classement par jour, disponibilité,
+        // heure puis distance. Sans cette reprise, le tri disparaîtrait sans
+        // qu'aucune erreur ne soit levée.
+        List<Schedule> slots = ids.stream()
+            .map(parId::get)
+            .filter(Objects::nonNull)
             .filter(s -> !s.getProgram().getUserActivity().getUser().getId().equals(requesterId))
-            .map(s -> toFeedItem(s, request.lat(), request.lng(), requesterId))
+            .toList();
+
+        FeedContext context = feedContext(slots, requesterId);
+
+        return slots.stream()
+            .map(s -> toFeedItem(s, request.lat(), request.lng(), requesterId, context))
             .toList();
     }
 
@@ -428,11 +457,16 @@ public class SlotService {
             .map(SlotParticipation::getSchedule)
             .toList();
 
-        return java.util.stream.Stream.concat(hosted.stream(), joined.stream())
+        List<Schedule> slots = java.util.stream.Stream.concat(hosted.stream(), joined.stream())
             .distinct()
             .filter(s -> !upcomingOnly || s.getStartsAt().isAfter(Instant.now()))
             .sorted(java.util.Comparator.comparing(Schedule::getStartsAt))
-            .map(s -> toFeedItem(s, null, null, userId))
+            .toList();
+
+        FeedContext context = feedContext(slots, userId);
+
+        return slots.stream()
+            .map(s -> toFeedItem(s, null, null, userId, context))
             .toList();
     }
 
@@ -461,13 +495,68 @@ public class SlotService {
             .toList();
     }
 
+    /**
+     * Ce qu'il faut avoir sous la main pour rendre un lot de créneaux sans
+     * retourner en base à chaque élément : le profil public de chaque hôte, et
+     * ma participation à chacun des créneaux.
+     *
+     * <p>Les deux sont indexés par identifiant et calculés <b>une fois pour le
+     * lot</b>. Un fil de vingt créneaux appelait auparavant, par élément, un
+     * profil public complet (cinq requêtes, plus une par badge) et jusqu'à deux
+     * lectures de participation — pour une information que plusieurs créneaux
+     * partagent très souvent, le même hôte publiant plusieurs séances.
+     *
+     * <p>Une entrée absente de {@code participations} vaut « aucune
+     * participation », jamais « pas encore chargée » : c'est ce qui autorise le
+     * mapping à ne plus jamais toucher le dépôt.
+     */
+    private record FeedContext(Map<UUID, UserPublicDto> profiles,
+                               Map<UUID, SlotParticipation> participations) {}
+
+    private FeedContext feedContext(List<Schedule> slots, UUID requesterId) {
+        if (slots.isEmpty()) {
+            return new FeedContext(Map.of(), Map.of());
+        }
+
+        // distinct() avant l'appel, et non après : c'est tout l'intérêt: deux
+        // créneaux du même hôte ne redemandent pas deux fois le même profil.
+        Map<UUID, UserPublicDto> profiles = slots.stream()
+            .map(s -> s.getProgram().getUserActivity().getUser().getId())
+            .distinct()
+            .collect(Collectors.toMap(Function.identity(),
+                                      id -> userService.getPublicProfile(id, requesterId)));
+
+        // Sans demandeur il n'y a pas de participation à chercher — la page
+        // publique d'un créneau passe par ici.
+        Map<UUID, SlotParticipation> participations = requesterId == null
+            ? Map.of()
+            : participationRepository
+                .findByUserIdAndScheduleIdIn(requesterId, slots.stream().map(Schedule::getId).toList())
+                .stream()
+                .collect(Collectors.toMap(p -> p.getSchedule().getId(), Function.identity()));
+
+        return new FeedContext(profiles, participations);
+    }
+
+    /**
+     * Le cas d'un créneau seul, exprimé comme un lot d'un élément : une seule
+     * écriture de la règle, donc pas de second chemin qui puisse en diverger.
+     */
     private SlotFeedItemDto toFeedItem(Schedule slot, Double viewerLat, Double viewerLng, UUID requesterId) {
+        List<Schedule> lot = List.of(slot);
+        return toFeedItem(slot, viewerLat, viewerLng, requesterId, feedContext(lot, requesterId));
+    }
+
+    private SlotFeedItemDto toFeedItem(Schedule slot, Double viewerLat, Double viewerLng,
+                                       UUID requesterId, FeedContext context) {
         Program program = slot.getProgram();
         UserActivity userActivity = program.getUserActivity();
         Activity activity = userActivity.getActivity();
         Category category = activity.getCategory();
 
-        SlotAddressVisibility.Resolved place = SlotAddressVisibility.resolve(slot, requesterId, participationRepository);
+        SlotParticipation myParticipation = context.participations().get(slot.getId());
+
+        SlotAddressVisibility.Resolved place = SlotAddressVisibility.resolve(slot, myParticipation);
 
         Double distanceMeters = null;
         if (viewerLat != null && viewerLng != null && slot.getLocation() != null) {
@@ -475,16 +564,14 @@ public class SlotService {
                 slot.getLocation().getY(), slot.getLocation().getX());
         }
 
-        var myParticipation = requesterId == null
-            ? java.util.Optional.<SlotParticipation>empty()
-            : participationRepository.findByScheduleIdAndUserId(slot.getId(), requesterId);
+        String myParticipationStatus = myParticipation != null
+            ? myParticipation.getStatus().name()
+            : null;
 
-        String myParticipationStatus = myParticipation.map(p -> p.getStatus().name()).orElse(null);
-
-        Integer myWaitlistPosition = myParticipation
-            .filter(p -> p.getStatus() == ParticipationStatus.WAITLISTED)
-            .map(SlotParticipation::getWaitlistPosition)
-            .orElse(null);
+        Integer myWaitlistPosition = myParticipation != null
+                && myParticipation.getStatus() == ParticipationStatus.WAITLISTED
+            ? myParticipation.getWaitlistPosition()
+            : null;
 
         return new SlotFeedItemDto(
             slot.getId(),
@@ -496,7 +583,7 @@ public class SlotService {
             category != null ? category.getColorRamp() : null,
             userActivity.getLevel() != null ? userActivity.getLevel().name() : null,
             userActivity.getFormat() != null ? userActivity.getFormat().name() : null,
-            userService.getPublicProfile(userActivity.getUser().getId(), requesterId),
+            context.profiles().get(userActivity.getUser().getId()),
             slot.getPlaceName(),
             place.displayAddress(),
             place.lat(),

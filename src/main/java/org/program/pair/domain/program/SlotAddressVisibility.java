@@ -27,14 +27,43 @@ public final class SlotAddressVisibility {
      */
     public static Resolved resolve(Schedule slot, UUID requesterId,
                                     SlotParticipationRepository participationRepository) {
+        return resolve(slot, () -> requesterId != null && participationRepository
+            .existsByScheduleIdAndUserIdAndStatus(slot.getId(), requesterId, ParticipationStatus.CONFIRMED));
+    }
+
+    /**
+     * La même règle, quand la participation de l'appelant est <b>déjà chargée</b>.
+     *
+     * <p>Écrite pour les listes. Rendre un fil de N créneaux faisait poser à la
+     * surcharge ci-dessus une question par élément, alors que
+     * {@link SlotParticipationRepository#findByUserIdAndScheduleIdIn} répond pour
+     * tout le lot d'un coup. C'est la même règle et le même code — seule la
+     * provenance de la réponse change.
+     *
+     * <p>{@code null} vaut « aucune participation », et non « pas encore
+     * chargée ». L'appelant doit donc avoir constitué sa table sur l'ensemble des
+     * créneaux qu'il rend : une table partielle ne masquerait pas un lieu, elle
+     * le cacherait à quelqu'un qui a le droit de le voir.
+     */
+    public static Resolved resolve(Schedule slot, SlotParticipation participation) {
+        return resolve(slot, () -> participation != null
+            && participation.getStatus() == ParticipationStatus.CONFIRMED);
+    }
+
+    /**
+     * Le tronc commun. Le prédicat est passé <b>paresseux</b> à dessein : un lieu
+     * public ou dont l'adresse exacte est assumée se tranche sans rien demander à
+     * personne, et c'est le cas courant. L'évaluer d'avance rétablirait la requête
+     * par créneau que ce lot supprime.
+     */
+    private static Resolved resolve(Schedule slot, java.util.function.BooleanSupplier confirmedParticipant) {
         if (slot.getPlaceType() == PlaceType.ONLINE || slot.getLocation() == null) {
             return Resolved.HIDDEN;
         }
 
         boolean canSeeExactPlace = slot.getPlaceType() == PlaceType.PUBLIC
             || Boolean.TRUE.equals(slot.getShowExactAddress())
-            || (requesterId != null && participationRepository
-                .existsByScheduleIdAndUserIdAndStatus(slot.getId(), requesterId, ParticipationStatus.CONFIRMED));
+            || confirmedParticipant.getAsBoolean();
 
         if (!canSeeExactPlace) {
             return Resolved.HIDDEN;

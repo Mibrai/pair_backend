@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -25,6 +26,29 @@ public interface SlotParticipationRepository extends JpaRepository<SlotParticipa
     List<SlotParticipation> findByUserIdAndStatus(UUID userId, ParticipationStatus status);
 
     List<SlotParticipation> findByUserIdAndStatusIn(UUID userId, List<ParticipationStatus> statuses);
+
+    /**
+     * Mes participations sur <b>un lot de créneaux</b>, en une requête.
+     *
+     * <p>Le pendant par lot de {@link #findByScheduleIdAndUserId} et de
+     * {@link #existsByScheduleIdAndUserIdAndStatus}. Rendre un fil de N créneaux
+     * appelait ces deux-là une fois par élément — le statut de participation et
+     * le rang en file d'attente d'un côté, la visibilité du lieu de l'autre —
+     * soit jusqu'à deux allers-retours par créneau affiché, pour une information
+     * qui tient dans une seule lecture.
+     *
+     * <p>Une personne a au plus une participation par créneau (contrainte
+     * d'unicité sur le couple), donc le résultat s'indexe sans perte par id de
+     * créneau. Un créneau absent de la table rendue signifie « aucune
+     * participation », et non « pas encore chargé » : c'est ce qui permet à
+     * l'appelant de ne jamais retomber sur le dépôt.
+     */
+    @Query("""
+        SELECT sp FROM SlotParticipation sp
+        WHERE sp.user.id = :userId AND sp.schedule.id IN :scheduleIds
+        """)
+    List<SlotParticipation> findByUserIdAndScheduleIdIn(@Param("userId") UUID userId,
+                                                        @Param("scheduleIds") Collection<UUID> scheduleIds);
 
     @Query("SELECT COUNT(sp) FROM SlotParticipation sp " +
            "WHERE sp.schedule.id = :scheduleId AND sp.status = 'CONFIRMED'")

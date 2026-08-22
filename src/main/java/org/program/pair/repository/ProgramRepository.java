@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -192,14 +193,33 @@ public interface ProgramRepository extends JpaRepository<Program, UUID> {
     );
 
     /**
-     * Same visibility filter as findVisibleInRadius, but matches on where the
-     * program actually takes place (its nearest schedule location, same source
-     * GET /map/activities uses for its markers) instead of the organizer's own
-     * profile location. Falls back to the organizer's location only when the
-     * program has no schedule with a location.
+     * Ids des programmes visibles autour d'un point, classés par distance.
+     *
+     * <p>Même filtre de visibilité que {@link #findVisibleInRadius}, mais la
+     * distance se mesure <b>là où le programme a lieu</b> — la séance localisée
+     * la plus proche, la source dont {@code GET /map/activities} tire déjà ses
+     * marqueurs — et non à l'adresse de profil de l'organisateur, qui n'est
+     * retenue qu'à défaut de séance localisée.
+     *
+     * <p>Une requête native ne peut pas porter de {@code JOIN FETCH} : les
+     * entités qu'elle rend arrivent avec toutes leurs associations paresseuses,
+     * et la construction du DTO les traversait une par programme —
+     * {@code userActivity}, puis {@code user}, {@code activity} et
+     * {@code category}. Le bornage géographique reste donc en SQL, où seul
+     * PostGIS sait le faire, et la reprise passe par
+     * {@link #findWithOrganizerDetailsByIds} qui, elle, sait précharger.
+     *
+     * <p><b>L'ordre rendu ici est le résultat</b>, pas un détail de
+     * présentation : c'est le classement par distance au point interrogé. La
+     * reprise par {@code IN :ids} ne le conserve pas — aucun {@code IN} ne
+     * garantit d'ordre — et il faut le réappliquer depuis cette liste. Le perdre
+     * ne casse rien de visible : la page reste complète, seulement mélangée.
+     *
+     * <p>Aucun commentaire SQL dans le corps de la requête, pour la raison
+     * exposée dans {@code ScheduleRepository.findOpenSlotsInRadius}.
      */
     @Query(value = """
-        SELECT p.* FROM programs p
+        SELECT p.id FROM programs p
         JOIN user_activities ua ON p.user_activity_id = ua.id
         JOIN users u ON ua.user_id = u.id
         LEFT JOIN LATERAL (
@@ -223,10 +243,77 @@ public interface ProgramRepository extends JpaRepository<Program, UUID> {
         )
         LIMIT :limit
         """, nativeQuery = true)
-    List<Program> findVisibleNearScheduleOrOrganizer(
+    List<UUID> findVisibleNearScheduleOrOrganizerIds(
         @Param("lat") double lat,
         @Param("lng") double lng,
         @Param("radiusMeters") int radiusMeters,
         @Param("limit") int limit
     );
+
+    /**
+     * Programmes désignés par leurs ids, organisateur et activité déjà chargés.
+     *
+     * <p>Le DTO de programme traverse systématiquement {@code userActivity} vers
+     * l'auteur d'un côté et vers l'activité puis sa catégorie de l'autre. Sans
+     * ces {@code JOIN FETCH}, une page de cent programmes paie ces quatre
+     * chaînes cent fois.
+     *
+     * <p><b>Le résultat n'est pas ordonné</b>, et ne peut pas l'être : un
+     * {@code IN} rend ce que le plan d'exécution lui donne. L'appelant qui tenait
+     * un ordre — celui d'un tri par distance, par exemple — doit le réappliquer
+     * depuis sa liste d'ids.
+     */
+    @Query("""
+        SELECT p FROM Program p
+        LEFT JOIN FETCH p.userActivity ua
+        LEFT JOIN FETCH ua.user
+        LEFT JOIN FETCH ua.activity a
+        LEFT JOIN FETCH a.category
+        WHERE p.id IN :ids
+        """)
+    List<Program> findWithOrganizerDetailsByIds(@Param("ids") Collection<UUID> ids);
+
+    /**
+     * Programmes non archivés d'un auteur, organisateur et activité préchargés.
+     *
+     * <p>Même préchargement que {@link #findWithOrganizerDetailsByIds}, pour la
+     * même raison : c'est une liste, et chaque entrée traverse les mêmes chaînes.
+     */
+    @Query("""
+        SELECT p FROM Program p
+        LEFT JOIN FETCH p.userActivity ua
+        LEFT JOIN FETCH ua.user
+        LEFT JOIN FETCH ua.activity a
+        LEFT JOIN FETCH a.category
+        WHERE ua.user.id = :userId AND p.status <> :status
+        """)
+    List<Program> findWithOrganizerDetailsByUserIdAndStatusNot(@Param("userId") UUID userId,
+                                                                @Param("status") ProgramStatus status);
+
+    /** Variante préchargée de {@link #findActivePublicByUserId}, pour la même raison. */
+    @Query("""
+        SELECT p FROM Program p
+        LEFT JOIN FETCH p.userActivity ua
+        LEFT JOIN FETCH ua.user
+        LEFT JOIN FETCH ua.activity a
+        LEFT JOIN FETCH a.category
+        WHERE ua.user.id = :userId AND p.status = 'ACTIVE' AND p.isPublic = true
+        """)
+    List<Program> findActivePublicWithOrganizerDetailsByUserId(@Param("userId") UUID userId);
+
+    /**
+     * Créneaux de plusieurs programmes en une lecture.
+     *
+     * <p>Vit ici et non dans {@code ScheduleRepository} parce que c'est un besoin
+     * du programme — servir la liste des séances d'une page de programmes — et
+     * non une interrogation des créneaux pour eux-mêmes.
+     *
+     * <p>Le tri par {@code startsAt} reprend celui que {@code Program.schedules}
+     * déclare déjà par {@code @OrderBy} : sans lui, l'ordre des séances d'un
+     * même programme dépendrait du plan d'exécution du lot, donc du nombre de
+     * programmes demandés.
+     */
+    @Query("SELECT s FROM Schedule s WHERE s.program.id IN :programIds ORDER BY s.startsAt ASC")
+    List<org.program.pair.domain.program.Schedule> findSchedulesByProgramIds(
+        @Param("programIds") Collection<UUID> programIds);
 }

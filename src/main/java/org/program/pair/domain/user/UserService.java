@@ -325,20 +325,26 @@ public class UserService {
             && user.getLastActiveAt() != null
             && user.getLastActiveAt().isAfter(Instant.now().minusSeconds(300)); // 5 min
 
-        List<String> badgeCodes = badgeAwardRepository.findByUserId(user.getId()).stream()
-            .map(award -> {
-                try {
-                    return award.getBadge().getCode();
-                } catch (IllegalArgumentException e) {
-                    // Badge illisible (valeur d'enum inconnue en base) : on l'ignore plutôt
-                    // que de faire échouer tout le profil public.
-                    log.warn("Badge illisible pour l'award {} de l'utilisateur {} : {}",
-                        award.getId(), user.getId(), e.getMessage());
-                    return null;
-                }
-            })
-            .filter(Objects::nonNull)
-            .toList();
+        // Un profil dont les détails sont masqués rend une liste de badges vide :
+        // aller les chercher en base serait du travail jeté. Le chargement est
+        // donc conditionné, et il passe par le dépôt qui rapatrie le badge dans
+        // la même requête — sinon chaque code lu ci-dessous en coûterait une.
+        List<String> badgeCodes = detailsVisible
+            ? badgeAwardRepository.findByUserIdWithBadge(user.getId()).stream()
+                .map(award -> {
+                    try {
+                        return award.getBadge().getCode();
+                    } catch (IllegalArgumentException e) {
+                        // Badge illisible (valeur d'enum inconnue en base) : on l'ignore plutôt
+                        // que de faire échouer tout le profil public.
+                        log.warn("Badge illisible pour l'award {} de l'utilisateur {} : {}",
+                            award.getId(), user.getId(), e.getMessage());
+                        return null;
+                    }
+                })
+                .filter(Objects::nonNull)
+                .toList()
+            : List.<String>of();
 
         return new UserPublicDto(
             user.getId(),
@@ -346,7 +352,7 @@ public class UserService {
             detailsVisible ? user.getBio() : null,
             user.getAvatarUrl(),
             user.getVerificationStatus().name(),
-            detailsVisible ? badgeCodes : List.of(),
+            badgeCodes,
             List.of(), // activities — rempli par ActivityService
             showOnline,
             detailsVisible ? subscriberCount : null,

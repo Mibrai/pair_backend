@@ -274,19 +274,14 @@ public class ProgramService {
 
     @Transactional(readOnly = true)
     public List<ProgramDto> getMyPrograms(UUID userId) {
-        return programRepository.findByUserActivityUserIdAndStatusNot(
-            userId, ProgramStatus.ARCHIVED)
-            .stream()
-            .map(p -> toDto(p, userId))
-            .collect(Collectors.toList());
+        return toDtoList(programRepository.findWithOrganizerDetailsByUserIdAndStatusNot(
+            userId, ProgramStatus.ARCHIVED), userId);
     }
 
     @Transactional(readOnly = true)
     public List<ProgramDto> getPublicProgramsByUser(UUID userId) {
-        return programRepository.findActivePublicByUserId(userId)
-            .stream()
-            .map(p -> toDto(p, null))
-            .collect(Collectors.toList());
+        return toDtoList(
+            programRepository.findActivePublicWithOrganizerDetailsByUserId(userId), null);
     }
 
     private static final double DEFAULT_RADIUS_KM = 5.0;
@@ -313,9 +308,40 @@ public class ProgramService {
 
         int radiusMeters = Math.max(1, (int) Math.round(effectiveRadiusKm * 1000));
 
-        return programRepository.findVisibleNearScheduleOrOrganizer(lat, lng, radiusMeters, 100)
+        List<UUID> orderedIds = programRepository
+            .findVisibleNearScheduleOrOrganizerIds(lat, lng, radiusMeters, 100);
+
+        return toDtoList(loadInIdOrder(orderedIds), requesterId);
+    }
+
+    /**
+     * Les programmes désignés, rechargés avec leur organisateur et leur activité,
+     * <b>dans l'ordre exact de la liste d'ids reçue</b>.
+     *
+     * <p>Cet ordre est celui du tri par distance de la requête géographique, et
+     * c'est la seule trace qu'il en reste : le rechargement par {@code IN :ids}
+     * rend ses lignes dans l'ordre qui arrange son plan d'exécution, jamais dans
+     * celui des paramètres. Le réappliquer ici n'est donc pas une précaution,
+     * c'est ce qui conserve le classement.
+     *
+     * <p>Le piège tient à ce que sa perte est muette : la page garde le même
+     * nombre de programmes et les mêmes programmes, seulement mélangés. Aucun
+     * test qui compte ou qui cherche par identifiant ne s'en apercevrait.
+     *
+     * <p>Un id sans programme est écarté plutôt que rendu nul — le cas suppose
+     * une suppression entre les deux requêtes, et il vaut mieux une page plus
+     * courte qu'un trou dans la liste.
+     */
+    private List<Program> loadInIdOrder(List<UUID> orderedIds) {
+        if (orderedIds.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, Program> byId = programRepository.findWithOrganizerDetailsByIds(orderedIds)
             .stream()
-            .map(p -> toDto(p, requesterId))
+            .collect(Collectors.toMap(Program::getId, p -> p));
+        return orderedIds.stream()
+            .map(byId::get)
+            .filter(java.util.Objects::nonNull)
             .collect(Collectors.toList());
     }
 
@@ -585,15 +611,101 @@ public class ProgramService {
         return program;
     }
 
+    /**
+     * Tout ce qu'un {@link ProgramDto} tire d'ailleurs que de son programme.
+     *
+     * <p>Existe pour que la construction du DTO ne sache plus <i>d'où</i> ces
+     * données viennent : une par programme quand il est seul, une par page quand
+     * il y en a cent. Sans cette séparation, la version par lot serait une copie
+     * de la version unitaire, et les deux divergeraient au premier champ ajouté.
+     *
+     * <p>{@code averageRating} est nullable — aucun avis n'a pas de moyenne — là
+     * où les deux comptes valent zéro et jamais {@code null}.
+     */
+    private record ProgramAggregates(
+        List<Schedule> schedules,
+        List<ProgramMedia> media,
+        Double averageRating,
+        long reviewCount,
+        long enrolledCount
+    ) {}
+
+    /**
+     * Une page de programmes en un nombre de requêtes constant.
+     *
+     * <p>Le chemin unitaire lisait, <b>par programme</b>, ses séances, ses
+     * médias, la moyenne de ses avis, leur nombre et son nombre d'inscrits :
+     * une page de cent programmes en demandait plus de cinq cents, et
+     * {@code GET /programs?lat&lng&radius_km} était la route la plus lente du
+     * service pour cette seule raison. Ici, quatre lectures servent la page
+     * entière, quel que soit le nombre de programmes — la moyenne des avis et
+     * leur nombre tenant dans le même {@code GROUP BY}.
+     *
+     * <p>L'ordre des programmes reçus est conservé tel quel : c'est un résultat
+     * de tri chez l'appelant, pas à cette méthode de le décider.
+     */
+    private List<ProgramDto> toDtoList(List<Program> programs, UUID requesterId) {
+        if (programs.isEmpty()) {
+            return List.of();
+        }
+
+        List<UUID> programIds = programs.stream().map(Program::getId).collect(Collectors.toList());
+
+        Map<UUID, List<Schedule>> schedulesByProgram = programRepository
+            .findSchedulesByProgramIds(programIds)
+            .stream()
+            .collect(Collectors.groupingBy(s -> s.getProgram().getId()));
+
+        Map<UUID, List<ProgramMedia>> mediaByProgram = programMediaRepository
+            .findByProgramIdsOrderBySortOrder(programIds)
+            .stream()
+            .collect(Collectors.groupingBy(m -> m.getProgram().getId()));
+
+        // Un programme sans avis n'a pas de ligne dans le GROUP BY : son absence
+        // de ces deux tables est ce qui distingue « aucune moyenne » de « zéro ».
+        Map<UUID, Double> averageByProgram = new java.util.HashMap<>();
+        Map<UUID, Long> reviewCountByProgram = new java.util.HashMap<>();
+        for (Object[] row : reviewRepository.findRatingSummariesByProgramIds(programIds)) {
+            averageByProgram.put((UUID) row[0], (Double) row[1]);
+            reviewCountByProgram.put((UUID) row[0], (Long) row[2]);
+        }
+
+        Map<UUID, Long> enrolledByProgram = userProgramRepository
+            .countActiveParticipantsByProgramIds(programIds)
+            .stream()
+            .collect(Collectors.toMap(row -> (UUID) row[0], row -> (Long) row[1]));
+
+        // Une seule référence de temps pour toute la page : deux programmes ne
+        // peuvent pas comparer leur prochaine séance à deux « maintenant »
+        // différents.
+        Instant now = Instant.now();
+
+        return programs.stream()
+            .map(p -> toDto(p, requesterId, now, new ProgramAggregates(
+                schedulesByProgram.getOrDefault(p.getId(), List.of()),
+                mediaByProgram.getOrDefault(p.getId(), List.of()),
+                averageByProgram.get(p.getId()),
+                reviewCountByProgram.getOrDefault(p.getId(), 0L),
+                enrolledByProgram.getOrDefault(p.getId(), 0L))))
+            .collect(Collectors.toList());
+    }
+
     private ProgramDto toDto(Program p, UUID requesterId) {
-        List<ScheduleDto> schedules = scheduleRepository
-            .findByProgramId(p.getId())
+        return toDto(p, requesterId, Instant.now(), new ProgramAggregates(
+            scheduleRepository.findByProgramId(p.getId()),
+            programMediaRepository.findByProgramIdOrderBySortOrder(p.getId()),
+            reviewRepository.findAverageRatingByProgramId(p.getId()),
+            reviewRepository.countByProgramId(p.getId()),
+            userProgramRepository.countActiveParticipantsByProgramId(p.getId())));
+    }
+
+    private ProgramDto toDto(Program p, UUID requesterId, Instant now, ProgramAggregates aggregates) {
+        List<ScheduleDto> schedules = aggregates.schedules()
             .stream()
             .map(s -> toScheduleDto(s, requesterId))
             .collect(Collectors.toList());
 
-        List<ProgramMediaDto> media = programMediaRepository
-            .findByProgramIdOrderBySortOrder(p.getId())
+        List<ProgramMediaDto> media = aggregates.media()
             .stream()
             .map(m -> new ProgramMediaDto(
                 m.getId(),
@@ -603,14 +715,17 @@ public class ProgramService {
             ))
             .collect(Collectors.toList());
 
-        Double avgDouble = reviewRepository.findAverageRatingByProgramId(p.getId());
+        Double avgDouble = aggregates.averageRating();
         Float averageScore = avgDouble != null ? avgDouble.floatValue() : null;
-        Integer reviewCount = (int) reviewRepository.countByProgramId(p.getId());
-        Integer enrolledCount = (int) userProgramRepository.countActiveParticipantsByProgramId(p.getId());
+        Integer reviewCount = (int) aggregates.reviewCount();
+        Integer enrolledCount = (int) aggregates.enrolledCount();
 
-        Instant nextSession = p.getSchedules().stream()
+        // Les séances déjà en main, et non p.getSchedules() : la collection
+        // paresseuse déclenchait une seconde lecture des mêmes lignes, juste
+        // après celle qui a rempli la liste ci-dessus.
+        Instant nextSession = aggregates.schedules().stream()
             .map(Schedule::getStartsAt)
-            .filter(t -> t != null && t.isAfter(Instant.now()))
+            .filter(t -> t != null && t.isAfter(now))
             .min(Instant::compareTo)
             .orElse(null);
 
