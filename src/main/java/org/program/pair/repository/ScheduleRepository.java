@@ -211,10 +211,76 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
     List<Schedule> findRecurringStartedBefore(@Param("now") Instant now);
 
     /**
+     * Corps commun des deux formes du fil « autour de moi » — jointures, filtres,
+     * prédicat de blocage et classement — écrit une fois.
+     *
+     * <p>Deux requêtes le partagent : {@link #findOpenSlotsInRadius}, qui rend les
+     * entités, et {@link #findOpenSlotIdsInRadius}, qui ne rend que les ids. Le
+     * recopier garantirait qu'une des deux diverge un jour, et le dépôt connaît
+     * déjà ce mode de panne — c'est l'argument que porte {@link BlockSql} pour le
+     * seul prédicat de blocage, et il vaut a fortiori pour un corps de cette
+     * taille. Partagé, un filtre ajouté ici s'applique aux deux formes : le fil ne
+     * peut pas montrer un créneau que sa variante bornée ignorerait, ni l'inverse.
+     *
+     * <p>La concaténation reste une <i>expression constante</i> au sens du langage,
+     * donc utilisable dans une annotation, parce que {@link BlockSql#NOT_BLOCKED_U}
+     * est lui-même une constante. Une méthode qui composerait la même chaîne ne
+     * compilerait pas ici.
+     */
+    String OPEN_SLOTS_IN_RADIUS_BODY = """
+        FROM schedules s
+        JOIN programs p         ON s.program_id = p.id
+        JOIN user_activities ua ON p.user_activity_id = ua.id
+        JOIN users u            ON ua.user_id = u.id
+        WHERE s.is_open_to_partners = TRUE
+          AND s.status IN ('OPEN', 'FULL')
+          AND s.starts_at BETWEEN :fromTs AND :toTs
+          AND p.status = 'ACTIVE'
+          AND p.is_public = TRUE
+          AND u.is_active = TRUE
+          AND ua.visible_on_map = TRUE
+          AND (CAST(:activityId AS uuid) IS NULL OR ua.activity_id = :activityId)
+          AND (CAST(:filterByCategory AS boolean) = FALSE OR EXISTS (
+                SELECT 1 FROM activities a
+                WHERE a.id = ua.activity_id AND a.category_id IN (:categoryIds)))
+          AND (CAST(:createdSince AS timestamptz) IS NULL OR s.created_at >= :createdSince)
+          AND (CAST(:filterByLanguage AS boolean) = FALSE
+               OR s.primary_language IS NULL
+               OR s.primary_language IN (:languages))
+          AND (CAST(:filterByTags AS boolean) = FALSE OR (
+                SELECT COUNT(DISTINCT sat.tag) FROM schedule_accessibility_tags sat
+                WHERE sat.schedule_id = s.id AND sat.tag IN (:accessibilityTags)
+              ) = :requiredTagCount)
+          AND ST_DWithin(
+                s.location::geography,
+                ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
+                :radiusMeters)
+        """ + BlockSql.NOT_BLOCKED_U + """
+        ORDER BY (s.starts_at AT TIME ZONE :zone)::date ASC,
+                 CASE WHEN EXISTS (
+                     SELECT 1 FROM user_availability av
+                     WHERE av.user_id = :viewerId
+                       AND av.day_of_week = EXTRACT(ISODOW FROM (s.starts_at AT TIME ZONE :zone))
+                       AND av.time_slot = CASE
+                             WHEN EXTRACT(HOUR FROM (s.starts_at AT TIME ZONE :zone)) BETWEEN 6 AND 11
+                                  THEN 'MORNING'
+                             WHEN EXTRACT(HOUR FROM (s.starts_at AT TIME ZONE :zone)) BETWEEN 12 AND 17
+                                  THEN 'AFTERNOON'
+                             WHEN EXTRACT(HOUR FROM (s.starts_at AT TIME ZONE :zone)) >= 18
+                                  THEN 'EVENING'
+                             ELSE 'NIGHT' END
+                 ) THEN 0 ELSE 1 END,
+                 s.starts_at ASC,
+                 ST_Distance(s.location::geography,
+                             ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography)
+        LIMIT :limit
+        """;
+
+    /**
      * Feed "autour de moi" — créneaux ouverts aux partenaires, à venir, dans le
      * rayon demandé. Ne retourne jamais un créneau dont l'hôte est inactif, ni
      * dont l'activité est masquée de la carte (mêmes filtres de visibilité que
-     * ProgramRepository.findVisibleNearScheduleOrOrganizer).
+     * ProgramRepository.findVisibleNearScheduleOrOrganizerIds).
      *
      * <p><b>Catégories multiples.</b> Le filtre porte sur une liste, pas sur une
      * valeur : la carte laisse cocher plusieurs catégories, et une requête par
@@ -262,56 +328,55 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
      * chargement du dépôt entier, au démarrage, avec un message qui ne la nomme
      * pas. Les explications vivent donc ici.
      */
-    @Query(value = """
-        SELECT s.* FROM schedules s
-        JOIN programs p         ON s.program_id = p.id
-        JOIN user_activities ua ON p.user_activity_id = ua.id
-        JOIN users u            ON ua.user_id = u.id
-        WHERE s.is_open_to_partners = TRUE
-          AND s.status IN ('OPEN', 'FULL')
-          AND s.starts_at BETWEEN :fromTs AND :toTs
-          AND p.status = 'ACTIVE'
-          AND p.is_public = TRUE
-          AND u.is_active = TRUE
-          AND ua.visible_on_map = TRUE
-          AND (CAST(:activityId AS uuid) IS NULL OR ua.activity_id = :activityId)
-          AND (CAST(:filterByCategory AS boolean) = FALSE OR EXISTS (
-                SELECT 1 FROM activities a
-                WHERE a.id = ua.activity_id AND a.category_id IN (:categoryIds)))
-          AND (CAST(:createdSince AS timestamptz) IS NULL OR s.created_at >= :createdSince)
-          AND (CAST(:filterByLanguage AS boolean) = FALSE
-               OR s.primary_language IS NULL
-               OR s.primary_language IN (:languages))
-          AND (CAST(:filterByTags AS boolean) = FALSE OR (
-                SELECT COUNT(DISTINCT sat.tag) FROM schedule_accessibility_tags sat
-                WHERE sat.schedule_id = s.id AND sat.tag IN (:accessibilityTags)
-              ) = :requiredTagCount)
-          AND ST_DWithin(
-                s.location::geography,
-                ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
-                :radiusMeters)
-        """ + BlockSql.NOT_BLOCKED_U + """
-        ORDER BY (s.starts_at AT TIME ZONE :zone)::date ASC,
-                 CASE WHEN EXISTS (
-                     SELECT 1 FROM user_availability av
-                     WHERE av.user_id = :viewerId
-                       AND av.day_of_week = EXTRACT(ISODOW FROM (s.starts_at AT TIME ZONE :zone))
-                       AND av.time_slot = CASE
-                             WHEN EXTRACT(HOUR FROM (s.starts_at AT TIME ZONE :zone)) BETWEEN 6 AND 11
-                                  THEN 'MORNING'
-                             WHEN EXTRACT(HOUR FROM (s.starts_at AT TIME ZONE :zone)) BETWEEN 12 AND 17
-                                  THEN 'AFTERNOON'
-                             WHEN EXTRACT(HOUR FROM (s.starts_at AT TIME ZONE :zone)) >= 18
-                                  THEN 'EVENING'
-                             ELSE 'NIGHT' END
-                 ) THEN 0 ELSE 1 END,
-                 s.starts_at ASC,
-                 ST_Distance(s.location::geography,
-                             ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography)
-        LIMIT :limit
-        """, nativeQuery = true)
 
+    @Query(value = "SELECT s.* " + OPEN_SLOTS_IN_RADIUS_BODY, nativeQuery = true)
     List<Schedule> findOpenSlotsInRadius(
+        @Param("lat") double lat,
+        @Param("lng") double lng,
+        @Param("radiusMeters") int radiusMeters,
+        @Param("fromTs") Instant from,
+        @Param("toTs") Instant to,
+        @Param("activityId") UUID activityId,
+        @Param("filterByCategory") boolean filterByCategory,
+        @Param("categoryIds") Collection<UUID> categoryIds,
+        @Param("createdSince") Instant createdSince,
+        @Param("limit") int limit,
+        @Param("viewerId") UUID viewerId,
+        @Param("filterByLanguage") boolean filterByLanguage,
+        @Param("languages") Collection<String> languages,
+        @Param("filterByTags") boolean filterByTags,
+        @Param("accessibilityTags") Collection<String> accessibilityTags,
+        @Param("requiredTagCount") long requiredTagCount,
+        @Param("zone") String zone
+    );
+
+    /**
+     * Le même fil, réduit aux <b>ids</b> — et c'est la forme que doit appeler
+     * toute lecture qui rend ensuite un DTO.
+     *
+     * <p>Une requête native ne peut pas porter de {@code JOIN FETCH}. Celle qui
+     * rend des entités les livre donc avec toutes leurs associations paresseuses,
+     * et le mapping qui suit paie ensuite, <b>par créneau</b>, la cascade
+     * program → userActivity → activity → category. Le temps de réponse suit alors
+     * le nombre d'éléments rendus et non la surface fouillée : mesuré à une
+     * seconde fixe plus une seconde et demie par élément, soit sept secondes pour
+     * quatre créneaux.
+     *
+     * <p>La reprise par {@link #findWithActivityDetailsByIds} conserve les
+     * {@code LEFT JOIN FETCH} et ramène ces quatre requêtes par élément à une
+     * seule pour tout le lot. C'est le patron déjà appliqué à la carte
+     * ({@code MapService}), et que {@link #findLocatedScheduleIdsWithin} documente.
+     *
+     * <p><b>L'ordre est porté par le SQL, pas par la reprise.</b> Le classement —
+     * par jour, puis par disponibilité de celui qui regarde, puis par heure et par
+     * distance — vit dans le {@code ORDER BY} ci-dessus. {@code findWithActivityDetailsByIds}
+     * interroge par {@code IN} et ne garantit aucun ordre. L'appelant doit donc
+     * réordonner selon la liste d'ids rendue ici ; s'il ne le fait pas, le tri
+     * disparaît sans qu'aucune erreur ne soit levée et sans qu'aucun test ne le
+     * voie.
+     */
+    @Query(value = "SELECT s.id " + OPEN_SLOTS_IN_RADIUS_BODY, nativeQuery = true)
+    List<UUID> findOpenSlotIdsInRadius(
         @Param("lat") double lat,
         @Param("lng") double lng,
         @Param("radiusMeters") int radiusMeters,

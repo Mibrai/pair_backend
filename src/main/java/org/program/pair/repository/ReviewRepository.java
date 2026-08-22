@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -28,6 +29,28 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
 
     @Query("SELECT AVG(r.score) FROM ReviewPhase3 r WHERE r.programId = :programId")
     Double findAverageRatingByProgramId(@Param("programId") UUID programId);
+
+    /**
+     * Moyenne et nombre d'avis de plusieurs programmes, une ligne par programme
+     * — {@code [UUID programId, Double moyenne, Long nombre]}.
+     *
+     * <p>Remplace, sur les chemins qui rendent une liste, deux requêtes par
+     * programme : la moyenne et le compte. Cent programmes affichés en
+     * demandaient deux cents.
+     *
+     * <p><b>Un programme sans aucun avis n'a pas de ligne</b> : le
+     * {@code GROUP BY} n'en produit que pour ce qui existe. L'appelant doit lire
+     * l'absence comme « aucune moyenne » — ce que rendait déjà
+     * {@link #findAverageRatingByProgramId} — et comme un compte de zéro, et non
+     * comme un compte nul.
+     */
+    @Query("""
+        SELECT r.programId, AVG(r.score), COUNT(r)
+        FROM ReviewPhase3 r
+        WHERE r.programId IN :programIds
+        GROUP BY r.programId
+        """)
+    List<Object[]> findRatingSummariesByProgramIds(@Param("programIds") Collection<UUID> programIds);
 
     @Query("""
         SELECT r.programId, AVG(r.score) as avgRating, COUNT(r) as reviewCount

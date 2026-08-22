@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -42,6 +43,19 @@ public interface UserProgramRepository extends JpaRepository<UserProgram, UUID> 
      */
     @Query("SELECT COUNT(up) FROM UserProgram up WHERE up.program.id = :programId AND up.status = 'ACTIVE'")
     long countActiveParticipantsByProgramId(@Param("programId") UUID programId);
+
+    /**
+     * Nombre d'inscrits actifs de plusieurs programmes, une ligne par programme
+     * — {@code [UUID programId, Long nombre]}.
+     *
+     * <p><b>Un programme sans aucun inscrit actif n'a pas de ligne</b> : son
+     * absence vaut zéro, et non « inconnu ». L'appelant qui la lirait comme un
+     * {@code null} exposerait un compte manquant là où le compte est nul.
+     */
+    @Query("SELECT up.program.id, COUNT(up) FROM UserProgram up "
+         + "WHERE up.program.id IN :programIds AND up.status = 'ACTIVE' "
+         + "GROUP BY up.program.id")
+    List<Object[]> countActiveParticipantsByProgramIds(@Param("programIds") Collection<UUID> programIds);
 
     /**
      * Count active participants for a specific schedule
