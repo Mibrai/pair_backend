@@ -25,6 +25,17 @@ public class EmailService {
     @Value("${email.from:noreply@pair.app}")
     private String fromAddress;
 
+    /**
+     * Racine publique de l'API, sur laquelle sont bâtis les liens envoyés par
+     * e-mail.
+     *
+     * <p>Le défaut {@code localhost:3000} vaut pour le développement. En
+     * production il n'avait jamais été surchargé : chaque e-mail de
+     * vérification est parti pendant des mois avec un lien vers la machine du
+     * destinataire. C'est le ticket du 25 août 2026 ; le profil {@code railway}
+     * porte désormais son propre défaut, pour que l'oubli d'une variable
+     * d'environnement ne puisse plus produire ce résultat.
+     */
     @Value("${email.base-url:http://localhost:3000}")
     private String baseUrl;
 
@@ -38,10 +49,10 @@ public class EmailService {
 
     public void sendVerificationEmail(String email, String token) {
         if (!resendEmailService.isEnabled()) {
-            log.info("[DEV] Verification link for {}: {}/verify-email?token={}", email, baseUrl, token);
+            log.info("[DEV] Verification link for {}: {}", email, lienVerification(token));
             return;
         }
-        String verifyUrl = baseUrl + "/verify-email?token=" + token;
+        String verifyUrl = lienVerification(token);
         String html = """
             <h2>Vérifiez votre adresse email</h2>
             <p>Cliquez sur le lien suivant pour activer votre compte Pair :</p>
@@ -57,11 +68,26 @@ public class EmailService {
         }
     }
 
+    /**
+     * Le lien pointe sur la route d'API elle-même, et non sur un chemin de
+     * frontend web : il n'existe aucun site qui servirait cette page, et les
+     * deux chemins plausibles rendaient 404. La route sait rendre du HTML quand
+     * c'est un navigateur qui la demande.
+     */
+    private String lienVerification(String token) {
+        return baseUrl + "/api/auth/verify-email?token=" + token;
+    }
+
     public void sendPasswordResetEmail(String email, String token) {
         if (!resendEmailService.isEnabled()) {
             log.info("[DEV] Password reset link for {}: {}/reset-password?token={}", email, baseUrl, token);
             return;
         }
+        // NOTE : ce chemin, lui, n'a toujours pas de page. Le rendre utilisable
+        // demande un formulaire (le jeton et le nouveau mot de passe partent en
+        // POST), pas une simple bascule HTML comme la vérification. Hors du
+        // ticket du 25 août, qui ne portait que sur la vérification d'adresse —
+        // signalé plutôt que corrigé à moitié.
         String resetUrl = baseUrl + "/reset-password?token=" + token;
         String html = """
             <h2>Réinitialisation de votre mot de passe</h2>

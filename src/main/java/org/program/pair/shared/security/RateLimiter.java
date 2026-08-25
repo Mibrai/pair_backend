@@ -15,6 +15,7 @@ public class RateLimiter {
     private final Map<String, Instant> lockouts = new ConcurrentHashMap<>();
     private final Map<String, AtomicInteger> registerAttempts = new ConcurrentHashMap<>();
     private final Map<String, AtomicInteger> passwordResetAttempts = new ConcurrentHashMap<>();
+    private final Map<String, AtomicInteger> resendVerificationAttempts = new ConcurrentHashMap<>();
 
     public void checkLogin(String ip) {
         if (isLockedOut(ip, lockouts)) {
@@ -33,6 +34,19 @@ public class RateLimiter {
                                       .incrementAndGet();
         if (attempts > 5) {
             throw new TooManyRequestsException("Trop d'inscriptions. Réessayez dans 1 heure.");
+        }
+    }
+
+    /**
+     * Renvoi d'un lien de vérification. Même budget que la réinitialisation de
+     * mot de passe : les deux déclenchent un e-mail vers une adresse choisie
+     * par l'appelant, et c'est cet envoi qu'il s'agit de borner.
+     */
+    public void checkResendVerification(String ip) {
+        int attempts = resendVerificationAttempts.computeIfAbsent(ip, k -> new AtomicInteger(0))
+                                                 .incrementAndGet();
+        if (attempts > 3) {
+            throw new TooManyRequestsException("Trop de demandes. Réessayez dans 1 heure.");
         }
     }
 
@@ -67,6 +81,7 @@ public class RateLimiter {
         lockouts.clear();
         registerAttempts.clear();
         passwordResetAttempts.clear();
+        resendVerificationAttempts.clear();
     }
 
     private boolean isLockedOut(String ip, Map<String, Instant> lockoutMap) {
