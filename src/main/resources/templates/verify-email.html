@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="fr" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Vérification de votre adresse — meetDo</title>
+    <style>
+        :root { color-scheme: light dark; }
+        body {
+            margin: 0; padding: 2rem 1.25rem;
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            line-height: 1.55; color: #16191c; background: #f5f6f7;
+        }
+        .card {
+            max-width: 32rem; margin: 0 auto; background: #fff;
+            border-radius: 10px; padding: 1.75rem; box-shadow: 0 1px 3px rgba(0,0,0,.09);
+        }
+        h1 { font-size: 1.15rem; margin: 0 0 .75rem; font-weight: 600; }
+        p { margin: 0 0 .75rem; color: #6b757d; }
+        p:last-child { margin-bottom: 0; }
+        .marque { font-size: .8rem; letter-spacing: .04em; text-transform: uppercase;
+                  color: #9aa3aa; margin: 0 0 1.25rem; }
+        .ok h1 { color: #1a7f4b; }
+        @media (prefers-color-scheme: dark) {
+            body { background: #101315; color: #e6e9ea; }
+            .card { background: #181c1f; box-shadow: none; }
+            p { color: #8d979e; }
+            .ok h1 { color: #4ac585; }
+        }
+    </style>
+</head>
+<body>
+<!-- Cette page est rendue par la route d'API elle-même, sur le même URL que
+     celui du lien reçu par e-mail, quand c'est un navigateur qui la demande.
+     Il n'existe pas de frontend web à qui déléguer, et en déployer un pour
+     cette seule page ne se justifiait pas. -->
+<div class="card" th:classappend="${etat.name() == 'VERIFIE' or etat.name() == 'DEJA_VERIFIE'} ? 'ok' : ''">
+    <p class="marque">meetDo</p>
+
+    <div th:switch="${etat.name()}">
+
+        <div th:case="'VERIFIE'">
+            <h1>Votre adresse est vérifiée</h1>
+            <p>Votre compte est actif. Vous pouvez retourner dans l'application
+                meetDo et vous connecter.</p>
+            <p>Cette page n'a plus d'utilité, vous pouvez la fermer.</p>
+        </div>
+
+        <!-- Un second clic sur le même lien ne doit pas ressembler à une panne :
+             le compte fonctionne, et le dire autrement ferait écrire au support
+             quelqu'un qui n'a aucun problème. -->
+        <div th:case="'DEJA_VERIFIE'">
+            <h1>Votre adresse était déjà vérifiée</h1>
+            <p>Ce lien a déjà été utilisé, et il a fonctionné. Votre compte est
+                actif : il n'y a rien à faire de plus.</p>
+            <p>Vous pouvez retourner dans l'application et vous connecter.</p>
+        </div>
+
+        <div th:case="'EXPIRE'">
+            <h1>Ce lien a expiré</h1>
+            <p>Les liens de vérification cessent de fonctionner 24 heures après
+                leur envoi. Celui-ci était authentique, mais il est trop ancien.</p>
+            <p>Ouvrez l'application meetDo et demandez un nouvel e-mail de
+                vérification : vous recevrez un lien valable pour 24 heures.</p>
+        </div>
+
+        <div th:case="'INCONNU'">
+            <h1>Ce lien n'est pas reconnu</h1>
+            <p>L'adresse est peut-être incomplète : certains logiciels de
+                messagerie coupent les liens longs sur plusieurs lignes. Vérifiez
+                que vous avez ouvert le lien en entier.</p>
+            <p>Si le problème persiste, demandez un nouvel e-mail de vérification
+                depuis l'application.</p>
+        </div>
+
+    </div>
+</div>
+</body>
+</html>
