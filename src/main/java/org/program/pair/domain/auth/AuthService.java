@@ -90,6 +90,27 @@ public class AuthService {
         emailVerificationService.verifyToken(token);
     }
 
+    /**
+     * Même vérification, rendue sous forme d'état plutôt que d'exception, pour
+     * que la page servie au navigateur puisse dire lequel des quatre cas s'est
+     * produit.
+     */
+    public ResultatVerification verifierEmailPourNavigateur(String token) {
+        return emailVerificationService.verifier(token);
+    }
+
+    /**
+     * Renvoie un lien de vérification si — et seulement si — l'adresse
+     * correspond à un compte actif qui n'est pas déjà vérifié. Ne signale rien
+     * dans les autres cas : l'appelant répond 200 quoi qu'il arrive.
+     */
+    public void resendVerificationEmail(String email) {
+        userRepository.findByEmail(email.toLowerCase().strip())
+            .filter(u -> Boolean.TRUE.equals(u.getIsActive()))
+            .filter(u -> u.getVerificationStatus() == VerificationStatus.UNVERIFIED)
+            .ifPresent(emailVerificationService::sendVerificationEmail);
+    }
+
     public void sendPasswordResetEmail(String email) {
         // Toujours répondre 200 même si l'email n'existe pas (éviter l'énumération)
         userRepository.findByEmail(email.toLowerCase().strip())
