@@ -123,5 +123,18 @@ public enum ErrorCode {
     // normal est une application restée sur un texte ancien : elle doit relire
     // l'état, réafficher le bon texte, et redemander. Nommé pour que le client
     // sache faire cela plutôt que d'afficher une erreur générique.
-    GUIDELINES_VERSION_MISMATCH
+    GUIDELINES_VERSION_MISMATCH,
+
+    // — signalements (ReportService) —
+    // Cet élément a déjà été signalé par la même personne. Rendu en 409 et non
+    // en 422 : c'est un état, pas un refus de droit. Le client le traite comme
+    // un succès — le signalement précédent tient toujours, il n'y a rien à
+    // refaire — et non comme une erreur.
+    REPORT_ALREADY_SUBMITTED,
+
+    // — recommandations entre pairs (PeerRecommendationService) —
+    // Cette personne a déjà été recommandée. Même raisonnement que ci-dessus, et
+    // même précédent qu'ALREADY_SUBSCRIBED : le client stabilise l'affichage sur
+    // « Recommandé » sans message d'erreur.
+    RECOMMENDATION_ALREADY_GIVEN
 }
