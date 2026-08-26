@@ -203,7 +203,10 @@ class PublicSlotPageIntegrationTest extends AbstractIntegrationTest {
         assertThat(status("/.well-known/apple-app-site-association")).isEqualTo(200);
         assertThat(body("/.well-known/apple-app-site-association"))
             .contains("97727T64DH.com.meetdo.app")
-            .contains("/s/*");
+            .contains("/s/*")
+            // Ajouté le 2026-08-26 : sans ce motif, iOS remet le lien de
+            // vérification à Safari quoi que fasse l'application.
+            .contains("/v/*");
     }
 
     @Test

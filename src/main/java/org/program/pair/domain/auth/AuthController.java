@@ -13,10 +13,7 @@ import org.program.pair.domain.auth.dto.ResetPasswordRequest;
 import org.program.pair.shared.security.RateLimiter;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.thymeleaf.TemplateEngine;
-import org.thymeleaf.context.Context;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
 
@@ -28,7 +25,7 @@ public class AuthController {
 
     private final AuthService authService;
     private final RateLimiter rateLimiter;
-    private final TemplateEngine templateEngine;
+    private final ReponseVerificationEmail reponseVerification;
 
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
@@ -51,38 +48,25 @@ public class AuthController {
     }
 
     /**
-     * Cible du lien envoyé par e-mail, et route d'API de l'application mobile.
+     * Cible historique du lien envoyé par e-mail, et route d'API de
+     * l'application mobile.
      *
      * <p>Les deux appelants ne veulent pas la même chose. L'app attend un
      * contrat JSON binaire, inchangé ici. Un navigateur, lui, affichait
      * jusqu'ici {@code {"message":...}} en pleine page — un testeur qui voit ça
      * conclut que la vérification a échoué, alors qu'elle vient de réussir.
+     * L'arbitrage vit dans {@link ReponseVerificationEmail}, partagé avec le
+     * chemin court {@code /v/{token}}.
      *
-     * <p>On distingue donc sur l'en-tête {@code Accept}, explicitement plutôt
-     * que par la négociation de contenu de Spring : avec deux gestionnaires sur
-     * le même chemin, un {@code Accept: *&#47;*} — ce qu'envoient beaucoup de
-     * clients — deviendrait ambigu, et l'arbitrage se ferait sans nous.
+     * <p><b>Cette route reste servie</b> bien que les e-mails partent désormais
+     * sur {@code /v/{token}} : les liens déjà en circulation la portent, et ils
+     * valent 24 heures.
      */
     @GetMapping("/verify-email")
     public ResponseEntity<?> verifyEmail(
             @RequestParam String token,
             @RequestHeader(value = HttpHeaders.ACCEPT, required = false) String accept) {
-
-        if (accept != null && accept.contains(MediaType.TEXT_HTML_VALUE)) {
-            ResultatVerification etat = authService.verifierEmailPourNavigateur(token);
-            Context contexte = new Context();
-            contexte.setVariable("etat", etat);
-            // 200 dans les quatre cas : la page dit elle-même ce qui s'est
-            // passé, et un code d'erreur exposerait le message à être remplacé
-            // par la page d'erreur d'un intermédiaire — c'est-à-dire à ne jamais
-            // atteindre la personne à qui il est destiné.
-            return ResponseEntity.ok()
-                .contentType(MediaType.TEXT_HTML)
-                .body(templateEngine.process("verify-email", contexte));
-        }
-
-        authService.verifyEmail(token);
-        return ResponseEntity.ok().build();
+        return reponseVerification.repondre(token, accept);
     }
 
     /**

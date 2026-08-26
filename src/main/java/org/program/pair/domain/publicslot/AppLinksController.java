@@ -76,7 +76,8 @@ public class AppLinksController {
                       { "/": "/s/*", "comment": "Pages publiques de créneau" },
                       { "/": "/p/*", "comment": "Pages publiques de programme" },
                       { "/": "/public/slots/*", "comment": "JSON et image d'aperçu, créneau" },
-                      { "/": "/public/programs/*", "comment": "JSON et image d'aperçu, programme" }
+                      { "/": "/public/programs/*", "comment": "JSON et image d'aperçu, programme" },
+                      { "/": "/v/*", "comment": "Vérification d'adresse e-mail" }
                     ]
                   }
                 ]

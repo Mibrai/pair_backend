@@ -22,11 +22,18 @@
         .marque { font-size: .8rem; letter-spacing: .04em; text-transform: uppercase;
                   color: #9aa3aa; margin: 0 0 1.25rem; }
         .ok h1 { color: #1a7f4b; }
+        .retour {
+            display: inline-block; margin: .5rem 0 .6rem;
+            background: #4F46E5; color: #fff; text-decoration: none;
+            padding: .7rem 1.4rem; border-radius: 6px; font-weight: 600;
+        }
+        .repli { font-size: .85rem; }
         @media (prefers-color-scheme: dark) {
             body { background: #101315; color: #e6e9ea; }
             .card { background: #181c1f; box-shadow: none; }
             p { color: #8d979e; }
             .ok h1 { color: #4ac585; }
+            .retour { background: #6366f1; color: #fff; }
         }
     </style>
 </head>
@@ -40,11 +47,21 @@
 
     <div th:switch="${etat.name()}">
 
+        <!-- Le lien de retour est nu : « meetdo://verify », sans jeton. À ce
+             stade le compte est actif et le jeton ne sert plus à rien ; une URL
+             qui en porterait un traînerait ensuite dans l'historique du
+             navigateur. L'application sait quoi faire d'un lien nu : elle
+             redemande le statut. Il n'apparaît que sur les deux états où le
+             compte est actif — sur « expiré » et « inconnu » il n'y aurait rien
+             à aller y faire. -->
+
         <div th:case="'VERIFIE'">
             <h1>Votre adresse est vérifiée</h1>
-            <p>Votre compte est actif. Vous pouvez retourner dans l'application
-                meetDo et vous connecter.</p>
-            <p>Cette page n'a plus d'utilité, vous pouvez la fermer.</p>
+            <p>Votre compte est actif.</p>
+            <a class="retour" href="meetdo://verify">Retourner dans meetDo</a>
+            <p class="repli">Ce bouton n'ouvre l'application que depuis le
+                téléphone où elle est installée. Sinon, cette page n'a plus
+                d'utilité : vous pouvez la fermer.</p>
         </div>
 
         <!-- Un second clic sur le même lien ne doit pas ressembler à une panne :
@@ -54,7 +71,10 @@
             <h1>Votre adresse était déjà vérifiée</h1>
             <p>Ce lien a déjà été utilisé, et il a fonctionné. Votre compte est
                 actif : il n'y a rien à faire de plus.</p>
-            <p>Vous pouvez retourner dans l'application et vous connecter.</p>
+            <a class="retour" href="meetdo://verify">Retourner dans meetDo</a>
+            <p class="repli">Ce bouton n'ouvre l'application que depuis le
+                téléphone où elle est installée. Sinon, cette page n'a plus
+                d'utilité : vous pouvez la fermer.</p>
         </div>
 
         <div th:case="'EXPIRE'">

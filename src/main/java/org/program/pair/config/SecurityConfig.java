@@ -85,6 +85,10 @@ public class SecurityConfig {
                 // qu'aucune messagerie ne rend cliquable.
                 .requestMatchers(HttpMethod.GET, "/public/programs/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/p/**").permitAll()
+                // Chemin court du lien de vérification d'adresse. Ouvert pour la
+                // même raison que /api/auth/verify-email juste au-dessus : on y
+                // arrive depuis un e-mail, sans session ni jeton d'accès.
+                .requestMatchers(HttpMethod.GET, "/v/**").permitAll()
                 // Fichiers d'association des liens universels. Ouverts sans
                 // condition : Apple et Google les lisent sans identité, et une
                 // redirection suffirait à faire échouer la validation.
@@ -102,7 +106,7 @@ public class SecurityConfig {
                 // existant.
                 .requestMatchers(HttpMethod.HEAD,
                     "/", "/public/safety/**", "/public/slots/**", "/s/**",
-                    "/public/programs/**", "/p/**", "/.well-known/**").permitAll()
+                    "/public/programs/**", "/p/**", "/v/**", "/.well-known/**").permitAll()
                 // Tout le reste : authentifié
                 .anyRequest().authenticated()
             )
