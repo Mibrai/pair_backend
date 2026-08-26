@@ -70,8 +70,12 @@ public class ReviewService {
                 "Vous devez avoir échangé des messages ou partagé une présence confirmée avec l'organisateur avant de pouvoir évaluer ce programme");
         }
 
+        // Pas d'id assigné ici : @GeneratedValue le pose. Un id posé à la main rend
+        // save() non-« new » pour Spring Data, qui appelle alors merge() au lieu de
+        // persist() ; Hibernate 7 refuse de fusionner une instance détachée dont la
+        // ligne n'existe pas et lève StaleObjectStateException — c'était le 500 du
+        // chemin nominal de cette écriture.
         Review review = Review.builder()
-            .id(UUID.randomUUID())
             .reviewerId(reviewerId)
             .programId(programId)
             .interactionProofId(conversationId)

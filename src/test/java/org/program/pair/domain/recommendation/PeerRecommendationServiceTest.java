@@ -13,6 +13,8 @@ import org.program.pair.repository.AttendanceRepository;
 import org.program.pair.repository.ConversationRepository;
 import org.program.pair.repository.PeerRecommendationRepository;
 import org.program.pair.shared.exception.BusinessException;
+import org.program.pair.shared.exception.ConflictException;
+import org.program.pair.shared.exception.ErrorCode;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -81,9 +83,12 @@ class PeerRecommendationServiceTest {
             toId, 5, "Excellente personne, très fiable et professionnelle", null, null
         );
 
+        // 409 et non 422 : « c'est déjà fait » est un état, pas un refus de droit.
         assertThatThrownBy(() -> recommendationService.createRecommendation(fromId, request))
-            .isInstanceOf(BusinessException.class)
-            .hasMessageContaining("déjà recommandé");
+            .isInstanceOf(ConflictException.class)
+            .hasMessageContaining("déjà recommandé")
+            .extracting(e -> ((ConflictException) e).getErrorCode())
+            .isEqualTo(ErrorCode.RECOMMENDATION_ALREADY_GIVEN);
     }
 
     @Test
@@ -97,7 +102,7 @@ class PeerRecommendationServiceTest {
             .thenReturn(Optional.of(conversation));
         when(recommendationRepository.findByRecommenderIdAndRecommendedId(fromId, toId))
             .thenReturn(Optional.empty());
-        when(recommendationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(recommendationRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
 
         CreateRecommendationRequest request = new CreateRecommendationRequest(toId, null, null, null, null);
 
@@ -118,7 +123,7 @@ class PeerRecommendationServiceTest {
         when(attendanceRepository.existsSharedPresence(fromId, toId)).thenReturn(true);
         when(recommendationRepository.findByRecommenderIdAndRecommendedId(fromId, toId))
             .thenReturn(Optional.empty());
-        when(recommendationRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(recommendationRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
 
         CreateRecommendationRequest request = new CreateRecommendationRequest(
             toId, null, "On a couru ensemble, super rythme.", null, null);
@@ -145,7 +150,7 @@ class PeerRecommendationServiceTest {
         assertThatThrownBy(() -> recommendationService.createRecommendation(fromId, request))
             .isInstanceOf(BusinessException.class);
 
-        verify(recommendationRepository, org.mockito.Mockito.never()).save(any());
+        verify(recommendationRepository, org.mockito.Mockito.never()).saveAndFlush(any());
     }
 
     @Test
