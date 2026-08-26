@@ -185,6 +185,128 @@ class SignalementRecommandationAvisIntegrationTest extends AbstractIntegrationTe
             .jsonPath("$.content[0].programId").isEqualTo(d.programId.toString());
     }
 
+    @Test
+    void signalerUneCibleInexistante_rend404_etNonUneErreurServeur() {
+        Decor d = monterLeDecor("cible-absente");
+
+        // Les quatre types de l'énumération, aucun n'était résolu auparavant :
+        // un identifiant bien formé mais orphelin allait jusqu'à l'insertion.
+        for (String type : new String[] {"USER", "PROGRAM", "MESSAGE", "REVIEW"}) {
+            webTestClient.post()
+                .uri("/api/reports")
+                .headers(h -> h.setBearerAuth(d.tokenA))
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("""
+                    {"reportedEntityType":"%s","reportedEntityId":"%s","reason":"SPAM",
+                     "description":"No additional details provided by the reporter."}
+                    """.formatted(type, UUID.randomUUID()))
+                .exchange()
+                .expectStatus().isNotFound()
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("NOT_FOUND");
+        }
+
+        // Un 404 ne doit rien avoir écrit au passage.
+        webTestClient.get()
+            .uri("/api/reports/me")
+            .headers(h -> h.setBearerAuth(d.tokenA))
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.page.totalElements").isEqualTo(0);
+    }
+
+    @Test
+    void signalerDeuxFoisLeMemeElement_rend409Nomme() {
+        Decor d = monterLeDecor("signal-doublon");
+        String corps = """
+            {"reportedEntityType":"USER","reportedEntityId":"%s","reason":"SPAM",
+             "description":"No additional details provided by the reporter."}
+            """.formatted(d.userB);
+
+        webTestClient.post()
+            .uri("/api/reports")
+            .headers(h -> h.setBearerAuth(d.tokenA))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(corps)
+            .exchange()
+            .expectStatus().isCreated();
+
+        webTestClient.post()
+            .uri("/api/reports")
+            .headers(h -> h.setBearerAuth(d.tokenA))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(corps)
+            .exchange()
+            .expectStatus().isEqualTo(409)
+            .expectBody()
+            .jsonPath("$.code").isEqualTo("REPORT_ALREADY_SUBMITTED");
+
+        // Le premier signalement tient toujours, et il n'y en a pas deux.
+        webTestClient.get()
+            .uri("/api/reports/me")
+            .headers(h -> h.setBearerAuth(d.tokenA))
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.page.totalElements").isEqualTo(1);
+    }
+
+    @Test
+    void recommanderDeuxFoisLaMemePersonne_rend409Nomme() {
+        Decor d = monterLeDecor("reco-doublon");
+        String corps = "{\"recommendedId\":\"%s\"}".formatted(d.userB);
+
+        webTestClient.post()
+            .uri("/api/recommendations")
+            .headers(h -> h.setBearerAuth(d.tokenA))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(corps)
+            .exchange()
+            .expectStatus().isCreated();
+
+        webTestClient.post()
+            .uri("/api/recommendations")
+            .headers(h -> h.setBearerAuth(d.tokenA))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(corps)
+            .exchange()
+            .expectStatus().isEqualTo(409)
+            .expectBody()
+            .jsonPath("$.code").isEqualTo("RECOMMENDATION_ALREADY_GIVEN");
+
+        webTestClient.get()
+            .uri("/api/recommendations/given")
+            .headers(h -> h.setBearerAuth(d.tokenA))
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.page.totalElements").isEqualTo(1);
+    }
+
+    /**
+     * Le refus de droit, lui, reste un {@code 422} : c'est la distinction que le
+     * client demandait de nommer. Sans preuve d'interaction, recommander n'est
+     * pas « déjà fait », c'est « pas permis ».
+     */
+    @Test
+    void recommanderSansPreuveDInteraction_resteEn422() {
+        Decor d = monterLeDecor("reco-sans-preuve");
+        String etranger = uniqueEmail("reco-sans-preuve-c");
+        inscrireEtConnecter(etranger);
+        UUID userC = userRepository.findByEmail(etranger).orElseThrow().getId();
+
+        webTestClient.post()
+            .uri("/api/recommendations")
+            .headers(h -> h.setBearerAuth(d.tokenA))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue("{\"recommendedId\":\"%s\"}".formatted(userC))
+            .exchange()
+            .expectStatus().isEqualTo(422)
+            .expectBody()
+            .jsonPath("$.code").isEqualTo("BUSINESS_RULE_VIOLATION");
+    }
+
     /**
      * Deux comptes neufs, un programme tenu par B, et une présence confirmée par
      * les deux sur le même créneau passé — la preuve d'interaction

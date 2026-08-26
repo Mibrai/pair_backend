@@ -10,6 +10,9 @@ import org.program.pair.repository.AttendanceRepository;
 import org.program.pair.repository.ConversationRepository;
 import org.program.pair.repository.PeerRecommendationRepository;
 import org.program.pair.shared.exception.BusinessException;
+import org.program.pair.shared.exception.ConflictException;
+import org.program.pair.shared.exception.ErrorCode;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -45,7 +48,7 @@ public class PeerRecommendationService {
 
         // Validation 2: Check if already recommended
         if (hasRecommended(recommenderId, recommendedId)) {
-            throw new BusinessException("Vous avez déjà recommandé cet utilisateur");
+            throw dejaRecommande();
         }
 
         // Validation 3: Must have proof of interaction (conversation OR shared attendance)
@@ -76,7 +79,18 @@ public class PeerRecommendationService {
             .programContext(request.getProgramContext())
             .build();
 
-        recommendation = recommendationRepository.save(recommendation);
+        try {
+            // saveAndFlush et non save : l'identifiant étant généré en mémoire,
+            // l'INSERT ne partirait qu'au commit, donc hors de ce try — et la
+            // violation de unique_recommendation ressortirait en 500.
+            recommendation = recommendationRepository.saveAndFlush(recommendation);
+        } catch (DataIntegrityViolationException e) {
+            // Deux recommandations simultanées de la même personne : le contrôle
+            // ci-dessus les laisse passer toutes les deux, seule la contrainte
+            // unique_recommendation tranche. La seconde est un « déjà
+            // recommandé » comme un autre, pas un 500.
+            throw dejaRecommande();
+        }
         log.info("User {} recommended user {} with rating {}", recommenderId, recommendedId, request.getRating());
 
         // Trigger badge evaluation for recommended user
@@ -87,6 +101,16 @@ public class PeerRecommendationService {
         }
 
         return recommendation;
+    }
+
+    /**
+     * {@code 409} et non {@code 422} : « c'est déjà fait » est un état, pas un
+     * refus de droit. L'app affiche alors « Recommandé », ce qui est la vérité —
+     * le {@code 422} lui faisait annoncer un refus sur un geste déjà accompli.
+     */
+    private ConflictException dejaRecommande() {
+        return new ConflictException(
+            ErrorCode.RECOMMENDATION_ALREADY_GIVEN, "Vous avez déjà recommandé cet utilisateur");
     }
 
     /**
