@@ -33,8 +33,12 @@ public class ReportService {
             throw new BusinessException("Vous avez déjà signalé cet élément");
         }
 
+        // Pas d'id assigné ici : @GeneratedValue le pose. Un id posé à la main rend
+        // save() non-« new » pour Spring Data, qui appelle alors merge() au lieu de
+        // persist() ; Hibernate 7 refuse de fusionner une instance détachée dont la
+        // ligne n'existe pas et lève StaleObjectStateException — c'était le 500 du
+        // chemin nominal de cette écriture.
         Report report = Report.builder()
-            .id(UUID.randomUUID())
             .reporterId(reporterId)
             .reportedEntityType(request.getReportedEntityType())
             .reportedEntityId(request.getReportedEntityId())
