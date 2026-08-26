@@ -69,13 +69,21 @@ public class EmailService {
     }
 
     /**
-     * Le lien pointe sur la route d'API elle-même, et non sur un chemin de
-     * frontend web : il n'existe aucun site qui servirait cette page, et les
-     * deux chemins plausibles rendaient 404. La route sait rendre du HTML quand
-     * c'est un navigateur qui la demande.
+     * Le lien pointe sur ce serveur, et non sur un chemin de frontend web : il
+     * n'existe aucun site qui servirait cette page, et les deux chemins
+     * plausibles rendaient 404. La route sait rendre du HTML quand c'est un
+     * navigateur qui la demande.
+     *
+     * <p><b>Le chemin court, et non {@code /api/auth/verify-email?token=…}.</b>
+     * C'est lui, et lui seul, que le fichier d'association Apple déclare — un
+     * lien vers l'ancien chemin est remis à Safari quoi que fasse l'application,
+     * parce qu'iOS ne regarde que l'adresse écrite dans l'e-mail. Le motif dans
+     * le fichier d'association et la route {@code /v/{token}} ne servent à rien
+     * tant que cette ligne n'a pas changé. L'ancien chemin reste servi pour les
+     * liens déjà partis.
      */
     private String lienVerification(String token) {
-        return baseUrl + "/api/auth/verify-email?token=" + token;
+        return baseUrl + "/v/" + token;
     }
 
     public void sendPasswordResetEmail(String email, String token) {
