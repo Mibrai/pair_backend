@@ -118,6 +118,75 @@ class ReportVocabulaireIntegrationTest extends AbstractIntegrationTest {
             .hasMessageContaining("reports_status_vocabulaire");
     }
 
+    /**
+     * Se signaler soi-même occupait la file de modération avec un signalement
+     * qui ne veut rien dire. {@code 422} et non {@code 409} : ce n'est pas
+     * « c'est déjà fait », c'est « vous n'avez pas à faire ça ».
+     */
+    @Test
+    void seSignalerSoiMeme_doitEtreRefuseEn422() {
+        Compte moi = compte();
+
+        webTestClient.post().uri("/api/reports")
+            .headers(h -> h.setBearerAuth(moi.token))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of(
+                "reportedEntityType", "USER",
+                "reportedEntityId", moi.id.toString(),
+                "reason", "OTHER",
+                "description", "Description assez longue pour passer la validation."))
+            .exchange()
+            .expectStatus().isEqualTo(422)
+            .expectBody()
+            .jsonPath("$.code").isEqualTo("BUSINESS_RULE_VIOLATION");
+    }
+
+    /**
+     * Le refus ne doit rien écrire : la file de modération est précisément ce
+     * que cette règle protège, un 422 qui laisserait la ligne derrière lui ne
+     * servirait à rien.
+     */
+    @Test
+    void seSignalerSoiMeme_neDoitRienEcrire() {
+        Compte moi = compte();
+
+        webTestClient.post().uri("/api/reports")
+            .headers(h -> h.setBearerAuth(moi.token))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of(
+                "reportedEntityType", "USER",
+                "reportedEntityId", moi.id.toString(),
+                "reason", "OTHER",
+                "description", "Description assez longue pour passer la validation."))
+            .exchange().expectStatus().isEqualTo(422);
+
+        webTestClient.get().uri("/api/reports/me")
+            .headers(h -> h.setBearerAuth(moi.token))
+            .exchange().expectStatus().isOk()
+            .expectBody().jsonPath("$.content.length()").isEqualTo(0);
+    }
+
+    /**
+     * La règle est restreinte à {@code USER}, le seul cas que le chantier mobile
+     * a observé. Signaler autrui reste évidemment permis — ce test garde la
+     * frontière, pour qu'un durcissement futur ne l'emporte pas par mégarde.
+     */
+    @Test
+    void signalerQuelquunDautre_resteAutorise() {
+        Compte moi = compte();
+        Compte autre = compte();
+
+        webTestClient.post().uri("/api/reports")
+            .headers(h -> h.setBearerAuth(moi.token))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of(
+                "reportedEntityType", "USER",
+                "reportedEntityId", autre.id.toString(),
+                "reason", "OTHER",
+                "description", "Description assez longue pour passer la validation."))
+            .exchange().expectStatus().isCreated();
+    }
+
     // — helpers —
 
     private record Compte(UUID id, String token) {}
