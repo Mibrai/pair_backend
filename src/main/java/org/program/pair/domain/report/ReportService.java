@@ -34,6 +34,25 @@ public class ReportService {
     private final ReviewRepository reviewRepository;
 
     public Report createReport(UUID reporterId, CreateReportRequest request) {
+        // Se signaler soi-même créait un vrai signalement, en PENDING, qui
+        // occupait la file de modération sans rien vouloir dire. Ce n'est ni un
+        // risque de sécurité ni une panne — c'est du bruit, et c'est pour cela
+        // que la règle a attendu une décision plutôt qu'un correctif.
+        //
+        // 422 et non 409 : ce n'est pas « c'est déjà fait », c'est « vous n'avez
+        // pas à faire ça » — le partage exact que le lot du 26/08 avait tranché
+        // entre les deux codes. Même forme que le refus de se recommander
+        // soi-même dans PeerRecommendationService.
+        //
+        // Restreint à USER, le seul cas signalé : signaler son propre programme
+        // ou son propre message est tout aussi vide de sens, mais ce serait une
+        // règle que personne n'a demandée, posée sur des cas que personne n'a
+        // observés.
+        if (request.getReportedEntityType() == ReportEntityType.USER
+                && reporterId.equals(request.getReportedEntityId())) {
+            throw new BusinessException("Vous ne pouvez pas vous signaler vous-même");
+        }
+
         // La cible d'abord : signaler du vide n'est pas un incident, c'est une
         // requête qui ne désigne rien, et l'app en tire « cette personne n'est
         // plus joignable » plutôt qu'une panne. Avant, aucun de ces quatre types
