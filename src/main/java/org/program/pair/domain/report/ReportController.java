@@ -26,14 +26,23 @@ public class ReportController {
 
     private final ReportService reportService;
 
+    /**
+     * Le {@code 201} est porté par {@code @ResponseStatus} et non par un
+     * {@code ResponseEntity.status(...)} : springdoc ne lit que la signature de
+     * la méthode, jamais le corps. Un statut posé à l'exécution laissait
+     * {@code /v3/api-docs} annoncer le {@code 200} par défaut — le serveur et
+     * son contrat se contredisaient sans que rien ne le signale. C'est la même
+     * forme que {@code POST /api/programs/{programId}/report}, qui se documentait
+     * juste pour cette raison.
+     */
     @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "Signaler un contenu", description = "Signaler un utilisateur, programme, message ou avis")
-    public ResponseEntity<Report> createReport(
+    public Report createReport(
             @AuthenticationPrincipal UserPrincipal currentUser,
             @Valid @RequestBody CreateReportRequest request) {
 
-        Report report = reportService.createReport(currentUser.getId(), request);
-        return ResponseEntity.status(HttpStatus.CREATED).body(report);
+        return reportService.createReport(currentUser.getId(), request);
     }
 
     @GetMapping("/me")
