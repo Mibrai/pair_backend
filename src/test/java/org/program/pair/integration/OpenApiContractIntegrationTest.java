@@ -42,6 +42,26 @@ class OpenApiContractIntegrationTest extends AbstractIntegrationTest {
         assertThat(schema.path("properties").has("scheduledAt")).isTrue();
     }
 
+    /**
+     * Le serveur rend {@code 201} sur la création d'un signalement ; le contrat
+     * annonçait {@code 200}. L'app accepte les deux — tout {@code 2xx} est un
+     * succès pour Dio — donc rien ne cassait et rien ne le signalait non plus.
+     *
+     * <p>La cause n'était pas un oubli de documentation mais la forme du
+     * contrôleur : springdoc lit la signature de la méthode, jamais son corps,
+     * et un {@code ResponseEntity.status(CREATED)} posé à l'exécution lui reste
+     * invisible. Ce test verrouille le statut documenté, pas l'annotation qui
+     * le produit.
+     */
+    @Test
+    void apiDocs_devraitAnnoncer201SurLaCreationDunSignalement() throws Exception {
+        JsonNode reponses = fetchApiDocs()
+            .path("paths").path("/api/reports").path("post").path("responses");
+
+        assertThat(reponses.has("201")).isTrue();
+        assertThat(reponses.has("200")).isFalse();
+    }
+
     private JsonNode fetchApiDocs() throws Exception {
         byte[] raw = webTestClient.get()
             .uri("/v3/api-docs")
