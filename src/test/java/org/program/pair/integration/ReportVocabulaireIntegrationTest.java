@@ -99,7 +99,10 @@ class ReportVocabulaireIntegrationTest extends AbstractIntegrationTest {
             .expectStatus().isOk()
             .expectBody()
             .jsonPath("$.content.length()").isEqualTo(1)
-            .jsonPath("$.content[0].status").isEqualTo("PENDING");
+            // Le champ s'appelle « state » et vaut RECEIVED depuis que la route
+            // rend ReportSummaryDto : PENDING est le mot de la modération, pas
+            // celui du signalant. Voir MesSignalementsFormeIntegrationTest.
+            .jsonPath("$.content[0].state").isEqualTo("RECEIVED");
     }
 
     /**
