@@ -124,7 +124,11 @@ class UserAvailabilityIntegrationTest extends AbstractIntegrationTest {
         String viewer = registerAndLogin();
         replace(viewer, List.of(Map.of("dayOfWeek", 2, "timeSlot", "EVENING")));
 
-        List<UUID> feed = feedIds(viewer, 14);
+        // Dix-sept jours et non quatorze, même borne calendaire que ci-dessus : le
+        // créneau lointain (mardi de la semaine d'après, au soir) atteint 14 j 20 h
+        // les mardis, et une fenêtre de quatorze jours pile le laisserait dehors —
+        // alors indexOf rendrait -1 et l'assertion tomberait pour la mauvaise raison.
+        List<UUID> feed = feedIds(viewer, 17);
         assertThat(feed.indexOf(soon)).isLessThan(feed.indexOf(later));
     }
 
@@ -163,8 +167,18 @@ class UserAvailabilityIntegrationTest extends AbstractIntegrationTest {
             .expectBodyList(Map.class).returnResult().getResponseBody();
     }
 
+    /**
+     * Fenêtre par défaut de neuf jours, et non sept, à cause d'une borne
+     * calendaire. {@link #nextOccurrence} part de demain et cherche le jour
+     * voulu : le jour où l'on est soi-même ce jour de la semaine, « le prochain
+     * mardi » tombe à sept jours pleins — plus les heures du créneau, jusqu'à
+     * 7 j 20 h pour une séance du soir. Une fenêtre de sept jours pile laisse
+     * alors le créneau juste au-dehors, et le fil revient vide un jour sur sept.
+     * Neuf jours couvrent le cas sans rien changer à ce que les tests mesurent,
+     * la pondération ne jouant qu'entre créneaux d'un même jour.
+     */
     private List<UUID> feedIds(String token) {
-        return feedIds(token, 7);
+        return feedIds(token, 9);
     }
 
     private List<UUID> feedIds(String token, int days) {
