@@ -3,6 +3,7 @@ package org.program.pair.domain.report;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.report.dto.CreateReportRequest;
+import org.program.pair.domain.report.dto.ReportSummaryDto;
 import org.program.pair.repository.MessageRepository;
 import org.program.pair.repository.ProgramRepository;
 import org.program.pair.repository.ReportRepository;
@@ -129,9 +130,19 @@ public class ReportService {
         return reportRepository.findByStatusOrderByCreatedAtDesc(ReportStatus.PENDING, pageable);
     }
 
+    /**
+     * Les signalements de l'appelant, projetés.
+     *
+     * <p>La projection n'est pas cosmétique : cette méthode rendait l'entité
+     * {@code Report} entière, donc les notes de modération et l'identité du
+     * modérateur. Voir {@link ReportSummaryDto}. Elle est faite ici et non dans
+     * le contrôleur pour qu'aucun appelant futur du service ne récupère par
+     * mégarde la forme complète.
+     */
     @Transactional(readOnly = true)
-    public Page<Report> getMyReports(UUID userId, Pageable pageable) {
-        return reportRepository.findByReporterIdOrderByCreatedAtDesc(userId, pageable);
+    public Page<ReportSummaryDto> getMyReports(UUID userId, Pageable pageable) {
+        return reportRepository.findByReporterIdOrderByCreatedAtDesc(userId, pageable)
+            .map(ReportSummaryDto::from);
     }
 
     public Report reviewReport(UUID reportId, UUID moderatorId, ReportStatus newStatus, String notes) {
