@@ -9,6 +9,9 @@ import org.program.pair.domain.activity.Activity;
 import org.program.pair.domain.activity.UserActivity;
 import org.program.pair.domain.attendance.Attendance;
 import org.program.pair.domain.program.PlaceType;
+import org.program.pair.domain.report.Report;
+import org.program.pair.domain.report.ReportEntityType;
+import org.program.pair.domain.report.ReportReason;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.ProgramStatus;
 import org.program.pair.domain.program.Schedule;
@@ -17,6 +20,7 @@ import org.program.pair.domain.user.User;
 import org.program.pair.repository.ActivityRepository;
 import org.program.pair.repository.AttendanceRepository;
 import org.program.pair.repository.ProgramRepository;
+import org.program.pair.repository.ReportRepository;
 import org.program.pair.repository.ScheduleRepository;
 import org.program.pair.repository.UserActivityRepository;
 import org.program.pair.repository.UserRepository;
@@ -57,6 +61,7 @@ class SignalementRecommandationAvisIntegrationTest extends AbstractIntegrationTe
     @Autowired ActivityRepository activityRepository;
     @Autowired UserActivityRepository userActivityRepository;
     @Autowired ProgramRepository programRepository;
+    @Autowired ReportRepository reportRepository;
     @Autowired ScheduleRepository scheduleRepository;
     @Autowired AttendanceRepository attendanceRepository;
 
@@ -87,9 +92,21 @@ class SignalementRecommandationAvisIntegrationTest extends AbstractIntegrationTe
             .expectStatus().isOk()
             .expectBody()
             .jsonPath("$.page.totalElements").isEqualTo(1)
-            .jsonPath("$.content[0].reportedEntityType").isEqualTo("USER")
-            .jsonPath("$.content[0].reportedEntityId").isEqualTo(d.userB.toString())
-            .jsonPath("$.content[0].reason").isEqualTo("SPAM");
+            .jsonPath("$.content[0].targetType").isEqualTo("USER")
+            .jsonPath("$.content[0].state").isEqualTo("RECEIVED");
+
+        // La cible et le motif ne sont plus dans la réponse : ReportSummaryDto
+        // ferme la liste aux cinq champs du contrat, et l'identifiant de la
+        // personne visée n'en fait pas partie. Ce que ce test doit prouver — que
+        // le 201 a bien écrit une ligne, et la bonne — se vérifie donc sur la
+        // ligne elle-même, ce qui est plus fort que de relire l'écho de la route.
+        assertThat(signalementsDe(d.userA))
+            .singleElement()
+            .satisfies(signalement -> {
+                assertThat(signalement.getReportedEntityType()).isEqualTo(ReportEntityType.USER);
+                assertThat(signalement.getReportedEntityId()).isEqualTo(d.userB);
+                assertThat(signalement.getReason()).isEqualTo(ReportReason.SPAM);
+            });
     }
 
     @Test
@@ -113,8 +130,23 @@ class SignalementRecommandationAvisIntegrationTest extends AbstractIntegrationTe
             .expectStatus().isOk()
             .expectBody()
             .jsonPath("$.page.totalElements").isEqualTo(1)
-            .jsonPath("$.content[0].reportedEntityType").isEqualTo("PROGRAM")
-            .jsonPath("$.content[0].reportedEntityId").isEqualTo(d.programId.toString());
+            .jsonPath("$.content[0].targetType").isEqualTo("PROGRAM")
+            .jsonPath("$.content[0].state").isEqualTo("RECEIVED");
+
+        assertThat(signalementsDe(d.userA))
+            .singleElement()
+            .satisfies(signalement -> {
+                assertThat(signalement.getReportedEntityType()).isEqualTo(ReportEntityType.PROGRAM);
+                assertThat(signalement.getReportedEntityId()).isEqualTo(d.programId);
+            });
+    }
+
+    /** Les signalements écrits par ce compte, relus depuis la table. */
+    private java.util.List<Report> signalementsDe(UUID reporterId) {
+        return reportRepository
+            .findByReporterIdOrderByCreatedAtDesc(reporterId,
+                org.springframework.data.domain.PageRequest.of(0, 50))
+            .getContent();
     }
 
     @Test

@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.report.dto.CreateReportRequest;
+import org.program.pair.domain.report.dto.ReportSummaryDto;
 import org.program.pair.shared.security.UserPrincipal;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -45,15 +46,29 @@ public class ReportController {
         return reportService.createReport(currentUser.getId(), request);
     }
 
+    /**
+     * Le suivi de ses propres signalements.
+     *
+     * <p><b>Rend {@link ReportSummaryDto}, et non l'entité.</b> Cette route
+     * servait {@code Page<Report>} : l'entité est annotée {@code @Data}, donc
+     * tous ses champs partaient — {@code resolutionNotes}, les notes internes du
+     * modérateur, et {@code reviewedBy}, son identifiant. La forme fermée est ce
+     * qui referme cette fuite ; elle n'est pas une préférence de style.
+     *
+     * <p>Le type de retour est déclaré dans la signature parce que springdoc ne
+     * lit que celle-ci : le contrat annoncerait {@code Report} si la projection
+     * n'avait lieu que dans le corps, et le client coderait contre une forme que
+     * le serveur ne sert plus. C'est la même raison qui a fait porter le
+     * {@code 201} de la création par {@code @ResponseStatus}.
+     */
     @GetMapping("/me")
-    @Operation(summary = "Mes signalements", description = "Signalements que j'ai créés")
-    public ResponseEntity<Page<Report>> getMyReports(
+    @Operation(summary = "Mes signalements", description = "Signalements que j'ai créés, et où ils en sont")
+    public ResponseEntity<Page<ReportSummaryDto>> getMyReports(
             @AuthenticationPrincipal UserPrincipal currentUser,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
 
-        Page<Report> reports = reportService.getMyReports(currentUser.getId(), PageRequest.of(page, size));
-        return ResponseEntity.ok(reports);
+        return ResponseEntity.ok(reportService.getMyReports(currentUser.getId(), PageRequest.of(page, size)));
     }
 
     @GetMapping("/pending")
