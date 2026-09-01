@@ -206,7 +206,8 @@ public enum ErrorCode {
     // Un incident visant une personne doit désigner qui : sans cible, il ne peut
     // pas basculer dans la modération.
     INCIDENT_PERSON_TARGET_REQUIRED,
-    // Un incident visant une personne demande une description : le signalement
-    // qu'il produit en modération ne peut pas être vide.
-    INCIDENT_DESCRIPTION_REQUIRED
+    // Un incident visant une personne demande une note : le signalement qu'il
+    // produit en modération ne peut pas être vide. Nommé d'après le champ `note`
+    // du corps, pour que le code et le contrat parlent le même mot.
+    INCIDENT_NOTE_REQUIRED
 }

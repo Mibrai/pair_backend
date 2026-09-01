@@ -14,4 +14,7 @@ public interface IncidentRepository extends JpaRepository<Incident, UUID> {
 
     /** Mes incidents, du plus récent au plus ancien. */
     java.util.List<Incident> findByUserIdOrderByCreatedAtDesc(UUID userId);
+
+    /** Un incident précis de l'appelant : l'appartenance est vérifiée dans la requête. */
+    java.util.Optional<Incident> findByIdAndUserId(UUID id, UUID userId);
 }
