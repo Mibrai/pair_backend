@@ -169,7 +169,10 @@ public class WatchService {
             .orElseThrow(() -> new ResourceNotFoundException("Veille introuvable."));
         List<WatchEventDto> timeline = eventRepository.findByWatchIdOrderByOccurredAtAsc(watchId)
             .stream().map(WatchEventDto::from).toList();
-        return new WatchDetailDto(dto(watch), timeline, deliveryOf(watchId));
+        // Un seul calcul de remise, partagé entre l'objet watch et le champ de tête
+        // (que le contrat porte depuis le 01/09, et que le client lit là).
+        String delivery = deliveryOf(watchId);
+        return new WatchDetailDto(WatchDto.from(watch, publicBaseUrl, delivery), timeline, delivery);
     }
 
     /** Les veilles terminées de l'appelant, sans coordonnées : le journal. */
@@ -269,6 +272,34 @@ public class WatchService {
             ? watch.getOutboundBaseAt() : watch.getArmedAt();
         watch.setOutboundBaseAt(base.plus(Duration.ofMinutes(15)));
         inscrire(watchId, WatchEventType.SEEN_BY_HOST, Instant.now());
+    }
+
+    /**
+     * Les inscrits qu'un organisateur attend encore sur son créneau.
+     *
+     * <p>Réservé à l'organisateur : un créneau qu'il n'organise pas — ou qui
+     * n'existe pas — lui est <b>introuvable</b> (404), jamais interdit. La liste ne
+     * porte que le nom, la veille et l'heure d'attente ; rien de ce que
+     * l'organisateur n'a pas à voir (décision 15).
+     */
+    @Transactional(readOnly = true)
+    public List<org.program.pair.domain.watch.dto.PendingArrivalDto> pendingArrivals(UUID hostId, UUID scheduleId) {
+        Schedule slot = scheduleRepository.findById(scheduleId)
+            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+        if (!hostId.equals(organisateurDe(slot))) {
+            throw new ResourceNotFoundException("Créneau introuvable.");
+        }
+        return watchRepository.findByScheduleIdAndStateIn(scheduleId,
+                List.of(WatchState.ARMED, WatchState.EN_ROUTE)).stream()
+            .map(w -> new org.program.pair.domain.watch.dto.PendingArrivalDto(
+                w.getId(),
+                org.program.pair.domain.user.GivenName.from(displayNameDe(w.getUserId())),
+                w.getOccurrenceStartsAt()))
+            .toList();
+    }
+
+    private String displayNameDe(UUID userId) {
+        return userRepository.findById(userId).map(User::getDisplayName).orElse("Un inscrit");
     }
 
     private static UUID organisateurDe(Schedule slot) {
@@ -602,9 +633,9 @@ public class WatchService {
 
     // ------------------------------------------------------------------ outils
 
-    /** Fabrique le DTO en y composant l'URL du lien public. */
+    /** Fabrique le DTO en y composant l'URL du lien public et l'état de remise. */
     private WatchDto dto(Watch watch) {
-        return WatchDto.from(watch, publicBaseUrl);
+        return WatchDto.from(watch, publicBaseUrl, deliveryOf(watch.getId()));
     }
 
     private void inscrire(UUID watchId, WatchEventType type, Instant quand) {
