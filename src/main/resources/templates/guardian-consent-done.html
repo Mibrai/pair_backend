@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="fr" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Réponse enregistrée — meetDo</title>
+    <style>
+        :root { color-scheme: light dark; }
+        body {
+            margin: 0; padding: 2rem 1.25rem;
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            line-height: 1.55; color: #16191c; background: #f5f6f7;
+        }
+        .card {
+            max-width: 32rem; margin: 0 auto; background: #fff;
+            border-radius: 10px; padding: 1.75rem; box-shadow: 0 1px 3px rgba(0,0,0,.09);
+        }
+        h1 { font-size: 1.15rem; margin: 0 0 1rem; font-weight: 600; }
+        p { margin: 0 0 1rem; }
+        .note { margin-top: 1rem; font-size: .85rem; color: #6b757d; }
+        @media (prefers-color-scheme: dark) {
+            body { background: #101315; color: #e6e9ea; }
+            .card { background: #181c1f; box-shadow: none; }
+            .note { color: #8d979e; }
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div th:if="${decision == 'accepted'}">
+        <h1>C'est noté, merci.</h1>
+        <p>Vous avez accepté d'être prévenu si votre proche ne confirmait pas son
+           retour. Vous ne recevrez rien d'autre tant que ce cas ne se présente pas.</p>
+        <p class="note">meetDo ne partage ni sa position, ni l'adresse exacte de ses
+           sorties. Vous ne serez contacté qu'en cas d'absence de confirmation.</p>
+    </div>
+    <div th:if="${decision == 'refused'}">
+        <h1>Votre refus est enregistré.</h1>
+        <p>Vous ne serez pas contacté, et votre numéro ne pourra plus être désigné
+           comme contact sur meetDo. Ce refus est définitif.</p>
+    </div>
+</div>
+</body>
+</html>
