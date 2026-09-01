@@ -59,13 +59,21 @@ public record WatchDto(
     Instant guardianSeenAt,
 
     @Schema(description = "Quand le contact a cliqué « je l'ai eue au téléphone ». Null sinon.")
-    Instant guardianCalledAt
+    Instant guardianCalledAt,
+
+    @Schema(description = "État de remise des alertes de cette veille : NONE, PENDING, SENT, "
+        + "DELIVERED, BOUNCED, FAILED. Porté sur la liste active à dessein : c'est le seul "
+        + "endroit qu'un bandeau global peut lire sans relire la veille — et un BOUNCED y est "
+        + "la seule information qui dise que le proche n'a pas été joint.")
+    String alertDelivery
 ) {
 
     /**
      * @param publicBaseUrl la racine des liens publics, pour composer l'URL de statut.
+     * @param alertDelivery l'état de remise agrégé, calculé par le service (voir
+     *                      {@code WatchService.deliveryOf}).
      */
-    public static WatchDto from(Watch w, String publicBaseUrl) {
+    public static WatchDto from(Watch w, String publicBaseUrl, String alertDelivery) {
         String token = w.getPublicToken();
         String url = token == null ? null : publicBaseUrl + "/public/watch/" + token;
         return new WatchDto(
@@ -84,6 +92,7 @@ public record WatchDto(
             token,
             url,
             w.getGuardianSeenAt(),
-            w.getGuardianCalledAt());
+            w.getGuardianCalledAt(),
+            alertDelivery);
     }
 }
