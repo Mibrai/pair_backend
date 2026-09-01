@@ -9,6 +9,8 @@ import org.program.pair.domain.watch.dto.ArrivalRequest;
 import org.program.pair.domain.watch.dto.ArrivalResponse;
 import org.program.pair.domain.watch.dto.CloseRequest;
 import org.program.pair.domain.watch.dto.CreateWatchRequest;
+import org.program.pair.domain.watch.dto.InterruptRequest;
+import org.program.pair.domain.watch.dto.ResendCodeRequest;
 import org.program.pair.domain.watch.dto.WatchDetailDto;
 import org.program.pair.domain.watch.dto.WatchDto;
 import org.program.pair.shared.exception.ConflictException;
@@ -115,6 +117,54 @@ public class WatchController {
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id) {
         return watchService.abandon(principal.getId(), id);
+    }
+
+    @PostMapping("/{id}/snooze")
+    @Operation(summary = "Snooze",
+        description = "Repousse l'échéance de retour de 30 minutes, sans code, et réarme les rappels.")
+    public WatchDto snooze(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        return watchService.snooze(principal.getId(), id);
+    }
+
+    @PostMapping("/{id}/panic")
+    @Operation(summary = "Panic",
+        description = "Fait partir le message d'alerte immédiatement.")
+    public WatchDto panic(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        return watchService.panic(principal.getId(), id);
+    }
+
+    @PostMapping("/{id}/resend-code")
+    @Operation(summary = "Renvoyer le code de retour",
+        description = "Régénère le code sous mot de passe, une fois par cycle. Le rend en clair, une fois.")
+    public ArrivalResponse resendCode(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @Valid @RequestBody ResendCodeRequest request) {
+        return watchService.resendCode(principal.getId(), id, request);
+    }
+
+    @PostMapping("/{id}/interrupt")
+    @Operation(summary = "Interrompre la séance",
+        description = "On repart plus tôt. Recale l'échéance sur le trajet de retour, ou sur maintenant si déjà rentrée.")
+    public WatchDto interrupt(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @Valid @RequestBody InterruptRequest request) {
+        return watchService.interrupt(principal.getId(), id, request);
+    }
+
+    @PostMapping("/{id}/revoke-link")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Révoquer le lien de statut public",
+        description = "Éteint la page publique de cette veille, même avant son expiration.")
+    public void revokeLink(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        watchService.revokePublicLink(principal.getId(), id);
     }
 
     @DeleteMapping("/{id}")

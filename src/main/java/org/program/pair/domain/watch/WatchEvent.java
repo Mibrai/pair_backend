@@ -41,9 +41,14 @@ public class WatchEvent {
     protected WatchEvent() {}
 
     public WatchEvent(UUID watchId, WatchEventType type, Instant occurredAt) {
+        this(watchId, type, occurredAt, null);
+    }
+
+    public WatchEvent(UUID watchId, WatchEventType type, Instant occurredAt, String detail) {
         this.watchId = watchId;
         this.type = type;
         this.occurredAt = occurredAt;
+        this.detail = detail;
     }
 
     public UUID getId() {

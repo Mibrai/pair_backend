@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="fr" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow">
+    <!-- Plancher de rafraîchissement, sans JavaScript : la page se recharge
+         toute seule, y compris dans un navigateur intégré ou sur un vieux
+         téléphone, là où un sondage JS afficherait une page vide. -->
+    <meta http-equiv="refresh" content="60">
+    <title>Point de sécurité — meetDo</title>
+    <style>
+        :root { color-scheme: light dark; }
+        body {
+            margin: 0; padding: 2rem 1.25rem;
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            line-height: 1.55; color: #16191c; background: #f5f6f7;
+        }
+        .card {
+            max-width: 32rem; margin: 0 auto; background: #fff;
+            border-radius: 10px; padding: 1.75rem; box-shadow: 0 1px 3px rgba(0,0,0,.09);
+        }
+        .status {
+            font-size: 1.35rem; font-weight: 700; margin: 0 0 .25rem;
+        }
+        .status.alerte { color: #b3261e; }
+        .status.rentree { color: #1f8a4c; }
+        .maj { font-size: .8rem; color: #6b757d; margin: 0 0 1.25rem; }
+        dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: .55rem 1.25rem; }
+        dt { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: #6b757d; }
+        dd { margin: 0; font-weight: 500; }
+        .actions { display: flex; gap: .75rem; margin-top: 1.5rem; flex-wrap: wrap; }
+        button {
+            flex: 1 1 auto; min-width: 9rem; padding: .75rem 1rem; border-radius: 8px;
+            border: 1px solid #c9d1d6; background: #fff; font-size: .95rem; font-weight: 600;
+            cursor: pointer; color: #16191c;
+        }
+        .note { margin-top: 1.5rem; font-size: .82rem; color: #6b757d; }
+        @media (prefers-color-scheme: dark) {
+            body { background: #101315; color: #e6e9ea; }
+            .card { background: #181c1f; box-shadow: none; }
+            dt, .maj, .note { color: #8d979e; }
+            button { background: #21262a; color: #e6e9ea; border-color: #3a4147; }
+            .status.rentree { color: #5ac57f; }
+            .status.alerte { color: #f2b8b5; }
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <p class="status"
+       th:classappend="${statutCode == 'ALERTE_ENVOYEE'} ? 'alerte' : (${statutCode == 'RENTREE'} ? 'rentree' : '')"
+       th:text="${statut}">Sur place</p>
+    <p class="maj">Actualisé il y a <span th:text="${majMinutes}">3</span> min</p>
+
+    <dl>
+        <dt>Personne</dt>
+        <dd th:text="${prenom} ?: 'Non renseigné'">Camille</dd>
+
+        <dt th:if="${activite}">Activité</dt>
+        <dd th:if="${activite}" th:text="${activite}">Yoga</dd>
+
+        <dt>Lieu</dt>
+        <dd><span th:text="${lieu} ?: 'Non renseigné'">Studio Lumière</span><span
+                th:if="${ville}" th:text="' — ' + ${ville}"></span></dd>
+
+        <dt th:if="${debut}">Séance</dt>
+        <dd th:if="${debut}">de <span th:text="${debut}">9h00</span>
+            <span th:if="${fin}">à <span th:text="${fin}">10h00</span></span></dd>
+
+        <dt th:if="${echeance}">Retour attendu</dt>
+        <dd th:if="${echeance}" th:text="'avant ' + ${echeance}">avant 12h00</dd>
+    </dl>
+
+    <!-- Deux boutons d'accusé, aucune clôture. Cachés une fois la veille terminée. -->
+    <div class="actions" th:unless="${terminal}">
+        <form method="post" th:action="@{/public/watch/{t}/seen(t=${token})}">
+            <button type="submit">J'ai vu</button>
+        </form>
+        <form method="post" th:action="@{/public/watch/{t}/called(t=${token})}">
+            <button type="submit">Je l'ai eue au téléphone</button>
+        </form>
+    </div>
+
+    <p class="note" th:if="${statutCode == 'ALERTE_ENVOYEE'}">
+        meetDo ne sait pas si cette personne va bien — seulement qu'elle n'a pas
+        confirmé son retour. En cas de danger immédiat, appelez le 112.
+    </p>
+    <p class="note" th:if="${terminal}">
+        Cette personne est bien rentrée. Il n'y a rien à faire.
+    </p>
+    <p class="note">
+        L'adresse exacte et les coordonnées ne sont volontairement pas affichées.
+    </p>
+</div>
+</body>
+</html>

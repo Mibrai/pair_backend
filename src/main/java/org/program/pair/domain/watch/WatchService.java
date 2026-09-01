@@ -7,6 +7,7 @@ import org.program.pair.domain.guardian.Guardian;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotAudience;
 import org.program.pair.domain.program.SlotTiming;
+import org.program.pair.domain.user.User;
 import org.program.pair.domain.watch.dto.CreateWatchRequest;
 import org.program.pair.domain.watch.dto.WatchDetailDto;
 import org.program.pair.domain.watch.dto.WatchDto;
@@ -14,9 +15,12 @@ import org.program.pair.domain.watch.dto.WatchEventDto;
 import org.program.pair.domain.watch.dto.ArrivalRequest;
 import org.program.pair.domain.watch.dto.ArrivalResponse;
 import org.program.pair.domain.watch.dto.CloseRequest;
+import org.program.pair.domain.watch.dto.InterruptRequest;
+import org.program.pair.domain.watch.dto.ResendCodeRequest;
 import org.program.pair.repository.GuardianRepository;
 import org.program.pair.repository.ReturnCodeRepository;
 import org.program.pair.repository.ScheduleRepository;
+import org.program.pair.repository.UserRepository;
 import org.program.pair.repository.WatchEventRepository;
 import org.program.pair.repository.WatchRepository;
 import org.program.pair.shared.exception.BusinessException;
@@ -72,6 +76,13 @@ public class WatchService {
     private final SlotAudience slotAudience;
     private final Pepper pepper;
     private final WatchEscalationService escalation;
+    private final UserRepository userRepository;
+    private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
+
+    /** Trajet de retour par défaut, et ses bornes de bon sens (§7.5). */
+    private static final int TRAJET_DEFAUT_MIN = 45;
+    private static final int TRAJET_MIN = 15;
+    private static final int TRAJET_MAX = 240;
 
     // -------------------------------------------------------------------- armer
 
@@ -193,6 +204,14 @@ public class WatchService {
         watch.setClosedAt(now);
         inscrire(watchId, WatchEventType.ABANDONED, now);
         return WatchDto.from(watch);
+    }
+
+    /** Révoque le lien public : la page devient introuvable, même avant son expiration. */
+    public void revokePublicLink(UUID userId, UUID watchId) {
+        Watch watch = exigerVeille(userId, watchId);
+        if (watch.getPublicTokenRevokedAt() == null) {
+            watch.setPublicTokenRevokedAt(Instant.now());
+        }
     }
 
     private Watch exigerVeille(UUID userId, UUID watchId) {
@@ -355,9 +374,127 @@ public class WatchService {
 
     public enum CloseStatus { CLOSED, WRONG, LOCKED }
 
+    // -------------------------------------------------------------- les sorties
+
+    /**
+     * Snooze : +30 min, sans code, et <b>toute la chaîne réarmée</b>.
+     *
+     * <p>Repousser l'échéance sans remettre les rappels à zéro laisserait la
+     * personne à un rappel de l'escalade juste après avoir gagné du temps. Le
+     * snooze rend donc les trois rappels à venir : {@code remindersSent} repart de
+     * zéro, et une veille qui relançait revient en attente.
+     */
+    public WatchDto snooze(UUID userId, UUID watchId) {
+        Watch watch = exigerVeille(userId, watchId);
+        exigerSurPlace(watch);
+
+        watch.setDeadlineAt(watch.getDeadlineAt().plus(Duration.ofMinutes(30)));
+        watch.setRemindersSent(0);
+        if (watch.getState() == WatchState.REMINDING) {
+            watch.setState(WatchState.ON_SITE);
+        }
+        inscrire(watchId, WatchEventType.SNOOZED, Instant.now());
+        return WatchDto.from(watch);
+    }
+
+    /** Panic : le message part immédiatement, sans attendre l'échéance ni les rappels. */
+    public WatchDto panic(UUID userId, UUID watchId) {
+        Watch watch = exigerVeille(userId, watchId);
+        if (!watch.estActive()) {
+            throw new ConflictException(ErrorCode.WATCH_NOT_DISARMABLE,
+                "Cette veille est déjà close.");
+        }
+        watch.setState(WatchState.ESCALATED);
+        inscrire(watchId, WatchEventType.PANIC_TRIGGERED, Instant.now());
+        // À la différence de la contrainte, panic est un geste explicite : rien à
+        // cacher, on prévient tout de suite.
+        escalation.ensureAlerted(watch, 0);
+        return WatchDto.from(watch);
+    }
+
+    /**
+     * Renvoi du code : le régénère, sous mot de passe, une fois par cycle.
+     *
+     * <p>L'ancien code est oublié du serveur — on ne peut que le remplacer. Le mot
+     * de passe est exigé pour que la route ne devienne pas une porte dérobée : sans
+     * lui, un téléphone déverrouillé suffirait à se fabriquer un code. Un seul
+     * renvoi par cycle, pour qu'il ne serve pas non plus à contourner le plafond de
+     * trois essais.
+     */
+    public ArrivalResponse resendCode(UUID userId, UUID watchId, ResendCodeRequest req) {
+        Watch watch = exigerVeille(userId, watchId);
+        ReturnCode rc = returnCodeRepository.findByWatchId(watchId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.WATCH_NOT_ON_SITE,
+                "Aucun code à renvoyer : l'arrivée n'a pas été validée."));
+
+        User user = userRepository.findById(userId)
+            .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable."));
+        if (!passwordEncoder.matches(req.password(), user.getPasswordHash())) {
+            throw new BusinessException(ErrorCode.WATCH_PASSWORD_REQUIRED,
+                "Mot de passe incorrect.");
+        }
+        if (rc.isResent()) {
+            throw new ConflictException(ErrorCode.WATCH_RESEND_ALREADY_USED,
+                "Le code a déjà été renvoyé pour ce cycle.");
+        }
+
+        String code = ReturnCodeGenerator.next();
+        byte[] sel = pepper.nouveauSel();
+        int kv = pepper.versionCourante();
+        rc.replaceWith(pepper.empreinte(code, sel, kv),
+            java.util.Base64.getEncoder().encodeToString(sel), kv);
+
+        inscrire(watchId, WatchEventType.CODE_RESENT, Instant.now());
+        return new ArrivalResponse(WatchDto.from(watch), code);
+    }
+
+    /**
+     * Interruption d'une séance : on repart plus tôt.
+     *
+     * <p>{@code alreadyHome=true} : la personne est déjà rentrée, l'échéance passe à
+     * maintenant — retour à confirmer sur-le-champ, avec le code. {@code false} :
+     * elle prend le trajet, et l'échéance se recale sur maintenant + la durée reçue
+     * de l'app (bornée 15–240 min), le code étant demandé à l'arrivée. Dans les deux
+     * cas, la chaîne de rappels est réarmée sur la nouvelle échéance.
+     */
+    public WatchDto interrupt(UUID userId, UUID watchId, InterruptRequest req) {
+        Watch watch = exigerVeille(userId, watchId);
+        exigerSurPlace(watch);
+
+        Instant now = Instant.now();
+        watch.setInterruptedAt(now);
+        watch.setRemindersSent(0);
+        if (watch.getState() == WatchState.REMINDING) {
+            watch.setState(WatchState.ON_SITE);
+        }
+
+        if (req.alreadyHome()) {
+            watch.setDeadlineAt(now);
+        } else {
+            int minutes = req.travelMinutes() == null ? TRAJET_DEFAUT_MIN
+                : Math.max(TRAJET_MIN, Math.min(TRAJET_MAX, req.travelMinutes()));
+            watch.setDeadlineAt(now.plus(Duration.ofMinutes(minutes)));
+        }
+
+        inscrire(watchId, WatchEventType.INTERRUPTED, now,
+            req.reason() == null || req.reason().isBlank() ? null : req.reason().strip());
+        return WatchDto.from(watch);
+    }
+
+    private void exigerSurPlace(Watch watch) {
+        if (watch.getState() != WatchState.ON_SITE && watch.getState() != WatchState.REMINDING) {
+            throw new ConflictException(ErrorCode.WATCH_NOT_ON_SITE,
+                "Ce geste suppose une arrivée validée.");
+        }
+    }
+
     // ------------------------------------------------------------------ outils
 
     private void inscrire(UUID watchId, WatchEventType type, Instant quand) {
         eventRepository.save(new WatchEvent(watchId, type, quand));
+    }
+
+    private void inscrire(UUID watchId, WatchEventType type, Instant quand, String detail) {
+        eventRepository.save(new WatchEvent(watchId, type, quand, detail));
     }
 }

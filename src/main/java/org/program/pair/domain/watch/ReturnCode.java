@@ -68,6 +68,10 @@ public class ReturnCode {
     @Column(name = "duress_hash", length = 64)
     private String duressHash;
 
+    /** Vrai si le code a déjà été renvoyé pour ce cycle. Un seul renvoi par cycle. */
+    @Column(name = "resent", nullable = false)
+    private boolean resent = false;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -91,7 +95,17 @@ public class ReturnCode {
     public int getKeyVersion() { return keyVersion; }
     public int getAttemptsLeft() { return attemptsLeft; }
     public String getDuressHash() { return duressHash; }
+    public boolean isResent() { return resent; }
     public Instant getCreatedAt() { return createdAt; }
 
     public void setAttemptsLeft(int attemptsLeft) { this.attemptsLeft = attemptsLeft; }
+
+    /** Remplace le code par une empreinte neuve (renvoi), et marque le cycle comme renvoyé. */
+    public void replaceWith(String hash, String salt, int keyVersion) {
+        this.hash = hash;
+        this.salt = salt;
+        this.keyVersion = keyVersion;
+        this.attemptsLeft = 3;
+        this.resent = true;
+    }
 }
