@@ -15,5 +15,18 @@ public enum WatchEventType {
     ARMED,
 
     /** Désarmée avant tout départ, sans message et sans compter d'absence. */
-    DISARMED_BEFORE_DEPARTURE
+    DISARMED_BEFORE_DEPARTURE,
+
+    /** Arrivée sur place validée : le code de retour a été créé. */
+    ARRIVED_ON_SITE,
+
+    /**
+     * Refermée par le code de retour. Le même événement quel que soit le code
+     * présenté — normal ou de contrainte : la chronologie ne doit pas trahir, à
+     * qui la lirait, lequel des deux a servi. Ce qui distingue les deux cas est
+     * l'état de la veille, que le client sait ne pas montrer sous contrainte, pas
+     * une ligne de journal. L'horodatage est celui saisi par l'utilisateur
+     * ({@code enteredAt}), qui fait foi, et non l'heure de réception.
+     */
+    CLOSED_BY_CODE
 }
