@@ -10,6 +10,7 @@ import org.program.pair.domain.auth.dto.LoginRequest;
 import org.program.pair.domain.auth.dto.RefreshRequest;
 import org.program.pair.domain.auth.dto.RegisterRequest;
 import org.program.pair.domain.auth.dto.ResetPasswordRequest;
+import org.program.pair.shared.exception.InvalidCredentialsException;
 import org.program.pair.shared.security.RateLimiter;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -35,11 +36,35 @@ public class AuthController {
         return authService.register(request);
     }
 
+    /**
+     * Connexion.
+     *
+     * <p><b>Le plafond porte sur les échecs, pas sur les appels.</b> La
+     * vérification ne consomme rien ; c'est l'issue qui décide. Une session de
+     * travail à deux comptes depuis un même poste — le cas qui a bloqué le
+     * chantier mobile le 01/09 — ne consomme donc plus rien du tout, tant que les
+     * mots de passe sont bons. Et réessayer après un refus ne rallonge pas
+     * l'attente, ce que l'ancien compteur faisait sans qu'aucun écran ne puisse
+     * l'expliquer.
+     */
     @PostMapping("/login")
     public AuthResponse login(@Valid @RequestBody LoginRequest request,
                                HttpServletRequest httpRequest) {
-        rateLimiter.checkLogin(httpRequest.getRemoteAddr());
-        return authService.login(request);
+        String ip = httpRequest.getRemoteAddr();
+        rateLimiter.checkLogin(ip, request.email());
+        try {
+            AuthResponse response = authService.login(request);
+            rateLimiter.recordLoginSuccess(request.email());
+            return response;
+        } catch (InvalidCredentialsException e) {
+            // Seul un identifiant refusé consomme du budget — mot de passe faux,
+            // compte inconnu ou désactivé, qui rendent tous ce même refus
+            // indifférencié. Une panne de base ou une validation ratée lèvent
+            // autre chose et ne rapprochent personne du plafond : ce n'est pas
+            // une tentative de deviner un mot de passe.
+            rateLimiter.recordLoginFailure(ip, request.email());
+            throw e;
+        }
     }
 
     @PostMapping("/refresh")
