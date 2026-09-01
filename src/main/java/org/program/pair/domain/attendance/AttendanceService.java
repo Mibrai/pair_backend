@@ -28,7 +28,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -121,8 +123,31 @@ public class AttendanceService {
     }
 
     /**
-     * Créneaux terminés (hôte ou participant confirmé) en attente de
-     * confirmation de ma part.
+     * Créneaux terminés en attente de confirmation de ma part.
+     *
+     * <p><b>Le filtre, en toutes lettres — il est le même que celui de
+     * {@link #confirm}.</b> Une séance est proposée si et seulement si :
+     *
+     * <ol>
+     *   <li>je l'héberge, <b>ou</b> j'y ai une participation de créneau
+     *       {@code CONFIRMED}, <b>ou</b> j'ai une inscription de programme
+     *       {@code ACTIVE} rattachée à ce créneau — les trois mêmes sources que
+     *       {@code confirm} interroge avant de rendre son {@code 403} ;</li>
+     *   <li>une occurrence est terminée ({@link SlotTiming#lastEndedOccurrence}) ;</li>
+     *   <li>je n'ai pas déjà répondu <b>pour cette occurrence-là</b>.</li>
+     * </ol>
+     *
+     * <p>C'est ce qui autorise l'app à consommer la liste telle quelle : rien
+     * d'ici ne peut se voir refuser à l'écriture, et un filtre côté client
+     * parierait sur une règle qui vit dans ce fichier.
+     *
+     * <p><b>Un créneau récurrent repose la question à chaque occurrence.</b> Ce
+     * n'est pas un défaut : une participation à un créneau récurrent est un
+     * engagement qui tient d'une semaine sur l'autre — c'est la même lecture qui
+     * gouverne le compteur de places (voir {@code ParticipantCounter}). Qui ne
+     * veut plus qu'on la lui pose quitte le créneau. Le champ {@code role} est là
+     * pour que la question posée à un hôte sur sa propre séance ne ressemble pas
+     * à une erreur.
      */
     @Transactional(readOnly = true)
     public List<PendingAttendanceDto> getPending(UUID userId) {
@@ -145,6 +170,13 @@ public class AttendanceService {
         // de confirmer une séance passée.
         record Pending(Schedule slot, SlotOccurrence occurrence) {}
 
+        // À quel titre chaque séance est proposée. Les hébergées sont connues
+        // avant la fusion ; tout le reste est une inscription. Les deux ensembles
+        // sont disjoints par construction — on ne peut ni rejoindre son propre
+        // créneau (SLOT_OWN_SLOT) ni s'inscrire à son propre programme
+        // (PROGRAM_OWN_PROGRAM).
+        Set<UUID> hostedIds = hosted.stream().map(Schedule::getId).collect(Collectors.toSet());
+
         Instant now = Instant.now();
         return java.util.stream.Stream.of(hosted, slotJoined, programJoined)
             .flatMap(List::stream)
@@ -161,7 +193,8 @@ public class AttendanceService {
                 // La fin reste nulle quand elle n'a jamais été déclarée : la
                 // convention des deux heures sert à calculer, pas à afficher
                 // une heure que personne n'a annoncée.
-                p.slot().getEndsAt() != null ? p.occurrence().endsAt() : null
+                p.slot().getEndsAt() != null ? p.occurrence().endsAt() : null,
+                hostedIds.contains(p.slot().getId()) ? "HOST" : "PARTICIPANT"
             ))
             .toList();
     }

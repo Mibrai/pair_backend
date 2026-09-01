@@ -58,6 +58,12 @@ public class SecurityConfig {
                 .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                 // Actuator
                 .requestMatchers("/actuator/health").permitAll()
+                // /actuator/info : la version, l'heure de construction et le commit
+                // déployé. Ouvert parce qu'il sert précisément quand plus rien
+                // d'autre ne répond comme attendu — savoir quel code tourne ne doit
+                // pas dépendre d'une session. Il ne rend que ce que build-info.properties
+                // contient : rien de la configuration, rien de l'environnement.
+                .requestMatchers("/actuator/info").permitAll()
                 // Public endpoints for categories and activities (read-only)
                 .requestMatchers(HttpMethod.GET, "/api/categories").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/activities").permitAll()
