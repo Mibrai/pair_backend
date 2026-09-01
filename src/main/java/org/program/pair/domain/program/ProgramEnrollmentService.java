@@ -33,6 +33,8 @@ public class ProgramEnrollmentService {
     private final ScheduleRepository scheduleRepository;
     private final UserRepository userRepository;
     private final ScheduleConflictDetector conflictDetector;
+    private final ParticipantCounter participantCounter;
+    private final WaitlistPromoter waitlistPromoter;
 
     /**
      * Enroll a user in a program
@@ -122,6 +124,16 @@ public class ProgramEnrollmentService {
             .build();
 
         UserProgram saved = userProgramRepository.save(userProgram);
+
+        // Le compteur de places du créneau agrège les deux sources d'inscription,
+        // donc celle-ci le change. Ce chemin ne le réécrivait pas : rejoindre par le
+        // programme prenait une place que la fiche continuait d'annoncer libre, et
+        // ne passait jamais le créneau en FULL. Voir ParticipantCounter.
+        if (schedule != null) {
+            participantCounter.refresh(schedule);
+            scheduleRepository.save(schedule);
+        }
+
         log.info("User {} successfully joined program {}", userId, programId);
 
         return toDto(saved);
@@ -153,12 +165,38 @@ public class ProgramEnrollmentService {
             throw new ValidationException(ErrorCode.ENROLLMENT_ALREADY_LEFT, "You have already left this program");
         }
 
+        // Le verrou est pris AVANT l'écriture du départ, comme dans leaveSlot et
+        // pour la même raison : sans lui, deux départs simultanés liraient la même
+        // file et promouvraient deux fois la même personne. Il n'est pris qu'ici,
+        // et pas en tête de méthode, parce que le créneau concerné n'est connu
+        // qu'une fois l'inscription chargée — les vérifications qui précèdent ne
+        // sont que des lectures.
+        Schedule schedule = userProgram.getSchedule() == null ? null
+            : scheduleRepository.lockById(userProgram.getSchedule().getId())
+                .orElseThrow(() -> new ResourceNotFoundException("Schedule not found"));
+
         // Update status
         userProgram.setStatus(UserProgramStatus.LEFT);
         userProgram.setLeaveReason(reason);
         userProgram.setLeftAt(Instant.now());
 
         userProgramRepository.save(userProgram);
+
+        // Symétrique de joinProgram : la place est rendue, donc elle doit profiter
+        // à quelqu'un. La capacité d'un créneau est partagée entre les deux formes
+        // d'inscription ; sa file d'attente l'est donc aussi. Ce chemin ne la
+        // faisait pas remonter : une place rendue en quittant le programme restait
+        // libre pendant que quelqu'un l'attendait.
+        //
+        // Dans cet ordre, et pas l'inverse : la promotion prend la place avant que
+        // le compteur ne soit relu, sans quoi le créneau annoncerait une place
+        // libre qui vient d'être reprise.
+        if (schedule != null) {
+            waitlistPromoter.promoteFirstWaiting(schedule);
+            participantCounter.refresh(schedule);
+            scheduleRepository.save(schedule);
+        }
+
         log.info("User {} successfully left program enrollment {}", userId, userProgramId);
     }
 
