@@ -136,5 +136,77 @@ public enum ErrorCode {
     // Cette personne a déjà été recommandée. Même raisonnement que ci-dessus, et
     // même précédent qu'ALREADY_SUBSCRIBED : le client stabilise l'affichage sur
     // « Recommandé » sans message d'erreur.
-    RECOMMENDATION_ALREADY_GIVEN
+    RECOMMENDATION_ALREADY_GIVEN,
+
+    // — contacts d'urgence (GuardianService) —
+    // La demande décrit un contact qui n'est ni un membre ni un contact externe
+    // joignable — les deux à la fois, ou ni l'un ni l'autre. Un contact sans
+    // moyen d'être joint n'en est pas un.
+    GUARDIAN_INVALID_CONTACT,
+    // On ne se désigne pas soi-même comme son propre contact d'urgence.
+    GUARDIAN_SELF,
+    // Ce membre est déjà l'un de vos contacts : le redésigner enverrait une
+    // seconde demande pour rien. État, non refus de droit — rendu en 409.
+    GUARDIAN_ALREADY_DESIGNATED,
+    // Le numéro saisi a déjà refusé d'être sollicité, par n'importe quel compte.
+    // Le refus est global et définitif ; ce numéro ne peut plus être désigné.
+    GUARDIAN_CONTACT_REFUSED,
+    // Une demande a déjà été envoyée à ce contact. Un seul message part, jamais
+    // de relance : la seconde invitation est refusée.
+    GUARDIAN_ALREADY_INVITED,
+    // Ce contact a déjà répondu (accepté ou refusé) : il n'y a plus rien à lui
+    // demander.
+    GUARDIAN_ALREADY_RESPONDED,
+    // Le contact n'a qu'un téléphone, et l'envoi de SMS n'est pas encore livré
+    // (priorité 4 du lot). L'inviter par SMS attend ce canal ; un contact avec
+    // un e-mail, ou un membre, peut être invité dès maintenant.
+    GUARDIAN_SMS_NOT_AVAILABLE,
+
+    // — veilles retour (WatchService) —
+    // Le contact désigné pour la veille n'est pas un contact accepté de
+    // l'appelant. Sans contact accepté, rien ne peut être armé — c'est la
+    // dépendance de la priorité 1 sur laquelle repose tout le module.
+    WATCH_GUARDIAN_NOT_ACCEPTED,
+    // Une veille est déjà en cours sur ce créneau pour cette personne. En armer
+    // une seconde dédoublerait rappels et alertes.
+    WATCH_ALREADY_ACTIVE,
+    // L'heure limite de retour demandée est déjà passée. Une veille dont
+    // l'échéance est derrière soi lèverait une alerte à l'instant même.
+    WATCH_DEADLINE_PAST,
+    // La veille n'est plus au stade où on la désarme d'un geste : quelque chose
+    // est déjà parti. On la referme par les sorties prévues (clôture, abandon,
+    // interruption), pas par un désarmement d'avant-départ.
+    WATCH_NOT_DISARMABLE,
+    // L'arrivée ne peut être validée que sur une veille en attente d'arrivée
+    // (armée ou en chemin). Déjà sur place, ou déjà close : il n'y a rien à valider.
+    WATCH_ARRIVAL_NOT_EXPECTED,
+    // La clôture par code suppose une arrivée validée : sans code créé, il n'y a
+    // rien à confronter.
+    WATCH_NO_CODE_TO_CLOSE,
+    // Le code présenté est faux. Rendu en 409 : c'est un état — « ce n'est pas le
+    // bon code » — assorti du nombre d'essais restants, pas un défaut de la requête.
+    WATCH_CODE_WRONG,
+    // Les trois essais sont épuisés. Le code ne peut plus être présenté ; il faut
+    // en demander le renvoi (priorité 6).
+    WATCH_CODE_LOCKED,
+    // Le geste — « je suis en chemin », « je n'y vais pas » — ne vaut que sur le
+    // trajet aller, avant l'arrivée. Une fois sur place ou plus loin, la veille se
+    // referme par ses sorties de retour, pas par celles du départ.
+    WATCH_NOT_OUTBOUND,
+    // Le geste — snooze, renvoi de code, interruption — suppose une arrivée
+    // validée : il n'y a rien à repousser, renvoyer ou interrompre avant.
+    WATCH_NOT_ON_SITE,
+    // Le code a déjà été renvoyé pour ce cycle. Un seul renvoi, pour ne pas faire
+    // du renvoi une porte dérobée de contournement du plafond d'essais.
+    WATCH_RESEND_ALREADY_USED,
+    // Le mot de passe du compte, exigé pour renvoyer le code, est faux.
+    WATCH_PASSWORD_REQUIRED,
+
+    // — incidents (IncidentService) —
+    // Un incident visant une personne doit désigner qui : sans cible, il ne peut
+    // pas basculer dans la modération.
+    INCIDENT_PERSON_TARGET_REQUIRED,
+    // Un incident visant une personne demande une description : le signalement
+    // qu'il produit en modération ne peut pas être vide.
+    INCIDENT_DESCRIPTION_REQUIRED
 }

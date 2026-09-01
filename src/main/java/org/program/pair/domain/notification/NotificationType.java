@@ -38,7 +38,30 @@ public enum NotificationType {
     // NEW_MESSAGE : le tap doit ouvrir le fil du programme, pas une
     // conversation à deux, et le client range les deux dans des rubriques
     // différentes de son catalogue de préférences.
-    PROGRAM_BROADCAST
+    PROGRAM_BROADCAST,
+    // Quelqu'un vous a désigné comme son contact d'urgence pour une veille retour
+    // et demande votre accord. Le tap ouvre l'écran accepter / refuser. Distinct
+    // de tout le reste : il porte une décision de consentement, pas une
+    // information ni un engagement.
+    GUARDIAN_CONSENT_REQUEST,
+    // Rappel de retour adressé à la personne veillée : son heure limite est
+    // passée et elle n'a pas confirmé. Time-sensitive, et critique — il doit
+    // traverser les heures de silence, sinon le silence de confort ferait partir
+    // une alerte chez un proche à la place d'un rappel qui aurait suffi.
+    WATCH_RETURN_REMINDER,
+    // Alerte in-app à un contact d'urgence qui est membre meetDo : la personne
+    // qu'il veille n'a pas confirmé son retour. Le pendant du SMS ② pour un
+    // contact qui a l'application. Critique, pour la même raison.
+    WATCH_GUARDIAN_ALERT,
+    // Demande « tu y es ? » à la personne veillée qui n'a pas encore validé son
+    // arrivée. Time-sensitive et critique : le coût de la manquer est une alerte
+    // envoyée à sa place.
+    WATCH_ARRIVAL_PROMPT,
+    // Notification in-app à l'organisateur d'un créneau : un inscrit n'est jamais
+    // arrivé (perdu en chemin). Porte le nom, l'absence de validation et l'heure —
+    // jamais le lieu de départ, ni le contact, ni la position, qui ne le regardent
+    // pas. L'organisateur ne reçoit AUCUN des SMS d'alerte ; seulement ceci.
+    WATCH_LOST_ORGANIZER
 ;
 
     /**
@@ -83,7 +106,21 @@ public enum NotificationType {
      * réveiller quelqu'un pour une place.
      */
     private static final java.util.Set<NotificationType> CRITICAL = java.util.EnumSet.of(
-        SLOT_CANCELLED, PROGRAM_CANCELLED, SCHEDULE_CHANGED, PROGRAM_REMINDER);
+        SLOT_CANCELLED, PROGRAM_CANCELLED, SCHEDULE_CHANGED, PROGRAM_REMINDER,
+        // Le rappel de retour traverse le silence pour la raison la plus forte de
+        // cet ensemble : le coût de l'apprendre trop tard n'est pas une séance
+        // manquée mais une alerte envoyée chez un proche. Étouffer les trois
+        // rappels, c'est supprimer les trois occasions de lever l'alerte soi-même.
+        WATCH_RETURN_REMINDER,
+        // L'alerte à un contact membre est le fait même que la fonctionnalité
+        // existe pour délivrer : elle ne se tait jamais.
+        WATCH_GUARDIAN_ALERT,
+        // La demande « tu y es ? » traverse le silence pour la même raison que le
+        // rappel de retour : la manquer coûte une alerte à sa place.
+        WATCH_ARRIVAL_PROMPT);
+        // WATCH_LOST_ORGANIZER n'en fait PAS partie : l'organisateur n'a rien à
+        // faire dans la nuit d'une absence qui ne le met pas en mouvement, et le
+        // réveiller pour chaque retardataire le ferait couper ses notifications.
 
     /**
      * Celles qui méritent en plus un e-mail.

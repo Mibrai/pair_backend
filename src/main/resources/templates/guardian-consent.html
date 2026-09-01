@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="fr" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Aucun aperçu social, et surtout aucun préchargement : la décision se prend
+         par les boutons POST ci-dessous, jamais par l'ouverture de la page. -->
+    <meta name="robots" content="noindex, nofollow">
+    <title>Demande de contact de confiance — meetDo</title>
+    <style>
+        :root { color-scheme: light dark; }
+        body {
+            margin: 0; padding: 2rem 1.25rem;
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            line-height: 1.55; color: #16191c; background: #f5f6f7;
+        }
+        .card {
+            max-width: 32rem; margin: 0 auto; background: #fff;
+            border-radius: 10px; padding: 1.75rem; box-shadow: 0 1px 3px rgba(0,0,0,.09);
+        }
+        h1 { font-size: 1.15rem; margin: 0 0 1rem; font-weight: 600; }
+        p { margin: 0 0 1rem; }
+        .actions { display: flex; gap: .75rem; margin-top: 1.5rem; flex-wrap: wrap; }
+        button {
+            flex: 1 1 auto; min-width: 8rem; padding: .8rem 1rem; border-radius: 8px;
+            border: 0; font-size: 1rem; font-weight: 600; cursor: pointer;
+        }
+        .accept { background: #1f8a4c; color: #fff; }
+        .refuse { background: transparent; color: #b3261e; border: 1px solid #d7c3c1; }
+        .note { margin-top: 1.5rem; font-size: .85rem; color: #6b757d; }
+        .already { font-weight: 600; }
+        @media (prefers-color-scheme: dark) {
+            body { background: #101315; color: #e6e9ea; }
+            .card { background: #181c1f; box-shadow: none; }
+            .note { color: #8d979e; }
+            .refuse { color: #f2b8b5; border-color: #4a3b3a; }
+        }
+    </style>
+</head>
+<body>
+<div class="card">
+    <h1><span th:text="${ownerName}">Une personne</span> vous a désigné comme contact de confiance</h1>
+
+    <!-- Cas normal : pas encore répondu. Les deux boutons. -->
+    <div th:if="${state == 'PENDING'}">
+        <p>Sur meetDo, cette personne peut « armer une veille » avant une sortie.
+           Si elle ne confirme pas son retour à temps, vous seriez prévenu — vous
+           seul, et seulement après plusieurs rappels qui lui sont d'abord adressés.</p>
+        <p>meetDo ne saura jamais si elle va bien : seulement si elle a confirmé, ou non.</p>
+
+        <div class="actions">
+            <form method="post" th:action="@{/public/guardian-consent/{t}/accept(t=${token})}">
+                <button type="submit" class="accept">J'accepte</button>
+            </form>
+            <form method="post" th:action="@{/public/guardian-consent/{t}/refuse(t=${token})}">
+                <button type="submit" class="refuse">Je refuse</button>
+            </form>
+        </div>
+
+        <p class="note">
+            Un seul message vous est envoyé, sans réponse de votre part. Si vous
+            refusez, votre numéro ne pourra plus être désigné par personne sur meetDo —
+            ce refus est définitif.
+        </p>
+    </div>
+
+    <!-- Déjà répondu : on ne redemande pas, et on n'affiche pas de bouton. -->
+    <p th:if="${state == 'ACCEPTED'}" class="already">
+        Vous avez déjà accepté cette demande. Il n'y a rien d'autre à faire.
+    </p>
+    <p th:if="${state == 'REFUSED'}" class="already">
+        Vous avez refusé cette demande, et ce refus est définitif.
+    </p>
+</div>
+</body>
+</html>

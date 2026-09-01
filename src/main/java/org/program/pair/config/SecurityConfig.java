@@ -93,6 +93,19 @@ public class SecurityConfig {
                 // condition : Apple et Google les lisent sans identité, et une
                 // redirection suffirait à faire échouer la validation.
                 .requestMatchers(HttpMethod.GET, "/.well-known/**").permitAll()
+                // Flux de consentement d'un contact d'urgence. Le GET rend la page
+                // à deux boutons ; le POST applique la décision. Les deux sont
+                // publics — le contact n'a pas de compte — et le POST l'est
+                // délibérément : accepter ou refuser par un GET laisserait un
+                // scanner de messagerie fabriquer un refus définitif à la place du
+                // propriétaire du téléphone.
+                .requestMatchers(HttpMethod.GET, "/public/guardian-consent/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/public/guardian-consent/**").permitAll()
+                // Page de statut d'une veille, ouverte depuis un SMS d'alerte. GET
+                // rend la page ; les deux POST d'accusé (« j'ai vu », « je l'ai eue
+                // au téléphone ») remontent dans l'app. Aucun ne clôture.
+                .requestMatchers(HttpMethod.GET, "/public/watch/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/public/watch/**").permitAll()
                 // HEAD, sur tout ce qui précède.
                 //
                 // Signalé par l'équipe mobile le 2026-08-20 : HEAD retombait sur
@@ -106,7 +119,8 @@ public class SecurityConfig {
                 // existant.
                 .requestMatchers(HttpMethod.HEAD,
                     "/", "/public/safety/**", "/public/slots/**", "/s/**",
-                    "/public/programs/**", "/p/**", "/v/**", "/.well-known/**").permitAll()
+                    "/public/programs/**", "/p/**", "/v/**", "/.well-known/**",
+                    "/public/guardian-consent/**", "/public/watch/**").permitAll()
                 // Tout le reste : authentifié
                 .anyRequest().authenticated()
             )
