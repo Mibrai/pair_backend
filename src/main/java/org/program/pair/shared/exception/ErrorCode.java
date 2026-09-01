@@ -136,5 +136,29 @@ public enum ErrorCode {
     // Cette personne a déjà été recommandée. Même raisonnement que ci-dessus, et
     // même précédent qu'ALREADY_SUBSCRIBED : le client stabilise l'affichage sur
     // « Recommandé » sans message d'erreur.
-    RECOMMENDATION_ALREADY_GIVEN
+    RECOMMENDATION_ALREADY_GIVEN,
+
+    // — contacts d'urgence (GuardianService) —
+    // La demande décrit un contact qui n'est ni un membre ni un contact externe
+    // joignable — les deux à la fois, ou ni l'un ni l'autre. Un contact sans
+    // moyen d'être joint n'en est pas un.
+    GUARDIAN_INVALID_CONTACT,
+    // On ne se désigne pas soi-même comme son propre contact d'urgence.
+    GUARDIAN_SELF,
+    // Ce membre est déjà l'un de vos contacts : le redésigner enverrait une
+    // seconde demande pour rien. État, non refus de droit — rendu en 409.
+    GUARDIAN_ALREADY_DESIGNATED,
+    // Le numéro saisi a déjà refusé d'être sollicité, par n'importe quel compte.
+    // Le refus est global et définitif ; ce numéro ne peut plus être désigné.
+    GUARDIAN_CONTACT_REFUSED,
+    // Une demande a déjà été envoyée à ce contact. Un seul message part, jamais
+    // de relance : la seconde invitation est refusée.
+    GUARDIAN_ALREADY_INVITED,
+    // Ce contact a déjà répondu (accepté ou refusé) : il n'y a plus rien à lui
+    // demander.
+    GUARDIAN_ALREADY_RESPONDED,
+    // Le contact n'a qu'un téléphone, et l'envoi de SMS n'est pas encore livré
+    // (priorité 4 du lot). L'inviter par SMS attend ce canal ; un contact avec
+    // un e-mail, ou un membre, peut être invité dès maintenant.
+    GUARDIAN_SMS_NOT_AVAILABLE
 }

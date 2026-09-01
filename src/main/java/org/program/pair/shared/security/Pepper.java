@@ -134,6 +134,32 @@ public class Pepper {
         return versionCourante;
     }
 
+    /**
+     * Toutes les versions de clé connues, courante et anciennes.
+     *
+     * <p>Sert à consulter une empreinte <b>déterministe</b> — sans sel par ligne —
+     * dont on ne sait pas d'avance sous quelle version elle a été écrite : la liste
+     * de blocage des numéros refusés en est le cas. On calcule l'empreinte du
+     * numéro présenté sous chacune de ces versions et l'on cherche l'ensemble d'un
+     * coup, plutôt que de recalculer ligne à ligne. C'est aussi ce qui empêche une
+     * rotation de clé de <b>débloquer</b> en silence un numéro refusé : tant que
+     * l'ancienne clé reste configurée, son empreinte reste retrouvable.
+     */
+    public java.util.Set<Integer> versions() {
+        return cles.keySet();
+    }
+
+    /**
+     * Empreinte <b>déterministe</b> d'un secret sous une version donnée — sans sel,
+     * pour qu'elle soit indexable et consultable par égalité. À réserver aux
+     * secrets dont on doit retrouver l'empreinte sans connaître la ligne
+     * d'avance : la liste de blocage des numéros. Le code de retour, lui, se vérifie
+     * ligne à ligne et garde son sel.
+     */
+    public String empreinteDeterministe(String clair, int versionDeCle) {
+        return empreinte(clair, new byte[0], versionDeCle);
+    }
+
     /** Un sel neuf, à écrire à côté de l'empreinte qu'il aura servi à produire. */
     public byte[] nouveauSel() {
         byte[] sel = new byte[TAILLE_SEL_OCTETS];
