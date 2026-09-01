@@ -101,6 +101,11 @@ public class SecurityConfig {
                 // propriétaire du téléphone.
                 .requestMatchers(HttpMethod.GET, "/public/guardian-consent/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/public/guardian-consent/**").permitAll()
+                // Page de statut d'une veille, ouverte depuis un SMS d'alerte. GET
+                // rend la page ; les deux POST d'accusé (« j'ai vu », « je l'ai eue
+                // au téléphone ») remontent dans l'app. Aucun ne clôture.
+                .requestMatchers(HttpMethod.GET, "/public/watch/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/public/watch/**").permitAll()
                 // HEAD, sur tout ce qui précède.
                 //
                 // Signalé par l'équipe mobile le 2026-08-20 : HEAD retombait sur
@@ -115,7 +120,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.HEAD,
                     "/", "/public/safety/**", "/public/slots/**", "/s/**",
                     "/public/programs/**", "/p/**", "/v/**", "/.well-known/**",
-                    "/public/guardian-consent/**").permitAll()
+                    "/public/guardian-consent/**", "/public/watch/**").permitAll()
                 // Tout le reste : authentifié
                 .anyRequest().authenticated()
             )

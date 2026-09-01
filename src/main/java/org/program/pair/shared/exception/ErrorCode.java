@@ -192,5 +192,13 @@ public enum ErrorCode {
     // Le geste — « je suis en chemin », « je n'y vais pas » — ne vaut que sur le
     // trajet aller, avant l'arrivée. Une fois sur place ou plus loin, la veille se
     // referme par ses sorties de retour, pas par celles du départ.
-    WATCH_NOT_OUTBOUND
+    WATCH_NOT_OUTBOUND,
+    // Le geste — snooze, renvoi de code, interruption — suppose une arrivée
+    // validée : il n'y a rien à repousser, renvoyer ou interrompre avant.
+    WATCH_NOT_ON_SITE,
+    // Le code a déjà été renvoyé pour ce cycle. Un seul renvoi, pour ne pas faire
+    // du renvoi une porte dérobée de contournement du plafond d'essais.
+    WATCH_RESEND_ALREADY_USED,
+    // Le mot de passe du compte, exigé pour renvoyer le code, est faux.
+    WATCH_PASSWORD_REQUIRED
 }

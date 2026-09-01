@@ -15,4 +15,7 @@ public interface WatchEventRepository extends JpaRepository<WatchEvent, UUID> {
 
     /** Ce fait a-t-il déjà été inscrit ? Pour ne pas prévenir deux fois le contact de secours. */
     boolean existsByWatchIdAndType(UUID watchId, org.program.pair.domain.watch.WatchEventType type);
+
+    /** Le fait le plus récent d'une veille : sert à dater « actualisé il y a … » sur la page publique. */
+    java.util.Optional<org.program.pair.domain.watch.WatchEvent> findFirstByWatchIdOrderByOccurredAtDesc(UUID watchId);
 }

@@ -56,5 +56,23 @@ public enum WatchEventType {
      * prévenu, le message ⑤ part au contact, et un incident est journalisé — jamais
      * une absence.
      */
-    LOST_ON_THE_WAY
+    LOST_ON_THE_WAY,
+
+    /** Un contact a cliqué « j'ai vu » sur la page publique. Remonte dans l'app. */
+    GUARDIAN_ACK_SEEN,
+
+    /** Un contact a cliqué « je l'ai eue au téléphone ». Remonte dans l'app. */
+    GUARDIAN_ACK_CALLED,
+
+    /** Snooze : l'échéance est repoussée de trente minutes et la chaîne réarmée. */
+    SNOOZED,
+
+    /** Panic : l'utilisateur a fait partir le message immédiatement. */
+    PANIC_TRIGGERED,
+
+    /** Le code de retour a été renvoyé (régénéré) après vérification du mot de passe. */
+    CODE_RESENT,
+
+    /** Interruption en cours de séance : la personne repart plus tôt. */
+    INTERRUPTED
 }

@@ -118,6 +118,17 @@ public class Watch {
     @Column(name = "public_token", length = 22)
     private String publicToken;
 
+    /**
+     * Première ouverture de la page publique — le « le principal a ouvert » qui
+     * décide si l'on prévient le contact de secours.
+     */
+    @Column(name = "public_viewed_at")
+    private Instant publicViewedAt;
+
+    /** Révocation du lien public par le propriétaire, avant expiration naturelle. */
+    @Column(name = "public_token_revoked_at")
+    private Instant publicTokenRevokedAt;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;

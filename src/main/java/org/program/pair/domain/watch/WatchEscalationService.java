@@ -116,8 +116,13 @@ public class WatchEscalationService {
             agi = true;
         }
 
+        // Le contact de secours, à sa fenêtre — mais seulement « si le principal
+        // n'a rien ouvert ». Une ouverture de la page publique avant cette fenêtre
+        // vaut réponse du principal, le seul à détenir le lien avant que le secours
+        // ne soit prévenu : on ne le dérange alors pas.
         if (watch.getBackupGuardianId() != null
                 && ecouleMinutes >= 75
+                && watch.getPublicViewedAt() == null
                 && !eventRepository.existsByWatchIdAndType(watch.getId(), WatchEventType.BACKUP_ALERTED)) {
             prevenirLeContact(watch.getBackupGuardianId(), watch.getId(), contexte(watch));
             inscrire(watch.getId(), WatchEventType.BACKUP_ALERTED, Instant.now());

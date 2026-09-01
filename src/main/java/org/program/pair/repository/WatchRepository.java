@@ -33,6 +33,8 @@ public interface WatchRepository extends JpaRepository<Watch, UUID> {
 
     boolean existsByPublicToken(String publicToken);
 
+    java.util.Optional<Watch> findByPublicToken(String publicToken);
+
     /**
      * Les veilles de la boucle aller à examiner : pas encore arrivées, dont la base
      * des demandes est passée sans être trop ancienne.
