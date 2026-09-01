@@ -7,13 +7,14 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.watch.dto.ArrivalRequest;
 import org.program.pair.domain.watch.dto.ArrivalResponse;
+import org.program.pair.domain.watch.dto.CloseErrorResponse;
 import org.program.pair.domain.watch.dto.CloseRequest;
 import org.program.pair.domain.watch.dto.CreateWatchRequest;
 import org.program.pair.domain.watch.dto.InterruptRequest;
 import org.program.pair.domain.watch.dto.ResendCodeRequest;
 import org.program.pair.domain.watch.dto.WatchDetailDto;
 import org.program.pair.domain.watch.dto.WatchDto;
-import org.program.pair.shared.exception.ConflictException;
+import org.program.pair.domain.watch.dto.WatchHistoryDto;
 import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.security.UserPrincipal;
 import org.springframework.http.HttpStatus;
@@ -21,6 +22,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -66,6 +68,23 @@ public class WatchController {
         return watchService.detail(principal.getId(), id);
     }
 
+    @GetMapping("/history")
+    @Operation(summary = "Mon journal des veilles terminées",
+        description = "Les veilles closes, sans aucune coordonnée : horodatage et nom du lieu.")
+    public List<WatchHistoryDto> history(@AuthenticationPrincipal UserPrincipal principal) {
+        return watchService.history(principal.getId());
+    }
+
+    @PostMapping("/{id}/seen-by-host")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "« Je la vois, elle est là » (organisateur)",
+        description = "L'organisateur repousse la relance d'arrivée de 15 min. Ne valide pas l'arrivée.")
+    public void seenByHost(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        watchService.seenByHost(principal.getId(), id);
+    }
+
     @PostMapping("/{id}/arrival")
     @Operation(summary = "Valider son arrivée sur place",
         description = "Crée le code de retour et le rend en clair, une seule fois.")
@@ -87,17 +106,25 @@ public class WatchController {
      * décrément et rendu le plafond de trois essais inopérant.
      */
     @PostMapping("/{id}/close")
-    public ResponseEntity<Void> close(
+    public ResponseEntity<?> close(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
             @Valid @RequestBody CloseRequest request) {
         WatchService.CloseOutcome outcome = watchService.close(principal.getId(), id, request);
         return switch (outcome.status()) {
             case CLOSED -> ResponseEntity.accepted().build();
-            case WRONG -> throw new ConflictException(ErrorCode.WATCH_CODE_WRONG,
-                "Code incorrect. Essais restants : " + outcome.attemptsLeft() + ".");
-            case LOCKED -> throw new ConflictException(ErrorCode.WATCH_CODE_LOCKED,
-                "Trop d'essais : ce code ne peut plus être présenté.");
+            // 409 avec un corps qui porte attemptsLeft en clair : l'écran l'annonce
+            // avant le dernier essai, sans parser le message traduit. Construit ici
+            // plutôt que levé, pour que le corps porte cet entier — le gestionnaire
+            // global ne rend que {code, message, timestamp}.
+            case WRONG -> ResponseEntity.status(HttpStatus.CONFLICT).body(new CloseErrorResponse(
+                ErrorCode.WATCH_CODE_WRONG.name(),
+                "Code incorrect. Essais restants : " + outcome.attemptsLeft() + ".",
+                outcome.attemptsLeft(), Instant.now()));
+            case LOCKED -> ResponseEntity.status(HttpStatus.CONFLICT).body(new CloseErrorResponse(
+                ErrorCode.WATCH_CODE_LOCKED.name(),
+                "Trop d'essais : ce code ne peut plus être présenté.",
+                0, Instant.now()));
         };
     }
 

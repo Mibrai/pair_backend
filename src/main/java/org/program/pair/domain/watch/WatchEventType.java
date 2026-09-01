@@ -74,5 +74,12 @@ public enum WatchEventType {
     CODE_RESENT,
 
     /** Interruption en cours de séance : la personne repart plus tôt. */
-    INTERRUPTED
+    INTERRUPTED,
+
+    /**
+     * L'organisateur a signalé qu'il voit la personne : « elle est là ». Repousse
+     * la relance d'arrivée de 15 min. L'organisateur ne valide pas l'arrivée et ne
+     * crée aucun code — ce geste appartient à l'intéressée seule.
+     */
+    SEEN_BY_HOST
 }

@@ -90,6 +90,15 @@ public class PublicWatchService {
         if (watch.getPublicViewedAt() == null) {
             watch.setPublicViewedAt(now);
         }
+        // Les accusés sont datés sur la veille, pour que GET /watches/{id} les rende
+        // sans relire la chronologie. On garde la première fois : « j'ai vu » ne se
+        // dé-voit pas. L'événement reste inscrit pour l'historique complet.
+        if (type == WatchEventType.GUARDIAN_ACK_SEEN && watch.getGuardianSeenAt() == null) {
+            watch.setGuardianSeenAt(now);
+        }
+        if (type == WatchEventType.GUARDIAN_ACK_CALLED && watch.getGuardianCalledAt() == null) {
+            watch.setGuardianCalledAt(now);
+        }
         eventRepository.save(new WatchEvent(watch.getId(), type, now));
     }
 
