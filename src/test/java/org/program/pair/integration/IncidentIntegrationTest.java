@@ -114,6 +114,58 @@ class IncidentIntegrationTest extends AbstractIntegrationTest {
             .expectBody().jsonPath("$.code").isEqualTo("BUSINESS_RULE_VIOLATION");
     }
 
+    @Test
+    void retirerUnIncidentDeMonJournal_leFaitDisparaitre() {
+        Compte moi = compte();
+
+        String incidentId = String.valueOf(webTestClient.post().uri("/api/incidents")
+            .headers(h -> h.setBearerAuth(moi.token()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("target", "PLACE", "note", "Lieu peu rassurant."))
+            .exchange().expectStatus().isCreated()
+            .expectBody(Map.class).returnResult().getResponseBody().get("id"));
+
+        webTestClient.delete().uri("/api/incidents/{id}", incidentId)
+            .headers(h -> h.setBearerAuth(moi.token()))
+            .exchange().expectStatus().isNoContent();
+
+        webTestClient.get().uri("/api/incidents/me")
+            .headers(h -> h.setBearerAuth(moi.token()))
+            .exchange().expectStatus().isOk()
+            .expectBody().jsonPath("$.length()").isEqualTo(0);
+    }
+
+    @Test
+    void retirerLincidentDunAutre_rend404() {
+        Compte moi = compte();
+        Compte autre = compte();
+
+        String incidentId = String.valueOf(webTestClient.post().uri("/api/incidents")
+            .headers(h -> h.setBearerAuth(moi.token()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("target", "TRANSIT", "note", "Perdue en chemin."))
+            .exchange().expectStatus().isCreated()
+            .expectBody(Map.class).returnResult().getResponseBody().get("id"));
+
+        // Un incident qui n'est pas le sien est introuvable, pas interdit.
+        webTestClient.delete().uri("/api/incidents/{id}", incidentId)
+            .headers(h -> h.setBearerAuth(autre.token()))
+            .exchange().expectStatus().isNotFound();
+    }
+
+    @Test
+    void unIncidentPersonSansNote_estRefuse_avecLeCodeAligne() {
+        Compte moi = compte();
+        Compte autre = compte();
+
+        webTestClient.post().uri("/api/incidents")
+            .headers(h -> h.setBearerAuth(moi.token()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("target", "PERSON", "targetUserId", autre.id().toString()))
+            .exchange().expectStatus().isEqualTo(422)
+            .expectBody().jsonPath("$.code").isEqualTo("INCIDENT_NOTE_REQUIRED");
+    }
+
     // ------------------------------------------------------------------ outils
 
     private record Compte(UUID id, String token) {}
