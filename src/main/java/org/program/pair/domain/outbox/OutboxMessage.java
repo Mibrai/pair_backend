@@ -73,6 +73,11 @@ public class OutboxMessage {
     @Column(name = "provider_message_id", length = 128)
     private String providerMessageId;
 
+    /** Ce que le fournisseur rapporte sur la remise. UNKNOWN tant qu'aucun accusé n'est venu. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "delivery_state", nullable = false, length = 12)
+    private OutboxDelivery deliveryState = OutboxDelivery.UNKNOWN;
+
     @Column(name = "last_attempt_at")
     private Instant lastAttemptAt;
 
@@ -116,6 +121,8 @@ public class OutboxMessage {
     public int getAttempts() { return attempts; }
     public UUID getWatchId() { return watchId; }
     public String getProviderMessageId() { return providerMessageId; }
+    public OutboxDelivery getDeliveryState() { return deliveryState; }
+    public void setDeliveryState(OutboxDelivery deliveryState) { this.deliveryState = deliveryState; }
     public Instant getSentAt() { return sentAt; }
 
     public void markSent(String providerMessageId, Instant when) {
