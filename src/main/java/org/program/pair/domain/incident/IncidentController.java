@@ -46,4 +46,15 @@ public class IncidentController {
     public List<IncidentDto> mine(@AuthenticationPrincipal UserPrincipal principal) {
         return incidentService.mine(principal.getId());
     }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    @Operation(summary = "Retirer un incident de mon journal",
+        description = "Supprime l'incident personnel. Le signalement de modération qu'un incident "
+            + "PERSON avait engendré n'est pas touché : l'agrégat de sécurité est préservé.")
+    public void delete(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable java.util.UUID id) {
+        incidentService.delete(principal.getId(), id);
+    }
 }

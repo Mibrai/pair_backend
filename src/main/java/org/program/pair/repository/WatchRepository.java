@@ -16,6 +16,9 @@ public interface WatchRepository extends JpaRepository<Watch, UUID> {
     /** Les veilles vivantes de l'appelant, de la plus récente à la plus ancienne. */
     List<Watch> findByUserIdAndStateNotInOrderByArmedAtDesc(UUID userId, Collection<WatchState> terminaux);
 
+    /** Les veilles terminées de l'appelant : le journal. */
+    List<Watch> findByUserIdAndStateInOrderByArmedAtDesc(UUID userId, Collection<WatchState> etats);
+
     /** Une veille précise de l'appelant : l'appartenance est vérifiée dans la requête. */
     Optional<Watch> findByIdAndUserId(UUID id, UUID userId);
 

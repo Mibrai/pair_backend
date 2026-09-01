@@ -12,6 +12,7 @@ import org.program.pair.domain.watch.dto.CreateWatchRequest;
 import org.program.pair.domain.watch.dto.WatchDetailDto;
 import org.program.pair.domain.watch.dto.WatchDto;
 import org.program.pair.domain.watch.dto.WatchEventDto;
+import org.program.pair.domain.watch.dto.WatchHistoryDto;
 import org.program.pair.domain.watch.dto.ArrivalRequest;
 import org.program.pair.domain.watch.dto.ArrivalResponse;
 import org.program.pair.domain.watch.dto.CloseRequest;
@@ -77,7 +78,11 @@ public class WatchService {
     private final Pepper pepper;
     private final WatchEscalationService escalation;
     private final UserRepository userRepository;
+    private final org.program.pair.repository.OutboxMessageRepository outboxRepository;
     private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
+
+    @org.springframework.beans.factory.annotation.Value("${pair.public.base-url:https://lien.meetdo.fun}")
+    private String publicBaseUrl;
 
     /** Trajet de retour par défaut, et ses bornes de bon sens (§7.5). */
     private static final int TRAJET_DEFAUT_MIN = 45;
@@ -137,7 +142,7 @@ public class WatchService {
             .build());
 
         inscrire(watch.getId(), WatchEventType.ARMED, now);
-        return WatchDto.from(watch);
+        return dto(watch);
     }
 
     private void exigerContactAccepte(UUID userId, UUID guardianId) {
@@ -155,7 +160,7 @@ public class WatchService {
     @Transactional(readOnly = true)
     public List<WatchDto> listActive(UUID userId) {
         return watchRepository.findByUserIdAndStateNotInOrderByArmedAtDesc(userId, WatchState.TERMINAUX)
-            .stream().map(WatchDto::from).toList();
+            .stream().map(this::dto).toList();
     }
 
     @Transactional(readOnly = true)
@@ -164,7 +169,101 @@ public class WatchService {
             .orElseThrow(() -> new ResourceNotFoundException("Veille introuvable."));
         List<WatchEventDto> timeline = eventRepository.findByWatchIdOrderByOccurredAtAsc(watchId)
             .stream().map(WatchEventDto::from).toList();
-        return new WatchDetailDto(WatchDto.from(watch), timeline);
+        return new WatchDetailDto(dto(watch), timeline, deliveryOf(watchId));
+    }
+
+    /** Les veilles terminées de l'appelant, sans coordonnées : le journal. */
+    @Transactional(readOnly = true)
+    public List<WatchHistoryDto> history(UUID userId) {
+        return watchRepository.findByUserIdAndStateInOrderByArmedAtDesc(userId, WatchState.TERMINAUX)
+            .stream().map(this::historyDto).toList();
+    }
+
+    private WatchHistoryDto historyDto(Watch w) {
+        Schedule slot = scheduleRepository.findById(w.getScheduleId()).orElse(null);
+        String titre = null;
+        if (slot != null) {
+            try {
+                titre = slot.getProgram().getUserActivity().getActivity().getName();
+            } catch (RuntimeException ignore) {
+                // Programme ou activité non chargés : le journal se passe du titre.
+            }
+        }
+        return new WatchHistoryDto(
+            w.getId(), w.getState().name(), titre,
+            slot != null ? slot.getPlaceName() : null,
+            slot != null ? slot.getCity() : null,
+            w.getOccurrenceStartsAt(), w.getClosedAt(),
+            // Une veille dont le lien public est né a vu une alerte partir.
+            w.getPublicToken() != null);
+    }
+
+    /**
+     * L'état de remise des alertes d'une veille, agrégé depuis l'outbox.
+     *
+     * <p>Avec un seul canal — l'e-mail, tant que le SMS est éteint — l'app a besoin
+     * de savoir si le message est <b>parti</b>, pour ne pas laisser croire qu'un
+     * proche a été prévenu quand l'adresse est en faute. On rend le pire état du
+     * lot : {@code FAILED} l'emporte, puis {@code PENDING}, {@code SENT} sinon, et
+     * {@code NONE} si aucune alerte n'a été déposée. Ce n'est pas encore le
+     * « délivré » plein — les rebonds demanderaient les webhooks du fournisseur —
+     * mais c'est le retour qui manquait.
+     */
+    private String deliveryOf(UUID watchId) {
+        List<org.program.pair.domain.outbox.OutboxMessage> messages =
+            outboxRepository.findByWatchId(watchId);
+        if (messages.isEmpty()) {
+            return "NONE";
+        }
+        if (messages.stream().anyMatch(m ->
+                m.getStatus() == org.program.pair.domain.outbox.OutboxStatus.FAILED)) {
+            return "FAILED";
+        }
+        boolean toutParti = messages.stream().allMatch(m ->
+            m.getStatus() == org.program.pair.domain.outbox.OutboxStatus.SENT);
+        return toutParti ? "SENT" : "PENDING";
+    }
+
+    // ------------------------------------------------- trajet aller (organisateur)
+
+    /**
+     * « Je la vois, elle est là » — l'organisateur repousse la relance d'arrivée
+     * de 15 min.
+     *
+     * <p>Un verbe à part de {@code still-coming}, qui appartient à l'intéressée sur
+     * sa propre veille : le faire appeler par l'organisateur le ferait agir sous
+     * l'identité de quelqu'un d'autre. L'organisateur <b>ne valide pas</b> l'arrivée
+     * et ne crée aucun code — il gagne du temps, rien de plus.
+     *
+     * <p>Autorisé au seul organisateur du créneau. Une veille qui n'est pas la
+     * sienne, ou qu'il n'organise pas, lui est <b>introuvable</b> (404), pas
+     * interdite.
+     */
+    public void seenByHost(UUID hostId, UUID watchId) {
+        Watch watch = watchRepository.findById(watchId)
+            .orElseThrow(() -> new ResourceNotFoundException("Veille introuvable."));
+        Schedule slot = scheduleRepository.findById(watch.getScheduleId())
+            .orElseThrow(() -> new ResourceNotFoundException("Veille introuvable."));
+        if (!hostId.equals(organisateurDe(slot))) {
+            throw new ResourceNotFoundException("Veille introuvable.");
+        }
+        if (watch.getState() != WatchState.ARMED && watch.getState() != WatchState.EN_ROUTE) {
+            throw new ConflictException(ErrorCode.WATCH_NOT_OUTBOUND,
+                "Cette veille n'est plus sur le trajet aller.");
+        }
+
+        Instant base = watch.getOutboundBaseAt() != null
+            ? watch.getOutboundBaseAt() : watch.getArmedAt();
+        watch.setOutboundBaseAt(base.plus(Duration.ofMinutes(15)));
+        inscrire(watchId, WatchEventType.SEEN_BY_HOST, Instant.now());
+    }
+
+    private static UUID organisateurDe(Schedule slot) {
+        try {
+            return slot.getProgram().getUserActivity().getUser().getId();
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     // ---------------------------------------------------------- trajet aller
@@ -185,7 +284,7 @@ public class WatchService {
         watch.setOutboundBaseAt(base.plus(Duration.ofMinutes(15)));
         watch.setState(WatchState.EN_ROUTE);
         inscrire(watchId, WatchEventType.STILL_COMING, Instant.now());
-        return WatchDto.from(watch);
+        return dto(watch);
     }
 
     /**
@@ -203,7 +302,7 @@ public class WatchService {
         watch.setState(WatchState.CLOSED);
         watch.setClosedAt(now);
         inscrire(watchId, WatchEventType.ABANDONED, now);
-        return WatchDto.from(watch);
+        return dto(watch);
     }
 
     /** Révoque le lien public : la page devient introuvable, même avant son expiration. */
@@ -285,7 +384,7 @@ public class WatchService {
         watch.setArrivalConfirmedAt(now);
         inscrire(watchId, WatchEventType.ARRIVED_ON_SITE, now);
 
-        return new ArrivalResponse(WatchDto.from(watch), code);
+        return new ArrivalResponse(dto(watch), code);
     }
 
     // ------------------------------------------------------------------ clôture
@@ -394,7 +493,7 @@ public class WatchService {
             watch.setState(WatchState.ON_SITE);
         }
         inscrire(watchId, WatchEventType.SNOOZED, Instant.now());
-        return WatchDto.from(watch);
+        return dto(watch);
     }
 
     /** Panic : le message part immédiatement, sans attendre l'échéance ni les rappels. */
@@ -409,7 +508,7 @@ public class WatchService {
         // À la différence de la contrainte, panic est un geste explicite : rien à
         // cacher, on prévient tout de suite.
         escalation.ensureAlerted(watch, 0);
-        return WatchDto.from(watch);
+        return dto(watch);
     }
 
     /**
@@ -445,7 +544,7 @@ public class WatchService {
             java.util.Base64.getEncoder().encodeToString(sel), kv);
 
         inscrire(watchId, WatchEventType.CODE_RESENT, Instant.now());
-        return new ArrivalResponse(WatchDto.from(watch), code);
+        return new ArrivalResponse(dto(watch), code);
     }
 
     /**
@@ -478,7 +577,7 @@ public class WatchService {
 
         inscrire(watchId, WatchEventType.INTERRUPTED, now,
             req.reason() == null || req.reason().isBlank() ? null : req.reason().strip());
-        return WatchDto.from(watch);
+        return dto(watch);
     }
 
     private void exigerSurPlace(Watch watch) {
@@ -489,6 +588,11 @@ public class WatchService {
     }
 
     // ------------------------------------------------------------------ outils
+
+    /** Fabrique le DTO en y composant l'URL du lien public. */
+    private WatchDto dto(Watch watch) {
+        return WatchDto.from(watch, publicBaseUrl);
+    }
 
     private void inscrire(UUID watchId, WatchEventType type, Instant quand) {
         eventRepository.save(new WatchEvent(watchId, type, quand));

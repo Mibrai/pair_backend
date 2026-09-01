@@ -129,6 +129,14 @@ public class Watch {
     @Column(name = "public_token_revoked_at")
     private Instant publicTokenRevokedAt;
 
+    /** Quand un contact a cliqué « j'ai vu » sur la page publique. */
+    @Column(name = "guardian_seen_at")
+    private Instant guardianSeenAt;
+
+    /** Quand un contact a cliqué « je l'ai eue au téléphone ». */
+    @Column(name = "guardian_called_at")
+    private Instant guardianCalledAt;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
