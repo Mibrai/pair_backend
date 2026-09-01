@@ -18,5 +18,11 @@ public record WatchDetailDto(
     @Schema(description = "État de remise des alertes : NONE (aucune), PENDING, SENT (accepté par "
         + "le fournisseur), DELIVERED (arrivé), BOUNCED (a rebondi / marqué indésirable), "
         + "FAILED (envoi échoué). Avec un seul canal actif, ce retour dit si le proche a été joint.")
-    String alertDelivery
+    String alertDelivery,
+
+    @Schema(description = "Nombre de retours confirmés d'affilée, celui-ci compris quand il "
+        + "l'est. Compte les veilles refermées par le code de la personne, en remontant "
+        + "jusqu'à la première qui a mal fini. Une veille désarmée avant le départ ne compte "
+        + "ni ne rompt : il n'y avait pas de retour à confirmer. Jamais nul — zéro est zéro.")
+    int consecutiveConfirmedReturns
 ) {}

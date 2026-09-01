@@ -106,6 +106,35 @@ public final class AlertMessages {
             """.formatted(escape(c.prenom()), escape(c.prenom()));
     }
 
+    /**
+     * ⑤ « Je suis bien rentrée » — annonce de retour, à la demande expresse de la
+     * personne veillée.
+     *
+     * <p><b>Ce n'est pas une notification de fin de veille, et la nuance est tout
+     * le sujet.</b> Le module s'interdit qu'un message apprenne à un tiers qu'une
+     * veille s'est terminée — donc qu'elle avait été armée. Ce message-ci ne dit
+     * rien d'une veille : il ne nomme ni le dispositif, ni le lieu, ni l'heure
+     * limite, ni l'activité. Il dit « je suis rentrée », ce que la personne
+     * enverrait de sa main, et il ne part que parce qu'elle l'a demandé sur cet
+     * envoi-là.
+     *
+     * <p>Sobriété volontaire du contenu : tout ce qu'on ajouterait — un lieu, une
+     * heure de fin — recomposerait la veille dans la tête du destinataire et
+     * ferait de ce message ce qu'il ne doit pas être.
+     */
+    public static String retourAnnonceSms(Contexte c) {
+        return c.prenom() + " est bien rentrée. — meetDo";
+    }
+
+    /** ⑤ L'annonce de retour, par e-mail. Voir {@link #retourAnnonceSms}. */
+    public static String retourAnnonceEmailHtml(Contexte c) {
+        return """
+            <h2>%s est bien rentrée</h2>
+            <p>%s a demandé à vous prévenir de son retour. Il n'y a rien à faire.</p>
+            <p style="color:#6b757d;font-size:13px;">— meetDo</p>
+            """.formatted(escape(c.prenom()), escape(c.prenom()));
+    }
+
     /** ④ E-mail d'alerte : la version longue de ②, avec la chronologie et un lien en bouton. */
     public static String alerteRetourEmailHtml(Contexte c, String lienDesabonnement) {
         String titreLigne = (c.titre() == null || c.titre().isBlank())
