@@ -43,7 +43,16 @@ public enum NotificationType {
     // et demande votre accord. Le tap ouvre l'écran accepter / refuser. Distinct
     // de tout le reste : il porte une décision de consentement, pas une
     // information ni un engagement.
-    GUARDIAN_CONSENT_REQUEST
+    GUARDIAN_CONSENT_REQUEST,
+    // Rappel de retour adressé à la personne veillée : son heure limite est
+    // passée et elle n'a pas confirmé. Time-sensitive, et critique — il doit
+    // traverser les heures de silence, sinon le silence de confort ferait partir
+    // une alerte chez un proche à la place d'un rappel qui aurait suffi.
+    WATCH_RETURN_REMINDER,
+    // Alerte in-app à un contact d'urgence qui est membre meetDo : la personne
+    // qu'il veille n'a pas confirmé son retour. Le pendant du SMS ② pour un
+    // contact qui a l'application. Critique, pour la même raison.
+    WATCH_GUARDIAN_ALERT
 ;
 
     /**
@@ -88,7 +97,15 @@ public enum NotificationType {
      * réveiller quelqu'un pour une place.
      */
     private static final java.util.Set<NotificationType> CRITICAL = java.util.EnumSet.of(
-        SLOT_CANCELLED, PROGRAM_CANCELLED, SCHEDULE_CHANGED, PROGRAM_REMINDER);
+        SLOT_CANCELLED, PROGRAM_CANCELLED, SCHEDULE_CHANGED, PROGRAM_REMINDER,
+        // Le rappel de retour traverse le silence pour la raison la plus forte de
+        // cet ensemble : le coût de l'apprendre trop tard n'est pas une séance
+        // manquée mais une alerte envoyée chez un proche. Étouffer les trois
+        // rappels, c'est supprimer les trois occasions de lever l'alerte soi-même.
+        WATCH_RETURN_REMINDER,
+        // L'alerte à un contact membre est le fait même que la fonctionnalité
+        // existe pour délivrer : elle ne se tait jamais.
+        WATCH_GUARDIAN_ALERT);
 
     /**
      * Celles qui méritent en plus un e-mail.

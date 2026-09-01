@@ -28,5 +28,17 @@ public enum WatchEventType {
      * une ligne de journal. L'horodatage est celui saisi par l'utilisateur
      * ({@code enteredAt}), qui fait foi, et non l'heure de réception.
      */
-    CLOSED_BY_CODE
+    CLOSED_BY_CODE,
+
+    /** Un rappel de retour a été envoyé à la personne (push). Un des trois. */
+    REMINDER_SENT,
+
+    /** Sans réponse après les trois rappels, le contact principal a été prévenu. */
+    ESCALATED,
+
+    /** Le contact de secours a été prévenu à son tour. */
+    BACKUP_ALERTED,
+
+    /** La levée est partie : la personne a fini par confirmer après une alerte. */
+    LEVEE_SENT
 }

@@ -22,4 +22,14 @@ public interface WatchRepository extends JpaRepository<Watch, UUID> {
     /** Y a-t-il déjà une veille vivante de cette personne sur ce créneau ? */
     boolean existsByUserIdAndScheduleIdAndStateNotIn(
         UUID userId, UUID scheduleId, Collection<WatchState> terminaux);
+
+    /**
+     * Les veilles que les minuteurs doivent examiner : dans l'un des états donnés,
+     * et dont l'échéance est passée sans être trop ancienne. La borne haute évite
+     * de rebalayer indéfiniment l'historique ; la basse ne prend que ce qui est dû.
+     */
+    List<Watch> findByStateInAndDeadlineAtBetween(
+        Collection<WatchState> states, java.time.Instant depuis, java.time.Instant jusqua);
+
+    boolean existsByPublicToken(String publicToken);
 }
