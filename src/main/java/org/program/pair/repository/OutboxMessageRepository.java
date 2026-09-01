@@ -24,4 +24,7 @@ public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, UU
 
     /** Les messages d'une veille : la levée repart exactement là où l'alerte est allée. */
     List<OutboxMessage> findByWatchId(UUID watchId);
+
+    /** Le message correspondant à un identifiant fournisseur — pour recouper un accusé de remise. */
+    java.util.Optional<OutboxMessage> findByProviderMessageId(String providerMessageId);
 }
