@@ -160,5 +160,21 @@ public enum ErrorCode {
     // Le contact n'a qu'un téléphone, et l'envoi de SMS n'est pas encore livré
     // (priorité 4 du lot). L'inviter par SMS attend ce canal ; un contact avec
     // un e-mail, ou un membre, peut être invité dès maintenant.
-    GUARDIAN_SMS_NOT_AVAILABLE
+    GUARDIAN_SMS_NOT_AVAILABLE,
+
+    // — veilles retour (WatchService) —
+    // Le contact désigné pour la veille n'est pas un contact accepté de
+    // l'appelant. Sans contact accepté, rien ne peut être armé — c'est la
+    // dépendance de la priorité 1 sur laquelle repose tout le module.
+    WATCH_GUARDIAN_NOT_ACCEPTED,
+    // Une veille est déjà en cours sur ce créneau pour cette personne. En armer
+    // une seconde dédoublerait rappels et alertes.
+    WATCH_ALREADY_ACTIVE,
+    // L'heure limite de retour demandée est déjà passée. Une veille dont
+    // l'échéance est derrière soi lèverait une alerte à l'instant même.
+    WATCH_DEADLINE_PAST,
+    // La veille n'est plus au stade où on la désarme d'un geste : quelque chose
+    // est déjà parti. On la referme par les sorties prévues (clôture, abandon,
+    // interruption), pas par un désarmement d'avant-départ.
+    WATCH_NOT_DISARMABLE
 }
