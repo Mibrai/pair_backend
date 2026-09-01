@@ -188,5 +188,9 @@ public enum ErrorCode {
     WATCH_CODE_WRONG,
     // Les trois essais sont épuisés. Le code ne peut plus être présenté ; il faut
     // en demander le renvoi (priorité 6).
-    WATCH_CODE_LOCKED
+    WATCH_CODE_LOCKED,
+    // Le geste — « je suis en chemin », « je n'y vais pas » — ne vaut que sur le
+    // trajet aller, avant l'arrivée. Une fois sur place ou plus loin, la veille se
+    // referme par ses sorties de retour, pas par celles du départ.
+    WATCH_NOT_OUTBOUND
 }

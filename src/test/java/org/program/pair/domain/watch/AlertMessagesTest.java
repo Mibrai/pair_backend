@@ -22,6 +22,7 @@ class AlertMessagesTest {
             Instant.parse("2026-09-01T22:00:00Z"),
             Instant.parse("2026-09-01T19:30:00Z"),
             "Studio Lumière", "Strasbourg", "Yoga",
+            Instant.parse("2026-09-01T18:00:00Z"),
             Instant.parse("2026-09-01T21:00:00Z"),
             "https://lien.meetdo.fun/public/watch/abc123");
     }
@@ -64,6 +65,20 @@ class AlertMessagesTest {
             .contains("Camille")
             .containsIgnoringCase("fausse alerte")
             .containsIgnoringCase("confirm");
+    }
+
+    @Test
+    void laNonArrivee_ditNestPasArrivee_pasNestPasRentree() {
+        String m = AlertMessages.nonArriveeSms(
+            contexte(), null, Instant.parse("2026-09-01T17:45:00Z"));
+        assertThat(m)
+            .contains("Camille Dubois")
+            .contains("n'est pas arrivée")
+            .contains(AlertMessages.CLAUSE_112);
+        // Distincte de ② : elle ne parle jamais de retour ni de « rentrée ».
+        assertThat(m)
+            .doesNotContain("rentrée")
+            .doesNotContain("confirmé son retour");
     }
 
     @Test

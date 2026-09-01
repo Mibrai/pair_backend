@@ -81,6 +81,24 @@ public class Watch {
     @Builder.Default
     private int remindersSent = 0;
 
+    /**
+     * Le début de l'occurrence, figé à l'armement — la base de la boucle aller.
+     * Figé pour la même raison que {@code deadlineAt} : le rollover d'un créneau
+     * récurrent réécrit {@code starts_at}, et une base recalculée ferait fuir les
+     * demandes « tu y es ? ».
+     */
+    @Column(name = "occurrence_starts_at")
+    private Instant occurrenceStartsAt;
+
+    /** La base des demandes d'arrivée. Décalée de 15 min à chaque « je suis en chemin ». */
+    @Column(name = "outbound_base_at")
+    private Instant outboundBaseAt;
+
+    /** 0 à 3 demandes « tu y es ? » envoyées. */
+    @Column(name = "arrival_prompts_sent", nullable = false)
+    @Builder.Default
+    private int arrivalPromptsSent = 0;
+
     /** Le contact principal — un contact accepté de l'utilisateur. */
     @Column(name = "guardian_id", nullable = false)
     private UUID guardianId;

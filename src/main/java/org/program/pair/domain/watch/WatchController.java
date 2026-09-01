@@ -99,6 +99,24 @@ public class WatchController {
         };
     }
 
+    @PostMapping("/{id}/still-coming")
+    @Operation(summary = "« Je suis en chemin »",
+        description = "Repousse la relance d'arrivée de quinze minutes.")
+    public WatchDto stillComing(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        return watchService.stillComing(principal.getId(), id);
+    }
+
+    @PostMapping("/{id}/abandon")
+    @Operation(summary = "« Je n'y vais pas »",
+        description = "Désarme sans message et sans compter d'absence.")
+    public WatchDto abandon(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        return watchService.abandon(principal.getId(), id);
+    }
+
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Désarmer avant départ",

@@ -3,6 +3,7 @@ package org.program.pair.domain.watch;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.guardian.Guardian;
+import org.program.pair.domain.incident.Incident;
 import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.outbox.OutboxMessage;
@@ -53,6 +54,7 @@ public class WatchEscalationService {
     private final OutboxService outbox;
     private final OutboxMessageRepository outboxRepository;
     private final NotificationService notificationService;
+    private final org.program.pair.repository.IncidentRepository incidentRepository;
 
     @Value("${pair.public.base-url:https://lien.meetdo.fun}")
     private String publicBaseUrl;
@@ -65,6 +67,13 @@ public class WatchEscalationService {
             Map.of("watchId", watch.getId().toString(),
                    "deadlineAt", watch.getDeadlineAt().toString()));
         inscrire(watch.getId(), WatchEventType.REMINDER_SENT, Instant.now());
+    }
+
+    /** Une demande « tu y es ? » à la personne, sur le trajet aller. */
+    public void sendArrivalPrompt(Watch watch) {
+        notificationService.notify(watch.getUserId(), NotificationType.WATCH_ARRIVAL_PROMPT,
+            Map.of("watchId", watch.getId().toString()));
+        inscrire(watch.getId(), WatchEventType.ARRIVAL_PROMPTED, Instant.now());
     }
 
     // ------------------------------------------------------------------ alerte
@@ -115,6 +124,90 @@ public class WatchEscalationService {
             agi = true;
         }
         return agi;
+    }
+
+    // ------------------------------------------------------------ non-arrivée
+
+    /**
+     * Perdu en chemin : trois demandes d'arrivée sans réponse.
+     *
+     * <p>Trois choses partent, et une seule ne part pas. L'organisateur reçoit une
+     * notification in-app — le nom, l'absence de validation, l'heure — et rien
+     * d'autre : ni le lieu de départ, ni le contact, ni la position ne le
+     * regardent, et il ne reçoit aucun des SMS d'alerte. Le contact reçoit le
+     * message ⑤ (non-arrivée, distincte de la non-retour). Un incident est
+     * journalisé. Ce qui ne part <b>jamais</b>, c'est une ligne {@code Attendance} :
+     * un perdu en chemin ne compte ni comme une absence, ni contre la fiabilité, la
+     * série ou les badges — sinon le produit punit quelqu'un pour un incident de
+     * sécurité.
+     *
+     * <p>Idempotent : l'incident déjà journalisé pour cette veille tient lieu de
+     * garde.
+     */
+    public void escalateNonArrival(Watch watch) {
+        if (incidentRepository.existsByWatchId(watch.getId())) {
+            return;
+        }
+        if (watch.getPublicToken() == null) {
+            watch.setPublicToken(ShareToken.nextUnique(watchRepository::existsByPublicToken));
+        }
+
+        AlertMessages.Contexte ctx = contexte(watch);
+
+        // L'organisateur, en in-app seulement, et sans rien qui ne le regarde pas.
+        Schedule slot = scheduleRepository.findById(watch.getScheduleId()).orElse(null);
+        UUID organisateur = organisateurDe(slot);
+        if (organisateur != null && !organisateur.equals(watch.getUserId())) {
+            notificationService.notify(organisateur, NotificationType.WATCH_LOST_ORGANIZER,
+                Map.of("watchId", watch.getId().toString(),
+                       "personne", ctx.prenomNom(),
+                       "heure", watch.getOccurrenceStartsAt() != null
+                           ? watch.getOccurrenceStartsAt().toString() : ""));
+        }
+
+        // Le contact : message ⑤, SMS et e-mail selon les canaux. Le lieu de départ
+        // n'est pas connu (aucune adresse de domicile stockée) ; l'heure de départ
+        // est celle de l'armement.
+        prevenirNonArrivee(watch.getGuardianId(), watch.getId(), ctx, watch.getArmedAt());
+
+        // L'incident, jamais une absence.
+        incidentRepository.save(Incident.lostOnTheWay(
+            watch.getUserId(), watch.getId(), watch.getScheduleId()));
+
+        watch.setState(WatchState.ESCALATED);
+        inscrire(watch.getId(), WatchEventType.LOST_ON_THE_WAY, Instant.now());
+    }
+
+    private void prevenirNonArrivee(UUID guardianId, UUID watchId,
+                                    AlertMessages.Contexte ctx, Instant heureDepart) {
+        Guardian guardian = guardianRepository.findById(guardianId).orElse(null);
+        if (guardian == null) {
+            return;
+        }
+        if (guardian.isMember()) {
+            notificationService.notify(guardian.getMemberId(), NotificationType.WATCH_GUARDIAN_ALERT,
+                Map.of("watchId", watchId.toString(), "lien", ctx.lienStatut()));
+            return;
+        }
+        if (notBlank(guardian.getPhone())) {
+            outbox.enqueueSms(guardian.getPhone(),
+                AlertMessages.nonArriveeSms(ctx, null, heureDepart),
+                OutboxService.PRIORITE_ALERTE, watchId);
+        }
+        if (notBlank(guardian.getEmail())) {
+            String desabonnement = publicBaseUrl + "/public/guardian-consent/" + guardian.getConsentToken();
+            outbox.enqueueEmail(guardian.getEmail(), "Non-arrivée — meetDo",
+                AlertMessages.alerteRetourEmailHtml(ctx, desabonnement),
+                OutboxService.PRIORITE_EMAIL, watchId);
+        }
+    }
+
+    private static UUID organisateurDe(Schedule slot) {
+        try {
+            return slot.getProgram().getUserActivity().getUser().getId();
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     // ------------------------------------------------------------------- levée
@@ -201,7 +294,8 @@ public class WatchEscalationService {
         return new AlertMessages.Contexte(
             displayName, GivenName.from(displayName),
             watch.getDeadlineAt(), dernierSigne,
-            lieuNom, ville, titre, heureFin, lien);
+            lieuNom, ville, titre,
+            watch.getOccurrenceStartsAt(), heureFin, lien);
     }
 
     private static String titreActivite(Schedule slot) {

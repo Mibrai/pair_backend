@@ -52,7 +52,16 @@ public enum NotificationType {
     // Alerte in-app à un contact d'urgence qui est membre meetDo : la personne
     // qu'il veille n'a pas confirmé son retour. Le pendant du SMS ② pour un
     // contact qui a l'application. Critique, pour la même raison.
-    WATCH_GUARDIAN_ALERT
+    WATCH_GUARDIAN_ALERT,
+    // Demande « tu y es ? » à la personne veillée qui n'a pas encore validé son
+    // arrivée. Time-sensitive et critique : le coût de la manquer est une alerte
+    // envoyée à sa place.
+    WATCH_ARRIVAL_PROMPT,
+    // Notification in-app à l'organisateur d'un créneau : un inscrit n'est jamais
+    // arrivé (perdu en chemin). Porte le nom, l'absence de validation et l'heure —
+    // jamais le lieu de départ, ni le contact, ni la position, qui ne le regardent
+    // pas. L'organisateur ne reçoit AUCUN des SMS d'alerte ; seulement ceci.
+    WATCH_LOST_ORGANIZER
 ;
 
     /**
@@ -105,7 +114,13 @@ public enum NotificationType {
         WATCH_RETURN_REMINDER,
         // L'alerte à un contact membre est le fait même que la fonctionnalité
         // existe pour délivrer : elle ne se tait jamais.
-        WATCH_GUARDIAN_ALERT);
+        WATCH_GUARDIAN_ALERT,
+        // La demande « tu y es ? » traverse le silence pour la même raison que le
+        // rappel de retour : la manquer coûte une alerte à sa place.
+        WATCH_ARRIVAL_PROMPT);
+        // WATCH_LOST_ORGANIZER n'en fait PAS partie : l'organisateur n'a rien à
+        // faire dans la nuit d'une absence qui ne le met pas en mouvement, et le
+        // réveiller pour chaque retardataire le ferait couper ses notifications.
 
     /**
      * Celles qui méritent en plus un e-mail.

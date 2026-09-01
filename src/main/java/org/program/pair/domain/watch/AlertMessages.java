@@ -61,7 +61,8 @@ public final class AlertMessages {
     public record Contexte(
         String prenomNom, String prenom,
         Instant heureLimite, Instant dernierSigneDeVie,
-        String lieuNom, String ville, String titre, Instant heureFin,
+        String lieuNom, String ville, String titre,
+        Instant heureDebut, Instant heureFin,
         String lienStatut) {}
 
     /** ② Alerte retour, par SMS. */
@@ -136,6 +137,46 @@ public final class AlertMessages {
                 CLAUSE_112,
                 escape(c.prenomNom()),
                 lienDesabonnement);
+    }
+
+    /**
+     * ⑤ Non-arrivée, par SMS — distincte de ②.
+     *
+     * <p>Un contact qui lit « n'est pas rentrée » alors que la personne n'est
+     * jamais partie cherche au mauvais endroit. Ce message dit l'inverse : elle
+     * n'est pas <b>arrivée</b>. Il nomme la destination et l'heure à laquelle on
+     * l'attendait, là où ② nommait le dernier signe de vie et la fin de séance.
+     *
+     * <p>Le lieu de départ n'est pas toujours connu — on ne stocke aucune adresse
+     * de domicile — et l'heure de départ est celle de l'armement. Ni la position,
+     * ni un contact, ni une coordonnée n'entrent : mêmes interdits que ②.
+     *
+     * @param lieuDepart nom du lieu de départ, s'il est connu ; sinon {@code null}
+     * @param heureDepart heure de départ (l'armement de la veille)
+     */
+    public static String nonArriveeSms(Contexte c, String lieuDepart, Instant heureDepart) {
+        StringBuilder m = new StringBuilder();
+        m.append(c.prenomNom()).append(" n'est pas arrivée. Partie");
+        if (lieuDepart != null && !lieuDepart.isBlank()) {
+            m.append(" de ").append(lieuDepart);
+        }
+        m.append(" à ").append(heure(heureDepart)).append(" pour ");
+        if (c.titre() != null && !c.titre().isBlank()) {
+            m.append(c.titre()).append(", ");
+        }
+        m.append(nomEtVille(c));
+        if (c.heureDebut() != null) {
+            m.append(" attendue à ").append(heure(c.heureDebut()));
+        }
+        m.append(". Suivi : ").append(c.lienStatut()).append(". ");
+        m.append(CLAUSE_112);
+        return m.toString();
+    }
+
+    /** Nom du lieu et ville, sans la virgule de tête que produit {@link #lieuEtVille}. */
+    private static String nomEtVille(Contexte c) {
+        String s = lieuEtVille(c);
+        return s.startsWith(", ") ? s.substring(2) : s;
     }
 
     private static String lieuEtVille(Contexte c) {
