@@ -32,4 +32,11 @@ public interface WatchRepository extends JpaRepository<Watch, UUID> {
         Collection<WatchState> states, java.time.Instant depuis, java.time.Instant jusqua);
 
     boolean existsByPublicToken(String publicToken);
+
+    /**
+     * Les veilles de la boucle aller à examiner : pas encore arrivées, dont la base
+     * des demandes est passée sans être trop ancienne.
+     */
+    List<Watch> findByStateInAndOutboundBaseAtBetween(
+        Collection<WatchState> states, java.time.Instant depuis, java.time.Instant jusqua);
 }

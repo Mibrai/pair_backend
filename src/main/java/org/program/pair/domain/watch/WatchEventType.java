@@ -40,5 +40,21 @@ public enum WatchEventType {
     BACKUP_ALERTED,
 
     /** La levée est partie : la personne a fini par confirmer après une alerte. */
-    LEVEE_SENT
+    LEVEE_SENT,
+
+    /** Une demande « tu y es ? » a été envoyée à la personne (boucle aller). */
+    ARRIVAL_PROMPTED,
+
+    /** « Je suis en chemin » : la relance d'arrivée est repoussée de quinze minutes. */
+    STILL_COMING,
+
+    /** Désarmée avant départ, « je n'y vais pas » — sans message et sans absence. */
+    ABANDONED,
+
+    /**
+     * Perdu en chemin : trois demandes d'arrivée sans réponse. L'organisateur est
+     * prévenu, le message ⑤ part au contact, et un incident est journalisé — jamais
+     * une absence.
+     */
+    LOST_ON_THE_WAY
 }

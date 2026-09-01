@@ -106,6 +106,11 @@ public class WatchService {
                 "L'heure limite de retour est déjà passée.");
         }
 
+        // Le début de l'occurrence est figé maintenant, comme l'échéance : la
+        // boucle aller s'y appuie, et il ne doit pas fuir avec le rollover.
+        Instant occurrenceStart = org.program.pair.domain.program.SlotTiming
+            .currentOccurrence(slot).startsAt();
+
         Watch watch = watchRepository.save(Watch.builder()
             .scheduleId(req.scheduleId())
             .userId(userId)
@@ -113,6 +118,9 @@ public class WatchService {
             .armedAt(now)
             .deadlineAt(deadline)
             .remindersSent(0)
+            .occurrenceStartsAt(occurrenceStart)
+            .outboundBaseAt(occurrenceStart)
+            .arrivalPromptsSent(0)
             .guardianId(req.guardianId())
             .backupGuardianId(req.backupGuardianId())
             .build());
@@ -146,6 +154,57 @@ public class WatchService {
         List<WatchEventDto> timeline = eventRepository.findByWatchIdOrderByOccurredAtAsc(watchId)
             .stream().map(WatchEventDto::from).toList();
         return new WatchDetailDto(WatchDto.from(watch), timeline);
+    }
+
+    // ---------------------------------------------------------- trajet aller
+
+    /**
+     * « Je suis en chemin » : repousse la relance d'arrivée de quinze minutes.
+     *
+     * <p>Ne vaut que sur le trajet aller, avant l'arrivée. La base des demandes
+     * « tu y es ? » est décalée d'un quart d'heure, ce qui rachète autant de temps
+     * avant la demande suivante — un métro en retard, une place de parking.
+     */
+    public WatchDto stillComing(UUID userId, UUID watchId) {
+        Watch watch = exigerVeille(userId, watchId);
+        exigerTrajetAller(watch);
+
+        Instant base = watch.getOutboundBaseAt() != null
+            ? watch.getOutboundBaseAt() : watch.getArmedAt();
+        watch.setOutboundBaseAt(base.plus(Duration.ofMinutes(15)));
+        watch.setState(WatchState.EN_ROUTE);
+        inscrire(watchId, WatchEventType.STILL_COMING, Instant.now());
+        return WatchDto.from(watch);
+    }
+
+    /**
+     * « Je n'y vais pas » : désarme sans message et <b>sans compter d'absence</b>.
+     *
+     * <p>Se décommander à l'avance n'est pas manquer à sa parole. Aucune ligne
+     * {@code Attendance} n'est écrite, aucun contact n'est prévenu : la veille se
+     * referme, un point c'est tout.
+     */
+    public WatchDto abandon(UUID userId, UUID watchId) {
+        Watch watch = exigerVeille(userId, watchId);
+        exigerTrajetAller(watch);
+
+        Instant now = Instant.now();
+        watch.setState(WatchState.CLOSED);
+        watch.setClosedAt(now);
+        inscrire(watchId, WatchEventType.ABANDONED, now);
+        return WatchDto.from(watch);
+    }
+
+    private Watch exigerVeille(UUID userId, UUID watchId) {
+        return watchRepository.findByIdAndUserId(watchId, userId)
+            .orElseThrow(() -> new ResourceNotFoundException("Veille introuvable."));
+    }
+
+    private void exigerTrajetAller(Watch watch) {
+        if (watch.getState() != WatchState.ARMED && watch.getState() != WatchState.EN_ROUTE) {
+            throw new ConflictException(ErrorCode.WATCH_NOT_OUTBOUND,
+                "Ce geste ne vaut que sur le trajet aller, avant l'arrivée.");
+        }
     }
 
     // --------------------------------------------------------------- désarmer
