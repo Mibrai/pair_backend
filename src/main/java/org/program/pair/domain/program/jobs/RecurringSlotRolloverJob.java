@@ -2,6 +2,7 @@ package org.program.pair.domain.program.jobs;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.program.pair.domain.program.ParticipantCounter;
 import org.program.pair.domain.program.RecurrenceExpander;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotStatus;
@@ -48,6 +49,7 @@ public class RecurringSlotRolloverJob {
 
     private final ScheduleRepository scheduleRepository;
     private final RecurrenceExpander recurrenceExpander;
+    private final ParticipantCounter participantCounter;
 
     @Scheduled(cron = "0 */10 * * * *")
     @Transactional
@@ -102,7 +104,24 @@ public class RecurringSlotRolloverJob {
                 schedule.setStartsAt(next);
                 schedule.setEndsAt(duration != null ? next.plus(duration) : null);
                 schedule.setStatus(SlotStatus.OPEN);
-                schedule.setParticipantCount(0);
+
+                // Le compteur est RECALCULÉ, plus remis à zéro.
+                //
+                // L'ancien setParticipantCount(0) disait « nouvelle occurrence,
+                // nouvelles places » — mais il était seul à le dire : les
+                // participations, elles, n'étaient pas retirées. Le créneau
+                // annonçait donc zéro inscrit pendant que /participants en
+                // listait un confirmé, et que myParticipationStatus valait
+                // CONFIRMED chez l'intéressé. C'est l'écart relevé en production
+                // le 01/09.
+                //
+                // Des deux lectures possibles, on retient celle que tous les
+                // autres chemins appliquaient déjà : une inscription à un créneau
+                // récurrent est un engagement qui tient d'une occurrence à la
+                // suivante. Le compteur s'aligne donc sur les inscrits, et le
+                // statut avec lui — un créneau récurrent complet le reste après
+                // rollover, au lieu de rouvrir des places qui n'existent pas.
+                participantCounter.refresh(schedule);
                 rolled++;
             }
 
