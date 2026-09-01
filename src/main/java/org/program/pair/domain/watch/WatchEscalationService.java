@@ -2,6 +2,7 @@ package org.program.pair.domain.watch;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.program.pair.domain.guardian.ConsentState;
 import org.program.pair.domain.guardian.Guardian;
 import org.program.pair.domain.incident.Incident;
 import org.program.pair.domain.notification.NotificationService;
@@ -259,6 +260,82 @@ public class WatchEscalationService {
             }
         }
         inscrire(watch.getId(), WatchEventType.LEVEE_SENT, Instant.now());
+    }
+
+    /**
+     * ⑤ « Je suis bien rentrée » — annonce demandée par la personne veillée.
+     *
+     * <p><b>Ce que cette méthode n'est pas.</b> Elle n'est pas une notification de
+     * fin de veille, et rien ici ne l'appelle de lui-même : elle ne part que sur un
+     * drapeau explicite de {@code CloseRequest}, faux par défaut. La règle qui
+     * interdit au système d'apprendre à un tiers qu'une veille s'est terminée tient
+     * entière — aucun {@code NotificationType} n'a été créé, et le test qui garde le
+     * catalogue reste vrai.
+     *
+     * <p><b>Au contact principal seulement</b>, jamais au suppléant : le suppléant
+     * n'est sollicité que lorsque le premier n'a pas répondu à une alerte, et il n'a
+     * ici rien à apprendre. Jamais non plus à l'organisateur, qui ne voit que des
+     * arrivées.
+     *
+     * <p><b>Les échecs sont avalés.</b> Un message d'agrément qui ne part pas ne doit
+     * pas faire échouer une clôture : la veille est refermée, c'est ce qui compte.
+     *
+     * <p><b>Le message n'est PAS rattaché à la veille dans l'outbox</b>, et c'est
+     * délibéré. {@code alertDelivery} agrège l'état de remise de tout ce que
+     * l'outbox porte pour une veille, et le client en a fait un bandeau global :
+     * un {@code BOUNCED} y signifie « le proche n'a pas été joint par l'alerte ».
+     * Rattacher cette annonce ferait passer à {@code SENT} une veille où aucune
+     * alerte n'est jamais partie, et afficherait le bandeau d'alarme parce qu'un
+     * « tout va bien » a rebondi. La trace de l'envoi est ailleurs, à sa place :
+     * l'événement {@code RETURN_ANNOUNCED} du journal.
+     */
+    public void annoncerLeRetour(Watch watch) {
+        if (watch.getGuardianId() == null) {
+            return;
+        }
+        try {
+            Guardian guardian = guardianRepository.findById(watch.getGuardianId()).orElse(null);
+            if (guardian == null || guardian.getConsentState() != ConsentState.ACCEPTED) {
+                // Un contact qui n'a pas accepté d'être contact ne reçoit rien, pas
+                // même une bonne nouvelle.
+                return;
+            }
+
+            AlertMessages.Contexte ctx = contexte(watch);
+            boolean envoye = false;
+
+            if (guardian.isMember()) {
+                // Contact membre : son adresse, et rien d'in-app — une notification
+                // in-app est précisément ce que la règle du module interdit ici.
+                String email = userRepository.findById(guardian.getMemberId())
+                    .map(User::getEmail).filter(e -> e != null && !e.isBlank()).orElse(null);
+                if (email != null) {
+                    outbox.enqueueEmail(email, "Tout va bien",
+                        AlertMessages.retourAnnonceEmailHtml(ctx),
+                        OutboxService.PRIORITE_EMAIL, null);
+                    envoye = true;
+                }
+            } else {
+                if (smsEnabled && notBlank(guardian.getPhone())) {
+                    outbox.enqueueSms(guardian.getPhone(), AlertMessages.retourAnnonceSms(ctx),
+                        OutboxService.PRIORITE_EMAIL, null);
+                    envoye = true;
+                }
+                if (notBlank(guardian.getEmail())) {
+                    outbox.enqueueEmail(guardian.getEmail(), "Tout va bien",
+                        AlertMessages.retourAnnonceEmailHtml(ctx),
+                        OutboxService.PRIORITE_EMAIL, null);
+                    envoye = true;
+                }
+            }
+
+            if (envoye) {
+                inscrire(watch.getId(), WatchEventType.RETURN_ANNOUNCED, Instant.now());
+            }
+        } catch (RuntimeException e) {
+            log.warn("Annonce de retour non partie pour la veille {} : {}",
+                watch.getId(), e.getMessage());
+        }
     }
 
     // ------------------------------------------------------------------ outils
