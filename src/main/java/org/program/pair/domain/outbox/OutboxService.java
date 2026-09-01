@@ -81,6 +81,40 @@ public class OutboxService {
         return envoyes;
     }
 
+    /**
+     * Enregistre ce qu'un accusé de remise rapporte, en recoupant par l'identifiant
+     * fournisseur.
+     *
+     * <p>On ne régresse pas un état plus avancé vers un état transitoire : un
+     * {@code DELIVERED} déjà reçu n'est pas ramené à {@code DELAYED} par un
+     * événement en retard, et un {@code BOUNCED} ou {@code COMPLAINED} — le fait
+     * qui compte — n'est jamais écrasé. Les événements qu'on ne suit pas (ouverture,
+     * clic) sont ignorés en silence.
+     */
+    @Transactional
+    public void recordDelivery(String providerMessageId, String eventType) {
+        OutboxDelivery nouveau = switch (eventType == null ? "" : eventType) {
+            case "email.delivered" -> OutboxDelivery.DELIVERED;
+            case "email.bounced" -> OutboxDelivery.BOUNCED;
+            case "email.complained" -> OutboxDelivery.COMPLAINED;
+            case "email.delivery_delayed" -> OutboxDelivery.DELAYED;
+            default -> null;
+        };
+        if (nouveau == null || providerMessageId == null) {
+            return;
+        }
+        repository.findByProviderMessageId(providerMessageId).ifPresent(message -> {
+            OutboxDelivery actuel = message.getDeliveryState();
+            if (actuel == OutboxDelivery.BOUNCED || actuel == OutboxDelivery.COMPLAINED) {
+                return; // fait terminal, on ne l'écrase pas.
+            }
+            if (nouveau == OutboxDelivery.DELAYED && actuel == OutboxDelivery.DELIVERED) {
+                return; // pas de régression d'un arrivé vers un retardé.
+            }
+            message.setDeliveryState(nouveau);
+        });
+    }
+
     private boolean envoyer(OutboxMessage message, Instant now) {
         try {
             return switch (message.getChannel()) {
@@ -94,10 +128,12 @@ public class OutboxService {
                     yield false;
                 }
                 case EMAIL -> {
-                    boolean sent = emailService.sendHtmlEmail(
+                    // On garde l'identifiant Resend : c'est lui que l'accusé de
+                    // remise (webhook) rappellera pour dire « arrivé » ou « rebondi ».
+                    String id = emailService.sendHtmlEmailReturningId(
                         message.getRecipient(), message.getSubject(), message.getBody());
-                    if (sent) {
-                        message.markSent(null, now);
+                    if (id != null) {
+                        message.markSent(id, now);
                         yield true;
                     }
                     message.markAttemptFailed(now, MAX_ESSAIS);

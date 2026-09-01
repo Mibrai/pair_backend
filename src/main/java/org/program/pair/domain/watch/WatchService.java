@@ -215,9 +215,22 @@ public class WatchService {
         if (messages.isEmpty()) {
             return "NONE";
         }
+        // Le rebond prime sur tout : c'est le fait qui dit que le proche n'a pas
+        // reçu, et avec un seul canal c'est celui qu'il fallait pouvoir voir.
+        if (messages.stream().anyMatch(m ->
+                m.getDeliveryState() == org.program.pair.domain.outbox.OutboxDelivery.BOUNCED
+             || m.getDeliveryState() == org.program.pair.domain.outbox.OutboxDelivery.COMPLAINED)) {
+            return "BOUNCED";
+        }
         if (messages.stream().anyMatch(m ->
                 m.getStatus() == org.program.pair.domain.outbox.OutboxStatus.FAILED)) {
             return "FAILED";
+        }
+        // Un accusé « délivré » est le meilleur retour possible : au moins un
+        // message est arrivé.
+        if (messages.stream().anyMatch(m ->
+                m.getDeliveryState() == org.program.pair.domain.outbox.OutboxDelivery.DELIVERED)) {
+            return "DELIVERED";
         }
         boolean toutParti = messages.stream().allMatch(m ->
             m.getStatus() == org.program.pair.domain.outbox.OutboxStatus.SENT);

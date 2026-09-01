@@ -106,6 +106,10 @@ public class SecurityConfig {
                 // au téléphone ») remontent dans l'app. Aucun ne clôture.
                 .requestMatchers(HttpMethod.GET, "/public/watch/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/public/watch/**").permitAll()
+                // Accusé de remise des e-mails d'alerte (Resend). Public parce que
+                // c'est le fournisseur qui l'appelle, sans identité meetDo ; la
+                // confiance repose sur la signature Svix, vérifiée dans le contrôleur.
+                .requestMatchers(HttpMethod.POST, "/public/resend-webhook").permitAll()
                 // HEAD, sur tout ce qui précède.
                 //
                 // Signalé par l'équipe mobile le 2026-08-20 : HEAD retombait sur

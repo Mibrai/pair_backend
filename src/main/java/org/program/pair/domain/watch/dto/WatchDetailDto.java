@@ -15,7 +15,8 @@ public record WatchDetailDto(
     @Schema(description = "Les faits qui jalonnent la veille, dans l'ordre chronologique.")
     List<WatchEventDto> timeline,
 
-    @Schema(description = "État de remise des alertes : NONE (aucune), PENDING, SENT, FAILED. "
-        + "Avec un seul canal actif, ce retour dit si le proche a bien été joint.")
+    @Schema(description = "État de remise des alertes : NONE (aucune), PENDING, SENT (accepté par "
+        + "le fournisseur), DELIVERED (arrivé), BOUNCED (a rebondi / marqué indésirable), "
+        + "FAILED (envoi échoué). Avec un seul canal actif, ce retour dit si le proche a été joint.")
     String alertDelivery
 ) {}
