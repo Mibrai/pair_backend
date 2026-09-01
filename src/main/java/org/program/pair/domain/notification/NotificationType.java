@@ -38,7 +38,12 @@ public enum NotificationType {
     // NEW_MESSAGE : le tap doit ouvrir le fil du programme, pas une
     // conversation à deux, et le client range les deux dans des rubriques
     // différentes de son catalogue de préférences.
-    PROGRAM_BROADCAST
+    PROGRAM_BROADCAST,
+    // Quelqu'un vous a désigné comme son contact d'urgence pour une veille retour
+    // et demande votre accord. Le tap ouvre l'écran accepter / refuser. Distinct
+    // de tout le reste : il porte une décision de consentement, pas une
+    // information ni un engagement.
+    GUARDIAN_CONSENT_REQUEST
 ;
 
     /**

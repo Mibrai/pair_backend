@@ -207,6 +207,51 @@ public class EmailService {
             """.formatted(escape(subjectFor(type, programTitle)), escape(text));
     }
 
+    /**
+     * Le gabarit ① : demander à un contact hors meetDo son accord pour être
+     * prévenu si son proche ne confirme pas son retour.
+     *
+     * <p><b>Un seul lien, vers une page, et non deux liens accepter / refuser.</b>
+     * La demande décrivait « deux liens » ; nous avons obtenu du chantier mobile
+     * qu'ils deviennent une page portant deux boutons. La raison est concrète :
+     * les scanners de messagerie et les aperçus de liens suivent automatiquement
+     * les {@code GET}. Un lien « refuser » suivi par un robot poserait un refus —
+     * définitif et global au numéro — sans que le propriétaire du téléphone ait
+     * rien fait. Le lien mène donc à une page ; la décision se prend par un bouton,
+     * en {@code POST}, que rien ne pré-charge.
+     *
+     * <p>La phrase « un seul message vous sera envoyé » n'est pas une politesse :
+     * c'est un engagement tenu par le code, qui n'envoie jamais de relance.
+     */
+    public void sendGuardianConsentEmail(String email, String ownerName, String pageUrl) {
+        String qui = (ownerName == null || ownerName.isBlank()) ? "Une personne" : escape(ownerName);
+        if (!resendEmailService.isEnabled()) {
+            log.info("[DEV] Guardian consent link for {} (parrain: {}): {}", email, qui, pageUrl);
+            return;
+        }
+        String html = """
+            <h2>%s vous a désigné comme contact de confiance</h2>
+            <p>Sur meetDo, %s peut « armer une veille » avant une sortie : si cette
+               personne ne confirme pas son retour à temps, vous seriez prévenu — et
+               vous seul, après plusieurs rappels qui lui sont d'abord adressés.</p>
+            <p>Votre accord est demandé avant quoi que ce soit. Ouvrez la page
+               ci-dessous pour <strong>accepter</strong> ou <strong>refuser</strong> :</p>
+            <a href="%s" style="background:#4F46E5;color:white;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">
+              Voir la demande
+            </a>
+            <p style="color:#6b757d;font-size:14px;margin-top:20px;">
+              Un seul message vous sera envoyé, sans réponse de votre part. Si vous
+              refusez, votre numéro ne pourra plus être désigné par personne sur meetDo.
+            </p>
+            """.formatted(qui, qui, pageUrl);
+
+        boolean sent = resendEmailService.sendHtmlEmail(email,
+            qui + " vous a désigné comme contact de confiance — meetDo", html);
+        if (!sent) {
+            log.error("Failed to send guardian consent email to {}", email);
+        }
+    }
+
     private static String escape(String value) {
         return value
             .replace("&", "&amp;")
