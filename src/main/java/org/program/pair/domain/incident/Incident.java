@@ -52,6 +52,10 @@ public class Incident {
     @Column(name = "note", length = 500)
     private String note;
 
+    /** URL d'une pièce jointe optionnelle (photo), déposée sur le volume de stockage. */
+    @Column(name = "attachment_url", length = 500)
+    private String attachmentUrl;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -68,11 +72,24 @@ public class Incident {
         return i;
     }
 
+    /** Un incident signalé par l'utilisateur lui-même, via la route. */
+    public static Incident reported(UUID userId, IncidentTarget target, UUID scheduleId,
+                                    String note, String attachmentUrl) {
+        Incident i = new Incident();
+        i.userId = userId;
+        i.target = target;
+        i.scheduleId = scheduleId;
+        i.note = note;
+        i.attachmentUrl = attachmentUrl;
+        return i;
+    }
+
     public UUID getId() { return id; }
     public UUID getUserId() { return userId; }
     public IncidentTarget getTarget() { return target; }
     public UUID getWatchId() { return watchId; }
     public UUID getScheduleId() { return scheduleId; }
     public String getNote() { return note; }
+    public String getAttachmentUrl() { return attachmentUrl; }
     public Instant getCreatedAt() { return createdAt; }
 }

@@ -173,6 +173,41 @@ public final class AlertMessages {
         return m.toString();
     }
 
+    /** ⑤ Non-arrivée, par e-mail — le pendant courrier de {@link #nonArriveeSms}. */
+    public static String nonArriveeEmailHtml(Contexte c, String lieuDepart,
+                                             Instant heureDepart, String lienDesabonnement) {
+        String depart = (lieuDepart == null || lieuDepart.isBlank())
+            ? "" : " de " + escape(lieuDepart);
+        String titreLigne = (c.titre() == null || c.titre().isBlank())
+            ? "" : "<li>Pour : <strong>" + escape(c.titre()) + "</strong></li>";
+        return """
+            <h2>%s n'est pas arrivée</h2>
+            <p>Partie%s à <strong>%s</strong>, elle n'a pas validé son arrivée à
+               destination.</p>
+            <ul>
+              <li>Destination : <strong>%s</strong>%s</li>
+              %s
+            </ul>
+            <p><a href="%s" style="background:#b3261e;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">
+              Voir la page de suivi
+            </a></p>
+            <p style="margin-top:16px;"><em>%s</em></p>
+            <p style="color:#6b757d;font-size:13px;margin-top:24px;">
+              Vous recevez ce message parce que %s vous a désigné comme contact de
+              confiance. <a href="%s">Ne plus être contacté</a>.
+            </p>
+            """.formatted(
+                escape(c.prenomNom()),
+                depart, heure(heureDepart),
+                escape(nomEtVille(c)),
+                c.heureDebut() != null ? ", attendue à " + heure(c.heureDebut()) : "",
+                titreLigne,
+                c.lienStatut(),
+                CLAUSE_112,
+                escape(c.prenomNom()),
+                lienDesabonnement);
+    }
+
     /** Nom du lieu et ville, sans la virgule de tête que produit {@link #lieuEtVille}. */
     private static String nomEtVille(Contexte c) {
         String s = lieuEtVille(c);
