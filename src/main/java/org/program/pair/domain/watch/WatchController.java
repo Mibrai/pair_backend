@@ -5,11 +5,17 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.program.pair.domain.watch.dto.ArrivalRequest;
+import org.program.pair.domain.watch.dto.ArrivalResponse;
+import org.program.pair.domain.watch.dto.CloseRequest;
 import org.program.pair.domain.watch.dto.CreateWatchRequest;
 import org.program.pair.domain.watch.dto.WatchDetailDto;
 import org.program.pair.domain.watch.dto.WatchDto;
+import org.program.pair.shared.exception.ConflictException;
+import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.security.UserPrincipal;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -56,6 +62,41 @@ public class WatchController {
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id) {
         return watchService.detail(principal.getId(), id);
+    }
+
+    @PostMapping("/{id}/arrival")
+    @Operation(summary = "Valider son arrivée sur place",
+        description = "Crée le code de retour et le rend en clair, une seule fois.")
+    public ArrivalResponse arrival(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @Valid @RequestBody(required = false) ArrivalRequest request) {
+        return watchService.arrival(principal.getId(), id, request);
+    }
+
+    /**
+     * Refermer une veille par son code.
+     *
+     * <p><b>{@code 202} sur succès, {@code 409} sur code faux.</b> Le succès rend
+     * un corps vide et le même {@code 202} que le code présenté soit le normal ou
+     * celui de contrainte — c'est la clause d'indistinguabilité. Le service a déjà
+     * validé sa transaction (dont le décrément d'essai sur code faux) quand ce
+     * contrôleur lève le {@code 409} : lever depuis le service aurait annulé ce
+     * décrément et rendu le plafond de trois essais inopérant.
+     */
+    @PostMapping("/{id}/close")
+    public ResponseEntity<Void> close(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @Valid @RequestBody CloseRequest request) {
+        WatchService.CloseOutcome outcome = watchService.close(principal.getId(), id, request);
+        return switch (outcome.status()) {
+            case CLOSED -> ResponseEntity.accepted().build();
+            case WRONG -> throw new ConflictException(ErrorCode.WATCH_CODE_WRONG,
+                "Code incorrect. Essais restants : " + outcome.attemptsLeft() + ".");
+            case LOCKED -> throw new ConflictException(ErrorCode.WATCH_CODE_LOCKED,
+                "Trop d'essais : ce code ne peut plus être présenté.");
+        };
     }
 
     @DeleteMapping("/{id}")

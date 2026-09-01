@@ -176,5 +176,17 @@ public enum ErrorCode {
     // La veille n'est plus au stade où on la désarme d'un geste : quelque chose
     // est déjà parti. On la referme par les sorties prévues (clôture, abandon,
     // interruption), pas par un désarmement d'avant-départ.
-    WATCH_NOT_DISARMABLE
+    WATCH_NOT_DISARMABLE,
+    // L'arrivée ne peut être validée que sur une veille en attente d'arrivée
+    // (armée ou en chemin). Déjà sur place, ou déjà close : il n'y a rien à valider.
+    WATCH_ARRIVAL_NOT_EXPECTED,
+    // La clôture par code suppose une arrivée validée : sans code créé, il n'y a
+    // rien à confronter.
+    WATCH_NO_CODE_TO_CLOSE,
+    // Le code présenté est faux. Rendu en 409 : c'est un état — « ce n'est pas le
+    // bon code » — assorti du nombre d'essais restants, pas un défaut de la requête.
+    WATCH_CODE_WRONG,
+    // Les trois essais sont épuisés. Le code ne peut plus être présenté ; il faut
+    // en demander le renvoi (priorité 6).
+    WATCH_CODE_LOCKED
 }
