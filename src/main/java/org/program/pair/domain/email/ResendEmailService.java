@@ -48,9 +48,22 @@ public class ResendEmailService {
      * Send an HTML email via Resend API
      */
     public boolean sendHtmlEmail(String to, String subject, String htmlContent) {
+        return sendHtmlEmailReturningId(to, subject, htmlContent) != null;
+    }
+
+    /**
+     * Envoie un e-mail HTML et rend l'identifiant Resend du message, ou {@code null}
+     * en cas d'échec (ou si le service est désactivé).
+     *
+     * <p>Cet identifiant est la clé de recoupement des webhooks de remise : c'est
+     * lui que Resend rappelle dans ses événements {@code email.delivered} /
+     * {@code email.bounced}. Sans lui, on saurait qu'un envoi a été accepté, jamais
+     * s'il est arrivé — et avec un seul canal, la différence compte.
+     */
+    public String sendHtmlEmailReturningId(String to, String subject, String htmlContent) {
         if (!enabled) {
             log.debug("Resend is disabled. Email would be sent to: {} with subject: {}", to, subject);
-            return false;
+            return null;
         }
 
         Map<String, Object> emailRequest = new HashMap<>();
@@ -59,7 +72,7 @@ public class ResendEmailService {
         emailRequest.put("subject", subject);
         emailRequest.put("html", htmlContent);
 
-        return sendEmail(emailRequest, to, subject);
+        return sendEmailForId(emailRequest, to, subject);
     }
 
     /**
@@ -103,6 +116,11 @@ public class ResendEmailService {
      * Internal method to send email via Resend API
      */
     private boolean sendEmail(Map<String, Object> emailRequest, String to, String subject) {
+        return sendEmailForId(emailRequest, to, subject) != null;
+    }
+
+    /** Envoie et rend l'identifiant Resend du message, ou {@code null} en cas d'échec. */
+    private String sendEmailForId(Map<String, Object> emailRequest, String to, String subject) {
         try {
             Map<String, Object> response = webClient.post()
                     .uri("/emails")
@@ -119,16 +137,17 @@ public class ResendEmailService {
                     .bodyToMono(Map.class)
                     .block();
 
-            if (response != null && response.containsKey("id")) {
-                log.info("Email sent successfully via Resend to: {} (ID: {})", to, response.get("id"));
-                return true;
+            if (response != null && response.get("id") != null) {
+                String id = String.valueOf(response.get("id"));
+                log.info("Email sent successfully via Resend to: {} (ID: {})", to, id);
+                return id;
             } else {
                 log.error("Unexpected response from Resend API: {}", response);
-                return false;
+                return null;
             }
         } catch (Exception e) {
             log.error("Failed to send email to: {} with subject: {}", to, subject, e);
-            return false;
+            return null;
         }
     }
 
