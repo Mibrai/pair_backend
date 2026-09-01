@@ -200,5 +200,13 @@ public enum ErrorCode {
     // du renvoi une porte dérobée de contournement du plafond d'essais.
     WATCH_RESEND_ALREADY_USED,
     // Le mot de passe du compte, exigé pour renvoyer le code, est faux.
-    WATCH_PASSWORD_REQUIRED
+    WATCH_PASSWORD_REQUIRED,
+
+    // — incidents (IncidentService) —
+    // Un incident visant une personne doit désigner qui : sans cible, il ne peut
+    // pas basculer dans la modération.
+    INCIDENT_PERSON_TARGET_REQUIRED,
+    // Un incident visant une personne demande une description : le signalement
+    // qu'il produit en modération ne peut pas être vide.
+    INCIDENT_DESCRIPTION_REQUIRED
 }

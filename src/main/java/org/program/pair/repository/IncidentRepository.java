@@ -11,4 +11,7 @@ public interface IncidentRepository extends JpaRepository<Incident, UUID> {
 
     /** Un incident « perdu en chemin » existe-t-il déjà pour cette veille ? Pour ne pas le journaliser deux fois. */
     boolean existsByWatchId(UUID watchId);
+
+    /** Mes incidents, du plus récent au plus ancien. */
+    java.util.List<Incident> findByUserIdOrderByCreatedAtDesc(UUID userId);
 }

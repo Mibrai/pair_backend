@@ -69,8 +69,9 @@ class WatchReturnLoopIntegrationTest extends AbstractIntegrationTest {
         returnLoopJob.tick();
         assertThat(etat(watchId)).isEqualTo(WatchState.ESCALATED);
         List<OutboxMessage> messages = outboxRepository.findByWatchId(watchId);
+        // Canal SMS éteint par défaut : seule l'alerte e-mail est déposée.
         assertThat(messages).extracting(OutboxMessage::getChannel)
-            .contains(OutboxChannel.SMS, OutboxChannel.EMAIL);
+            .containsOnly(OutboxChannel.EMAIL);
         // Le lien d'urgence naît avec l'alerte, pas avant.
         assertThat(watch(watchId).getPublicToken()).isNotNull();
     }
@@ -99,7 +100,7 @@ class WatchReturnLoopIntegrationTest extends AbstractIntegrationTest {
         returnLoopJob.tick();
         assertThat(outboxRepository.findByWatchId(watchId))
             .extracting(OutboxMessage::getChannel)
-            .contains(OutboxChannel.SMS, OutboxChannel.EMAIL);
+            .containsOnly(OutboxChannel.EMAIL);
     }
 
     @Test

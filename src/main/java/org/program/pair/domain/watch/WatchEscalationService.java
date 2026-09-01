@@ -59,6 +59,20 @@ public class WatchEscalationService {
     @Value("${pair.public.base-url:https://lien.meetdo.fun}")
     private String publicBaseUrl;
 
+    /**
+     * Le canal SMS est-il actif ? <b>Éteint par défaut.</b> La décision d'envoyer
+     * des SMS n'est pas tranchée ; en attendant, les alertes ne partent que par
+     * e-mail. L'infrastructure SMS (abstraction, outbox, gabarits) reste en place
+     * et prête : poser {@code WATCH_SMS_ENABLED=true} — et brancher un vrai
+     * fournisseur — suffira à l'allumer, sans retoucher ce code.
+     *
+     * <p>Cela n'exclut personne : un contact externe accepté a forcément un
+     * e-mail, puisque l'invitation d'un contact qui n'a qu'un téléphone est déjà
+     * refusée à la priorité 1.
+     */
+    @Value("${pair.watch.sms.enabled:false}")
+    private boolean smsEnabled;
+
     // ------------------------------------------------------------------ rappels
 
     /** Un rappel de retour à la personne veillée. Push time-sensitive, inscrit à la chronologie. */
@@ -194,7 +208,7 @@ public class WatchEscalationService {
                 Map.of("watchId", watchId.toString(), "lien", ctx.lienStatut()));
             return;
         }
-        if (notBlank(guardian.getPhone())) {
+        if (smsEnabled && notBlank(guardian.getPhone())) {
             outbox.enqueueSms(guardian.getPhone(),
                 AlertMessages.nonArriveeSms(ctx, null, heureDepart),
                 OutboxService.PRIORITE_ALERTE, watchId);
@@ -202,7 +216,7 @@ public class WatchEscalationService {
         if (notBlank(guardian.getEmail())) {
             String desabonnement = publicBaseUrl + "/public/guardian-consent/" + guardian.getConsentToken();
             outbox.enqueueEmail(guardian.getEmail(), "Non-arrivée — meetDo",
-                AlertMessages.alerteRetourEmailHtml(ctx, desabonnement),
+                AlertMessages.nonArriveeEmailHtml(ctx, null, heureDepart, desabonnement),
                 OutboxService.PRIORITE_EMAIL, watchId);
         }
     }
@@ -269,9 +283,9 @@ public class WatchEscalationService {
             return;
         }
 
-        // Contact externe : SMS et e-mail en parallèle, selon les canaux laissés.
+        // Contact externe : e-mail, et SMS en parallèle si le canal est actif.
         String desabonnement = publicBaseUrl + "/public/guardian-consent/" + guardian.getConsentToken();
-        if (notBlank(guardian.getPhone())) {
+        if (smsEnabled && notBlank(guardian.getPhone())) {
             outbox.enqueueSms(guardian.getPhone(), AlertMessages.alerteRetourSms(ctx),
                 OutboxService.PRIORITE_ALERTE, watchId);
         }
