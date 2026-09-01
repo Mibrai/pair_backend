@@ -144,6 +144,31 @@ public enum NotificationType {
     private static final java.util.Set<NotificationType> EMAILED = java.util.EnumSet.of(
         SLOT_CANCELLED, PROGRAM_CANCELLED, SCHEDULE_CHANGED);
 
+    /**
+     * Les notifications que le téléphone doit afficher même en mode Concentration.
+     *
+     * <p><b>Distinct de {@link #CRITICAL}, et pour une raison qui se joue sur deux
+     * appareils différents.</b> {@code isCritical()} décide si le <i>serveur</i>
+     * envoie malgré les heures de silence qu'il tient lui-même. Cet ensemble-ci
+     * décide si <i>iOS</i> affiche la notification malgré un mode Concentration que
+     * le serveur ne voit pas — via {@code interruption-level: time-sensitive} dans
+     * la charge APNs. L'un ne suffit pas sans l'autre : sans le premier, la push ne
+     * part pas ; sans le second, elle part mais reste retenue sur l'appareil.
+     *
+     * <p>C'est le mode d'échec le plus coûteux du module de veille : sans niveau
+     * time-sensitive, un mode Concentration retient les trois relances de retour ou
+     * les demandes d'arrivée — la personne ne voit rien, ne saisit rien — <b>et
+     * l'alerte au proche part quand même</b>. Un proche réveillé pour une
+     * notification que le téléphone avait décidé de ne pas montrer.
+     *
+     * <p>Réservé aux notifications de veille où ce coût existe : les relances de
+     * retour, les demandes d'arrivée, et l'alerte in-app à un contact membre. Pas
+     * la notification à l'organisateur d'un perdu-en-chemin, qui ne met personne en
+     * mouvement dans l'instant.
+     */
+    private static final java.util.Set<NotificationType> TIME_SENSITIVE = java.util.EnumSet.of(
+        WATCH_RETURN_REMINDER, WATCH_ARRIVAL_PROMPT, WATCH_GUARDIAN_ALERT);
+
     /** Vrai si cette notification passe outre les heures de silence. */
     public boolean isCritical() {
         return CRITICAL.contains(this);
@@ -152,5 +177,13 @@ public enum NotificationType {
     /** Vrai si cette notification part aussi par e-mail, en plus de la push. */
     public boolean warrantsEmail() {
         return EMAILED.contains(this);
+    }
+
+    /**
+     * Vrai si iOS doit l'afficher malgré un mode Concentration
+     * ({@code interruption-level: time-sensitive}). Voir {@link #TIME_SENSITIVE}.
+     */
+    public boolean isTimeSensitive() {
+        return TIME_SENSITIVE.contains(this);
     }
 }

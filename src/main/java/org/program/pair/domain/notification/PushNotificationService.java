@@ -164,7 +164,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
             sendToTokens(userId, tokens,
                 title(group.getKey(), type, payload),
                 body(group.getKey(), type, payload),
-                payload, badge);
+                type, payload, badge);
         }
     }
 
@@ -249,7 +249,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
     }
 
     private void sendToTokens(UUID userId, List<String> tokens, String title, String body,
-                              Map<String, Object> payload, int badge) {
+                              NotificationType type, Map<String, Object> payload, int badge) {
         MulticastMessage message = MulticastMessage.builder()
             .addAllTokens(tokens)
             .setNotification(com.google.firebase.messaging.Notification.builder()
@@ -261,20 +261,78 @@ public class PushNotificationService implements PushNotificationServiceInterface
             // messages non lus, ce qui part compris. Application fermée, aucun
             // code client ne s'exécute pour aller le chercher, et un champ absent
             // n'est pas neutre : iOS conserve alors la valeur précédente.
-            .setApnsConfig(ApnsConfig.builder()
-                .setAps(visibleAps(badge))
-                .build())
-            .setAndroidConfig(AndroidConfig.builder()
-                .setPriority(AndroidConfig.Priority.HIGH)
-                .setNotification(AndroidNotification.builder()
-                    .setSound("default")
-                    .setColor("#FF5722")
-                    .setNotificationCount(badge)
-                    .build())
-                .build())
+            .setApnsConfig(apnsConfig(type, payload, badge))
+            .setAndroidConfig(androidConfig(type, badge))
             .build();
 
         dispatch(userId, tokens, message);
+    }
+
+    /**
+     * La configuration APNs d'une push visible, selon son type.
+     *
+     * <p>Pour une notification de veille time-sensitive, trois choses de plus,
+     * chacune répondant à un mode d'échec précis :
+     *
+     * <ul>
+     *   <li><b>{@code interruption-level: time-sensitive}</b> (dans l'{@code aps},
+     *       via {@code visibleApsTimeSensitive}) — sans quoi un mode Concentration
+     *       retient la notification sur l'appareil, alors même que le serveur l'a
+     *       envoyée et que l'alerte au proche, elle, partira. C'est le point qui
+     *       compte le plus.</li>
+     *   <li><b>{@code apns-collapse-id: watch-<id>}</b> — les trois relances
+     *       successives se remplacent au lieu de s'empiler, et la clôture peut
+     *       retirer les rappels déjà délivrés : {@code removeDeliveredNotifications}
+     *       côté iOS demande l'identifiant que le serveur a posé, pas un identifiant
+     *       local que la charge APNs ne porte pas.</li>
+     *   <li><b>{@code apns-push-type: alert} et {@code apns-priority: 10}</b> — le
+     *       type et la priorité d'une push qui doit s'afficher tout de suite, à
+     *       l'opposé du {@code background}/{@code 5} d'une push silencieuse.</li>
+     * </ul>
+     *
+     * <p>Le {@code collapse-id} n'est posé que si la charge porte un
+     * {@code watchId} — jamais évincé, il n'est pas dans {@link #EVICTABLE_KEYS} —
+     * de sorte qu'une notification hors veille (qui n'en a pas) garde un envoi
+     * normal, sans regroupement fortuit.
+     */
+    private ApnsConfig apnsConfig(NotificationType type, Map<String, Object> payload, int badge) {
+        if (!type.isTimeSensitive()) {
+            return ApnsConfig.builder().setAps(visibleAps(badge)).build();
+        }
+
+        ApnsConfig.Builder builder = ApnsConfig.builder()
+            .putHeader("apns-push-type", "alert")
+            .putHeader("apns-priority", "10")
+            .setAps(visibleApsTimeSensitive(badge));
+
+        String watchId = payload == null ? null : String.valueOf(payload.get("watchId"));
+        if (watchId != null && !watchId.isBlank() && !"null".equals(watchId)) {
+            builder.putHeader("apns-collapse-id", "watch-" + watchId);
+        }
+        return builder.build();
+    }
+
+    /**
+     * La configuration Android. Pour une notification time-sensitive, la priorité
+     * maximale au niveau du message <b>et</b> de la notification : c'est ce qui, du
+     * côté Android, demande à passer devant un mode Ne pas déranger. Le
+     * franchissement effectif dépend aussi de l'importance du canal, posée par le
+     * client — le serveur pousse au maximum ce qu'il contrôle.
+     */
+    private AndroidConfig androidConfig(NotificationType type, int badge) {
+        AndroidNotification.Builder notif = AndroidNotification.builder()
+            .setSound("default")
+            .setColor("#FF5722")
+            .setNotificationCount(badge);
+        if (type.isTimeSensitive()) {
+            notif.setPriority(AndroidNotification.Priority.MAX)
+                .setDefaultSound(true)
+                .setDefaultVibrateTimings(true);
+        }
+        return AndroidConfig.builder()
+            .setPriority(AndroidConfig.Priority.HIGH)
+            .setNotification(notif.build())
+            .build();
     }
 
     /**
@@ -340,6 +398,26 @@ public class PushNotificationService implements PushNotificationServiceInterface
             .setSound("default")
             .setMutableContent(true)
             .setCategory(APNS_TEMPLATE_CATEGORY)
+            .build();
+    }
+
+    /**
+     * Bloc {@code aps} d'une push visible <b>time-sensitive</b> : celui de
+     * {@link #visibleAps}, plus {@code interruption-level: time-sensitive}.
+     *
+     * <p>La clé n'a pas de méthode dédiée dans le builder de firebase-admin ; elle
+     * est posée en donnée personnalisée de l'{@code aps} ({@code putCustomData}),
+     * ce qui produit exactement {@code "aps": { …, "interruption-level":
+     * "time-sensitive" }} dans la charge. C'est ce que lit iOS pour afficher malgré
+     * un mode Concentration.
+     */
+    static Aps visibleApsTimeSensitive(int badge) {
+        return Aps.builder()
+            .setBadge(badge)
+            .setSound("default")
+            .setMutableContent(true)
+            .setCategory(APNS_TEMPLATE_CATEGORY)
+            .putCustomData("interruption-level", "time-sensitive")
             .build();
     }
 
