@@ -12,4 +12,7 @@ public interface WatchEventRepository extends JpaRepository<WatchEvent, UUID> {
 
     /** La chronologie d'une veille, dans l'ordre où les faits se sont produits. */
     List<WatchEvent> findByWatchIdOrderByOccurredAtAsc(UUID watchId);
+
+    /** Ce fait a-t-il déjà été inscrit ? Pour ne pas prévenir deux fois le contact de secours. */
+    boolean existsByWatchIdAndType(UUID watchId, org.program.pair.domain.watch.WatchEventType type);
 }

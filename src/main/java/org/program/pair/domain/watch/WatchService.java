@@ -71,6 +71,7 @@ public class WatchService {
     private final ReturnCodeRepository returnCodeRepository;
     private final SlotAudience slotAudience;
     private final Pepper pepper;
+    private final WatchEscalationService escalation;
 
     // -------------------------------------------------------------------- armer
 
@@ -253,21 +254,31 @@ public class WatchService {
         boolean okDuress = pepper.correspond(saisi, sel, rc.getKeyVersion(), rc.getDuressHash());
 
         if (okNormal || okDuress) {
+            boolean alerteEtaitPartie = watch.getState() == WatchState.ESCALATED;
+
             // Le secret est consommé : la ligne est supprimée, pas marquée obsolète.
             returnCodeRepository.delete(rc);
             inscrire(watchId, WatchEventType.CLOSED_BY_CODE, req.enteredAt());
 
             if (okDuress) {
                 // Escalade en silence. L'état ESCALATED est le signal que les
-                // minuteurs de la priorité 4 reprendront pour envoyer l'alerte ;
-                // l'envoi lui-même se fait hors de cette transaction de réponse.
-                // On ne pose pas closedAt : la veille n'est pas réellement close.
+                // minuteurs reprendront pour prévenir le contact ; l'envoi lui-même
+                // se fait hors de cette transaction de réponse. On ne pose pas
+                // closedAt : la veille n'est pas réellement close.
                 watch.setState(WatchState.ESCALATED);
+            } else if (alerteEtaitPartie) {
+                // Une alerte était partie : la clôture est une levée. La veille est
+                // résolue, et le message ③ repart là où l'alerte est allée.
+                watch.setState(WatchState.RESOLVED);
+                watch.setClosedAt(req.enteredAt());
+                escalation.sendLevee(watch);
             } else {
+                // Aucune alerte n'était partie (au plus des rappels à soi-même) :
+                // clôture normale, personne à détromper.
                 watch.setState(WatchState.CLOSED);
                 watch.setClosedAt(req.enteredAt());
             }
-            // Succès, quel que soit le code : même statut, même corps, même travail.
+            // Succès, quel que soit le code : même statut HTTP, même corps.
             return new CloseOutcome(CloseStatus.CLOSED, rc.getAttemptsLeft());
         }
 

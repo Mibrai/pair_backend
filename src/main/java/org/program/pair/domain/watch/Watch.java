@@ -92,6 +92,14 @@ public class Watch {
     @Column(name = "closed_at")
     private Instant closedAt;
 
+    /**
+     * Le jeton de la page de statut publique. Nul jusqu'à l'escalade : le lien
+     * d'urgence naît avec l'alerte, pas à l'armement, pour que la veille ne
+     * devienne pas un mouchard qui montrerait au contact chaque soirée.
+     */
+    @Column(name = "public_token", length = 22)
+    private String publicToken;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
