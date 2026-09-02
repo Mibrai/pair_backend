@@ -286,7 +286,8 @@ public class WatchEscalationService {
                     AlertMessages.renoncementSms(ctx),
                     OutboxService.PRIORITE_ALERTE, watch.getId());
                 case EMAIL -> outbox.enqueueEmail(alerte.getRecipient(),
-                    "Plus d'inquiétude à avoir", AlertMessages.renoncementEmailHtml(ctx),
+                    AlertMessages.renoncementObjet(ctx),
+                    AlertMessages.renoncementEmailHtml(ctx),
                     OutboxService.PRIORITE_ALERTE, watch.getId());
             }
         }

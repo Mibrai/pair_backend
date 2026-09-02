@@ -432,6 +432,24 @@ public class WatchService {
      * retour » — écrite pour la boucle retour, elle est fausse de quelqu'un qui n'est
      * jamais parti. ⑦ dit qu'elle a renoncé, qu'il n'y a plus lieu de s'inquiéter, et
      * que le message précédent est sans objet.
+     *
+     * <p><b>Une asymétrie assumée, écrite ici pour qu'on la trouve plutôt qu'on la
+     * corrige.</b> C'est la seule surface du module où <b>un geste éteint une alerte
+     * déjà partie</b>, sans code ni vérification : refermer après une arrivée exige
+     * les cinq caractères du code de retour, qui prouve que c'est bien la personne
+     * qui referme, et connaît une variante sous contrainte. Ici, un appel suffit.
+     *
+     * <p>Ce n'est pas un oubli, et les trois remèdes sont pires. Demander un code
+     * est impossible : sans arrivée validée il n'en existe aucun — c'est la
+     * définition de cette branche — donc aucun code de contrainte non plus. Exiger
+     * le mot de passe, comme le renvoi de code, poserait une porte de plus sur la
+     * même pièce et découragerait le geste au moment précis où il doit être facile.
+     * Et ne rien accepter était l'impasse qu'on vient de refermer : une veille
+     * escaladée sans arrivée n'avait aucune sortie, et bloquait son créneau.
+     *
+     * <p>Le cas se raréfie de lui-même : il faut qu'une alerte soit sortie sur une
+     * veille sans arrivée, ce que {@link WatchState#NOT_ARRIVED} rend impossible aux
+     * veilles neuves. Il ne reste que les héritées.
      */
     public WatchDto abandon(UUID userId, UUID watchId) {
         Watch watch = exigerVeille(userId, watchId);
