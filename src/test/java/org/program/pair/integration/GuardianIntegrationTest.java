@@ -230,6 +230,153 @@ class GuardianIntegrationTest extends AbstractIntegrationTest {
             .expectBody().jsonPath("$.length()").isEqualTo(0);
     }
 
+    // ------------------------------------------------------- le rôle (A2, 02/09)
+
+    /**
+     * Poser un rôle le retire à celui qui le portait, dans le même appel.
+     *
+     * <p>Sans cette atomicité, l'appelant devrait libérer puis poser, et la fenêtre
+     * entre les deux laisse un compte sans principal si le second appel échoue.
+     */
+    @Test
+    void poserUnPrincipal_leRetireAuPrecedent() {
+        Compte moi = compte();
+        String premier = creerContactEmail(moi, "Ana", "ana@example.org");
+        String second = creerContactEmail(moi, "Bo", "bo@example.org");
+
+        poserRole(moi, premier, "PRIMARY");
+        assertThat(roleDe(moi, premier)).isEqualTo("PRIMARY");
+
+        poserRole(moi, second, "PRIMARY");
+        assertThat(roleDe(moi, second)).isEqualTo("PRIMARY");
+        assertThat(roleDe(moi, premier))
+            .as("le précédent principal est libéré, pas laissé en double")
+            .isEqualTo("NONE");
+    }
+
+    /**
+     * L'invariant tenu par la base, et non par le client.
+     *
+     * <p>L'app garantit déjà l'unicité de son côté, mais deux appareils connectés au
+     * même compte peuvent poser deux principaux sans jamais se croiser. Un invariant
+     * que seul le client tient ne survit pas au second client.
+     */
+    @Test
+    void auPlusUnPrincipalEtUnSecours_parPersonne() {
+        Compte moi = compte();
+        String a = creerContactEmail(moi, "Ana", "ana2@example.org");
+        String b = creerContactEmail(moi, "Bo", "bo2@example.org");
+        String c = creerContactEmail(moi, "Cy", "cy2@example.org");
+
+        poserRole(moi, a, "PRIMARY");
+        poserRole(moi, b, "BACKUP");
+        poserRole(moi, c, "PRIMARY");
+
+        assertThat(rolesDe(moi)).containsExactlyInAnyOrder("NONE", "BACKUP", "PRIMARY");
+    }
+
+    /** Un contact déplacé du principal vers le secours cesse d'être principal. */
+    @Test
+    void unContactNePeutPasEtreLesDeuxALaFois() {
+        Compte moi = compte();
+        String seul = creerContactEmail(moi, "Ana", "ana3@example.org");
+
+        poserRole(moi, seul, "PRIMARY");
+        poserRole(moi, seul, "BACKUP");
+
+        assertThat(roleDe(moi, seul)).isEqualTo("BACKUP");
+        assertThat(rolesDe(moi)).containsExactly("BACKUP");
+    }
+
+    /**
+     * Le rôle ne survit pas au refus.
+     *
+     * <p>Un principal qui a dit non est un réglage qui pointe dans le vide : la
+     * feuille d'armement le proposerait en premier et l'armement le refuserait. Un
+     * choix absent se voit ; un choix mort ne se voit pas.
+     */
+    @Test
+    void leRoleSeLibereQuandLeContactRefuse() {
+        Compte moi = compte();
+        String contact = creerContactEmail(moi, "Ana", "ana4@example.org");
+        poserRole(moi, contact, "PRIMARY");
+
+        String token = guardianRepository.findByIdAndOwnerId(UUID.fromString(contact), moi.id())
+            .orElseThrow().getConsentToken();
+        webTestClient.post().uri("/public/guardian-consent/{t}/refuse", token)
+            .exchange().expectStatus().isOk();
+
+        assertThat(roleDe(moi, contact)).isEqualTo("NONE");
+    }
+
+    /** Et il ne se pose pas sur quelqu'un qui a déjà refusé. */
+    @Test
+    void unContactRefuse_nePrendPasDeRole() {
+        Compte moi = compte();
+        String contact = creerContactEmail(moi, "Ana", "ana5@example.org");
+        String token = guardianRepository.findByIdAndOwnerId(UUID.fromString(contact), moi.id())
+            .orElseThrow().getConsentToken();
+        webTestClient.post().uri("/public/guardian-consent/{t}/refuse", token)
+            .exchange().expectStatus().isOk();
+
+        webTestClient.put().uri("/api/guardians/{id}/role", contact)
+            .headers(h -> h.setBearerAuth(moi.token()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("role", "PRIMARY"))
+            .exchange().expectStatus().is4xxClientError();
+    }
+
+    /** Le rôle appartient au parrain : personne d'autre ne le pose. */
+    @Test
+    void leRoleNestPosableQueParSonProprietaire() {
+        Compte moi = compte();
+        Compte autre = compte();
+        String contact = creerContactEmail(moi, "Ana", "ana6@example.org");
+
+        webTestClient.put().uri("/api/guardians/{id}/role", contact)
+            .headers(h -> h.setBearerAuth(autre.token()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("role", "PRIMARY"))
+            .exchange().expectStatus().isNotFound();
+    }
+
+    /** Un contact sans rôle rend NONE, jamais l'absence de champ. */
+    @Test
+    void leRoleEstToujoursServi_NONE_parDefaut() {
+        Compte moi = compte();
+        creerContactEmail(moi, "Ana", "ana7@example.org");
+        assertThat(rolesDe(moi)).containsExactly("NONE");
+    }
+
+    private void poserRole(Compte owner, String guardianId, String role) {
+        webTestClient.put().uri("/api/guardians/{id}/role", guardianId)
+            .headers(h -> h.setBearerAuth(owner.token()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("role", role))
+            .exchange().expectStatus().isOk();
+    }
+
+    @SuppressWarnings("unchecked")
+    private java.util.List<String> rolesDe(Compte owner) {
+        java.util.List<Map<String, Object>> liste = webTestClient.get().uri("/api/guardians")
+            .headers(h -> h.setBearerAuth(owner.token()))
+            .exchange().expectStatus().isOk()
+            .expectBody(java.util.List.class).returnResult().getResponseBody();
+        return liste.stream().map(m -> String.valueOf(m.get("role"))).toList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private String roleDe(Compte owner, String guardianId) {
+        java.util.List<Map<String, Object>> liste = webTestClient.get().uri("/api/guardians")
+            .headers(h -> h.setBearerAuth(owner.token()))
+            .exchange().expectStatus().isOk()
+            .expectBody(java.util.List.class).returnResult().getResponseBody();
+        return liste.stream()
+            .filter(m -> guardianId.equals(String.valueOf(m.get("id"))))
+            .map(m -> String.valueOf(m.get("role")))
+            .findFirst().orElseThrow();
+    }
+
     // ------------------------------------------------------------------ outils
 
     private String creerContactEmail(Compte owner, String name, String email) {

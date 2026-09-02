@@ -7,7 +7,23 @@ import java.util.UUID;
 
 public record SearchResultDto(
     // — commun user / program / slot —
-    @Schema(allowableValues = {"user", "program", "slot"})
+    /**
+     * Le type du résultat.
+     *
+     * <p><b>{@code "user"} a été retiré le 02/09, et c'est une correction de
+     * contrat, pas une régression.</b> La valeur était déclarée depuis l'origine, et
+     * aucun code n'en produisait : les trois producteurs rendent {@code "slot"} ou
+     * {@code "program"}. Une fabrique {@code forUser} existait même, sans appelant.
+     * Un client a écrit un onglet « personnes » sur la foi de cette énumération,
+     * l'a vu rester vide, et n'a pu le découvrir qu'en interrogeant la production —
+     * aucune erreur ne pouvait le signaler. Une valeur qu'aucun code n'émet n'est
+     * pas « réservée », elle est fausse ; on la retire plutôt que de la documenter.
+     *
+     * <p>Le jour où la recherche de personnes existera, elle reviendra avec le code
+     * qui la produit — et vraisemblablement sans contrainte géographique : chercher
+     * quelqu'un par son nom n'a rien de local.
+     */
+    @Schema(allowableValues = {"program", "slot"})
     String resultType,
     UUID id,
     String title,
@@ -62,19 +78,4 @@ public record SearchResultDto(
     @Schema(description = "Capacité du créneau, pour afficher par ex. \"3 / 8\".")
     Integer maxParticipants
 ) {
-    /** Constructeur court pour les résultats de type "user" (champs program/slot à null). */
-    public static SearchResultDto forUser(
-            UUID id, String displayName, String avatarUrl,
-            Double lat, Double lng, Double distanceMeters,
-            String activityName, String level, String format,
-            boolean isOnline, String verificationStatus) {
-        return new SearchResultDto(
-            "user", id, displayName, null, avatarUrl,
-            lat, lng, distanceMeters, 0f,
-            activityName, level, format, isOnline, verificationStatus,
-            null, null, null, null, null, null, null,
-            null, null, null, null, null, null, null, null,
-            null, null, null
-        );
-    }
 }

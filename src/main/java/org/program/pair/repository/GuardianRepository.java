@@ -1,6 +1,7 @@
 package org.program.pair.repository;
 
 import org.program.pair.domain.guardian.ConsentState;
+import org.program.pair.domain.guardian.GuardianRole;
 import org.program.pair.domain.guardian.Guardian;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -28,4 +29,7 @@ public interface GuardianRepository extends JpaRepository<Guardian, UUID> {
 
     /** Les contacts acceptés d'un utilisateur : les seuls qu'une veille peut prendre. */
     List<Guardian> findByOwnerIdAndConsentState(UUID ownerId, ConsentState consentState);
+
+    /** Le contact qui porte ce rôle chez cette personne, s'il y en a un. Au plus un. */
+    Optional<Guardian> findByOwnerIdAndRole(UUID ownerId, GuardianRole role);
 }

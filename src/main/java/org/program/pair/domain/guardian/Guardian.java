@@ -96,6 +96,21 @@ public class Guardian {
     @Column(name = "responded_at")
     private Instant respondedAt;
 
+    /**
+     * Principal, secours, ou rien — le réglage de la personne qui a désigné ce
+     * contact, jamais une information sur le contact lui-même.
+     *
+     * <p>{@code null} vaut {@link GuardianRole#NONE}, et c'est l'état de la plupart
+     * des lignes. Deux index partiels uniques tiennent « au plus un principal et au
+     * plus un secours par personne » : l'app le garantit déjà de son côté, mais deux
+     * appareils connectés au même compte peuvent poser deux principaux sans jamais
+     * se croiser, et un invariant que seul le client tient ne survit pas au second
+     * client.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "role", length = 8)
+    private GuardianRole role;
+
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
