@@ -246,11 +246,37 @@ du mauvais côté pour une valeur d'énumération neuve — et c'est préciséme
 le §2 raconte, sous une autre forme : notre valeur par défaut à nous était
 enfouie dans un index SQL.
 
-**Le relevé des ② parasites est chez nous, vous avez raison** et nous n'aurions
-pas dû vous le demander : vous n'avez pas les journaux, et l'app ne garde aucune
-trace d'un message envoyé à un tiers. Nous le prenons en charge. Votre précision
-sur vos deux comptes de test est utile : elle écarte la source la plus probable,
-et resserre la recherche sur les comptes réels.
+**Le relevé des ② parasites est fait, et la réponse est zéro.** Vous aviez raison
+de nous le renvoyer : nous n'aurions pas dû vous le demander, vous n'avez ni les
+journaux ni la trace d'un message envoyé à un tiers.
+
+Nous l'avons donc fait, et la première chose que nous y avons apprise nous
+concerne : **nos journaux ne pouvaient pas répondre non plus.** L'envoi d'une
+notification est inscrit en `debug`, aucun niveau de journalisation n'est
+configuré, donc rien n'est émis en production ; l'outbox ne journalise que les
+échecs ; la boucle retour ne journalise qu'un compteur, sans identifiant. Un
+message parti normalement ne laisse aucune trace lisible. La réponse est venue de
+la base, pas des journaux — et nous ajoutons une inscription au niveau `info` sur
+l'envoi effectif, sans coordonnée, parce qu'un module de sécurité qui ne peut pas
+dire *a posteriori* « une alerte est partie à tel contact pour telle veille » se
+prive de tout audit.
+
+**Le relevé lui-même : aucune alerte retour n'est partie sur une non-arrivée.**
+Trois non-arrivées en base, zéro touchée — ni contact membre, ni contact externe.
+Le défaut que nous vous avons décrit était réel dans le code et il l'est
+toujours ; il n'a simplement **jamais été atteint**, faute d'une veille armée avec
+un contact membre sur une séance manquée. Votre précision sur vos deux comptes de
+test disait exactement cela, et elle valait pour la production entière. Personne
+n'a été réveillé pour rien.
+
+**En revanche le relevé a trouvé autre chose, et c'est votre §2.4 qui est
+confirmé.** Une veille de la nuit dernière porte une alerte retour ② partie
+**onze secondes après son armement**, sur un compte dont l'arrivée n'a jamais été
+validée. Aucun minuteur ne peut produire cela : c'est « prévenir maintenant »,
+pressé sur le trajet aller. Le contact a reçu « n'est pas rentrée » à propos de
+quelqu'un qui venait d'armer une veille et n'était pas encore parti. C'était un
+essai, pas un incident — mais le geste que vous nous demandiez d'interdire au
+serveur n'était pas une hypothèse : il a été fait, et il est parti.
 
 **Votre §4 sur le « Bien rentrée »** — nous l'avons verrouillé par un test
 unitaire dédié qui n'affirme pas seulement le bon état, mais **interdit
@@ -273,6 +299,7 @@ vérifier une page publique qui annonce une bonne nouvelle.
 | `POST /watches/{id}/panic` | **`409 WATCH_NOT_ON_SITE`** tant que `arrivalConfirmedAt` est nul |
 | `POST /watches/{id}/abandon` | **accepte `ESCALATED` sans arrivée** : referme en `NOT_ARRIVED`, et fait partir la levée si une alerte était sortie (§4) |
 | Contrat OpenAPI | **les états acceptés sont écrits sur chaque verbe**, avec le code d'erreur du refus (§5) |
+| Journalisation | l'envoi effectif d'une alerte est inscrit en `info`, sans coordonnée — il ne l'était nulle part (§7) |
 | Page publique | `NOT_ARRIVED` → **« En trajet »**. Un `ESCALATED` hérité sans arrivée aussi |
 | `resend-code`, ①②③④, boucle retour, série, journal | **inchangés** |
 
