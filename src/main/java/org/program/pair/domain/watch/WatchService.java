@@ -85,6 +85,13 @@ public class WatchService {
     private String publicBaseUrl;
 
     /** Trajet de retour par défaut, et ses bornes de bon sens (§7.5). */
+    /**
+     * Combien de temps une non-arrivée reste rendue par « mes veilles actives »
+     * après sa clôture. Elle est terminale, mais c'est le seul endroit où la
+     * personne concernée l'apprend — voir {@link #listActive}.
+     */
+    private static final Duration NON_ARRIVEE_VISIBLE = Duration.ofHours(24);
+
     private static final int TRAJET_DEFAUT_MIN = 45;
     private static final int TRAJET_MIN = 15;
     private static final int TRAJET_MAX = 240;
@@ -157,9 +164,25 @@ public class WatchService {
 
     // ------------------------------------------------------------------- lire
 
+    /**
+     * « Mes veilles actives » : les veilles vivantes, plus les non-arrivées
+     * refermées depuis moins de 24 h.
+     *
+     * <p>Une non-arrivée est terminale et n'aurait donc rien à faire ici — sauf que
+     * cette liste est le seul endroit où la personne concernée apprend que sa soirée
+     * a été classée perdue en chemin. Après T+45, l'organisateur est prévenu par une
+     * notification ; elle, rien ne le lui dirait. Vingt-quatre heures suffisent :
+     * passé ce délai la veille ne vit plus que dans le journal, qui est sa place.
+     *
+     * <p>La ligne rendue porte {@code closedAt} non nul et {@code alertDelivery} à
+     * {@code NONE} — aucun message n'est parti — et {@code publicToken} nul :
+     * aucun jeton n'est créé sur cette branche.
+     */
     @Transactional(readOnly = true)
     public List<WatchDto> listActive(UUID userId) {
-        return watchRepository.findByUserIdAndStateNotInOrderByArmedAtDesc(userId, WatchState.TERMINAUX)
+        return watchRepository.findActivesEtNonArriveesRecentes(
+                userId, WatchState.TERMINAUX, WatchState.NOT_ARRIVED,
+                Instant.now().minus(NON_ARRIVEE_VISIBLE))
             .stream().map(this::dto).toList();
     }
 
@@ -383,13 +406,45 @@ public class WatchService {
      * <p>Se décommander à l'avance n'est pas manquer à sa parole. Aucune ligne
      * {@code Attendance} n'est écrite, aucun contact n'est prévenu : la veille se
      * referme, un point c'est tout.
+     *
+     * <p><b>Accepté aussi sur une veille escaladée sans arrivée validée</b>, et
+     * c'est une porte de secours, pas un élargissement de confort. Une veille
+     * arrivée là par l'ancienne boucle aller n'avait <b>aucune sortie</b> : l'arrivée
+     * est refusée (l'état n'est plus en attente d'arrivée), le snooze et
+     * l'interruption supposent d'être sur place, le désarmement ne vaut qu'en
+     * {@code ARMED}, et la clôture réclame un code qui n'a jamais existé. La veille
+     * restait ouverte indéfiniment et bloquait l'armement d'une nouvelle sur le même
+     * créneau. Ces veilles-là existent en production ; {@link WatchState#NOT_ARRIVED}
+     * empêche qu'il s'en crée d'autres, il ne libère pas celles qui y sont.
+     *
+     * <p><b>Elle se referme en {@code NOT_ARRIVED}, jamais en {@code CLOSED}.</b>
+     * Ces veilles ont un jeton public distribué — l'ancienne branche en créait un —
+     * et {@code CLOSED} est terminal : la page publique dirait « Bien rentrée » au
+     * proche de quelqu'un qui n'est jamais arrivé.
+     *
+     * <p><b>Si une alerte était réellement partie, la clôture est une levée.</b>
+     * C'est la règle que le module applique déjà à la clôture par code, et elle vaut
+     * ici pour la même raison : ces veilles ont fait partir le message ⑤, et un
+     * proche prévenu que quelqu'un n'est pas arrivé doit apprendre que c'est fini.
+     * Sans cela il resterait sur la dernière chose qu'on lui a dite.
      */
     public WatchDto abandon(UUID userId, UUID watchId) {
         Watch watch = exigerVeille(userId, watchId);
-        exigerTrajetAller(watch);
+        boolean escaladeSansArrivee = watch.getState() == WatchState.ESCALATED
+            && watch.getArrivalConfirmedAt() == null;
+        if (!escaladeSansArrivee) {
+            exigerTrajetAller(watch);
+        }
 
         Instant now = Instant.now();
-        watch.setState(WatchState.CLOSED);
+        if (escaladeSansArrivee) {
+            if (!outboxRepository.findByWatchId(watchId).isEmpty()) {
+                escalation.sendLevee(watch);
+            }
+            watch.setState(WatchState.NOT_ARRIVED);
+        } else {
+            watch.setState(WatchState.CLOSED);
+        }
         watch.setClosedAt(now);
         inscrire(watchId, WatchEventType.ABANDONED, now);
         return dto(watch);
@@ -599,12 +654,35 @@ public class WatchService {
         return dto(watch);
     }
 
-    /** Panic : le message part immédiatement, sans attendre l'échéance ni les rappels. */
+    /**
+     * Panic : le message part immédiatement, sans attendre l'échéance ni les rappels.
+     *
+     * <p><b>Refusé tant que l'arrivée n'est pas validée</b>, depuis la décision du
+     * 02/09. Le bouton signale un souci <em>au lieu de l'activité</em> : il suppose
+     * qu'on y soit. L'app ne le propose plus sur le trajet aller, mais le refus
+     * serveur n'est pas une redondance — une app plus ancienne, un rejeu de file
+     * hors ligne ou un bouton d'écran verrouillé oublié suffiraient à faire partir
+     * le message que cette décision retire.
+     *
+     * <p><b>Le critère est {@code arrivalConfirmedAt}, pas l'état</b>, et l'on
+     * n'emploie donc pas {@link #exigerSurPlace} : ce garde refuse {@code ESCALATED},
+     * ce qui retirerait le bouton d'alerte à une personne bien arrivée dont la veille
+     * a déjà escaladé faute de retour confirmé — au moment précis où elle en a le
+     * plus besoin.
+     *
+     * <p>Ce refus est aussi ce qui rend la page publique sans ambiguïté : un
+     * {@code ESCALATED} sans arrivée validée ne peut plus être qu'une non-arrivée
+     * héritée, jamais un panic.
+     */
     public WatchDto panic(UUID userId, UUID watchId) {
         Watch watch = exigerVeille(userId, watchId);
         if (!watch.estActive()) {
             throw new ConflictException(ErrorCode.WATCH_NOT_DISARMABLE,
                 "Cette veille est déjà close.");
+        }
+        if (watch.getArrivalConfirmedAt() == null) {
+            throw new ConflictException(ErrorCode.WATCH_NOT_ON_SITE,
+                "Ce geste suppose une arrivée validée.");
         }
         watch.setState(WatchState.ESCALATED);
         inscrire(watchId, WatchEventType.PANIC_TRIGGERED, Instant.now());

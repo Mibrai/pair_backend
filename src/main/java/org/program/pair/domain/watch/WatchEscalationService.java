@@ -151,15 +151,31 @@ public class WatchEscalationService {
     /**
      * Perdu en chemin : trois demandes d'arrivée sans réponse.
      *
-     * <p>Trois choses partent, et une seule ne part pas. L'organisateur reçoit une
-     * notification in-app — le nom, l'absence de validation, l'heure — et rien
-     * d'autre : ni le lieu de départ, ni le contact, ni la position ne le
-     * regardent, et il ne reçoit aucun des SMS d'alerte. Le contact reçoit le
-     * message ⑤ (non-arrivée, distincte de la non-retour). Un incident est
+     * <p><b>Personne n'est prévenu, et c'est la décision du 02/09.</b> Quelqu'un qui
+     * n'a jamais validé son arrivée ne fait plus prévenir son contact d'urgence :
+     * personne n'est parti, il n'y a ni trajet à surveiller, ni dernier signe de vie
+     * à transmettre, ni lieu où chercher. Le gabarit ⑤ ne part plus, et
+     * <b>aucun jeton public n'est créé</b> — le contrat dit « le lien naît à
+     * l'alerte » ; sans alerte, un jeton qui existerait sans destinataire ne
+     * pourrait que fuir. Le prix est assumé : quelqu'un à qui il arrive réellement
+     * quelque chose <em>en chemin</em> ne sera pas signalé par la veille.
+     *
+     * <p>Restent deux choses. L'organisateur reçoit une notification in-app — le
+     * nom, l'absence de validation, l'heure — et rien d'autre : ni le lieu de
+     * départ, ni le contact, ni la position ne le regardent. Un incident est
      * journalisé. Ce qui ne part <b>jamais</b>, c'est une ligne {@code Attendance} :
      * un perdu en chemin ne compte ni comme une absence, ni contre la fiabilité, la
      * série ou les badges — sinon le produit punit quelqu'un pour un incident de
      * sécurité.
+     *
+     * <p><b>L'état posé est {@link WatchState#NOT_ARRIVED}, pas {@code ESCALATED}, et
+     * c'est ce qui empêche l'alerte de repartir par la bande.</b> {@code ESCALATED}
+     * est balayé par {@code WatchReturnLoopJob} : la veille y aurait été reprise à
+     * son échéance — fin de créneau plus une heure — et {@code ensureAlerted} aurait
+     * envoyé l'alerte retour ②, puis le contact de secours à +75 min. Le seul
+     * garde-fou qui l'en empêchait jusqu'ici était l'outbox non vide, c'est-à-dire
+     * un effet de bord du message ⑤ qu'on vient de retirer — et il ne tenait déjà
+     * pas quand le contact est un membre, ⑤ ne déposant alors rien dans l'outbox.
      *
      * <p>Idempotent : l'incident déjà journalisé pour cette veille tient lieu de
      * garde.
@@ -167,9 +183,6 @@ public class WatchEscalationService {
     public void escalateNonArrival(Watch watch) {
         if (incidentRepository.existsByWatchId(watch.getId())) {
             return;
-        }
-        if (watch.getPublicToken() == null) {
-            watch.setPublicToken(ShareToken.nextUnique(watchRepository::existsByPublicToken));
         }
 
         AlertMessages.Contexte ctx = contexte(watch);
@@ -185,41 +198,18 @@ public class WatchEscalationService {
                            ? watch.getOccurrenceStartsAt().toString() : ""));
         }
 
-        // Le contact : message ⑤, SMS et e-mail selon les canaux. Le lieu de départ
-        // n'est pas connu (aucune adresse de domicile stockée) ; l'heure de départ
-        // est celle de l'armement.
-        prevenirNonArrivee(watch.getGuardianId(), watch.getId(), ctx, watch.getArmedAt());
-
         // L'incident, jamais une absence.
         incidentRepository.save(Incident.lostOnTheWay(
             watch.getUserId(), watch.getId(), watch.getScheduleId()));
 
-        watch.setState(WatchState.ESCALATED);
-        inscrire(watch.getId(), WatchEventType.LOST_ON_THE_WAY, Instant.now());
-    }
-
-    private void prevenirNonArrivee(UUID guardianId, UUID watchId,
-                                    AlertMessages.Contexte ctx, Instant heureDepart) {
-        Guardian guardian = guardianRepository.findById(guardianId).orElse(null);
-        if (guardian == null) {
-            return;
-        }
-        if (guardian.isMember()) {
-            notificationService.notify(guardian.getMemberId(), NotificationType.WATCH_GUARDIAN_ALERT,
-                Map.of("watchId", watchId.toString(), "lien", ctx.lienStatut()));
-            return;
-        }
-        if (smsEnabled && notBlank(guardian.getPhone())) {
-            outbox.enqueueSms(guardian.getPhone(),
-                AlertMessages.nonArriveeSms(ctx, null, heureDepart),
-                OutboxService.PRIORITE_ALERTE, watchId);
-        }
-        if (notBlank(guardian.getEmail())) {
-            String desabonnement = publicBaseUrl + "/public/guardian-consent/" + guardian.getConsentToken();
-            outbox.enqueueEmail(guardian.getEmail(), "Non-arrivée — meetDo",
-                AlertMessages.nonArriveeEmailHtml(ctx, null, heureDepart, desabonnement),
-                OutboxService.PRIORITE_EMAIL, watchId);
-        }
+        // Refermée côté serveur : il n'y a plus rien à surveiller, et sans cela la
+        // veille resterait ouverte indéfiniment — la boucle aller ne balaie que
+        // ARMED et EN_ROUTE. closedAt date aussi la fenêtre de 24 h pendant laquelle
+        // « mes veilles actives » la rend encore, pour que la personne l'apprenne.
+        Instant now = Instant.now();
+        watch.setState(WatchState.NOT_ARRIVED);
+        watch.setClosedAt(now);
+        inscrire(watch.getId(), WatchEventType.LOST_ON_THE_WAY, now);
     }
 
     private static UUID organisateurDe(Schedule slot) {
@@ -263,7 +253,7 @@ public class WatchEscalationService {
     }
 
     /**
-     * ⑤ « Je suis bien rentrée » — annonce demandée par la personne veillée.
+     * ⑥ « Je suis bien rentrée » — annonce demandée par la personne veillée.
      *
      * <p><b>Ce que cette méthode n'est pas.</b> Elle n'est pas une notification de
      * fin de veille, et rien ici ne l'appelle de lui-même : elle ne part que sur un
