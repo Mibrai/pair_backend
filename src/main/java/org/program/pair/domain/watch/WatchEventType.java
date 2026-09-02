@@ -81,5 +81,19 @@ public enum WatchEventType {
      * la relance d'arrivée de 15 min. L'organisateur ne valide pas l'arrivée et ne
      * crée aucun code — ce geste appartient à l'intéressée seule.
      */
-    SEEN_BY_HOST
+    SEEN_BY_HOST,
+
+    /**
+     * La personne a demandé, en refermant, qu'on annonce son retour à son contact,
+     * et le message est parti.
+     *
+     * <p><b>Inscrit parce qu'un message est parti vers un tiers.</b> Le journal doit
+     * porter tout envoi sortant : c'est ce qui permet de répondre plus tard à
+     * « qu'est-ce qui a été dit de moi, et à qui ». Une trace d'autant plus due que
+     * cet envoi-ci est le seul du module qu'aucun incident ne motive.
+     *
+     * <p>Le journal est rendu au seul propriétaire de la veille : l'inscrire ne dit
+     * rien à personne d'autre.
+     */
+    RETURN_ANNOUNCED
 }

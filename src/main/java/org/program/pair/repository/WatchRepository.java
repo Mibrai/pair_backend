@@ -3,6 +3,8 @@ package org.program.pair.repository;
 import org.program.pair.domain.watch.Watch;
 import org.program.pair.domain.watch.WatchState;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
@@ -18,6 +20,33 @@ public interface WatchRepository extends JpaRepository<Watch, UUID> {
 
     /** Les veilles terminées de l'appelant : le journal. */
     List<Watch> findByUserIdAndStateInOrderByArmedAtDesc(UUID userId, Collection<WatchState> etats);
+
+    /**
+     * L'issue de chaque veille de l'appelant, de la plus récente à la plus
+     * ancienne : deux booléens par veille — a-t-elle été refermée par un code,
+     * et a-t-elle mal fini.
+     *
+     * <p><b>Sur les événements, jamais sur l'état.</b> C'est la condition pour que
+     * la série de retours confirmés ne trahisse pas une clôture sous contrainte :
+     * celle-ci laisse la veille en {@code ESCALATED}, mais écrit le même
+     * {@code CLOSED_BY_CODE} qu'une clôture normale. Compter les états ferait
+     * repartir la série à zéro sur cet écran-là, devant la personne qui contraint.
+     *
+     * <p>Rendu brut plutôt que projeté : la règle qui transforme cette liste en un
+     * entier vit dans le service, et elle est trop peu SQL pour y être écrite.
+     */
+    @Query(value = """
+        SELECT w.id,
+               EXISTS (SELECT 1 FROM watch_events e
+                       WHERE e.watch_id = w.id AND e.type = 'CLOSED_BY_CODE') AS confirme,
+               EXISTS (SELECT 1 FROM watch_events e
+                       WHERE e.watch_id = w.id
+                         AND e.type IN ('ESCALATED', 'ABANDONED', 'LOST_ON_THE_WAY')) AS rompu
+        FROM watches w
+        WHERE w.user_id = :userId
+        ORDER BY w.armed_at DESC
+        """, nativeQuery = true)
+    List<Object[]> issuesDesVeilles(@Param("userId") UUID userId);
 
     /** Les veilles d'un créneau dans certains états : les arrivées en attente, pour l'organisateur. */
     List<Watch> findByScheduleIdAndStateIn(UUID scheduleId, Collection<WatchState> etats);

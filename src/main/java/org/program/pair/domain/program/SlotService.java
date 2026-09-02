@@ -74,6 +74,8 @@ public class SlotService {
     private final ScheduleConflictDetector conflictDetector;
     private final BlockFilterService blockFilterService;
     private final HtmlSanitizer sanitizer;
+    private final ParticipantCounter participantCounter;
+    private final WaitlistPromoter waitlistPromoter;
 
     @Transactional(readOnly = true)
     public List<SlotFeedItemDto> getSlotFeed(SlotFeedRequest request, UUID requesterId) {
@@ -203,11 +205,7 @@ public class SlotService {
         }
         participationRepository.save(participation);
 
-        long confirmed = scheduleRepository.countConfirmedParticipants(scheduleId);
-        slot.setParticipantCount((int) confirmed);
-        if (slot.getMaxParticipants() != null && confirmed >= slot.getMaxParticipants()) {
-            slot.setStatus(SlotStatus.FULL);
-        }
+        participantCounter.refresh(slot);
         scheduleRepository.save(slot);
 
         // Ouvrir la conversation contextualisée (respecte receiveMessages de l'hôte).
@@ -268,14 +266,9 @@ public class SlotService {
         participationRepository.save(participation);
 
         if (wasConfirmed) {
-            promoteFirstWaiting(slot);
+            waitlistPromoter.promoteFirstWaiting(slot);
         }
-        long confirmed = scheduleRepository.countConfirmedParticipants(slot.getId());
-        slot.setParticipantCount((int) confirmed);
-        if (slot.getStatus() == SlotStatus.FULL
-                && (slot.getMaxParticipants() == null || confirmed < slot.getMaxParticipants())) {
-            slot.setStatus(SlotStatus.OPEN);
-        }
+        participantCounter.refresh(slot);
         scheduleRepository.save(slot);
     }
 
@@ -354,7 +347,7 @@ public class SlotService {
         participation.setWaitlistPosition(null);
         participationRepository.save(participation);
 
-        resequenceWaitlist(slot.getId());
+        waitlistPromoter.resequence(slot.getId());
     }
 
     /**
@@ -381,66 +374,6 @@ public class SlotService {
                 p.getJoinMessage(),
                 p.getCreatedAt()))
             .toList();
-    }
-
-    /**
-     * Une place s'est libérée : la première personne de la file y entre.
-     *
-     * <p>Appelée sous le verrou pessimiste du créneau, et seulement là. C'est ce
-     * qui empêche deux désistements simultanés de promouvoir la même personne ou
-     * de sauter un rang.
-     *
-     * <p><b>Le conflit d'agenda est vérifié ici, et pas à l'inscription en
-     * file.</b> Attendre n'est pas s'engager : interdire de patienter sur deux
-     * créneaux qui se chevauchent viderait la liste d'attente de son usage, qui
-     * est précisément de garder plusieurs fers au feu. Mais promouvoir quelqu'un
-     * qui s'est engagé ailleurs entre-temps créerait un double engagement qu'il
-     * n'a pas choisi — on passe donc au suivant, en le laissant dans la file.
-     */
-    private void promoteFirstWaiting(Schedule slot) {
-        if (slot.getMaxParticipants() != null
-                && scheduleRepository.countConfirmedParticipants(slot.getId())
-                    >= slot.getMaxParticipants()) {
-            return;
-        }
-
-        for (SlotParticipation candidate : participationRepository.findWaitlist(slot.getId())) {
-            UUID candidateId = candidate.getUser().getId();
-
-            if (!conflictDetector.detect(candidateId, List.of(slot)).isEmpty()) {
-                continue;
-            }
-
-            candidate.setStatus(ParticipationStatus.CONFIRMED);
-            candidate.setPromotedAt(Instant.now());
-            candidate.setWaitlistPosition(null);
-            participationRepository.save(candidate);
-
-            resequenceWaitlist(slot.getId());
-
-            notificationService.notify(candidateId,
-                slot.getProgram().getUserActivity().getUser().getId(),
-                NotificationType.WAITLIST_PROMOTED,
-                NotificationPayload.ofSchedule(slot).build());
-            return;
-        }
-    }
-
-    /**
-     * Recompacte les rangs à partir de 1.
-     *
-     * <p>Sans cela, la file garderait des trous — deuxième, quatrième, cinquième —
-     * et « vous êtes 4e » deviendrait faux dès le premier départ.
-     */
-    private void resequenceWaitlist(UUID scheduleId) {
-        int position = 1;
-        for (SlotParticipation waiting : participationRepository.findWaitlist(scheduleId)) {
-            if (!Integer.valueOf(position).equals(waiting.getWaitlistPosition())) {
-                waiting.setWaitlistPosition(position);
-                participationRepository.save(waiting);
-            }
-            position++;
-        }
     }
 
     @Transactional(readOnly = true)

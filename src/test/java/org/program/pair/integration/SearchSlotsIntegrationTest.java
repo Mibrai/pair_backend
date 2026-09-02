@@ -46,7 +46,7 @@ import static org.mockito.Mockito.when;
  * LocalEmbeddingService est mocké (vecteur nul, comme SemanticSearchIntegrationTest).
  *
  * N'enregistre que 2 comptes pour toute la classe (une fois, via un garde
- * statique) : l'inscription est limitée à 5/heure/IP (RateLimiterService), un
+ * statique) : l'inscription est limitée à 5/heure/IP (RateLimiter), un
  * budget vite épuisé si chaque test enregistre les siens. Note : pas de
  * @TestInstance(PER_CLASS)/@BeforeAll ici — ça casse l'ordre d'initialisation
  * de @Testcontainers (le port du conteneur n'est pas encore mappé quand
