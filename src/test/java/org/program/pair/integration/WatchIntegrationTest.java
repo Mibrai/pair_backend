@@ -69,6 +69,31 @@ class WatchIntegrationTest extends AbstractIntegrationTest {
             .expectBody().jsonPath("$.code").isEqualTo("WATCH_GUARDIAN_NOT_ACCEPTED");
     }
 
+    /**
+     * Le même contact aux deux postes est refusé, et non ignoré.
+     *
+     * <p>Accepté, il sautait la vérification du contact de secours et donnait une
+     * <b>seconde ligne de défense qui n'existe pas</b> : à l'escalade, la branche du
+     * secours prévenait la même personne une seconde fois et inscrivait
+     * {@code BACKUP_ALERTED} à la chronologie. La veille affichait un second recours
+     * sollicité alors qu'un seul proche avait été joint, deux fois.
+     */
+    @Test
+    void armerAvecLeMemeContactEnPrincipalEtEnSecours_estRefuse() {
+        Compte moi = compte();
+        UUID scheduleId = creerCreneau(moi);
+        UUID guardianId = contactAccepte(moi);
+
+        webTestClient.post().uri("/api/watches")
+            .headers(h -> h.setBearerAuth(moi.token()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("scheduleId", scheduleId.toString(),
+                              "guardianId", guardianId.toString(),
+                              "backupGuardianId", guardianId.toString()))
+            .exchange().expectStatus().isEqualTo(422)
+            .expectBody().jsonPath("$.code").isEqualTo("WATCH_BACKUP_SAME_AS_PRIMARY");
+    }
+
     @Test
     void armerDeuxFoisLeMemeCreneau_estRefuse() {
         Compte moi = compte();

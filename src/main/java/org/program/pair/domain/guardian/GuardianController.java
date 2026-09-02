@@ -7,6 +7,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.guardian.dto.CreateGuardianRequest;
 import org.program.pair.domain.guardian.dto.GuardianDto;
+import org.program.pair.domain.guardian.dto.SetGuardianRoleRequest;
 import org.program.pair.shared.security.UserPrincipal;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -55,6 +56,21 @@ public class GuardianController {
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id) {
         return guardianService.invite(principal.getId(), id);
+    }
+
+    @PutMapping("/{id}/role")
+    @Operation(summary = "Poser le rôle d'un contact",
+        description = "PRIMARY, BACKUP ou NONE. **Poser un rôle le retire au contact qui le "
+            + "portait**, dans la même transaction : au plus un principal et un secours par "
+            + "personne, tenu par la base et non par le client — deux appareils du même compte "
+            + "peuvent poser deux principaux sans jamais se croiser. Un contact PENDING accepte "
+            + "un rôle (on désigne, puis on invite) ; un contact REFUSED le refuse, et perd "
+            + "celui qu'il avait au moment du refus. Le contact n'apprend jamais son rôle.")
+    public GuardianDto setRole(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @Valid @RequestBody SetGuardianRoleRequest request) {
+        return guardianService.setRole(principal.getId(), id, request.role());
     }
 
     @DeleteMapping("/{id}")

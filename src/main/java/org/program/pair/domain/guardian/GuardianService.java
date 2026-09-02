@@ -229,10 +229,59 @@ public class GuardianService {
         if (guardian.getConsentState() != ConsentState.REFUSED) {
             guardian.setConsentState(ConsentState.REFUSED);
             guardian.setRespondedAt(Instant.now());
+            // Le rôle ne survit pas au refus. Un principal qui a dit non est un
+            // réglage qui pointe dans le vide : la feuille d'armement le proposerait
+            // en premier et l'armement le refuserait. Mieux vaut n'avoir plus de
+            // principal — un choix absent se voit, un choix mort ne se voit pas.
+            guardian.setRole(null);
         }
         if (notBlank(guardian.getPhone())) {
             refusedContacts.refuser(guardian.getPhone());
         }
+    }
+
+    /**
+     * Pose un rôle sur un contact : principal, secours, ou aucun.
+     *
+     * <p><b>Poser un rôle le retire à celui qui le portait.</b> C'est la forme la
+     * plus sûre pour un réglage à cardinalité un : sans elle, l'appelant devrait
+     * faire deux appels — libérer puis poser — et la fenêtre entre les deux laisse
+     * un compte sans principal si le second échoue. Ici l'échange est atomique.
+     *
+     * <p><b>Un contact ne peut pas être les deux à la fois</b> : la colonne n'en
+     * porte qu'un, donc poser {@code BACKUP} sur le principal actuel le fait cesser
+     * d'être principal. C'est ce que la personne demande en le déplaçant, et le
+     * refuser l'obligerait à un aller-retour pour le même résultat.
+     *
+     * <p><b>Un contact qui a refusé ne prend pas de rôle.</b> Le poser créerait
+     * exactement le réglage mort que {@link #refuseConsent} efface. On accepte en
+     * revanche un contact {@code PENDING} : on désigne d'abord, on invite ensuite, et
+     * l'ordre inverse obligerait à revenir sur l'écran après la réponse du contact.
+     */
+    public GuardianDto setRole(UUID ownerId, UUID guardianId, GuardianRole demande) {
+        Guardian guardian = guardianRepository.findByIdAndOwnerId(guardianId, ownerId)
+            .orElseThrow(() -> new ResourceNotFoundException("Contact introuvable."));
+
+        GuardianRole cible = demande == null ? GuardianRole.NONE : demande;
+
+        if (cible != GuardianRole.NONE && guardian.getConsentState() == ConsentState.REFUSED) {
+            throw new BusinessException(ErrorCode.GUARDIAN_CONTACT_REFUSED,
+                "Ce contact a refusé d'être contact d'urgence : il ne peut pas être désigné.");
+        }
+
+        if (cible != GuardianRole.NONE) {
+            // Le tenant actuel est libéré d'abord, dans la même transaction, et l'on
+            // vide au passage pour que l'index partiel unique ne voie jamais deux
+            // porteurs — l'ordre des écritures compte, la contrainte est immédiate.
+            guardianRepository.findByOwnerIdAndRole(ownerId, cible)
+                .filter(autre -> !autre.getId().equals(guardianId))
+                .ifPresent(autre -> autre.setRole(null));
+            guardianRepository.flush();
+        }
+
+        guardian.setRole(cible.toStored());
+        guardianRepository.flush();
+        return toDto(guardian);
     }
 
     private Guardian parJeton(String token) {

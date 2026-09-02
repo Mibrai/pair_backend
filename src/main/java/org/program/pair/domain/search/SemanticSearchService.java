@@ -141,13 +141,17 @@ public class SemanticSearchService {
 
     /**
      * Total par type sur la liste entière. Les clés reprennent l'énumération
-     * {@code resultType} — {@code user}, {@code program}, {@code slot} — et les
-     * trois sont toujours présentes, à zéro le cas échéant : un client qui
-     * affiche des onglets ne doit pas avoir à distinguer « zéro » de « absent ».
+     * {@code resultType} — {@code program}, {@code slot} — et les deux sont
+     * toujours présentes, à zéro le cas échéant : un client qui affiche des onglets
+     * ne doit pas avoir à distinguer « zéro » de « absent ».
+     *
+     * <p><b>La clé {@code user} a disparu le 02/09</b>, avec la valeur du même nom.
+     * Elle valait structurellement zéro — aucun producteur n'en rendait — et une
+     * facette toujours nulle pour un type qui ne peut pas exister est le même
+     * mensonge que l'énumération qui le déclarait.
      */
     private Map<String, Integer> countsByType(List<SearchResultDto> all) {
         Map<String, Integer> counts = new LinkedHashMap<>();
-        counts.put("user", 0);
         counts.put("program", 0);
         counts.put("slot", 0);
         for (SearchResultDto result : all) {
