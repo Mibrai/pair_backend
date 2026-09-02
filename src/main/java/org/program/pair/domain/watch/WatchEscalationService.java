@@ -124,7 +124,7 @@ public class WatchEscalationService {
             if (watch.getPublicToken() == null) {
                 watch.setPublicToken(ShareToken.nextUnique(watchRepository::existsByPublicToken));
             }
-            prevenirLeContact(watch.getGuardianId(), watch.getId(), contexte(watch));
+            prevenirLeContact(watch.getGuardianId(), watch.getId(), contexte(watch), "principal");
             if (!eventRepository.existsByWatchIdAndType(watch.getId(), WatchEventType.ESCALATED)) {
                 inscrire(watch.getId(), WatchEventType.ESCALATED, Instant.now());
             }
@@ -139,7 +139,7 @@ public class WatchEscalationService {
                 && ecouleMinutes >= 75
                 && watch.getPublicViewedAt() == null
                 && !eventRepository.existsByWatchIdAndType(watch.getId(), WatchEventType.BACKUP_ALERTED)) {
-            prevenirLeContact(watch.getBackupGuardianId(), watch.getId(), contexte(watch));
+            prevenirLeContact(watch.getBackupGuardianId(), watch.getId(), contexte(watch), "secours");
             inscrire(watch.getId(), WatchEventType.BACKUP_ALERTED, Instant.now());
             agi = true;
         }
@@ -210,6 +210,11 @@ public class WatchEscalationService {
         watch.setState(WatchState.NOT_ARRIVED);
         watch.setClosedAt(now);
         inscrire(watch.getId(), WatchEventType.LOST_ON_THE_WAY, now);
+
+        // Inscrit aussi ce qui NE part pas : c'est la trace qui dit qu'une
+        // non-arrivée s'est bien tue, et elle vaut celle d'un envoi.
+        log.info("Veille {} : non-arrivée, refermée. Organisateur {}, contact d'urgence non prévenu",
+            watch.getId(), organisateur != null ? "prévenu" : "absent");
     }
 
     private static UUID organisateurDe(Schedule slot) {
@@ -250,6 +255,46 @@ public class WatchEscalationService {
             }
         }
         inscrire(watch.getId(), WatchEventType.LEVEE_SENT, Instant.now());
+        log.info("Veille {} : LEVEE partie à {} destinataire(s)", watch.getId(), deja.size());
+    }
+
+    /**
+     * ⑦ Le renoncement : la personne a renoncé à s'y rendre, après qu'un message
+     * est parti à son contact.
+     *
+     * <p><b>Même mécanique que la levée, autre texte, et le texte est tout le
+     * sujet.</b> On repart sur le canal exact où l'alerte est allée — « même canal,
+     * même fil » — mais ③ dit « vient de confirmer son retour », ce qui est faux de
+     * quelqu'un qui n'est jamais parti. Envoyer ③ ici serait vrai sur l'essentiel et
+     * faux sur les faits : le même défaut que « Bien rentrée » sur la page publique,
+     * en plus discret, et de ceux que personne ne vient vérifier parce qu'ils
+     * annoncent une bonne nouvelle.
+     *
+     * <p>N'a de sens qu'après un envoi : sur une veille dont l'outbox est vide, rien
+     * ne part et l'appelant n'a pas à s'en soucier.
+     */
+    public void sendRenoncement(Watch watch) {
+        AlertMessages.Contexte ctx = contexte(watch);
+        java.util.Set<String> deja = new java.util.HashSet<>();
+
+        for (OutboxMessage alerte : outboxRepository.findByWatchId(watch.getId())) {
+            if (!deja.add(alerte.getChannel() + "|" + alerte.getRecipient())) {
+                continue;
+            }
+            switch (alerte.getChannel()) {
+                case SMS -> outbox.enqueueSms(alerte.getRecipient(),
+                    AlertMessages.renoncementSms(ctx),
+                    OutboxService.PRIORITE_ALERTE, watch.getId());
+                case EMAIL -> outbox.enqueueEmail(alerte.getRecipient(),
+                    "Plus d'inquiétude à avoir", AlertMessages.renoncementEmailHtml(ctx),
+                    OutboxService.PRIORITE_ALERTE, watch.getId());
+            }
+        }
+        if (!deja.isEmpty()) {
+            inscrire(watch.getId(), WatchEventType.LEVEE_SENT, Instant.now());
+            log.info("Veille {} : RENONCEMENT parti à {} destinataire(s)",
+                watch.getId(), deja.size());
+        }
     }
 
     /**
@@ -321,6 +366,8 @@ public class WatchEscalationService {
 
             if (envoye) {
                 inscrire(watch.getId(), WatchEventType.RETURN_ANNOUNCED, Instant.now());
+                inscrireAuJournal(watch.getId(), "ANNONCE_RETOUR", "principal",
+                    guardian.getId(), "email");
             }
         } catch (RuntimeException e) {
             log.warn("Annonce de retour non partie pour la veille {} : {}",
@@ -330,7 +377,8 @@ public class WatchEscalationService {
 
     // ------------------------------------------------------------------ outils
 
-    private void prevenirLeContact(UUID guardianId, UUID watchId, AlertMessages.Contexte ctx) {
+    private void prevenirLeContact(UUID guardianId, UUID watchId, AlertMessages.Contexte ctx,
+                                   String role) {
         Guardian guardian = guardianRepository.findById(guardianId).orElse(null);
         if (guardian == null) {
             log.warn("Contact {} de la veille {} introuvable à l'escalade", guardianId, watchId);
@@ -341,26 +389,66 @@ public class WatchEscalationService {
             // Contact qui a un compte : alerte in-app, plus un e-mail à son adresse.
             notificationService.notify(guardian.getMemberId(), NotificationType.WATCH_GUARDIAN_ALERT,
                 Map.of("watchId", watchId.toString(), "lien", ctx.lienStatut()));
-            userRepository.findById(guardian.getMemberId())
+            boolean parCourrier = userRepository.findById(guardian.getMemberId())
                 .map(User::getEmail)
                 .filter(e -> e != null && !e.isBlank())
-                .ifPresent(email -> outbox.enqueueEmail(email, "Alerte retour — meetDo",
-                    AlertMessages.alerteRetourEmailHtml(ctx, ctx.lienStatut()),
-                    OutboxService.PRIORITE_EMAIL, watchId));
+                .map(email -> {
+                    outbox.enqueueEmail(email, "Alerte retour — meetDo",
+                        AlertMessages.alerteRetourEmailHtml(ctx, ctx.lienStatut()),
+                        OutboxService.PRIORITE_EMAIL, watchId);
+                    return true;
+                }).orElse(false);
+            inscrireAuJournal(watchId, "ALERTE_RETOUR", role, guardianId,
+                parCourrier ? "in-app+email" : "in-app");
             return;
         }
 
         // Contact externe : e-mail, et SMS en parallèle si le canal est actif.
         String desabonnement = publicBaseUrl + "/public/guardian-consent/" + guardian.getConsentToken();
-        if (smsEnabled && notBlank(guardian.getPhone())) {
+        boolean parSms = smsEnabled && notBlank(guardian.getPhone());
+        if (parSms) {
             outbox.enqueueSms(guardian.getPhone(), AlertMessages.alerteRetourSms(ctx),
                 OutboxService.PRIORITE_ALERTE, watchId);
         }
-        if (notBlank(guardian.getEmail())) {
+        boolean parCourrier = notBlank(guardian.getEmail());
+        if (parCourrier) {
             outbox.enqueueEmail(guardian.getEmail(), "Alerte retour — meetDo",
                 AlertMessages.alerteRetourEmailHtml(ctx, desabonnement),
                 OutboxService.PRIORITE_EMAIL, watchId);
         }
+        inscrireAuJournal(watchId, "ALERTE_RETOUR", role, guardianId, canaux(parSms, parCourrier));
+    }
+
+    /**
+     * L'inscription au journal d'un envoi <b>réellement parti</b> vers un tiers.
+     *
+     * <p><b>Au niveau {@code info}, et c'est le point.</b> Jusqu'ici l'envoi d'une
+     * alerte n'était inscrit nulle part de lisible : la notification l'était en
+     * {@code debug}, que la configuration de production n'émet pas ; l'outbox ne
+     * journalise que ses échecs ; les boucles ne journalisent qu'un compteur sans
+     * identifiant. Un message parti normalement ne laissait donc aucune trace, et
+     * répondre à « une alerte est-elle partie à ce contact, pour cette veille ? »
+     * demandait de reconstituer la réponse depuis la base.
+     *
+     * <p><b>Aucune coordonnée n'y entre</b> — ni adresse, ni numéro, ni nom. Des
+     * identifiants internes et le canal employé, rien de plus : un journal
+     * d'application n'est pas l'endroit où recopier le carnet d'adresses de
+     * quelqu'un, et l'audit n'en a pas besoin pour être concluant.
+     */
+    private void inscrireAuJournal(UUID watchId, String gabarit, String role,
+                                   UUID destinataireId, String canaux) {
+        log.info("Veille {} : {} parti au contact {} ({}), par {}",
+            watchId, gabarit, role, destinataireId, canaux);
+    }
+
+    private static String canaux(boolean sms, boolean email) {
+        if (sms && email) {
+            return "sms+email";
+        }
+        if (sms) {
+            return "sms";
+        }
+        return email ? "email" : "aucun canal";
     }
 
     private AlertMessages.Contexte contexte(Watch watch) {

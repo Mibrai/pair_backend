@@ -152,6 +152,34 @@ class WatchOutboundIntegrationTest extends AbstractIntegrationTest {
     }
 
     /**
+     * {@code alertDelivery} est servi sur <b>toutes</b> les veilles de la liste
+     * active, jamais absent — y compris sur celles qu'aucun message n'a touchées.
+     *
+     * <p>Le client en a fait le premier discriminant de son bandeau : un champ
+     * présent et à {@code NONE} dit « personne n'a été prévenu », un champ absent le
+     * renverrait à des déductions, et c'est une déduction de ce genre qui lui a fait
+     * afficher « personne n'a été prévenu » sur une veille où une alerte était
+     * réellement partie.
+     */
+    @Test
+    void alertDelivery_estServiSurToutesLesVeillesActives() {
+        Compte moi = compte();
+        UUID vivante = armer(moi, "0677991100", "vivante@example.org");
+        UUID perdue = armer(moi, "0677991101", "perdue@example.org");
+        reculerBaseAller(perdue, 60);
+        for (int i = 0; i < 4; i++) {
+            outboundJob.tick();
+        }
+
+        webTestClient.get().uri("/api/watches/active")
+            .headers(h -> h.setBearerAuth(moi.token()))
+            .exchange().expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$[?(@.id=='" + vivante + "')].alertDelivery").isEqualTo("NONE")
+            .jsonPath("$[?(@.id=='" + perdue + "')].alertDelivery").isEqualTo("NONE");
+    }
+
+    /**
      * Une non-arrivée est terminale, mais elle reste <b>listée</b> 24 h.
      *
      * <p>Sans cela, après T+45 l'organisateur reçoit une notification et la personne
@@ -252,9 +280,13 @@ class WatchOutboundIntegrationTest extends AbstractIntegrationTest {
      * quelqu'un n'était pas arrivé. Refermer sans rien lui dire le laisserait sur
      * la dernière chose qu'on lui a dite. C'est la règle que le module applique
      * déjà à la clôture par code.
+     *
+     * <p>Mais avec le gabarit ⑦, jamais ③ : la levée dit « vient de confirmer son
+     * retour », écrite pour la boucle retour, et fausse de quelqu'un qui n'est
+     * jamais parti.
      */
     @Test
-    void abandon_dUneEscaladeHeritee_faitPartirLaLevee() {
+    void abandon_dUneEscaladeHeritee_faitPartirLeRenoncement() {
         Compte moi = compte();
         UUID watchId = armer(moi, "0677445566", "levee@example.org");
         // L'alerte héritée, telle que l'ancienne branche aller l'avait déposée.
@@ -266,8 +298,12 @@ class WatchOutboundIntegrationTest extends AbstractIntegrationTest {
             .headers(h -> h.setBearerAuth(moi.token()))
             .exchange().expectStatus().isOk();
 
+        // ⑦ et jamais ③ : « vient de confirmer son retour » serait faux de
+        // quelqu'un qui n'est jamais parti.
         assertThat(outboxRepository.findByWatchId(watchId))
-            .anySatisfy(m -> assertThat(m.getSubject()).contains("Fausse alerte"));
+            .anySatisfy(m -> assertThat(m.getBody()).contains("a renoncé à s'y rendre"));
+        assertThat(outboxRepository.findByWatchId(watchId))
+            .noneSatisfy(m -> assertThat(m.getBody()).contains("vient de confirmer"));
     }
 
     /** Une veille neuve, sans alerte partie, ne fait partir aucune levée. */
