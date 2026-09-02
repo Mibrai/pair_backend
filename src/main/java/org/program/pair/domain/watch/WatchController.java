@@ -145,7 +145,11 @@ public class WatchController {
         description = "Désarme sans message et sans compter d'absence. "
             + "**États acceptés : ARMED, EN_ROUTE, et ESCALATED tant que arrivalConfirmedAt est nul.** "
             + "Ce dernier cas est la sortie d'une veille escaladée sans arrivée, qui n'en avait aucune : "
-            + "elle se referme en NOT_ARRIVED, et si une alerte était partie, la levée part avec.")
+            + "elle se referme en NOT_ARRIVED, et si une alerte était partie, le message de "
+            + "renoncement (⑦) part avec. **C'est la seule surface du module où un geste éteint "
+            + "une alerte déjà partie, sans code ni vérification** — refermer après une arrivée "
+            + "exige le code de retour. Assumé : sans arrivée validée il n'existe aucun code à "
+            + "demander, et laisser la veille sans sortie était le défaut que ce verbe corrige.")
     public WatchDto abandon(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id) {

@@ -299,11 +299,21 @@ class WatchOutboundIntegrationTest extends AbstractIntegrationTest {
             .exchange().expectStatus().isOk();
 
         // ⑦ et jamais ③ : « vient de confirmer son retour » serait faux de
-        // quelqu'un qui n'est jamais parti.
+        // quelqu'un qui n'est jamais parti. L'interdit compte plus que la
+        // présence : c'est lui qui retomberait si quelqu'un fusionnait les deux
+        // méthodes sans connaître cette histoire.
         assertThat(outboxRepository.findByWatchId(watchId))
             .anySatisfy(m -> assertThat(m.getBody()).contains("a renoncé à s'y rendre"));
         assertThat(outboxRepository.findByWatchId(watchId))
             .noneSatisfy(m -> assertThat(m.getBody()).contains("vient de confirmer"));
+
+        // L'objet porte le prénom : c'est la seule ligne que lira quelqu'un qui
+        // n'ouvre pas le message, et un même contact peut veiller sur deux
+        // personnes. « Plus d'inquiétude à avoir » seul ne dit pas pour qui.
+        String prenom = prenomDe(moi);
+        assertThat(outboxRepository.findByWatchId(watchId))
+            .filteredOn(m -> m.getBody().contains("a renoncé à s'y rendre"))
+            .allSatisfy(m -> assertThat(m.getSubject()).contains(prenom));
     }
 
     /** Une veille neuve, sans alerte partie, ne fait partir aucune levée. */
@@ -496,6 +506,15 @@ class WatchOutboundIntegrationTest extends AbstractIntegrationTest {
         webTestClient.post().uri("/public/guardian-consent/{t}/accept", token)
             .exchange().expectStatus().isOk();
         return guardianId;
+    }
+
+    /** Le prénom tel que les gabarits le composent, depuis le nom affiché du compte. */
+    private String prenomDe(Compte c) {
+        String affiche = String.valueOf(webTestClient.get().uri("/api/users/me")
+            .headers(h -> h.setBearerAuth(c.token()))
+            .exchange().expectStatus().isOk()
+            .expectBody(Map.class).returnResult().getResponseBody().get("displayName"));
+        return org.program.pair.domain.user.GivenName.from(affiche);
     }
 
     private record Compte(UUID id, String token) {}

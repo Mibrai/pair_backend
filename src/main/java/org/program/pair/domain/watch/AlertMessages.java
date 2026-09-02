@@ -159,6 +159,12 @@ public final class AlertMessages {
      * genre exactement que le « Bien rentrée » qu'on s'interdit sur la page
      * publique : une bonne nouvelle mal formulée que personne n'ira vérifier.
      *
+     * <p><b>Le prénom seul, jamais le nom complet.</b> Le nom entier a une fonction
+     * dans ② et ④ : il sert à <em>chercher quelqu'un</em> — un contact qui appelle,
+     * qui se déplace, qui parle à un tiers en a besoin. ⑦ ne demande rien à
+     * personne, et le destinataire est un proche qui a accepté d'être désigné : il
+     * sait de qui on parle.
+     *
      * <p><b>Ce qui n'y entre pas, et pourquoi.</b> Ni lieu, ni heure, ni motif. Elle
      * n'a pas à se justifier d'avoir renoncé, et le proche n'a pas à savoir
      * pourquoi ; les ajouter recomposerait la soirée dans sa tête sans rien lui
@@ -166,7 +172,7 @@ public final class AlertMessages {
      * précédent est sans objet — rien de plus.
      */
     public static String renoncementSms(Contexte c) {
-        return c.prenomNom() + " a renoncé à s'y rendre. Il n'y a plus lieu de "
+        return c.prenom() + " a renoncé à s'y rendre. Il n'y a plus lieu de "
             + "s'inquiéter, et le message précédent est sans objet. Merci d'avoir "
             + "été là. — meetDo";
     }
@@ -179,7 +185,20 @@ public final class AlertMessages {
                objet. Il n'y a rien à faire.</p>
             <p>Merci d'avoir été là.</p>
             <p style="color:#6b757d;font-size:13px;">— meetDo</p>
-            """.formatted(escape(c.prenomNom()));
+            """.formatted(escape(c.prenom()));
+    }
+
+    /**
+     * ⑦ L'objet de l'e-mail de renoncement — <b>et il porte le prénom.</b>
+     *
+     * <p>C'est la seule ligne du message que lira quelqu'un qui ne l'ouvre pas. Un
+     * même contact peut veiller sur deux personnes — une famille, une colocation —
+     * et « plus d'inquiétude à avoir » ne dit pas <em>pour qui</em>. Lu sur un écran
+     * verrouillé à côté d'une alerte reçue une heure plus tôt, l'objet doit lever
+     * l'inquiétude sans qu'on ouvre quoi que ce soit.
+     */
+    public static String renoncementObjet(Contexte c) {
+        return c.prenom() + " — plus d'inquiétude à avoir";
     }
 
     /** ④ E-mail d'alerte : la version longue de ②, avec la chronologie et un lien en bouton. */
