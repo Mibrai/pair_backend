@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -17,6 +18,41 @@ public interface WatchRepository extends JpaRepository<Watch, UUID> {
 
     /** Les veilles vivantes de l'appelant, de la plus récente à la plus ancienne. */
     List<Watch> findByUserIdAndStateNotInOrderByArmedAtDesc(UUID userId, Collection<WatchState> terminaux);
+
+    /**
+     * Ce que rend « mes veilles actives » : les veilles vivantes, <b>plus</b> les
+     * non-arrivées refermées depuis moins de 24 h.
+     *
+     * <p><b>Pourquoi une requête à part plutôt qu'un {@code TERMINAUX} assoupli.</b>
+     * {@code NOT_ARRIVED} doit rester terminal partout ailleurs : c'est le même
+     * ensemble qui autorise {@code existsByUserIdAndScheduleIdAndStateNotIn} à
+     * réarmer une veille sur le même créneau. L'en retirer rendrait la non-arrivée
+     * bloquante pendant 24 h — précisément le défaut que la terminalité venait de
+     * refermer. Le besoin est d'affichage, pas de machine à états : il se sert ici.
+     *
+     * <p><b>Pourquoi une non-arrivée doit rester visible.</b> Après T+45,
+     * l'organisateur reçoit une notification et la personne concernée n'en reçoit
+     * aucune. Cette liste est le seul endroit où elle apprend que sa soirée a été
+     * classée perdue en chemin et qu'un incident est journalisé à son nom. Le seul
+     * effet est cette ligne : la veille est close, aucun geste n'est plus accepté
+     * sur elle.
+     *
+     * <p><b>Conséquence à connaître :</b> c'est le seul cas où cette liste rend une
+     * veille dont {@code closedAt} n'est pas nul. Un lecteur qui supposait
+     * « active ⟹ non close » se trompera ici.
+     */
+    @Query("""
+        SELECT w FROM Watch w
+        WHERE w.userId = :userId
+          AND (w.state NOT IN :terminaux
+               OR (w.state = :nonArrivee AND w.closedAt > :depuis))
+        ORDER BY w.armedAt DESC
+        """)
+    List<Watch> findActivesEtNonArriveesRecentes(
+        @Param("userId") UUID userId,
+        @Param("terminaux") Collection<WatchState> terminaux,
+        @Param("nonArrivee") WatchState nonArrivee,
+        @Param("depuis") Instant depuis);
 
     /** Les veilles terminées de l'appelant : le journal. */
     List<Watch> findByUserIdAndStateInOrderByArmedAtDesc(UUID userId, Collection<WatchState> etats);
