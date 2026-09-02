@@ -6,8 +6,15 @@ import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 
 /**
- * Les six gabarits d'alerte, dont trois vivent ici : ② l'alerte retour (SMS),
+ * Les sept gabarits d'alerte, dont trois vivent ici : ② l'alerte retour (SMS),
  * ③ la levée (SMS), ④ l'alerte par e-mail. Aucun champ libre.
+ *
+ * <p><b>La numérotation, une fois pour toutes</b>, parce qu'elle a dérivé entre le
+ * client et nous : ① l'invitation d'un contact, ② l'alerte retour, ③ la levée,
+ * ④ l'alerte retour par e-mail, ⑤ la non-arrivée (retirée), ⑥ l'annonce « je suis
+ * bien rentrée », ⑦ le renoncement. ⑥ portait le numéro ⑤ dans ce fichier jusqu'au
+ * 02/09, ce qui en faisait deux à se disputer le même chiffre le jour où ⑤ a été
+ * retiré.
  *
  * <p><b>⑤ n'a plus d'appelant depuis le 02/09</b> — voir {@link #nonArriveeSms}.
  * Il reste ici, entier et testé, parce qu'une décision produit peut se reprendre et
@@ -138,6 +145,41 @@ public final class AlertMessages {
             <p>%s a demandé à vous prévenir de son retour. Il n'y a rien à faire.</p>
             <p style="color:#6b757d;font-size:13px;">— meetDo</p>
             """.formatted(escape(c.prenom()), escape(c.prenom()));
+    }
+
+    /**
+     * ⑦ Renoncement — la personne a renoncé à s'y rendre, après qu'un message est
+     * parti à son contact.
+     *
+     * <p><b>Pourquoi ce n'est pas ③.</b> La levée dit « fausse alerte, {prénom}
+     * vient de confirmer son retour » : elle a été écrite pour la boucle retour, où
+     * la personne confirme être rentrée. Ici elle confirme l'inverse — qu'elle ne
+     * viendra pas — et n'est jamais partie. Envoyer ③ tel quel serait vrai sur
+     * l'essentiel (il n'y a plus lieu de s'inquiéter) et faux sur les faits, du même
+     * genre exactement que le « Bien rentrée » qu'on s'interdit sur la page
+     * publique : une bonne nouvelle mal formulée que personne n'ira vérifier.
+     *
+     * <p><b>Ce qui n'y entre pas, et pourquoi.</b> Ni lieu, ni heure, ni motif. Elle
+     * n'a pas à se justifier d'avoir renoncé, et le proche n'a pas à savoir
+     * pourquoi ; les ajouter recomposerait la soirée dans sa tête sans rien lui
+     * apprendre d'utile. On dit ce qui lève l'inquiétude, et que le message
+     * précédent est sans objet — rien de plus.
+     */
+    public static String renoncementSms(Contexte c) {
+        return c.prenomNom() + " a renoncé à s'y rendre. Il n'y a plus lieu de "
+            + "s'inquiéter, et le message précédent est sans objet. Merci d'avoir "
+            + "été là. — meetDo";
+    }
+
+    /** ⑦ Le renoncement, par e-mail. Voir {@link #renoncementSms}. */
+    public static String renoncementEmailHtml(Contexte c) {
+        return """
+            <h2>%s a renoncé à s'y rendre</h2>
+            <p>Il n'y a plus lieu de s'inquiéter, et le message précédent est sans
+               objet. Il n'y a rien à faire.</p>
+            <p>Merci d'avoir été là.</p>
+            <p style="color:#6b757d;font-size:13px;">— meetDo</p>
+            """.formatted(escape(c.prenomNom()));
     }
 
     /** ④ E-mail d'alerte : la version longue de ②, avec la chronologie et un lien en bouton. */

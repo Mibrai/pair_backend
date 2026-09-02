@@ -422,11 +422,16 @@ public class WatchService {
      * et {@code CLOSED} est terminal : la page publique dirait « Bien rentrée » au
      * proche de quelqu'un qui n'est jamais arrivé.
      *
-     * <p><b>Si une alerte était réellement partie, la clôture est une levée.</b>
+     * <p><b>Si une alerte était réellement partie, un message de renoncement part.</b>
      * C'est la règle que le module applique déjà à la clôture par code, et elle vaut
      * ici pour la même raison : ces veilles ont fait partir le message ⑤, et un
      * proche prévenu que quelqu'un n'est pas arrivé doit apprendre que c'est fini.
      * Sans cela il resterait sur la dernière chose qu'on lui a dite.
+     *
+     * <p><b>Le gabarit ⑦, jamais ③.</b> La levée dit « vient de confirmer son
+     * retour » — écrite pour la boucle retour, elle est fausse de quelqu'un qui n'est
+     * jamais parti. ⑦ dit qu'elle a renoncé, qu'il n'y a plus lieu de s'inquiéter, et
+     * que le message précédent est sans objet.
      */
     public WatchDto abandon(UUID userId, UUID watchId) {
         Watch watch = exigerVeille(userId, watchId);
@@ -439,7 +444,7 @@ public class WatchService {
         Instant now = Instant.now();
         if (escaladeSansArrivee) {
             if (!outboxRepository.findByWatchId(watchId).isEmpty()) {
-                escalation.sendLevee(watch);
+                escalation.sendRenoncement(watch);
             }
             watch.setState(WatchState.NOT_ARRIVED);
         } else {
@@ -593,7 +598,7 @@ public class WatchService {
                 // résolue, et le message ③ repart là où l'alerte est allée.
                 watch.setState(WatchState.RESOLVED);
                 watch.setClosedAt(req.enteredAt());
-                escalation.sendLevee(watch);
+                escalation.sendRenoncement(watch);
             } else {
                 // Aucune alerte n'était partie (au plus des rappels à soi-même) :
                 // clôture normale, personne à détromper.
