@@ -167,6 +167,12 @@ public enum ErrorCode {
     // l'appelant. Sans contact accepté, rien ne peut être armé — c'est la
     // dépendance de la priorité 1 sur laquelle repose tout le module.
     WATCH_GUARDIAN_NOT_ACCEPTED,
+
+    // Le contact de secours est le même que le principal. Refusé plutôt qu'ignoré :
+    // accepté, il donnait une seconde ligne de défense qui n'existe pas — l'escalade
+    // prévenait deux fois la même personne et inscrivait BACKUP_ALERTED à la
+    // chronologie, faisant croire qu'un second recours avait été sollicité.
+    WATCH_BACKUP_SAME_AS_PRIMARY,
     // Une veille est déjà en cours sur ce créneau pour cette personne. En armer
     // une seconde dédoublerait rappels et alertes.
     WATCH_ALREADY_ACTIVE,

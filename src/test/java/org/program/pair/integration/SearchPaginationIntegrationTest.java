@@ -149,8 +149,12 @@ class SearchPaginationIntegrationTest extends AbstractIntegrationTest {
         SearchResponse response = search(0, 2);
 
         assertThat(response.countsByType())
-            .as("les trois clés sont toujours présentes, à zéro le cas échéant")
-            .containsKeys("user", "program", "slot");
+            .as("les deux clés sont toujours présentes, à zéro le cas échéant")
+            .containsOnlyKeys("program", "slot");
+        assertThat(response.countsByType())
+            .as("« user » a été retiré le 02/09 : aucun producteur n'en rendait, "
+                + "et une facette toujours nulle promet une fonctionnalité absente")
+            .doesNotContainKey("user");
         assertThat(response.countsByType().values().stream().mapToInt(Integer::intValue).sum())
             .isEqualTo(response.totalCount());
     }
