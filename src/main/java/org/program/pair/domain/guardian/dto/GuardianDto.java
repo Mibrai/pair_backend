@@ -3,6 +3,7 @@ package org.program.pair.domain.guardian.dto;
 import io.swagger.v3.oas.annotations.media.Schema;
 import org.program.pair.domain.guardian.ConsentState;
 import org.program.pair.domain.guardian.Guardian;
+import org.program.pair.domain.guardian.GuardianRole;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -17,6 +18,13 @@ import java.util.UUID;
  *
  * <p>{@code consentToken} n'y figure pas : c'est le secret du lien envoyé au
  * contact, il n'a rien à faire dans la liste que consulte l'owner.
+ *
+ * <p><b>Ce DTO n'est jamais servi au contact lui-même</b>, et {@code role} en
+ * dépend. Le flux public de consentement passe par une projection dédiée — nom du
+ * parrain et état, rien d'autre — et non par ce record. Si un écran devait un jour
+ * montrer quelque chose au contact, il lui faudrait sa propre projection : savoir
+ * qu'il est principal plutôt que secours est une information de plus, sans usage
+ * pour lui, et sur laquelle il n'a rien à dire.
  */
 @Schema(description = "Un contact d'urgence désigné par l'appelant.")
 public record GuardianDto(
@@ -45,6 +53,12 @@ public record GuardianDto(
     @Schema(description = "Quand il a répondu. Null tant qu'il est PENDING.")
     Instant respondedAt,
 
+    @Schema(description = "PRIMARY, BACKUP ou NONE — lequel de ses contacts l'appelant veut "
+        + "prévenir en premier. Un réglage de l'appelant, jamais une information sur le "
+        + "contact : le contact ne l'apprend pas, et ce champ ne figure dans aucune vue qui "
+        + "lui soit servie. Au plus un PRIMARY et un BACKUP par personne, tenus par la base.")
+    GuardianRole role,
+
     Instant createdAt
 ) {
 
@@ -63,6 +77,7 @@ public record GuardianDto(
             g.getConsentState(),
             g.getInvitedAt(),
             g.getRespondedAt(),
+            GuardianRole.ofNullable(g.getRole()),
             g.getCreatedAt());
     }
 }

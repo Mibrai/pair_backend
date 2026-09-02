@@ -110,7 +110,17 @@ public class WatchService {
         }
 
         exigerContactAccepte(userId, req.guardianId());
-        if (req.backupGuardianId() != null && !req.backupGuardianId().equals(req.guardianId())) {
+        if (req.backupGuardianId() != null) {
+            // Le même contact aux deux postes est refusé, et non ignoré. Accepté, il
+            // sautait la vérification ci-dessous et donnait une seconde ligne de
+            // défense qui n'existe pas : à l'escalade, la branche du secours
+            // prévenait la même personne une seconde fois et inscrivait
+            // BACKUP_ALERTED à la chronologie. La veille affichait un second recours
+            // sollicité alors qu'un seul proche avait été joint, deux fois.
+            if (req.backupGuardianId().equals(req.guardianId())) {
+                throw new BusinessException(ErrorCode.WATCH_BACKUP_SAME_AS_PRIMARY,
+                    "Le contact de secours doit être différent du contact principal.");
+            }
             exigerContactAccepte(userId, req.backupGuardianId());
         }
 
