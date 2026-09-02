@@ -36,11 +36,34 @@ public enum PublicWatchStatus {
     /**
      * Ce que la page affiche, projeté depuis l'état interne de la veille.
      *
-     * <p>L'ordre des tests compte : un état terminal l'emporte sur tout (rentrée),
-     * puis l'alerte, puis l'interruption (repartie plus tôt), puis la distinction
-     * « sur place » / « retour à confirmer » selon que l'échéance est franchie.
+     * <p>L'ordre des tests compte : la non-arrivée d'abord, puis un état terminal
+     * qui l'emporte sur tout (rentrée), puis l'alerte, puis l'interruption (repartie
+     * plus tôt), puis la distinction « sur place » / « retour à confirmer » selon
+     * que l'échéance est franchie.
+     *
+     * <p><b>La non-arrivée se teste en premier, et c'est vital.</b> {@code
+     * NOT_ARRIVED} est terminal ; sans ce test placé avant, il tomberait dans la
+     * branche terminale et la page annoncerait <b>« Bien rentrée »</b> pour quelqu'un
+     * qui n'est jamais arrivé — le pire résultat possible, et celui que personne ne
+     * viendrait vérifier puisqu'il annonce une bonne nouvelle. La page dit « En
+     * trajet » : c'est vrai, c'est le dernier état connu, et cela ne promet rien.
+     *
+     * <p>Le second test couvre les liens <b>hérités</b> : une veille armée avant la
+     * décision du 02/09 a pu passer {@code ESCALATED} sans arrivée validée, avec un
+     * jeton déjà distribué. Elle ne doit pas non plus afficher l'alerte. Le critère
+     * est celui du contrat côté app — l'arrivée est-elle validée — et il est sans
+     * ambiguïté depuis que {@code panic} refuse avant l'arrivée : un {@code
+     * ESCALATED} sans {@code arrivalConfirmedAt} ne peut plus être qu'une
+     * non-arrivée. Aucun jeton neuf n'est créé sur cette branche, donc ce cas
+     * s'éteindra de lui-même.
      */
     public static PublicWatchStatus of(Watch watch, Instant now) {
+        if (watch.getState() == WatchState.NOT_ARRIVED) {
+            return EN_TRAJET;
+        }
+        if (watch.getState() == WatchState.ESCALATED && watch.getArrivalConfirmedAt() == null) {
+            return EN_TRAJET;
+        }
         if (WatchState.TERMINAUX.contains(watch.getState())) {
             return RENTREE;
         }

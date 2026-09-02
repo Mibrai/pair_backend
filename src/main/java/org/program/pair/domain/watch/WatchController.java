@@ -78,7 +78,8 @@ public class WatchController {
     @PostMapping("/{id}/seen-by-host")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "« Je la vois, elle est là » (organisateur)",
-        description = "L'organisateur repousse la relance d'arrivée de 15 min. Ne valide pas l'arrivée.")
+        description = "L'organisateur repousse la relance d'arrivée de 15 min. Ne valide pas l'arrivée. "
+            + "**États acceptés : ARMED, EN_ROUTE.** Sinon 409 WATCH_NOT_OUTBOUND.")
     public void seenByHost(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id) {
@@ -87,7 +88,8 @@ public class WatchController {
 
     @PostMapping("/{id}/arrival")
     @Operation(summary = "Valider son arrivée sur place",
-        description = "Crée le code de retour et le rend en clair, une seule fois.")
+        description = "Crée le code de retour et le rend en clair, une seule fois. "
+            + "**États acceptés : ARMED, EN_ROUTE.** Sinon 409 WATCH_ARRIVAL_NOT_EXPECTED.")
     public ArrivalResponse arrival(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
@@ -130,7 +132,8 @@ public class WatchController {
 
     @PostMapping("/{id}/still-coming")
     @Operation(summary = "« Je suis en chemin »",
-        description = "Repousse la relance d'arrivée de quinze minutes.")
+        description = "Repousse la relance d'arrivée de quinze minutes. "
+            + "**États acceptés : ARMED, EN_ROUTE.** Sinon 409 WATCH_NOT_OUTBOUND.")
     public WatchDto stillComing(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id) {
@@ -139,7 +142,10 @@ public class WatchController {
 
     @PostMapping("/{id}/abandon")
     @Operation(summary = "« Je n'y vais pas »",
-        description = "Désarme sans message et sans compter d'absence.")
+        description = "Désarme sans message et sans compter d'absence. "
+            + "**États acceptés : ARMED, EN_ROUTE, et ESCALATED tant que arrivalConfirmedAt est nul.** "
+            + "Ce dernier cas est la sortie d'une veille escaladée sans arrivée, qui n'en avait aucune : "
+            + "elle se referme en NOT_ARRIVED, et si une alerte était partie, la levée part avec.")
     public WatchDto abandon(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id) {
@@ -148,7 +154,8 @@ public class WatchController {
 
     @PostMapping("/{id}/snooze")
     @Operation(summary = "Snooze",
-        description = "Repousse l'échéance de retour de 30 minutes, sans code, et réarme les rappels.")
+        description = "Repousse l'échéance de retour de 30 minutes, sans code, et réarme les rappels. "
+            + "**États acceptés : ON_SITE, REMINDING.** Sinon 409 WATCH_NOT_ON_SITE.")
     public WatchDto snooze(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id) {
@@ -157,7 +164,9 @@ public class WatchController {
 
     @PostMapping("/{id}/panic")
     @Operation(summary = "Panic",
-        description = "Fait partir le message d'alerte immédiatement.")
+        description = "Fait partir le message d'alerte immédiatement. "
+            + "**Exige une arrivée validée** (arrivalConfirmedAt non nul) sur une veille non close. "
+            + "Sinon 409 WATCH_NOT_ON_SITE : le geste signale un souci au lieu de l'activité.")
     public WatchDto panic(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id) {
@@ -166,7 +175,8 @@ public class WatchController {
 
     @PostMapping("/{id}/resend-code")
     @Operation(summary = "Renvoyer le code de retour",
-        description = "Régénère le code sous mot de passe, une fois par cycle. Le rend en clair, une fois.")
+        description = "Régénère le code sous mot de passe, une fois par cycle. Le rend en clair, une fois. "
+            + "**Exige un code existant**, donc une arrivée validée. Sinon 409 WATCH_NOT_ON_SITE.")
     public ArrivalResponse resendCode(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
@@ -176,7 +186,8 @@ public class WatchController {
 
     @PostMapping("/{id}/interrupt")
     @Operation(summary = "Interrompre la séance",
-        description = "On repart plus tôt. Recale l'échéance sur le trajet de retour, ou sur maintenant si déjà rentrée.")
+        description = "On repart plus tôt. Recale l'échéance sur le trajet de retour, ou sur maintenant si déjà rentrée. "
+            + "**États acceptés : ON_SITE, REMINDING.** Sinon 409 WATCH_NOT_ON_SITE.")
     public WatchDto interrupt(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id,
@@ -187,7 +198,7 @@ public class WatchController {
     @PostMapping("/{id}/revoke-link")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Révoquer le lien de statut public",
-        description = "Éteint la page publique de cette veille, même avant son expiration.")
+        description = "Éteint la page publique de cette veille, même avant son expiration. **Tous états.**")
     public void revokeLink(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id) {
@@ -197,7 +208,9 @@ public class WatchController {
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @Operation(summary = "Désarmer avant départ",
-        description = "Éteint une veille encore armée, sans message et sans compter d'absence.")
+        description = "Éteint une veille encore armée, sans message et sans compter d'absence. "
+            + "**État accepté : ARMED seul.** Sinon 409 WATCH_NOT_DISARMABLE ; après un départ, "
+            + "la sortie est /abandon.")
     public void disarm(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID id) {
