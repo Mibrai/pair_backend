@@ -37,7 +37,7 @@ import static org.mockito.Mockito.when;
  * justement le chemin réel de création.
  *
  * <p>Deux comptes seulement pour toute la classe, créés une fois via un garde
- * statique : l'inscription est limitée à 5/heure/IP (RateLimiterService).
+ * statique : l'inscription est limitée à 5/heure/IP (RateLimiter).
  */
 class RecentSearchDeletionIntegrationTest extends AbstractIntegrationTest {
 

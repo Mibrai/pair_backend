@@ -192,6 +192,47 @@ class SlotWaitlistIntegrationTest extends AbstractIntegrationTest {
         assertThat(slotFor(second, ctx.slotId).myParticipationStatus()).isEqualTo("WAITLISTED");
     }
 
+    @Test
+    void quitterLeProgramme_doitFaireRemonterLaFile() {
+        // La capacité d'un créneau est partagée entre les deux formes
+        // d'inscription — rejoindre le créneau, ou rejoindre le programme sur ce
+        // créneau. Sa file d'attente l'est donc aussi. Seul le départ par le
+        // créneau la faisait remonter : une place rendue en quittant le programme
+        // restait libre pendant que quelqu'un l'attendait, et « vous êtes 1er » ne
+        // devenait jamais rien.
+        String host = registerAndLogin();
+        UUID slotId = publishSlot(host, 1);
+        UUID programId = jdbcTemplate.queryForObject(
+            "SELECT program_id FROM schedules WHERE id = ?", UUID.class, slotId);
+
+        String occupant = registerAndLogin();
+        UUID enrollmentId = UUID.fromString(String.valueOf(webTestClient.post()
+            .uri("/api/programs/{id}/join", programId)
+            .headers(h -> h.setBearerAuth(occupant))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("scheduleId", slotId.toString()))
+            .exchange().expectStatus().isCreated()
+            .expectBody(Map.class).returnResult().getResponseBody().get("id")));
+
+        String candidate = registerAndLogin();
+        joinWaitlist(candidate, slotId);
+        assertThat(slotFor(candidate, slotId).myParticipationStatus()).isEqualTo("WAITLISTED");
+
+        webTestClient.post().uri("/api/programs/{id}/leave", programId)
+            .headers(h -> h.setBearerAuth(occupant))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("userProgramId", enrollmentId.toString()))
+            .exchange().expectStatus().isNoContent();
+
+        SlotFeedItemDto vu = slotFor(candidate, slotId);
+        assertThat(vu.myParticipationStatus()).isEqualTo("CONFIRMED");
+        assertThat(vu.myWaitlistPosition()).isNull();
+
+        // La place a changé de mains, elle ne s'est pas ajoutée : le créneau
+        // annoncerait sinon une place libre qui vient d'être reprise.
+        assertThat(vu.participantCount()).isEqualTo(1);
+    }
+
     // — concurrence : l'exigence explicite de la spécification —
 
     @Test

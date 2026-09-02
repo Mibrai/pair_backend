@@ -30,7 +30,36 @@
         <java.version>17</java.version>
         <!-- Surchargeable en ligne de commande : mvn test -DexcludedGroups= -->
         <excludedGroups>model-integration</excludedGroups>
+
+        <!--
+          Identité du build, gravée dans build-info.properties et rendue par
+          /actuator/info. Valeur de repli pour une construction locale ; la
+          plateforme de déploiement la remplace par le profil ci-dessous. Une seule
+          propriété, et pas la branche : le profil s'active sur la présence du sha,
+          et une variable de branche absente ferait échouer la construction sur un
+          renseignement qui n'apprend rien de plus.
+        -->
+        <build.commit>local</build.commit>
     </properties>
+
+    <profiles>
+        <!--
+          Sur la plateforme de déploiement, le sha et la branche viennent de
+          l'environnement. Le profil ne s'active que si la variable existe : une
+          construction locale garde ses valeurs de repli plutôt que d'échouer.
+        -->
+        <profile>
+            <id>build-identity-from-env</id>
+            <activation>
+                <property>
+                    <name>env.RAILWAY_GIT_COMMIT_SHA</name>
+                </property>
+            </activation>
+            <properties>
+                <build.commit>${env.RAILWAY_GIT_COMMIT_SHA}</build.commit>
+            </properties>
+        </profile>
+    </profiles>
     <dependencies>
         <!--
             Moteur de récurrence RFC 5545. Écrit à la main, il couvrirait FREQ et
@@ -226,13 +255,6 @@
             <version>9.2.0</version>
         </dependency>
 
-        <!-- Phase 4: Bucket4j (Rate Limiting) -->
-        <dependency>
-            <groupId>com.bucket4j</groupId>
-            <artifactId>bucket4j-core</artifactId>
-            <version>8.7.0</version>
-        </dependency>
-
         <!-- Phase 4: Quartz (Scheduled Jobs) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -290,10 +312,11 @@
     <build>
         <plugins>
             <!-- Un fork JVM par classe de test : les tests @SpringBootTest partagent
-                 sinon des ressources statiques par JVM (bucket4j en mémoire, pool
-                 Reactor Netty global) entre classes indépendantes, provoquant des
-                 échecs aléatoires (rate-limit atteint, timeouts réseau) quand la
-                 suite tourne en entier plutôt que classe par classe. -->
+                 sinon des ressources par JVM (les compteurs en mémoire du
+                 RateLimiter, le pool Reactor Netty global) entre classes
+                 indépendantes, provoquant des échecs aléatoires (plafond atteint,
+                 timeouts réseau) quand la suite tourne en entier plutôt que classe
+                 par classe. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
@@ -317,6 +340,33 @@
                         </exclude>
                     </excludes>
                 </configuration>
+                <executions>
+                    <!--
+                      Grave dans le jar de quoi savoir QUEL build tourne.
+
+                      Sans cela, /actuator/info rendait un objet vide, et une
+                      divergence entre la spec et la production ne pouvait pas être
+                      instruite : impossible de dire si le serveur exécute le code
+                      qu'on est en train de lire. C'est exactement ce qui a bloqué
+                      l'instruction du relevé du 01/09 sur /slots/{id}/participants.
+
+                      Le sha est pris dans l'environnement plutôt que d'un plugin
+                      git : la plateforme de déploiement le pose déjà, et lire le
+                      dépôt à la construction ne dirait rien dans un conteneur qui
+                      n'en a pas.
+                    -->
+                    <execution>
+                        <id>build-info</id>
+                        <goals>
+                            <goal>build-info</goal>
+                        </goals>
+                        <configuration>
+                            <additionalProperties>
+                                <commit>${build.commit}</commit>
+                            </additionalProperties>
+                        </configuration>
+                    </execution>
+                </executions>
             </plugin>
 
             <!-- JaCoCo Maven Plugin for Code Coverage -->

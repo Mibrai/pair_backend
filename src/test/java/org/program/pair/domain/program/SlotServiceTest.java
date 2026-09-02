@@ -50,6 +50,14 @@ class SlotServiceTest {
 
     @Mock BlockFilterService blockFilterService;
 
+    // Non stubbés, pour la même raison que conflictDetector : ces deux-là écrivent
+    // sur le créneau et sur la file, et ce que cette classe vérifie — les refus
+    // d'entrée, et l'ouverture de conversation — se joue avant ou après eux. Ils
+    // doivent seulement exister : sans déclaration, @InjectMocks les laisse à null
+    // et joinSlot tombe sur un NullPointerException qui ne dit rien du test.
+    @Mock ParticipantCounter participantCounter;
+    @Mock WaitlistPromoter waitlistPromoter;
+
     @InjectMocks
     SlotService slotService;
 
@@ -135,7 +143,10 @@ class SlotServiceTest {
     private void stubHappyPathJoin(Schedule slot, UUID joinerId) {
         when(scheduleRepository.lockById(slot.getId())).thenReturn(Optional.of(slot));
         when(participationRepository.existsByScheduleIdAndUserId(slot.getId(), joinerId)).thenReturn(false);
-        when(scheduleRepository.countConfirmedParticipants(slot.getId())).thenReturn(1L);
+        // Plus de stub du décompte de places : le recomptage qui suivait l'écriture
+        // a quitté SlotService pour ParticipantCounter, qui est mocké. Le seul
+        // décompte que joinSlot fait encore lui-même est le contrôle de capacité,
+        // et ce créneau de test n'a pas de plafond — il ne l'atteint donc jamais.
         lenient().when(sanitizer.sanitize(any())).thenAnswer(inv -> inv.getArgument(0));
         User joiner = new User();
         joiner.setId(joinerId);
