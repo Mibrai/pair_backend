@@ -6,8 +6,13 @@ import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 
 /**
- * Les cinq gabarits d'alerte, dont trois vivent ici : ② l'alerte retour (SMS),
+ * Les six gabarits d'alerte, dont trois vivent ici : ② l'alerte retour (SMS),
  * ③ la levée (SMS), ④ l'alerte par e-mail. Aucun champ libre.
+ *
+ * <p><b>⑤ n'a plus d'appelant depuis le 02/09</b> — voir {@link #nonArriveeSms}.
+ * Il reste ici, entier et testé, parce qu'une décision produit peut se reprendre et
+ * que réécrire un message d'urgence de mémoire serait une mauvaise façon de la
+ * reprendre.
  *
  * <p><b>Pourquoi aucun texte n'est saisi par un utilisateur.</b> Un message qu'une
  * personne pourrait rédiger, envoyé par SMS depuis une marque de confiance à un
@@ -107,7 +112,7 @@ public final class AlertMessages {
     }
 
     /**
-     * ⑤ « Je suis bien rentrée » — annonce de retour, à la demande expresse de la
+     * ⑥ « Je suis bien rentrée » — annonce de retour, à la demande expresse de la
      * personne veillée.
      *
      * <p><b>Ce n'est pas une notification de fin de veille, et la nuance est tout
@@ -126,7 +131,7 @@ public final class AlertMessages {
         return c.prenom() + " est bien rentrée. — meetDo";
     }
 
-    /** ⑤ L'annonce de retour, par e-mail. Voir {@link #retourAnnonceSms}. */
+    /** ⑥ L'annonce de retour, par e-mail. Voir {@link #retourAnnonceSms}. */
     public static String retourAnnonceEmailHtml(Contexte c) {
         return """
             <h2>%s est bien rentrée</h2>
@@ -170,6 +175,13 @@ public final class AlertMessages {
 
     /**
      * ⑤ Non-arrivée, par SMS — distincte de ②.
+     *
+     * <p><b>Retiré le 02/09 : ce gabarit n'a plus d'appelant.</b> Une personne qui
+     * n'a jamais validé son arrivée ne fait plus prévenir son contact d'urgence —
+     * personne n'est parti, il n'y a ni trajet à surveiller ni lieu où chercher, et
+     * réveiller un proche au nom de meetDo engagerait une inquiétude que rien ne
+     * justifie. Le texte reste ici, et ses tests avec lui : la décision est un choix
+     * produit, pas un défaut du message, et elle peut se reprendre.
      *
      * <p>Un contact qui lit « n'est pas rentrée » alors que la personne n'est
      * jamais partie cherche au mauvais endroit. Ce message dit l'inverse : elle
