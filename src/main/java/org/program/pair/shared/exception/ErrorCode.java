@@ -207,6 +207,19 @@ public enum ErrorCode {
     WATCH_RESEND_ALREADY_USED,
     // Le mot de passe du compte, exigé pour renvoyer le code, est faux.
     WATCH_PASSWORD_REQUIRED,
+    // L'arrivée a déjà été déclarée. La personne a touché deux fois : c'est un
+    // conflit d'état, pas une faute.
+    WATCH_ARRIVAL_ALREADY_CLAIMED,
+    // Le code de retour est demandé avant que l'arrivée ne soit validée : il n'y a
+    // rien à donner. La validation vient de l'hôte, ou du délai.
+    WATCH_ARRIVAL_NOT_CONFIRMED,
+    // Le code de retour a déjà été remis une fois. Il n'existe en clair qu'à cet
+    // instant-là ; pour en obtenir un autre, il faut passer par le renvoi sous mot
+    // de passe, qui le régénère.
+    WATCH_CODE_ALREADY_CLAIMED,
+    // Le geste suppose quelqu'un à prévenir, et cette veille a été armée sans
+    // contact. Rien ne sortira d'elle — c'est ce qui a été accepté à l'armement.
+    WATCH_NO_GUARDIAN,
 
     // — incidents (IncidentService) —
     // Un incident visant une personne doit désigner qui : sans cible, il ne peut

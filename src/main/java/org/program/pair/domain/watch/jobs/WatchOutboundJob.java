@@ -30,6 +30,12 @@ import java.util.List;
  * recevrait une notification pour chaque retardataire de chaque séance, et
  * couperait ses notifications.
  *
+ * <p><b>Une arrivée déclarée sort de cette boucle</b>, sans changer d'état : ni
+ * demande, ni verdict de non-arrivée tant qu'elle attend sa validation. C'est ce
+ * qui empêche qu'on classe « perdu en chemin » quelqu'un qui vient de dire qu'il
+ * est arrivé. Le job porte donc aussi la bascule automatique du 03/09, qui valide
+ * une arrivée déclarée passé {@code Watch.DELAI_VALIDATION_AUTO}.
+ *
  * <p>« Je suis en chemin » repousse la base de quinze minutes, ce qui rachète
  * autant de temps avant la demande suivante. Une arrivée validée sort la veille de
  * cette boucle (elle passe {@code ON_SITE}) ; un abandon la referme.
@@ -46,11 +52,23 @@ public class WatchOutboundJob {
 
     private final WatchRepository watchRepository;
     private final WatchEscalationService escalation;
+    private final org.program.pair.domain.watch.WatchService watchService;
 
     @Scheduled(fixedDelay = 60_000, initialDelay = 45_000)
     @Transactional
     public void tick() {
         Instant now = Instant.now();
+
+        // La bascule automatique, d'abord et par sa propre requête. Elle ne peut
+        // pas se greffer sur le balayage ci-dessous : celui-ci ne voit que les
+        // veilles dont outbound_base_at est déjà passé, et quelqu'un qui arrive
+        // en avance déclare son arrivée avant que sa veille n'y entre — sa
+        // validation ne serait alors jamais tombée.
+        int valides = watchService.confirmerLesArriveesEchues();
+        if (valides > 0) {
+            log.info("Boucle aller : {} arrivée(s) validée(s) par le délai", valides);
+        }
+
         List<Watch> aExaminer = watchRepository.findByStateInAndOutboundBaseAtBetween(
             List.of(WatchState.ARMED, WatchState.EN_ROUTE),
             now.minus(FENETRE), now);
@@ -71,6 +89,20 @@ public class WatchOutboundJob {
     }
 
     private boolean avancer(Watch watch, Instant now) {
+        // Une arrivée déclarée sort de cette boucle, et c'est structurel plutôt
+        // qu'un garde-fou. Sans cela, deux choses arrivaient : les demandes
+        // « tu y es ? » continuaient de partir à quelqu'un qui venait de dire
+        // qu'il y était, et surtout le verdict de non-arrivée tombait à T+45 sur
+        // une veille en attente de validation — terminale, donc plus de code de
+        // retour possible, donc une soirée que plus rien ne surveille. C'est
+        // l'inverse exact de ce que ce module existe pour faire.
+        //
+        // Ce qui l'attend désormais est la validation : celle de l'hôte, ou celle
+        // du délai, traitée en tête de tick().
+        if (watch.getArrivalClaimedAt() != null) {
+            return false;
+        }
+
         long ecoule = Duration.between(watch.getOutboundBaseAt(), now).toMinutes();
 
         int demandesDues = ecoule >= DEMANDE_3_MIN ? 3

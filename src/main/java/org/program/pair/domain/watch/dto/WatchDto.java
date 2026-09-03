@@ -10,6 +10,12 @@ import java.util.UUID;
 /**
  * Une veille telle que son propriétaire la voit.
  *
+ * <p><b>{@code guardianId} peut être nul</b>, et c'est le seul moyen de savoir
+ * qu'une veille n'a personne à prévenir. Une veille armée sans contact relance,
+ * journalise et porte la validation de présence, mais n'envoie rien : ni alerte,
+ * ni lien public. Ne pas le déduire d'une contrainte d'interface — les veilles
+ * déjà en base ne la connaissent pas.
+ *
  * <p>Le miroir de l'entité, moins {@code userId} — c'est l'appelant, le répéter
  * n'apprend rien. Rendu au seul propriétaire de la veille : ce sont ses propres
  * données.
@@ -32,8 +38,18 @@ public record WatchDto(
     WatchState state,
     Instant armedAt,
 
+    @Schema(description = "Quand la personne a déclaré son arrivée. Null tant qu'elle ne l'a pas "
+        + "fait. Déclarer ne valide rien : c'est l'hôte, ou le délai, qui valide.")
+    Instant arrivalClaimedAt,
+
     @Schema(description = "Quand l'arrivée sur place a été validée. Null tant qu'elle ne l'est pas.")
     Instant arrivalConfirmedAt,
+
+    @Schema(description = "Quand l'arrivée déclarée se validera d'elle-même, sans geste de "
+        + "l'hôte. Null s'il n'y a rien à attendre — pas de déclaration, déjà validée, ou "
+        + "veille terminée. À afficher avant le geste : c'est l'heure du serveur, jamais une "
+        + "addition faite sur l'appareil.")
+    Instant arrivalAutoConfirmAt,
 
     Instant interruptedAt,
 
@@ -81,7 +97,9 @@ public record WatchDto(
             w.getScheduleId(),
             w.getState(),
             w.getArmedAt(),
+            w.getArrivalClaimedAt(),
             w.getArrivalConfirmedAt(),
+            w.getArrivalAutoConfirmAt(),
             w.getInterruptedAt(),
             w.getDeadlineAt(),
             w.getRemindersSent(),

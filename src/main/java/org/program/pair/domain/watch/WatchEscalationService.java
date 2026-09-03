@@ -112,6 +112,15 @@ public class WatchEscalationService {
      * @param ecouleMinutes minutes écoulées depuis l'échéance, pour la fenêtre du secours
      */
     public boolean ensureAlerted(Watch watch, long ecouleMinutes) {
+        // Une veille armée sans contact n'a personne à prévenir : ce point d'envoi
+        // n'a rien à faire pour elle. Le garde est ici plutôt que chez les trois
+        // appelants — la boucle retour, panic, la clôture sous contrainte — parce
+        // que c'est le passage obligé de tout ce qui sort du module, et que le
+        // quatrième appelant sera écrit par quelqu'un qui ne connaîtra pas la règle.
+        if (watch.sansContact()) {
+            return false;
+        }
+
         boolean agi = false;
 
         // ensureAlerted ne tourne que sur une veille ESCALATED, avant toute levée
@@ -144,6 +153,17 @@ public class WatchEscalationService {
             agi = true;
         }
         return agi;
+    }
+
+    /**
+     * Inscrit la clôture d'une veille sans contact à sa chronologie.
+     *
+     * <p>Ici plutôt que dans le job, pour que tous les faits d'une veille soient
+     * écrits par le même service — celui qui tient déjà la non-arrivée, les rappels
+     * et l'escalade.
+     */
+    public void inscrireCloturSansContact(java.util.UUID watchId, Instant quand) {
+        inscrire(watchId, WatchEventType.CLOSED_NO_CONTACT, quand);
     }
 
     // ------------------------------------------------------------ non-arrivée
