@@ -6,6 +6,7 @@ import org.program.pair.domain.guardian.ConsentState;
 import org.program.pair.domain.guardian.Guardian;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotAudience;
+import org.program.pair.domain.program.SlotParticipation;
 import org.program.pair.domain.program.SlotTiming;
 import org.program.pair.domain.user.User;
 import org.program.pair.domain.watch.dto.CreateWatchRequest;
@@ -35,7 +36,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -75,6 +78,7 @@ public class WatchService {
     private final ScheduleRepository scheduleRepository;
     private final ReturnCodeRepository returnCodeRepository;
     private final SlotAudience slotAudience;
+    private final org.program.pair.repository.SlotParticipationRepository participationRepository;
     private final Pepper pepper;
     private final WatchEscalationService escalation;
     private final UserRepository userRepository;
@@ -91,6 +95,18 @@ public class WatchService {
      * personne concernée l'apprend — voir {@link #listActive}.
      */
     private static final Duration NON_ARRIVEE_VISIBLE = Duration.ofHours(24);
+
+    /**
+     * Les issues terminales que « mes veilles actives » continue de rendre 24 h.
+     *
+     * <p>Les deux où <b>personne n'a été prévenu</b> : perdue en chemin, et refermée
+     * sans contact. Dans les deux cas la personne n'apprendrait rien autrement — il
+     * n'y a ni alerte partie, ni message reçu, et pour la seconde c'est même
+     * exactement ce qu'elle avait accepté. Cette liste est le seul endroit qui le
+     * lui dit.
+     */
+    private static final List<WatchState> ISSUES_VISIBLES_UN_JOUR =
+        List.of(WatchState.NOT_ARRIVED, WatchState.NO_CONTACT);
 
     private static final int TRAJET_DEFAUT_MIN = 45;
     private static final int TRAJET_MIN = 15;
@@ -109,7 +125,12 @@ public class WatchService {
             throw new ResourceNotFoundException("Créneau introuvable.");
         }
 
-        exigerContactAccepte(userId, req.guardianId());
+        // Le contact est facultatif depuis le 03/09. Sans lui, la veille relance,
+        // journalise et porte la validation de présence — mais rien ne sortira
+        // d'elle, et elle se refermera en NO_CONTACT à l'échéance.
+        if (req.guardianId() != null) {
+            exigerContactAccepte(userId, req.guardianId());
+        }
         if (req.backupGuardianId() != null) {
             // Le même contact aux deux postes est refusé, et non ignoré. Accepté, il
             // sautait la vérification ci-dessous et donnait une seconde ligne de
@@ -117,6 +138,15 @@ public class WatchService {
             // prévenait la même personne une seconde fois et inscrivait
             // BACKUP_ALERTED à la chronologie. La veille affichait un second recours
             // sollicité alors qu'un seul proche avait été joint, deux fois.
+            if (req.guardianId() == null) {
+                // Un secours seul ne « seconde » personne : la branche du secours ne
+                // s'ouvre qu'après que le principal a été prévenu sans rien ouvrir.
+                // L'accepter armerait une veille dont le seul contact ne serait
+                // jamais joint, ce qui est pire que pas de contact du tout : ici
+                // l'app croirait qu'il y en a un.
+                throw new BusinessException(ErrorCode.WATCH_NO_GUARDIAN,
+                    "Un contact de secours suppose un contact principal.");
+            }
             if (req.backupGuardianId().equals(req.guardianId())) {
                 throw new BusinessException(ErrorCode.WATCH_BACKUP_SAME_AS_PRIMARY,
                     "Le contact de secours doit être différent du contact principal.");
@@ -190,8 +220,8 @@ public class WatchService {
      */
     @Transactional(readOnly = true)
     public List<WatchDto> listActive(UUID userId) {
-        return watchRepository.findActivesEtNonArriveesRecentes(
-                userId, WatchState.TERMINAUX, WatchState.NOT_ARRIVED,
+        return watchRepository.findActivesEtIssuesRecentes(
+                userId, WatchState.TERMINAUX, ISSUES_VISIBLES_UN_JOUR,
                 Instant.now().minus(NON_ARRIVEE_VISIBLE))
             .stream().map(this::dto).toList();
     }
@@ -370,6 +400,12 @@ public class WatchService {
         }
         return watchRepository.findByScheduleIdAndStateIn(scheduleId,
                 List.of(WatchState.ARMED, WatchState.EN_ROUTE)).stream()
+            // Qui a déclaré son arrivée n'est plus attendu : il attend, lui, d'être
+            // validé. Sans ce filtre, un même nom porterait les deux gestes à la
+            // fois — « je la vois » et « valider sa présence » — et l'organisateur
+            // aurait à choisir lequel croire. Depuis le 03/09, l'état ne suffit plus
+            // à les séparer : une déclaration laisse la veille en ARMED/EN_ROUTE.
+            .filter(w -> w.getArrivalClaimedAt() == null)
             .map(w -> new org.program.pair.domain.watch.dto.PendingArrivalDto(
                 w.getId(),
                 org.program.pair.domain.user.GivenName.from(displayNameDe(w.getUserId())),
@@ -545,24 +581,270 @@ public class WatchService {
                 "L'arrivée ne peut être validée que sur une veille en attente d'arrivée.");
         }
 
+        String code = tirerLeCode(watchId, req);
+
+        Instant now = Instant.now();
+        watch.setState(WatchState.ON_SITE);
+        // La déclaration est posée avec la validation : ce verbe fait les deux d'un
+        // coup, et une veille validée sans déclaration se lirait mal dans le journal
+        // comme dans la ligne de l'organisateur.
+        if (watch.getArrivalClaimedAt() == null) {
+            watch.setArrivalClaimedAt(now);
+        }
+        watch.setArrivalConfirmedAt(now);
+        inscrire(watchId, WatchEventType.ARRIVED_ON_SITE, now);
+
+        return new ArrivalResponse(dto(watch), code);
+    }
+
+    // --------------------------------------------------- arrivée à deux temps
+
+    /**
+     * « J'y suis » — la personne <b>déclare</b> son arrivée. Rien n'est tiré.
+     *
+     * <p>Le premier des deux temps du 03/09. Ce geste ne crée aucun code et ne
+     * change pas l'état : il pose {@code arrivalClaimedAt}, et c'est tout. La
+     * validation — par l'hôte, ou par le délai — est le second temps, et c'est elle
+     * qui fait naître le code de retour.
+     *
+     * <p><b>Un champ et pas un état, et ce n'est pas un détail de forme.</b>
+     * {@code WatchState.parse} du client rend {@code ARMED} sur tout état inconnu :
+     * un état neuf ferait retomber les applications anciennes sur « en attente
+     * d'arrivée », leur ferait proposer un « J'y suis » que le serveur refuserait, et
+     * la seule chose que verrait l'utilisateur serait un bouton qui échoue. Un champ
+     * inconnu, lui, est ignoré sans dommage.
+     *
+     * <p><b>Ce que ce geste arrête.</b> Il suspend la boucle aller — plus de
+     * « tu y es ? », et surtout plus de verdict de non-arrivée à T+45. Sans cette
+     * suspension, quelqu'un qui déclare son arrivée à T+40 serait classé perdu en
+     * chemin cinq minutes plus tard, sa veille deviendrait terminale, et le code de
+     * retour ne pourrait plus jamais lui être remis. Voir {@code WatchOutboundJob}.
+     *
+     * <p>{@code POST /watches/{id}/arrival} — l'ancien verbe — n'est pas touché : il
+     * continue de valider et de rendre le code d'un coup. Toutes les applications
+     * installées en dépendent, et écrivent sa réponse au Trousseau ; le lui retirer
+     * laisserait chaque téléphone non mis à jour sans code, donc sans clôture
+     * possible, donc avec une alerte à l'échéance.
+     */
+    public void claimArrival(UUID userId, UUID watchId) {
+        Watch watch = exigerVeille(userId, watchId);
+
+        if (watch.getState() != WatchState.ARMED && watch.getState() != WatchState.EN_ROUTE) {
+            throw new ConflictException(ErrorCode.WATCH_ARRIVAL_NOT_EXPECTED,
+                "L'arrivée ne peut être déclarée que sur une veille en attente d'arrivée.");
+        }
+        if (watch.getArrivalClaimedAt() != null) {
+            // La personne a touché deux fois. Un conflit d'état, pas une faute.
+            throw new ConflictException(ErrorCode.WATCH_ARRIVAL_ALREADY_CLAIMED,
+                "Cette arrivée a déjà été déclarée.");
+        }
+
+        Instant now = Instant.now();
+        watch.setArrivalClaimedAt(now);
+        inscrire(watchId, WatchEventType.ARRIVAL_CLAIMED, now);
+    }
+
+    /**
+     * L'organisateur valide une arrivée déclarée : le second temps.
+     *
+     * <p>Visé par {@code participationId} et non par {@code watchId} :
+     * l'organisateur n'a aucune raison de manipuler l'identifiant d'une veille, et
+     * la ligne qu'il touche est celle d'un inscrit. Un créneau qu'il n'organise pas
+     * — ou qui n'existe pas — lui est <b>introuvable</b> (404), jamais interdit :
+     * le même silence que {@code seen-by-host} et {@code pending-arrivals}.
+     *
+     * <p><b>Sans effet, et sans le dire, quand il n'y a rien à valider.</b> Un
+     * inscrit qui n'a pas armé de veille, ou qui n'a pas déclaré son arrivée, rend
+     * le même 202 qu'une validation réussie. C'est la contrainte de confidentialité
+     * du client, et elle ne tient que là : si ce verbe répondait 404 ou 409 sur un
+     * inscrit sans veille, l'hôte apprendrait qui se protège en essayant, et le
+     * soin pris à rendre {@code NONE} indistinguable dans la liste ne servirait à
+     * rien. Ce qui est protégé n'est pas la donnée, c'est le <b>geste disponible</b>.
+     */
+    public void confirmArrival(UUID hostId, UUID scheduleId, UUID participationId) {
+        Schedule slot = scheduleRepository.findById(scheduleId)
+            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+        if (!hostId.equals(organisateurDe(slot))) {
+            throw new ResourceNotFoundException("Créneau introuvable.");
+        }
+
+        SlotParticipation participation = participationRepository.findById(participationId)
+            .filter(p -> p.getSchedule() != null && scheduleId.equals(p.getSchedule().getId()))
+            .orElseThrow(() -> new ResourceNotFoundException("Inscrit introuvable."));
+
+        watchRepository.findByScheduleIdAndStateIn(scheduleId,
+                List.of(WatchState.ARMED, WatchState.EN_ROUTE)).stream()
+            .filter(w -> w.getUserId().equals(participation.getUser().getId()))
+            .filter(w -> w.getArrivalClaimedAt() != null && w.getArrivalConfirmedAt() == null)
+            .findFirst()
+            .ifPresent(w -> validerArrivee(w, WatchEventType.ARRIVAL_CONFIRMED_BY_HOST));
+    }
+
+    /**
+     * Le second temps, quel qu'en soit l'auteur : l'hôte, ou le délai.
+     *
+     * <p>La veille passe {@code ON_SITE} et l'échéance de retour commence à courir.
+     * <b>Aucun code n'est tiré ici</b> — voir {@link #claimCode}.
+     */
+    void validerArrivee(Watch watch, WatchEventType parQui) {
+        Instant now = Instant.now();
+        watch.setState(WatchState.ON_SITE);
+        watch.setArrivalConfirmedAt(now);
+        inscrire(watch.getId(), parQui, now);
+    }
+
+    /**
+     * Le code de retour, en clair, au titulaire seul, une seule fois.
+     *
+     * <p><b>Le code est tiré ici, et non à la validation.</b> Le client demandait
+     * qu'il naisse au moment où l'hôte valide ; ce n'est pas tenable, et la raison
+     * est la sienne : entre sa naissance et sa remise, le clair devrait attendre
+     * quelque part. Or il n'existe nulle part au repos — c'est ce qui rend vraie la
+     * phrase que toute l'application répète. Il est donc tiré au moment où il est
+     * remis, sur demande de la personne, et la validation ne fait qu'ouvrir ce
+     * droit.
+     *
+     * <p><b>Jamais dans une notification</b>, et l'argument du client est repris
+     * tel quel : une charge APNs s'écrit en clair sur un écran verrouillé, se
+     * conserve dans le centre de notifications et se capture. Poser le code de
+     * retour là le rendrait lisible par la personne même dont le code de contrainte
+     * existe pour protéger. La notification dit que la présence est validée ; elle
+     * ne dit pas le code.
+     *
+     * <p><b>Une seule fois</b>, comme la réponse d'{@code arrival} aujourd'hui. Un
+     * second appel est refusé plutôt que servi : c'est ce qui garde vraie la phrase
+     * « ce code n'existe en clair qu'une seule fois, sur ce téléphone-là ». Qui l'a
+     * perdu passe par {@link #resendCode}, sous mot de passe — la porte existait
+     * déjà, et elle est la bonne : elle régénère au lieu de rejouer, et coûte une
+     * preuve d'identité.
+     *
+     * <p>Le code de contrainte se pose ici, et non à la déclaration : c'est ici
+     * qu'existe la ligne à laquelle son empreinte s'attache, sous le même sel et la
+     * même version de clé que le code normal.
+     */
+    public ArrivalResponse claimCode(UUID userId, UUID watchId, ArrivalRequest req) {
+        Watch watch = exigerVeille(userId, watchId);
+
+        if (watch.getArrivalConfirmedAt() == null) {
+            throw new ConflictException(ErrorCode.WATCH_ARRIVAL_NOT_CONFIRMED,
+                "L'arrivée n'a pas encore été validée : il n'y a pas de code à remettre.");
+        }
+        if (returnCodeRepository.findByWatchId(watchId).isPresent()) {
+            throw new ConflictException(ErrorCode.WATCH_CODE_ALREADY_CLAIMED,
+                "Le code a déjà été remis une fois.");
+        }
+
+        return new ArrivalResponse(dto(watch), tirerLeCode(watchId, req));
+    }
+
+    /**
+     * Tire un code de retour, en stocke l'empreinte, et rend le clair.
+     *
+     * <p>Le clair ne sort que par cette valeur de retour : il n'est écrit nulle
+     * part, ni en base, ni dans un journal.
+     */
+    private String tirerLeCode(UUID watchId, ArrivalRequest req) {
         String code = ReturnCodeGenerator.next();
         byte[] sel = pepper.nouveauSel();
         int kv = pepper.versionCourante();
-        String selB64 = Base64.getEncoder().encodeToString(sel);
 
         String duressHash = (req != null && req.duressCode() != null && !req.duressCode().isBlank())
             ? pepper.empreinte(req.duressCode().strip(), sel, kv)
             : null;
 
         returnCodeRepository.save(new ReturnCode(
-            watchId, pepper.empreinte(code, sel, kv), selB64, kv, 3, duressHash));
+            watchId, pepper.empreinte(code, sel, kv),
+            Base64.getEncoder().encodeToString(sel), kv, 3, duressHash));
+        return code;
+    }
 
-        Instant now = Instant.now();
-        watch.setState(WatchState.ON_SITE);
-        watch.setArrivalConfirmedAt(now);
-        inscrire(watchId, WatchEventType.ARRIVED_ON_SITE, now);
+    /**
+     * L'état d'arrivée de chaque inscrit d'un créneau, pour la liste de l'hôte.
+     *
+     * <p>Indexé par identifiant d'utilisateur : c'est l'appelant qui recolle sur ses
+     * lignes de participation, et il en a une par inscrit — y compris pour les
+     * inscrits sans veille, qui doivent recevoir une ligne comme les autres.
+     *
+     * <p><b>L'absence est la valeur par défaut, et c'est toute la protection.</b>
+     * Un inscrit absent de cette carte rend {@code NONE}, et un inscrit qui a armé
+     * sans déclarer son arrivée rend {@code NONE} lui aussi. Les deux sont
+     * <b>indistinguables</b>, sans quoi l'insigne de présence deviendrait un
+     * détecteur : l'organisateur apprendrait qui se protège, ce que personne n'a
+     * accepté de lui dire.
+     *
+     * <p>Sans filtre d'état : une arrivée validée doit rester lisible après que la
+     * veille s'est refermée, sinon l'insigne disparaîtrait de l'écran de l'hôte au
+     * moment où la personne rentre chez elle.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, ArrivalView> arrivalsByUser(UUID scheduleId) {
+        Map<UUID, ArrivalView> parPersonne = new LinkedHashMap<>();
+        for (Watch w : watchRepository.findByScheduleId(scheduleId)) {
+            ArrivalView vue = ArrivalView.of(w);
+            if (vue == null) {
+                continue;
+            }
+            // Une personne peut avoir plusieurs veilles sur un créneau au fil du
+            // temps (une refermée, une réarmée) : la plus avancée gagne, sinon un
+            // insigne validé pourrait être effacé par une veille plus récente encore
+            // en route.
+            parPersonne.merge(w.getUserId(), vue,
+                (a, b) -> a.rang() >= b.rang() ? a : b);
+        }
+        return parPersonne;
+    }
 
-        return new ArrivalResponse(dto(watch), code);
+    /**
+     * Ce que l'organisateur voit d'une arrivée : un état, et deux heures.
+     *
+     * <p><b>Rien d'autre, et le type le tient.</b> Ni retard, ni motif, ni durée :
+     * l'insigne dit « vue à cette séance », pas comment. C'est la même clôture que
+     * {@code PendingArrivalDto} s'impose — y ajouter un champ serait donner à
+     * l'organisateur une information de traçabilité qui ne le regarde pas.
+     */
+    public record ArrivalView(String state, Instant claimedAt, Instant confirmedAt) {
+
+        /** Nul quand il n'y a rien à dire : le lecteur rendra {@code NONE}. */
+        static ArrivalView of(Watch w) {
+            if (w.getArrivalConfirmedAt() != null) {
+                return new ArrivalView("CONFIRMED", w.getArrivalClaimedAt(), w.getArrivalConfirmedAt());
+            }
+            if (w.getArrivalClaimedAt() != null) {
+                return new ArrivalView("CLAIMED", w.getArrivalClaimedAt(), null);
+            }
+            return null;
+        }
+
+        int rang() {
+            return "CONFIRMED".equals(state) ? 2 : 1;
+        }
+    }
+
+    /**
+     * La bascule automatique : les arrivées déclarées que le délai valide.
+     *
+     * <p><b>C'est le garde-fou qui rend la validation par l'hôte acceptable</b>, et
+     * il répond mot pour mot à l'objection que nous opposions au code de séance le
+     * 02/09 : un geste détenu par un tiers ferait dépendre de lui la naissance du
+     * code de retour, et en ferait un point de pression. Passé
+     * {@link Watch#DELAI_VALIDATION_AUTO}, l'arrivée se valide sans que personne
+     * n'ait rien touché. Dans le pire des cas — un hôte absent, distrait ou hostile
+     * — la personne attend le délai, et sa soirée est protégée quand même.
+     *
+     * <p><b>Inconditionnelle</b> : aucune condition sur l'hôte, sur le créneau ou
+     * sur l'heure de début. La seule horloge est celle du geste de la personne.
+     *
+     * @return le nombre d'arrivées validées à ce passage
+     */
+    public int confirmerLesArriveesEchues() {
+        Instant echu = Instant.now().minus(Watch.DELAI_VALIDATION_AUTO);
+        List<Watch> dues = watchRepository.findArriveesDeclareesEchues(
+            List.of(WatchState.ARMED, WatchState.EN_ROUTE), echu);
+
+        for (Watch watch : dues) {
+            validerArrivee(watch, WatchEventType.ARRIVAL_AUTO_CONFIRMED);
+        }
+        return dues.size();
     }
 
     // ------------------------------------------------------------------ clôture
@@ -615,7 +897,21 @@ public class WatchService {
             returnCodeRepository.delete(rc);
             inscrire(watchId, WatchEventType.CLOSED_BY_CODE, req.enteredAt());
 
-            if (okDuress) {
+            if (okDuress && watch.sansContact()) {
+                // Un code de contrainte sur une veille sans contact n'a personne à
+                // qui s'adresser : son effet entier est « prévenez le proche en
+                // silence », et il n'y a pas de proche. On referme donc exactement
+                // comme une clôture normale — même état, même closedAt, aucune trace
+                // qui distingue les deux.
+                //
+                // Rendre les deux branches identiques est ici plus protecteur que de
+                // marquer la contrainte : une marque que rien ne consomme resterait
+                // lisible dans le journal, sur l'appareil que la personne contrainte
+                // a peut-être à montrer. Ce que l'armement sans contact ne peut pas
+                // offrir, il vaut mieux ne pas en garder la trace.
+                watch.setState(WatchState.CLOSED);
+                watch.setClosedAt(req.enteredAt());
+            } else if (okDuress) {
                 // Escalade en silence. L'état ESCALATED est le signal que les
                 // minuteurs reprendront pour prévenir le contact ; l'envoi lui-même
                 // se fait hors de cette transaction de réponse. On ne pose pas
@@ -716,6 +1012,14 @@ public class WatchService {
         if (watch.getArrivalConfirmedAt() == null) {
             throw new ConflictException(ErrorCode.WATCH_NOT_ON_SITE,
                 "Ce geste suppose une arrivée validée.");
+        }
+        if (watch.sansContact()) {
+            // Refusé, plutôt que refermé en silence. Panic veut dire « prévenez
+            // maintenant » : sans destinataire, il n'y a rien à faire, et le pire
+            // serait de rendre 202 à quelqu'un qui croirait alors que quelqu'un a
+            // été alerté. Le code nommé permet au client d'éteindre le bouton.
+            throw new ConflictException(ErrorCode.WATCH_NO_GUARDIAN,
+                "Cette veille n'a personne à prévenir.");
         }
         watch.setState(WatchState.ESCALATED);
         inscrire(watchId, WatchEventType.PANIC_TRIGGERED, Instant.now());

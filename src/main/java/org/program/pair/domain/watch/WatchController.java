@@ -86,9 +86,50 @@ public class WatchController {
         watchService.seenByHost(principal.getId(), id);
     }
 
+    @PostMapping("/{id}/arrival/claim")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @Operation(summary = "« J'y suis » — déclarer son arrivée, sans tirer de code",
+        description = "Le premier des deux temps. Pose `arrivalClaimedAt`, **ne change pas "
+            + "l'état** et ne crée aucun code : c'est la validation — par l'organisateur, ou "
+            + "par le délai — qui ouvre le droit au code de retour.\n\n"
+            + "**États acceptés : ARMED, EN_ROUTE.** Sinon 409 WATCH_ARRIVAL_NOT_EXPECTED. "
+            + "Une seconde déclaration rend 409 WATCH_ARRIVAL_ALREADY_CLAIMED : la personne a "
+            + "touché deux fois.\n\n"
+            + "Déclarer suspend la boucle aller : plus de « tu y es ? », et plus de verdict de "
+            + "non-arrivée. `arrivalAutoConfirmAt` du WatchDto dit quand la validation tombera "
+            + "d'elle-même.")
+    public void claimArrival(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id) {
+        watchService.claimArrival(principal.getId(), id);
+    }
+
+    @PostMapping("/{id}/code/claim")
+    @Operation(summary = "Recevoir le code de retour, une seule fois",
+        description = "Réservé au titulaire de la veille (404 sinon). Le code est tiré **à cet "
+            + "appel** et rendu en clair : il n'existe nulle part au repos, et n'est jamais "
+            + "posé dans une notification — une charge APNs s'écrit sur un écran verrouillé et "
+            + "se capture.\n\n"
+            + "409 WATCH_ARRIVAL_NOT_CONFIRMED tant que l'arrivée n'est pas validée. "
+            + "409 WATCH_CODE_ALREADY_CLAIMED au second appel : qui l'a perdu passe par "
+            + "`/resend-code`, sous mot de passe, qui régénère au lieu de rejouer.\n\n"
+            + "`duressCode` se pose ici — c'est ici qu'existe la ligne à laquelle son empreinte "
+            + "s'attache.")
+    public ArrivalResponse claimCode(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID id,
+            @Valid @RequestBody(required = false) ArrivalRequest request) {
+        return watchService.claimCode(principal.getId(), id, request);
+    }
+
     @PostMapping("/{id}/arrival")
-    @Operation(summary = "Valider son arrivée sur place",
-        description = "Crée le code de retour et le rend en clair, une seule fois. "
+    @Operation(summary = "Valider son arrivée sur place (verbe historique, inchangé)",
+        description = "Valide et crée le code de retour d'un seul geste, et le rend en clair "
+            + "une seule fois.\n\n"
+            + "**Inchangé, et il le restera.** Toutes les applications installées en dépendent "
+            + "et écrivent sa réponse au Trousseau : le lui retirer laisserait chaque téléphone "
+            + "non mis à jour sans code, donc sans clôture possible, donc avec une alerte à "
+            + "l'échéance. Le parcours à deux temps est à côté, pas à la place.\n\n"
             + "**États acceptés : ARMED, EN_ROUTE.** Sinon 409 WATCH_ARRIVAL_NOT_EXPECTED.")
     public ArrivalResponse arrival(
             @AuthenticationPrincipal UserPrincipal principal,
