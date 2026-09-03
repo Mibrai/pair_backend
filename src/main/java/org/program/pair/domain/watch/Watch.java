@@ -46,6 +46,21 @@ import java.util.UUID;
 @EntityListeners(AuditingEntityListener.class)
 public class Watch {
 
+    /**
+     * Le délai au bout duquel une arrivée déclarée se valide toute seule.
+     *
+     * <p><b>C'est le garde-fou sans lequel la validation par l'hôte ne serait pas
+     * livrable</b>, et la raison est celle que nous opposions nous-mêmes au code de
+     * séance le 02/09 : un geste détenu par un tiers fait dépendre de lui la
+     * naissance du code de retour, et en fait un point de pression. Passé ce délai,
+     * l'arrivée est validée sans que personne n'ait rien touché. L'hôte gagne du
+     * temps sur la validation ; il n'a jamais de pouvoir sur elle.
+     *
+     * <p>Compté depuis {@code arrivalClaimedAt} — le geste de la personne — et non
+     * depuis le début de la séance, qu'un hôte peut modifier.
+     */
+    public static final java.time.Duration DELAI_VALIDATION_AUTO = java.time.Duration.ofMinutes(15);
+
     @Id
     @GeneratedValue
     private UUID id;
@@ -65,7 +80,25 @@ public class Watch {
     @Builder.Default
     private Instant armedAt = Instant.now();
 
-    /** Null tant que la personne n'a pas validé son arrivée sur place. */
+    /**
+     * Quand la personne a <b>déclaré</b> son arrivée. Null tant qu'elle ne l'a pas
+     * fait.
+     *
+     * <p>Un champ et non un état, à la demande du client : {@code WatchState.parse}
+     * rend {@code ARMED} sur tout état inconnu, donc un état neuf ferait retomber
+     * les applications anciennes sur « en attente d'arrivée » — faux dès qu'une
+     * déclaration existe. Un champ inconnu, lui, est ignoré sans dommage.
+     *
+     * <p><b>Ce champ suspend la boucle aller.</b> Tant qu'il est nul, les demandes
+     * « tu y es ? » partent et la non-arrivée se prononce à T+45 ; dès qu'il est
+     * posé, {@code WatchOutboundJob} ne fait plus qu'attendre la validation. Sans
+     * cela, quelqu'un qui déclare son arrivée à T+40 serait classé perdu en chemin
+     * cinq minutes plus tard — et sa veille, terminale, ne surveillerait plus rien.
+     */
+    @Column(name = "arrival_claimed_at")
+    private Instant arrivalClaimedAt;
+
+    /** Null tant que l'arrivée n'a pas été validée — par l'hôte, ou par le délai. */
     @Column(name = "arrival_confirmed_at")
     private Instant arrivalConfirmedAt;
 
@@ -99,9 +132,38 @@ public class Watch {
     @Builder.Default
     private int arrivalPromptsSent = 0;
 
-    /** Le contact principal — un contact accepté de l'utilisateur. */
-    @Column(name = "guardian_id", nullable = false)
+    /**
+     * Le contact principal — un contact accepté de l'utilisateur, ou <b>rien</b>.
+     *
+     * <p>Nul quand la veille a été armée sans contact. Une telle veille relance,
+     * journalise et porte la validation de présence, mais <b>n'envoie rien</b> :
+     * elle se referme en {@link WatchState#NO_CONTACT} à l'échéance. Tout code qui
+     * déréférence ce champ doit donc le tester d'abord — c'est la contrepartie du
+     * champ facultatif, et elle vaut pour chaque chemin d'alerte.
+     */
+    @Column(name = "guardian_id")
     private UUID guardianId;
+
+    /** Vrai quand la veille n'a personne à prévenir : rien ne sortira jamais d'elle. */
+    public boolean sansContact() {
+        return guardianId == null;
+    }
+
+    /**
+     * Quand l'arrivée se validera d'elle-même — nul quand il n'y a rien à attendre.
+     *
+     * <p>Rendu au client pour qu'il puisse écrire l'heure <b>avant</b> le geste :
+     * « sans réponse de ton hôte, ta présence sera validée à 19:57 ». C'est son
+     * heure à lui qui doit s'afficher, pas une addition faite sur l'appareil — même
+     * raison que {@code deadlineAt}, et la seule façon que les deux côtés parlent
+     * du même instant.
+     */
+    public Instant getArrivalAutoConfirmAt() {
+        if (arrivalClaimedAt == null || arrivalConfirmedAt != null || !estActive()) {
+            return null;
+        }
+        return arrivalClaimedAt.plus(DELAI_VALIDATION_AUTO);
+    }
 
     /** Le contact de secours, s'il y en a un. */
     @Column(name = "backup_guardian_id")

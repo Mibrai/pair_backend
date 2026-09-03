@@ -37,6 +37,8 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import org.program.pair.domain.watch.WatchService;
+
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -76,6 +78,12 @@ public class SlotService {
     private final HtmlSanitizer sanitizer;
     private final ParticipantCounter participantCounter;
     private final WaitlistPromoter waitlistPromoter;
+    /**
+     * Pour la seule ligne d'arrivée de la liste des inscrits. La dépendance va bien
+     * dans ce sens : le module veille lit les créneaux et leurs inscrits, il
+     * n'appelle jamais ce service-ci.
+     */
+    private final WatchService watchService;
 
     @Transactional(readOnly = true)
     public List<SlotFeedItemDto> getSlotFeed(SlotFeedRequest request, UUID requesterId) {
@@ -372,7 +380,11 @@ public class SlotService {
                 userService.getPublicProfile(p.getUser().getId(), userId),
                 p.getStatus().name(),
                 p.getJoinMessage(),
-                p.getCreatedAt()))
+                p.getCreatedAt(),
+                // Toujours NONE, et jamais lu : on n'attend l'arrivée de personne
+                // sur une file d'attente, et rien ne justifierait d'y porter un
+                // état d'arrivée que l'organisateur n'a aucune raison de voir.
+                SlotParticipantDto.Arrival.NONE))
             .toList();
     }
 
@@ -413,6 +425,10 @@ public class SlotService {
             throw new ForbiddenException(ErrorCode.SLOT_PARTICIPANTS_HOST_ONLY, "Seul l'hôte peut voir les participants.");
         }
 
+        // L'arrivée de chacun, en une lecture pour tout le créneau : une par ligne
+        // ferait une requête par inscrit sur un écran qui les montre tous.
+        Map<UUID, WatchService.ArrivalView> arrivees = watchService.arrivalsByUser(scheduleId);
+
         // La file d'attente a son propre endpoint : sans ce filtre, les personnes
         // en attente arriveraient ici mêlées aux inscrits, et l'hôte croirait son
         // créneau plus rempli qu'il n'est.
@@ -423,9 +439,23 @@ public class SlotService {
                 userService.getPublicProfile(p.getUser().getId(), userId),
                 p.getStatus().name(),
                 p.getJoinMessage(),
-                p.getCreatedAt()
+                p.getCreatedAt(),
+                arrivee(arrivees.get(p.getUser().getId()))
             ))
             .toList();
+    }
+
+    /**
+     * L'arrivée d'un inscrit, ou {@code NONE}.
+     *
+     * <p><b>L'absence de veille et l'absence de déclaration rendent la même
+     * valeur</b>, et c'est toute la protection : sans cela, l'organisateur
+     * apprendrait qui se protège rien qu'en lisant sa liste d'inscrits.
+     */
+    private static SlotParticipantDto.Arrival arrivee(WatchService.ArrivalView vue) {
+        return vue == null
+            ? SlotParticipantDto.Arrival.NONE
+            : new SlotParticipantDto.Arrival(vue.state(), vue.claimedAt(), vue.confirmedAt());
     }
 
     /**
