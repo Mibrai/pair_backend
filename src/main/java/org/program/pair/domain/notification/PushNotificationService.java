@@ -256,7 +256,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
                 .setTitle(title)
                 .setBody(body)
                 .build())
-            .putAllData(dataPayload(payload, title, body))
+            .putAllData(dataPayload(type, payload, title, body))
             // Le badge porte le total réel du destinataire — notifications ET
             // messages non lus, ce qui part compris. Application fermée, aucun
             // code client ne s'exécute pour aller le chercher, et un champ absent
@@ -434,10 +434,30 @@ public class PushNotificationService implements PushNotificationServiceInterface
      * décoratif d'abord, et jamais de quoi identifier la séance. Le client a un
      * repli documenté pour chacune de ces clés ; il n'en a aucun pour une
      * notification qui n'arrive pas.
+     *
+     * <p><b>{@code type} est posé ici, et il n'est pas facultatif.</b> C'est la
+     * clé dont le client tire la destination du tap — la même table que celle de
+     * sa liste in-app. Sans elle, il retombe sur son type de repli
+     * ({@code SYSTEM}), auquel aucune destination ne correspond, et il choisit
+     * alors de <i>ne pas naviguer</i> : la bannière s'affiche, le tap est reçu,
+     * et l'utilisateur reste sur la carte. Aucune erreur nulle part, des deux
+     * côtés — c'est ce qui a laissé le défaut vivre des semaines (prompt client
+     * du 03/09). Elle ne figure pas dans {@link #EVICTABLE_KEYS} et ne doit
+     * jamais y entrer.
      */
-    static Map<String, String> dataPayload(Map<String, Object> payload, String title, String body) {
+    static Map<String, String> dataPayload(NotificationType type, Map<String, Object> payload,
+                                           String title, String body) {
         Map<String, String> data = new LinkedHashMap<>();
         payload.forEach((key, value) -> data.put(key, String.valueOf(value)));
+
+        // Posé ici, et non par les producteurs. Ils sont treize, chacun compose
+        // son payload à la main, et le type est déjà un paramètre de l'envoi :
+        // le leur faire répéter, c'est attendre que le quatorzième l'oublie —
+        // sans que rien ne le signale, comme cela a été le cas jusqu'ici.
+        //
+        // Posé après la charge métier, jamais avant : le type de l'envoi fait
+        // foi sur une clé « type » qu'un payload porterait par accident.
+        data.put("type", type.name());
 
         // Le texte affiché voyage aussi dans la charge et compte dans le plafond.
         int overhead = utf8Length(title) + utf8Length(body);
