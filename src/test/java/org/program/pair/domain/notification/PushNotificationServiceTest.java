@@ -13,6 +13,8 @@ import com.google.firebase.messaging.MessagingErrorCode;
 import com.google.firebase.messaging.MulticastMessage;
 import com.google.firebase.messaging.SendResponse;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.slf4j.LoggerFactory;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -552,10 +554,11 @@ class PushNotificationServiceTest {
             "addressPublic", "Piscine du Rhône, Lyon",
             "authorAvatarUrl", "https://cdn/avatars/2a19.jpg");
 
-        Map<String, String> data = PushNotificationService.dataPayload(payload, "Titre", "Corps");
+        Map<String, String> data = PushNotificationService.dataPayload(
+            NotificationType.PROGRAM_REMINDER, payload, "Titre", "Corps");
 
         assertThat(data).containsOnlyKeys(
-            "programTitle", "activityName", "addressPublic", "authorAvatarUrl");
+            "type", "programTitle", "activityName", "addressPublic", "authorAvatarUrl");
     }
 
     @Test
@@ -569,7 +572,8 @@ class PushNotificationServiceTest {
         payload.put("authorAvatarUrl", "https://cdn/avatars/" + "x".repeat(1_500) + ".jpg");
         payload.put("addressPublic", "y".repeat(1_500));
 
-        Map<String, String> data = PushNotificationService.dataPayload(payload, "Titre", "Corps");
+        Map<String, String> data = PushNotificationService.dataPayload(
+            NotificationType.PROGRAM_REMINDER, payload, "Titre", "Corps");
 
         // Ce qui identifie la séance survit — programTitle est le seuil en
         // dessous duquel le client n'affiche plus rien du tout.
@@ -590,7 +594,8 @@ class PushNotificationServiceTest {
         payload.put("authorAvatarUrl", "https://cdn/avatars/" + "x".repeat(3_500) + ".jpg");
         payload.put("addressPublic", "Piscine du Rhône, 8 quai Claude Bernard, Lyon");
 
-        Map<String, String> data = PushNotificationService.dataPayload(payload, "Titre", "Corps");
+        Map<String, String> data = PushNotificationService.dataPayload(
+            NotificationType.PROGRAM_REMINDER, payload, "Titre", "Corps");
 
         assertThat(data).doesNotContainKey("authorAvatarUrl");
         assertThat(data).containsKey("addressPublic");
@@ -613,7 +618,8 @@ class PushNotificationServiceTest {
         payload.put("welcomeNote", "Bienvenue !");
         payload.put("authorAvatarUrl", "https://cdn/avatars/2a19.jpg");
 
-        Map<String, String> data = PushNotificationService.dataPayload(payload, "Titre", "Corps");
+        Map<String, String> data = PushNotificationService.dataPayload(
+            NotificationType.PROGRAM_REMINDER, payload, "Titre", "Corps");
 
         assertThat(data).containsKey("placeName");
         // Les trois évictables sont bien partis : ce n'est pas que rien n'a été
@@ -634,10 +640,124 @@ class PushNotificationServiceTest {
         payload.put("welcomeNote", "w".repeat(3_500));
         payload.put("addressPublic", "8 quai Claude Bernard, Lyon");
 
-        Map<String, String> data = PushNotificationService.dataPayload(payload, "Titre", "Corps");
+        Map<String, String> data = PushNotificationService.dataPayload(
+            NotificationType.PROGRAM_REMINDER, payload, "Titre", "Corps");
 
         assertThat(data).doesNotContainKey("welcomeNote");
         assertThat(data).containsKeys("addressPublic", "placeName");
+    }
+
+    // ─── Le type, sans lequel le tap ne mène nulle part ───────────────────────
+
+    /**
+     * <b>Le test que demandait le client (prompt du 03/09, §4.4), et il compte
+     * plus que le correctif.</b>
+     *
+     * <p>Le défaut qu'il ferme n'a produit aucune erreur pendant des semaines,
+     * des deux côtés : la bannière s'affichait, le tap était reçu, et le client
+     * — ne trouvant pas {@code type} — retombait sur {@code SYSTEM}, auquel
+     * aucune destination ne correspond, puis choisissait délibérément de ne pas
+     * naviguer. Rien ne le signalait, ni un log, ni un code d'erreur FCM.
+     *
+     * <p>Sur <b>toutes</b> les valeurs de l'énumération, et non sur une
+     * poignée : un type ajouté demain hérite du test le jour où il est écrit,
+     * ce qui est précisément ce qui manquait.
+     */
+    @ParameterizedTest
+    @EnumSource(NotificationType.class)
+    void chaqueType_doitVoyagerDansLaCharge(NotificationType type) {
+        Map<String, String> data = PushNotificationService.dataPayload(
+            type, Map.of("programTitle", "Longueurs du soir"), "Titre", "Corps");
+
+        assertThat(data).containsEntry("type", type.name());
+    }
+
+    /**
+     * Le même contrat, mais sur le message qui part vraiment.
+     *
+     * <p>{@code dataPayload} est un utilitaire : le vérifier seul laisserait
+     * passer un {@code sendToTokens} qui ne l'appellerait plus, ou qui écraserait
+     * son résultat. C'est le {@code MulticastMessage} remis à FCM qui est relu
+     * ici — le dernier état observable côté serveur.
+     */
+    @Test
+    void leType_doitArriverDansLeMessageFCM() throws FirebaseMessagingException {
+        PushNotificationService service = service();
+        UUID userId = UUID.randomUUID();
+
+        when(deviceTokenRepository.findByUserId(userId))
+            .thenReturn(List.of(device("token-fr", "fr")));
+        when(firebaseMessaging.sendEachForMulticast(any(MulticastMessage.class)))
+            .thenReturn(batchResponse);
+        when(batchResponse.getResponses()).thenReturn(List.of());
+
+        service.sendPush(userId, NotificationType.SLOT_JOINED, slotPayload(), 1);
+
+        ArgumentCaptor<MulticastMessage> captor = ArgumentCaptor.forClass(MulticastMessage.class);
+        verify(firebaseMessaging).sendEachForMulticast(captor.capture());
+
+        assertThat(dataOf(captor.getValue())).containsEntry("type", "SLOT_JOINED");
+    }
+
+    /**
+     * Le type survit à une charge qui déborde, comme les identifiants.
+     *
+     * <p>La tentation d'ajouter une clé de plus à {@link
+     * PushNotificationService#EVICTABLE_KEYS} se présentera : le jour où elle
+     * portera sur {@code type}, la notification arrivera encore, s'affichera
+     * encore, et ne mènera de nouveau nulle part — sans qu'aucun test ne tombe,
+     * sauf celui-ci.
+     */
+    @Test
+    void chargeInderacinable_doitGarderLeType() {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("programTitle", "z".repeat(4_000));
+        payload.put("scheduleId", UUID.randomUUID().toString());
+        payload.put("authorAvatarUrl", "https://cdn/avatars/2a19.jpg");
+        payload.put("welcomeNote", "Bienvenue !");
+        payload.put("addressPublic", "8 quai Claude Bernard, Lyon");
+
+        Map<String, String> data = PushNotificationService.dataPayload(
+            NotificationType.WATCH_RETURN_REMINDER, payload, "Titre", "Corps");
+
+        assertThat(data).containsEntry("type", "WATCH_RETURN_REMINDER");
+        assertThat(data).containsKey("scheduleId");
+    }
+
+    /**
+     * Le type de l'envoi fait foi sur une clé {@code type} de la charge métier.
+     *
+     * <p>Aucun producteur n'en pose une aujourd'hui, et c'est bien pour cela que
+     * la règle doit être écrite maintenant : le jour où l'un d'eux nommera
+     * {@code type} tout autre chose — le type d'un signalement, celui d'un
+     * abonnement —, le routage du tap doit rester celui de la notification.
+     */
+    @Test
+    void unTypeDansLaChargeMetier_neDoitPasEcraserCeluiDeLEnvoi() {
+        Map<String, String> data = PushNotificationService.dataPayload(
+            NotificationType.NEW_MESSAGE,
+            Map.of("type", "AUTHOR", "conversationId", "c-1"),
+            "Titre", "Corps");
+
+        assertThat(data).containsEntry("type", "NEW_MESSAGE");
+    }
+
+    /**
+     * {@code MulticastMessage} garde sa charge de données privée, comme
+     * {@code Aps} garde ses champs : la relire par réflexion est la seule lecture
+     * fidèle de ce qui partira, et recomposer le message dans le test ne
+     * testerait que le test.
+     */
+    private static Map<String, String> dataOf(MulticastMessage message) {
+        try {
+            java.lang.reflect.Field data = MulticastMessage.class.getDeclaredField("data");
+            data.setAccessible(true);
+            @SuppressWarnings("unchecked")
+            Map<String, String> values = (Map<String, String>) data.get(message);
+            return values;
+        } catch (ReflectiveOperationException e) {
+            throw new AssertionError("Impossible de relire la charge du message", e);
+        }
     }
 
     private static int serializedSize(Map<String, String> data) {
