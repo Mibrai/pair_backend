@@ -30,7 +30,12 @@ public interface WatchRepository extends JpaRepository<Watch, UUID> {
      * bloquante pendant 24 h — précisément le défaut que la terminalité venait de
      * refermer. Le besoin est d'affichage, pas de machine à états : il se sert ici.
      *
-     * <p><b>Pourquoi une non-arrivée doit rester visible.</b> Après T+45,
+     * <p><b>Pourquoi ces issues doivent rester visibles.</b> Une clôture sans
+     * contact suit la même règle qu'une non-arrivée : personne n'a été prévenu —
+     * c'est ce qui avait été accepté — et cette liste est le seul endroit où la
+     * personne le lit.
+     *
+     * <p><b>Le cas de la non-arrivée.</b> Après T+45,
      * l'organisateur reçoit une notification et la personne concernée n'en reçoit
      * aucune. Cette liste est le seul endroit où elle apprend que sa soirée a été
      * classée perdue en chemin et qu'un incident est journalisé à son nom. Le seul
@@ -45,13 +50,13 @@ public interface WatchRepository extends JpaRepository<Watch, UUID> {
         SELECT w FROM Watch w
         WHERE w.userId = :userId
           AND (w.state NOT IN :terminaux
-               OR (w.state = :nonArrivee AND w.closedAt > :depuis))
+               OR (w.state IN :visiblesUnJour AND w.closedAt > :depuis))
         ORDER BY w.armedAt DESC
         """)
-    List<Watch> findActivesEtNonArriveesRecentes(
+    List<Watch> findActivesEtIssuesRecentes(
         @Param("userId") UUID userId,
         @Param("terminaux") Collection<WatchState> terminaux,
-        @Param("nonArrivee") WatchState nonArrivee,
+        @Param("visiblesUnJour") Collection<WatchState> visiblesUnJour,
         @Param("depuis") Instant depuis);
 
     /** Les veilles terminées de l'appelant : le journal. */
@@ -77,7 +82,8 @@ public interface WatchRepository extends JpaRepository<Watch, UUID> {
                        WHERE e.watch_id = w.id AND e.type = 'CLOSED_BY_CODE') AS confirme,
                EXISTS (SELECT 1 FROM watch_events e
                        WHERE e.watch_id = w.id
-                         AND e.type IN ('ESCALATED', 'ABANDONED', 'LOST_ON_THE_WAY')) AS rompu
+                         AND e.type IN ('ESCALATED', 'ABANDONED', 'LOST_ON_THE_WAY',
+                                        'CLOSED_NO_CONTACT')) AS rompu
         FROM watches w
         WHERE w.user_id = :userId
         ORDER BY w.armed_at DESC
@@ -86,6 +92,36 @@ public interface WatchRepository extends JpaRepository<Watch, UUID> {
 
     /** Les veilles d'un créneau dans certains états : les arrivées en attente, pour l'organisateur. */
     List<Watch> findByScheduleIdAndStateIn(UUID scheduleId, Collection<WatchState> etats);
+
+    /**
+     * Toutes les veilles d'un créneau — celles qui alimentent la ligne d'arrivée de
+     * chaque inscrit chez l'organisateur.
+     *
+     * <p>Sans filtre d'état, à la différence de la liste des arrivées en attente :
+     * une arrivée validée doit rester lisible après que la veille a été refermée,
+     * sans quoi l'insigne disparaîtrait de l'écran de l'hôte au moment où la
+     * personne rentre chez elle.
+     */
+    List<Watch> findByScheduleId(UUID scheduleId);
+
+    /**
+     * Les arrivées déclarées qui attendent encore leur validation.
+     *
+     * <p>Le balayage de la bascule automatique. Il ne regarde pas l'état : une
+     * arrivée déclarée laisse la veille en {@code ARMED} ou {@code EN_ROUTE} — c'est
+     * la demande du client, un champ et pas un état — donc c'est le couple des deux
+     * horodatages qui décrit cette attente, et lui seul.
+     */
+    @Query("""
+        SELECT w FROM Watch w
+        WHERE w.arrivalClaimedAt IS NOT NULL
+          AND w.arrivalConfirmedAt IS NULL
+          AND w.state IN :vivants
+          AND w.arrivalClaimedAt <= :echu
+        """)
+    List<Watch> findArriveesDeclareesEchues(
+        @Param("vivants") Collection<WatchState> vivants,
+        @Param("echu") Instant echu);
 
     /** Une veille précise de l'appelant : l'appartenance est vérifiée dans la requête. */
     Optional<Watch> findByIdAndUserId(UUID id, UUID userId);

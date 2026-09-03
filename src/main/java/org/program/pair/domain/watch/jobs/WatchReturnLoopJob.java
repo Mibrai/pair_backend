@@ -29,6 +29,11 @@ import java.util.List;
  *   +75 min  message ② au contact de secours
  * </pre>
  *
+ * <p><b>Une veille armée sans contact ne quitte pas ce tableau, elle s'y arrête.</b>
+ * Les rappels partent comme pour les autres — c'est l'essentiel de ce qu'elle
+ * apporte — puis, à l'heure de l'escalade, elle se referme en
+ * {@code NO_CONTACT} sans rien envoyer. Voir {@code WatchState.NO_CONTACT}.
+ *
  * <p><b>Une action par veille et par passage.</b> Le job tourne chaque minute et
  * avance d'un cran à la fois. Si le serveur a manqué des fenêtres — arrêt,
  * redéploiement — les rappels se rattrapent sur quelques passages, et l'escalade
@@ -95,6 +100,20 @@ public class WatchReturnLoopJob {
                 return true;
             }
             if (ecoule >= ESCALADE_MIN && watch.getRemindersSent() >= 3) {
+                if (watch.sansContact()) {
+                    // Armée sans contact : les rappels ont eu lieu — c'est
+                    // l'essentiel de ce qu'une telle veille apporte — et il n'y a
+                    // plus rien à faire. NO_CONTACT et non ESCALATED : ce mot veut
+                    // dire « un message est parti à un tiers » partout ailleurs, et
+                    // le client en tire un bandeau « message d'urgence envoyé ».
+                    // L'état fait aussi le travail d'un garde-fou : il sort du
+                    // champ de ce balayage, qui rappellerait sinon ensureAlerted à
+                    // chaque passage sur une veille sans destinataire.
+                    watch.setState(WatchState.NO_CONTACT);
+                    watch.setClosedAt(now);
+                    escalation.inscrireCloturSansContact(watch.getId(), now);
+                    return true;
+                }
                 // On marque l'escalade ici et l'on délègue l'envoi à ensureAlerted,
                 // le point unique qui prévient les contacts — le même que celui
                 // qu'emprunte une clôture sous contrainte.

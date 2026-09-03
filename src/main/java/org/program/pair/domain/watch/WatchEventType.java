@@ -95,5 +95,28 @@ public enum WatchEventType {
      * <p>Le journal est rendu au seul propriétaire de la veille : l'inscrire ne dit
      * rien à personne d'autre.
      */
+    /** La personne a déclaré son arrivée. La validation est un fait distinct. */
+    ARRIVAL_CLAIMED,
+
+    /** L'organisateur a validé une arrivée déclarée. */
+    ARRIVAL_CONFIRMED_BY_HOST,
+
+    /**
+     * La validation est tombée d'elle-même, le délai passé sans geste de l'hôte.
+     *
+     * <p>Distinct de {@link #ARRIVAL_CONFIRMED_BY_HOST} dans le journal, et c'est
+     * volontaire : c'est la trace qui dit qu'aucun tiers n'a eu à agir. Sans elle,
+     * on ne pourrait pas relire après coup si le garde-fou a servi.
+     */
+    ARRIVAL_AUTO_CONFIRMED,
+
+    /**
+     * Échéance passée sans réponse, sur une veille sans contact : rien n'est parti.
+     *
+     * <p>Rompt la série de retours confirmés, comme {@code ESCALATED} : le retour
+     * n'a pas été confirmé. Ce qui diffère est qu'aucun proche n'a été dérangé.
+     */
+    CLOSED_NO_CONTACT,
+
     RETURN_ANNOUNCED
 }
