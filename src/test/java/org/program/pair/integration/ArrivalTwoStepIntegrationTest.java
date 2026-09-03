@@ -13,6 +13,8 @@ import org.program.pair.domain.watch.jobs.WatchOutboundJob;
 import org.program.pair.repository.ActivityRepository;
 import org.program.pair.repository.GuardianRepository;
 import org.program.pair.repository.IncidentRepository;
+import org.program.pair.domain.notification.NotificationType;
+import org.program.pair.repository.NotificationRepository;
 import org.program.pair.repository.OutboxMessageRepository;
 import org.program.pair.repository.WatchRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,6 +52,7 @@ class ArrivalTwoStepIntegrationTest extends AbstractIntegrationTest {
     @Autowired WatchRepository watchRepository;
     @Autowired OutboxMessageRepository outboxRepository;
     @Autowired IncidentRepository incidentRepository;
+    @Autowired NotificationRepository notificationRepository;
     @Autowired WatchOutboundJob outboundJob;
 
     private static final double LAT = 48.5734;
@@ -348,6 +351,117 @@ class ArrivalTwoStepIntegrationTest extends AbstractIntegrationTest {
         assertThat(watch(s.watchId()).getArrivalConfirmedAt()).isNotNull();
     }
 
+    // ─── la notification qui ramène chercher le code ──────────────────────────
+
+    /**
+     * <b>Le manque que le client a relevé le soir même, et il avait raison.</b>
+     *
+     * <p>Avant le parcours à deux temps, « j'y suis » rendait le code dans sa
+     * réponse : qui avait touché le bouton avait son code. Depuis, il faut revenir
+     * le chercher — et quelqu'un qui déclare son arrivée puis range son téléphone
+     * n'a pas de code à l'échéance, donc ne peut pas refermer, donc fait partir une
+     * alerte chez son proche pour une soirée qui s'est bien passée. Exactement ce
+     * que ce module existe pour empêcher, réintroduit par notre propre livraison.
+     *
+     * <p>La notification est ce qui fait rouvrir l'application, et rouvrir
+     * l'application est la seule condition du guetteur côté client.
+     */
+    @Test
+    void laValidationParLhote_doitPrevenirLaPersonne() {
+        Scene s = scene();
+        declarer(s);
+        valider(s);
+
+        assertThat(attendreLesNotifications(s.participant(),
+            NotificationType.WATCH_ARRIVAL_CONFIRMED)).isNotEmpty();
+    }
+
+    /**
+     * Et la bascule automatique prévient aussi. C'est même le cas où la
+     * notification compte le plus : personne n'a rien touché, donc rien d'autre
+     * n'a pu ramener la personne vers son code.
+     */
+    @Test
+    void laValidationParLeDelai_doitPrevenirLaPersonne() {
+        Scene s = scene();
+        declarer(s);
+        reculerDeclaration(s.watchId(), 16);
+
+        outboundJob.tick();
+
+        assertThat(attendreLesNotifications(s.participant(),
+            NotificationType.WATCH_ARRIVAL_CONFIRMED)).isNotEmpty();
+    }
+
+    /**
+     * <b>La charge ne porte pas le code, et ce test-là ne doit jamais être
+     * assoupli.</b>
+     *
+     * <p>Une charge APNs s'écrit en clair sur un écran verrouillé, se conserve dans
+     * le centre de notifications, se recopie dans les journaux du système et se
+     * capture. Y poser le code de retour le rendrait lisible par la personne même
+     * dont le code de contrainte existe pour protéger.
+     *
+     * <p>Le test vérifie aussi que {@code watchId} est là : sans lui le tap
+     * n'ouvrirait pas la veille, et la notification ne ramènerait la personne
+     * nulle part.
+     */
+    @Test
+    void laNotificationDeValidation_neDoitJamaisPorterLeCode() {
+        Scene s = scene();
+        declarer(s);
+        valider(s);
+
+        String charge = attendreLesNotifications(s.participant(),
+            NotificationType.WATCH_ARRIVAL_CONFIRMED).get(0).getPayload();
+
+        assertThat(charge).contains(s.watchId().toString());
+
+        // Le code est tiré après, et seulement sur demande : la charge ne peut donc
+        // pas le contenir. On le tire maintenant et on vérifie qu'il n'y était pas
+        // — ce qui garde aussi contre une future émission après le tirage.
+        String code = String.valueOf(webTestClient.post()
+            .uri("/api/watches/{id}/code/claim", s.watchId())
+            .headers(h -> h.setBearerAuth(s.participant().token()))
+            .exchange().expectStatus().isOk()
+            .expectBody(Map.class).returnResult().getResponseBody().get("returnCode"));
+        assertThat(charge).doesNotContain(code);
+        assertThat(charge).doesNotContainIgnoringCase("code");
+    }
+
+    /**
+     * Le verbe historique ne notifie pas : il rend le code dans sa réponse, la
+     * personne l'a déjà, et la prévenir serait du bruit.
+     */
+    @Test
+    void leVerbeHistorique_neDoitPasNotifier() {
+        Scene s = scene();
+
+        webTestClient.post().uri("/api/watches/{id}/arrival", s.watchId())
+            .headers(h -> h.setBearerAuth(s.participant().token()))
+            .exchange().expectStatus().isOk();
+
+        // On laisse au fil asynchrone le temps d'écrire avant de constater qu'il
+        // n'a rien écrit. Sans ce délai, l'assertion passerait aussi bien si la
+        // notification partait — elle ne testerait que la vitesse du dépôt.
+        dormir(1_000);
+        assertThat(notificationsDe(s.participant(), NotificationType.WATCH_ARRIVAL_CONFIRMED))
+            .isEmpty();
+    }
+
+    /**
+     * La notification traverse les heures de silence, et son type le porte.
+     *
+     * <p>Étouffée par un silence de confort, elle laisserait quelqu'un sans code de
+     * retour toute la soirée — le même coût que la demande « tu y es ? », qui est
+     * critique pour cette raison depuis le début.
+     */
+    @Test
+    void leType_doitEtreCritiqueEtTimeSensitive() {
+        assertThat(NotificationType.WATCH_ARRIVAL_CONFIRMED.isCritical()).isTrue();
+        assertThat(NotificationType.WATCH_ARRIVAL_CONFIRMED.isTimeSensitive()).isTrue();
+    }
+
     // ─── l'insigne, et ce qu'il ne doit pas dire ──────────────────────────────
 
     /**
@@ -481,6 +595,51 @@ class ArrivalTwoStepIntegrationTest extends AbstractIntegrationTest {
             .headers(h -> h.setBearerAuth(s.hote().token()))
             .exchange().expectStatus().isOk()
             .expectBody(List.class).returnResult().getResponseBody();
+    }
+
+    /**
+     * Les notifications d'un type reçues par quelqu'un, <b>attendues</b>.
+     *
+     * <p>{@code NotificationService.notify} est {@code @Async} et {@code @EnableAsync}
+     * est actif en test : l'écriture a lieu sur un autre fil que celui du test.
+     * Lire le dépôt juste après l'appel HTTP marche presque toujours — et c'est
+     * précisément ce qui rend un tel test nuisible : il passerait au vert la
+     * plupart du temps et tomberait sans raison sur une machine chargée, ce qui
+     * apprend à tout le monde à relancer la suite plutôt qu'à la lire.
+     *
+     * <p>On attend donc explicitement, avec une borne. Un test qui attend un fait
+     * asynchrone doit dire combien de temps il l'attend.
+     */
+    private List<org.program.pair.domain.notification.Notification> attendreLesNotifications(
+            Compte qui, NotificationType type) {
+        long limite = System.currentTimeMillis() + 5_000;
+        List<org.program.pair.domain.notification.Notification> vues = List.of();
+        while (System.currentTimeMillis() < limite) {
+            vues = notificationsDe(qui, type);
+            if (!vues.isEmpty()) {
+                return vues;
+            }
+            dormir(50);
+        }
+        return vues;
+    }
+
+    /** Le même dépôt, sans attente : pour vérifier qu'il ne se passe <b>rien</b>. */
+    private List<org.program.pair.domain.notification.Notification> notificationsDe(
+            Compte qui, NotificationType type) {
+        return notificationRepository.findAll().stream()
+            .filter(n -> n.getUser() != null && qui.id().equals(n.getUser().getId()))
+            .filter(n -> n.getType() == type)
+            .toList();
+    }
+
+    private static void dormir(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("Attente interrompue", e);
+        }
     }
 
     private Watch watch(UUID watchId) {
