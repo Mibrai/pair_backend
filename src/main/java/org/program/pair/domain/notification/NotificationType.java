@@ -57,6 +57,22 @@ public enum NotificationType {
     // arrivée. Time-sensitive et critique : le coût de la manquer est une alerte
     // envoyée à sa place.
     WATCH_ARRIVAL_PROMPT,
+    // « Ta présence est validée » — à la personne veillée, dès que son arrivée
+    // déclarée est confirmée, par l'organisateur ou par le délai.
+    //
+    // Elle NE PORTE JAMAIS LE CODE DE RETOUR. Une charge APNs s'écrit en clair sur
+    // un écran verrouillé, se conserve dans le centre de notifications et se
+    // capture : y poser le code le rendrait lisible par la personne même dont le
+    // code de contrainte protège. Elle porte le watchId, et le tap ouvre la veille
+    // — c'est là que le client réclame son code.
+    //
+    // Time-sensitive et critique, exactement pour la raison de WATCH_ARRIVAL_PROMPT
+    // et sans rien y ajouter : depuis le parcours à deux temps du 03/09, le code
+    // n'arrive plus dans la réponse au geste — il faut revenir le chercher. Manquer
+    // cette notification, c'est ranger son téléphone sans code, donc ne pas pouvoir
+    // refermer, donc faire partir une alerte chez un proche pour une soirée qui
+    // s'est bien passée. C'est ce que ce module existe pour empêcher.
+    WATCH_ARRIVAL_CONFIRMED,
     // Notification in-app à l'organisateur d'un créneau : un inscrit n'est jamais
     // arrivé (perdu en chemin). Porte le nom, l'absence de validation et l'heure —
     // jamais le lieu de départ, ni le contact, ni la position, qui ne le regardent
@@ -117,7 +133,12 @@ public enum NotificationType {
         WATCH_GUARDIAN_ALERT,
         // La demande « tu y es ? » traverse le silence pour la même raison que le
         // rappel de retour : la manquer coûte une alerte à sa place.
-        WATCH_ARRIVAL_PROMPT);
+        WATCH_ARRIVAL_PROMPT,
+        // La validation d'arrivée aussi, et c'est le même coût une fois de plus :
+        // étouffée par un silence de confort, elle laisse quelqu'un sans code de
+        // retour toute la soirée. Une notification dont le rôle est de faire
+        // rouvrir l'application ne peut pas être celle qu'on retient.
+        WATCH_ARRIVAL_CONFIRMED);
         // WATCH_LOST_ORGANIZER n'en fait PAS partie : l'organisateur n'a rien à
         // faire dans la nuit d'une absence qui ne le met pas en mouvement, et le
         // réveiller pour chaque retardataire le ferait couper ses notifications.
@@ -162,12 +183,14 @@ public enum NotificationType {
      * notification que le téléphone avait décidé de ne pas montrer.
      *
      * <p>Réservé aux notifications de veille où ce coût existe : les relances de
-     * retour, les demandes d'arrivée, et l'alerte in-app à un contact membre. Pas
-     * la notification à l'organisateur d'un perdu-en-chemin, qui ne met personne en
-     * mouvement dans l'instant.
+     * retour, les demandes d'arrivée, la validation d'arrivée — celle qui fait
+     * rouvrir l'application pour y prendre le code de retour — et l'alerte in-app à
+     * un contact membre. Pas la notification à l'organisateur d'un perdu-en-chemin,
+     * qui ne met personne en mouvement dans l'instant.
      */
     private static final java.util.Set<NotificationType> TIME_SENSITIVE = java.util.EnumSet.of(
-        WATCH_RETURN_REMINDER, WATCH_ARRIVAL_PROMPT, WATCH_GUARDIAN_ALERT);
+        WATCH_RETURN_REMINDER, WATCH_ARRIVAL_PROMPT, WATCH_GUARDIAN_ALERT,
+        WATCH_ARRIVAL_CONFIRMED);
 
     /** Vrai si cette notification passe outre les heures de silence. */
     public boolean isCritical() {

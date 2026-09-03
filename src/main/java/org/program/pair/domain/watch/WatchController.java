@@ -46,8 +46,18 @@ public class WatchController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "Armer une veille",
-        description = "Exige un contact d'urgence accepté. L'échéance vaut par défaut "
-            + "la fin du créneau plus une heure.")
+        description = "**`guardianId` est facultatif depuis le 03/09**, et ce résumé disait "
+            + "encore le contraire de son propre schéma.\n\n"
+            + "Avec un contact : la veille relance, et prévient ce contact si le retour n'est "
+            + "pas confirmé à l'échéance. Le contact doit être l'un des vôtres, et avoir "
+            + "accepté (422 WATCH_GUARDIAN_NOT_ACCEPTED sinon).\n\n"
+            + "Sans contact : la veille relance, journalise et porte la validation de "
+            + "présence, mais **n'enverra rien** — `alertDelivery` reste NONE, aucun lien "
+            + "public ne naît, et elle se referme en NO_CONTACT à l'échéance. `guardianId` "
+            + "servi `null` est le seul moyen fiable de le savoir.\n\n"
+            + "Un `backupGuardianId` sans `guardianId` est refusé (422 WATCH_NO_GUARDIAN) : "
+            + "la branche du secours ne s'ouvre qu'après que le principal a été prévenu.\n\n"
+            + "L'échéance vaut par défaut la fin du créneau plus une heure.")
     public WatchDto arm(
             @AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody CreateWatchRequest request) {

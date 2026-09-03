@@ -84,6 +84,37 @@ public class WatchEscalationService {
         inscrire(watch.getId(), WatchEventType.REMINDER_SENT, Instant.now());
     }
 
+    /**
+     * « Ta présence est validée » — à la personne veillée, dès que son arrivée
+     * déclarée est confirmée.
+     *
+     * <p><b>Sans cette notification, le parcours à deux temps est plus dangereux
+     * que celui qu'il remplace</b>, et c'est le client qui l'a vu le premier.
+     * Avant, « j'y suis » rendait le code dans la réponse : qui avait touché le
+     * bouton avait son code. Depuis, il faut revenir le chercher — et quelqu'un
+     * qui déclare son arrivée puis range son téléphone n'a pas de code à
+     * l'échéance, donc ne peut pas refermer, donc fait partir une alerte chez son
+     * proche pour une soirée qui s'est bien passée.
+     *
+     * <p>C'est elle qui fait rouvrir l'application, et rouvrir l'application est la
+     * seule condition du guetteur côté client. D'où le time-sensitive et le
+     * critique portés par le type.
+     *
+     * <p><b>Elle ne porte pas le code</b>, et ne le portera jamais : une charge
+     * APNs s'écrit en clair sur un écran verrouillé et se capture. Elle porte le
+     * {@code watchId}, le tap ouvre la veille, et c'est là que le code se réclame.
+     *
+     * <p>Rien n'est émis par le verbe historique {@code POST /watches/{id}/arrival}
+     * — il rend le code dans sa réponse, la personne l'a déjà, et la prévenir
+     * serait du bruit.
+     */
+    public void sendArrivalConfirmed(Watch watch) {
+        notificationService.notify(watch.getUserId(), NotificationType.WATCH_ARRIVAL_CONFIRMED,
+            Map.of("watchId", watch.getId().toString(),
+                   "scheduleId", watch.getScheduleId().toString(),
+                   "deadlineAt", watch.getDeadlineAt().toString()));
+    }
+
     /** Une demande « tu y es ? » à la personne, sur le trajet aller. */
     public void sendArrivalPrompt(Watch watch) {
         notificationService.notify(watch.getUserId(), NotificationType.WATCH_ARRIVAL_PROMPT,
