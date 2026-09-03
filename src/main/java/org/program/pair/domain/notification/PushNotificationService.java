@@ -653,6 +653,10 @@ public class PushNotificationService implements PushNotificationServiceInterface
             // programme qu'on suit, et trente personnes n'ont pas toutes son
             // auteur en tête.
             case PROGRAM_BROADCAST -> msg(locale, "push.PROGRAM_BROADCAST.title", arg(payload, "programTitle"));
+            // Un texte à elle, et non le titre générique : c'est la notification
+            // qui doit faire rouvrir l'application pour y prendre le code de
+            // retour. « Nouvelle notification » ne fait rouvrir personne.
+            case WATCH_ARRIVAL_CONFIRMED -> msg(locale, "push.WATCH_ARRIVAL_CONFIRMED.title");
             // Valeurs legacy utilisées uniquement par les données de seed (V12/V13/V27) —
             // jamais émises par notify(), donc pas de titre push dédié.
             default -> msg(locale, "push.generic.title");
@@ -689,6 +693,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
             case ACTIVITY_ALERT_MATCH -> msg(locale, "push.ACTIVITY_ALERT_MATCH.body",
                 arg(payload, "activityName"), arg(payload, "placeName"));
             case PROGRAM_BROADCAST -> rawOr(payload, "messageBody", locale, "push.PROGRAM_BROADCAST.body");
+            case WATCH_ARRIVAL_CONFIRMED -> msg(locale, "push.WATCH_ARRIVAL_CONFIRMED.body");
             default -> msg(locale, "push.generic.body");
         };
     }

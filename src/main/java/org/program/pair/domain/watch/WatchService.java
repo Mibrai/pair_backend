@@ -683,14 +683,24 @@ public class WatchService {
     /**
      * Le second temps, quel qu'en soit l'auteur : l'hôte, ou le délai.
      *
-     * <p>La veille passe {@code ON_SITE} et l'échéance de retour commence à courir.
-     * <b>Aucun code n'est tiré ici</b> — voir {@link #claimCode}.
+     * <p>La veille passe {@code ON_SITE}, l'échéance de retour commence à courir, et
+     * la personne est prévenue — sans le code. <b>Aucun code n'est tiré ici</b> :
+     * voir {@link #claimCode}, et {@code sendArrivalConfirmed} pour ce que la
+     * notification porte et ce qu'elle ne portera jamais.
      */
     void validerArrivee(Watch watch, WatchEventType parQui) {
         Instant now = Instant.now();
         watch.setState(WatchState.ON_SITE);
         watch.setArrivalConfirmedAt(now);
         inscrire(watch.getId(), parQui, now);
+
+        // Et on le lui dit. C'est le seul moyen qu'elle revienne chercher son code
+        // de retour, qui n'arrive plus dans la réponse à son propre geste depuis
+        // que l'arrivée se fait en deux temps. Ici, sur le chemin commun aux deux
+        // validations — celle de l'hôte et celle du délai — plutôt que chez les
+        // deux appelants : c'est la validation qui ouvre le droit au code, pas la
+        // façon dont elle est arrivée.
+        escalation.sendArrivalConfirmed(watch);
     }
 
     /**
