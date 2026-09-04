@@ -179,10 +179,11 @@ refusée sous son code, le créneau complet et le créneau passé toujours refus
 après un départ, les quatre champs effacés, une seule ligne en base après trois
 allers-retours, et le compteur périmé qui se répare à la première écriture.
 
-Autour du lot, les classes qui partagent la même capacité et la même ligne de
-participation sont passées sans échec : liste d'attente, capacité combinée avec
-l'inscription au programme, annulation, invitations, confirmation de présence et
-signal de fiabilité.
+La suite complète a été relancée : **1064 tests, aucun échec**. Elle a d'abord
+été rouge, et sur une classe qui n'a rien à voir avec le défaut — `SlotServiceTest`
+simulait la méthode de dépôt que le correctif n'appelle plus. Le test disait donc
+l'ancien contrat ; il dit maintenant le nouveau, et tient le défaut au niveau
+unitaire en plus de l'intégration.
 
 ---
 
