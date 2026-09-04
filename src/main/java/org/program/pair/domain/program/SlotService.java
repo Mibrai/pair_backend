@@ -285,8 +285,39 @@ public class SlotService {
         if (slot.getStartsAt().isBefore(Instant.now())) {
             throw new ValidationException(ErrorCode.SLOT_ALREADY_STARTED, "Ce créneau est déjà passé.");
         }
-        if (participationRepository.existsByScheduleIdAndUserId(scheduleId, userId)) {
+        // Sur l'ÉTAT de la participation, jamais sur l'existence de sa ligne.
+        //
+        // Le contrôle portait sur existsByScheduleIdAndUserId, donc sur la
+        // présence d'une ligne quel que soit son état. Comme leaveSlot pose
+        // WITHDRAWN sur cette même ligne — l'unicité (schedule_id, user_id) lui
+        // interdit d'en créer une seconde — se désinscrire fermait la porte pour
+        // de bon : le POST suivant refusait avec « Vous avez déjà rejoint ce
+        // créneau », adressé à quelqu'un qui venait précisément de le quitter.
+        // Signalé par le client le 04/09, reproduit trois fois sur trois.
+        //
+        // Ce n'est pas un cas de bord : hésiter entre deux séances du même soir,
+        // c'est changer d'avis deux fois, et la première hésitation condamnait.
+        //
+        // WAITLISTED reste un refus, et c'est délibéré : la file existe pour
+        // ordonner l'entrée, et convertir sa propre attente en inscription par
+        // ce chemin doublerait tous ceux qui attendent devant.
+        //
+        // Sous un code à lui, en revanche : le refus ne change pas, sa raison
+        // devient vraie. SLOT_ALREADY_JOINED disait « vous avez déjà rejoint ce
+        // créneau » à quelqu'un qui attendait précisément de pouvoir le
+        // rejoindre — et le message vient du bundle par error.<CODE>, jamais de
+        // l'exception, donc le corriger imposait un code. Ajout additif : un
+        // client qui ne connaît pas SLOT_ALREADY_WAITLISTED affiche le message
+        // rendu, qui est juste.
+        SlotParticipation participation = participationRepository
+            .findByScheduleIdAndUserId(scheduleId, userId)
+            .orElse(null);
+        if (participation != null && participation.getStatus() == ParticipationStatus.CONFIRMED) {
             throw new BusinessException(ErrorCode.SLOT_ALREADY_JOINED, "Vous avez déjà rejoint ce créneau.");
+        }
+        if (participation != null && participation.getStatus() == ParticipationStatus.WAITLISTED) {
+            throw new BusinessException(ErrorCode.SLOT_ALREADY_WAITLISTED,
+                "Vous êtes déjà en liste d'attente sur ce créneau.");
         }
         if (slot.getMaxParticipants() != null
                 && scheduleRepository.countConfirmedParticipants(scheduleId) >= slot.getMaxParticipants()) {
@@ -303,10 +334,32 @@ public class SlotService {
                 "Ce créneau chevauche un engagement que vous avez déjà pris.", conflicts);
         }
 
-        SlotParticipation participation = new SlotParticipation();
-        participation.setSchedule(slot);
-        participation.setUser(userRepository.getReferenceById(userId));
+        // La ligne est réactivée quand elle existe, créée sinon — même geste que
+        // joinWaitlist, pour la même raison : la contrainte d'unicité interdit
+        // d'en poser une seconde.
+        if (participation == null) {
+            participation = new SlotParticipation();
+            participation.setSchedule(slot);
+            participation.setUser(userRepository.getReferenceById(userId));
+        }
         participation.setStatus(ParticipationStatus.CONFIRMED);
+
+        // Tout ce que la vie précédente de la ligne avait écrit est effacé, et
+        // chacun de ces quatre champs a une conséquence s'il survit :
+        // withdrawnAt ferait lire un désistement là où il y a une inscription ;
+        // waitlistPosition se mettrait en travers du suivant (index unique
+        // partiel, V67) ; promotedAt raconterait une promotion qui n'a pas eu
+        // lieu ; attendanceClosedAt retirerait la séance du signal de fiabilité
+        // pour toujours, puisque findUnansweredToClose exige qu'il soit nul.
+        participation.setWithdrawnAt(null);
+        participation.setWaitlistPosition(null);
+        participation.setPromotedAt(null);
+        participation.setAttendanceClosedAt(null);
+
+        // Le message d'accompagnement n'est écrasé que s'il en vient un nouveau :
+        // celui d'une inscription précédente vaut mieux que rien, et le taire
+        // silencieusement ferait disparaître un texte que l'hôte a peut-être déjà
+        // lu.
         if (request.joinMessage() != null) {
             participation.setJoinMessage(sanitizer.sanitize(request.joinMessage()).strip());
         }
