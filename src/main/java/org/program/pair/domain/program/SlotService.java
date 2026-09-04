@@ -11,6 +11,8 @@ import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.program.dto.JoinSlotRequest;
 import org.program.pair.domain.program.dto.ScheduleConflictDto;
+import org.program.pair.domain.program.dto.SlotBoundsRequest;
+import org.program.pair.domain.program.dto.SlotBoundsResponse;
 import org.program.pair.domain.program.dto.SlotFeedItemDto;
 import org.program.pair.domain.program.dto.SlotFeedRequest;
 import org.program.pair.domain.program.dto.SlotParticipantDto;
@@ -21,6 +23,7 @@ import org.program.pair.domain.user.dto.UserPublicDto;
 import org.program.pair.repository.ScheduleRepository;
 import org.program.pair.repository.SlotParticipationRepository;
 import org.program.pair.repository.UserRepository;
+import org.program.pair.shared.GeoBounds;
 import org.program.pair.shared.GeoUtils;
 import org.program.pair.shared.exception.BusinessException;
 import org.program.pair.shared.exception.ErrorCode;
@@ -139,6 +142,102 @@ public class SlotService {
         return slots.stream()
             .map(s -> toFeedItem(s, request.lat(), request.lng(), requesterId, context))
             .toList();
+    }
+
+    /**
+     * Les créneaux d'un rectangle — l'onglet « Créneaux » de la carte.
+     *
+     * <p><b>Pourquoi cette route existe.</b> {@code /slots/feed} interroge un
+     * disque plafonné à 50 km. Sur une vue à l'échelle d'un pays, l'onglet
+     * Activités montrait tout et celui des créneaux cherchait dans un cinquantième
+     * de l'écran — et affirmait ensuite qu'il n'y avait rien. Le défaut n'était
+     * pas dans le plafond : il était dans le fait de répondre à une question
+     * rectangulaire par un disque. Le plafond du fil ne change donc pas.
+     *
+     * <p><b>Deux requêtes, et il en faut deux.</b> Le compte porte sur le même
+     * {@code WHERE} que la page ; c'est lui qui permet de dire « il y en a plus »
+     * plutôt que de tronquer en silence. Voir
+     * {@link ScheduleRepository#countOpenSlotsInBounds}.
+     *
+     * <p><b>Le lieu est filtré en base</b>, pas ici : un créneau dont la position
+     * n'est pas partagée n'entre pas dans la réponse. Sur le fil il remonte sans
+     * coordonnées, et c'est correct — il est trouvable sans être situé. Ici, la
+     * question posée est géographique : appartenir au rectangle <i>est</i> une
+     * position. Conséquence à retenir : tout élément rendu par cette route porte
+     * des {@code lat}/{@code lng} non nuls, ce qu'aucune autre lecture de
+     * {@code SlotFeedItemDto} ne garantit.
+     *
+     * <p>{@code distanceMeters} est nul : sans centre, il n'y a pas de distance à
+     * mesurer, et en inventer une depuis le centre du rectangle serait rendre un
+     * nombre que personne n'a demandé.
+     */
+    @Transactional(readOnly = true)
+    public SlotBoundsResponse getSlotsInBounds(SlotBoundsRequest request, UUID requesterId) {
+        GeoBounds.validateRectangle(
+            request.north(), request.south(), request.east(), request.west());
+
+        Instant from = request.from() != null ? request.from() : Instant.now();
+        Instant to = request.to() != null ? request.to() : Instant.now().plus(7, ChronoUnit.DAYS);
+
+        // Mêmes conventions de liaison que le fil : le drapeau porte « y a-t-il un
+        // filtre », la liste ne doit jamais être vide même quand il est faux.
+        Set<UUID> categoryIds = request.effectiveCategoryIds();
+        boolean filterByCategory = !categoryIds.isEmpty();
+
+        Set<String> languages = request.effectiveLanguages();
+        boolean filterByLanguage = !languages.isEmpty();
+
+        Set<String> tags = request.effectiveAccessibilityTags();
+        boolean filterByTags = !tags.isEmpty();
+
+        long total = scheduleRepository.countOpenSlotsInBounds(
+            request.north(), request.south(), request.east(), request.west(),
+            from, to, request.activityId(),
+            filterByCategory, filterByCategory ? categoryIds : ScheduleRepository.NO_CATEGORY_FILTER,
+            request.createdSince(), requesterId,
+            filterByLanguage, filterByLanguage ? languages : ScheduleRepository.NO_LANGUAGE_FILTER,
+            filterByTags, filterByTags ? tags : ScheduleRepository.NO_TAG_FILTER, tags.size());
+
+        if (total == 0) {
+            return new SlotBoundsResponse(List.of(), false, 0);
+        }
+
+        List<UUID> ids = scheduleRepository.findOpenSlotIdsInBounds(
+            request.north(), request.south(), request.east(), request.west(),
+            from, to, request.activityId(),
+            filterByCategory, filterByCategory ? categoryIds : ScheduleRepository.NO_CATEGORY_FILTER,
+            request.createdSince(), requesterId,
+            filterByLanguage, filterByLanguage ? languages : ScheduleRepository.NO_LANGUAGE_FILTER,
+            filterByTags, filterByTags ? tags : ScheduleRepository.NO_TAG_FILTER, tags.size(),
+            request.limit(), request.offset());
+
+        // Un offset au-delà du total rend une page vide sans que la zone le soit :
+        // truncated doit alors valoir vrai, sans quoi le client conclurait de la
+        // page vide que le rectangle l'est.
+        if (ids.isEmpty()) {
+            return new SlotBoundsResponse(List.of(), true, (int) total);
+        }
+
+        Map<UUID, Schedule> parId = scheduleRepository.findWithActivityDetailsByIds(ids).stream()
+            .collect(Collectors.toMap(Schedule::getId, Function.identity()));
+
+        // L'ordre vient de la liste d'ids, pas du rechargement : findWithActivityDetailsByIds
+        // interroge par IN et ne garantit rien. Sans cette reprise, le classement
+        // chronologique disparaîtrait sans qu'aucune erreur ne soit levée — et avec
+        // lui la seule chose qui rende la troncature défendable.
+        List<Schedule> slots = ids.stream()
+            .map(parId::get)
+            .filter(Objects::nonNull)
+            .toList();
+
+        FeedContext context = feedContext(slots, requesterId);
+
+        List<SlotFeedItemDto> items = slots.stream()
+            .map(s -> toFeedItem(s, null, null, requesterId, context))
+            .toList();
+
+        return new SlotBoundsResponse(
+            items, total > (long) request.offset() + items.size(), (int) total);
     }
 
     @Transactional(readOnly = true)
