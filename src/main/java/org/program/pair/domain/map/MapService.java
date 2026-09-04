@@ -8,6 +8,7 @@ import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.user.User;
 import org.program.pair.repository.*;
+import org.program.pair.shared.GeoBounds;
 import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.exception.ValidationException;
 import org.springframework.stereotype.Service;
@@ -591,25 +592,13 @@ public class MapService {
     /**
      * Les quatre bornes sont déjà obligatoires ({@code MapBoundsRequest}) ; il
      * reste à refuser celles qui ne décrivent pas un rectangle. Mêmes règles et
-     * même code que sur {@code /map/activities}, pour que le client n'ait pas
-     * deux comportements à apprendre.
+     * même code que sur {@code /map/activities} et {@code /slots/bounds} — au
+     * sens propre depuis {@link GeoBounds} : pour que le client n'ait pas
+     * plusieurs comportements à apprendre, il faut qu'il n'y ait qu'un code.
      */
     private void validateBounds(MapBoundsRequest request) {
-        if (request.south() > request.north()) {
-            throw new ValidationException(ErrorCode.MAP_BOUNDS_INVALID,
-                "'south' ne peut pas être supérieur à 'north'.");
-        }
-        if (request.west() > request.east()) {
-            throw new ValidationException(ErrorCode.MAP_BOUNDS_INVALID,
-                "'west' ne peut pas être supérieur à 'east' : une zone à cheval "
-                    + "sur l'antiméridien n'est pas supportée.");
-        }
-        if (request.south() < -90 || request.north() > 90
-                || request.west() < -180 || request.east() > 180) {
-            throw new ValidationException(ErrorCode.MAP_BOUNDS_INVALID,
-                "Les bornes doivent rester dans [-90, 90] en latitude et "
-                    + "[-180, 180] en longitude.");
-        }
+        GeoBounds.validateRectangle(
+            request.north(), request.south(), request.east(), request.west());
         if (request.limit() < 1) {
             throw new ValidationException(ErrorCode.MAP_LIMIT_OUT_OF_RANGE,
                 "Le paramètre 'limit' doit être supérieur ou égal à 1.");
@@ -1081,23 +1070,8 @@ public class MapService {
                     "Les bornes 'north', 'south', 'east' et 'west' vont ensemble : "
                         + "fournissez les quatre ou aucune.");
             }
-            if (request.south() > request.north()) {
-                throw new ValidationException(ErrorCode.MAP_BOUNDS_INVALID,
-                    "'south' ne peut pas être supérieur à 'north'.");
-            }
-            // Une bbox à cheval sur l'antiméridien demanderait deux enveloppes ;
-            // le cas n'est pas supporté, autant le dire plutôt que renvoyer vide.
-            if (request.west() > request.east()) {
-                throw new ValidationException(ErrorCode.MAP_BOUNDS_INVALID,
-                    "'west' ne peut pas être supérieur à 'east' : une zone à cheval "
-                        + "sur l'antiméridien n'est pas supportée.");
-            }
-            if (request.south() < -90 || request.north() > 90
-                    || request.west() < -180 || request.east() > 180) {
-                throw new ValidationException(ErrorCode.MAP_BOUNDS_INVALID,
-                    "Les bornes doivent rester dans [-90, 90] en latitude et "
-                        + "[-180, 180] en longitude.");
-            }
+            GeoBounds.validateRectangle(
+                request.north(), request.south(), request.east(), request.west());
         }
 
         if (request.limit() != null && request.limit() < 1) {

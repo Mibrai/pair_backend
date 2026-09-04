@@ -4,7 +4,6 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.*;
 
 import java.time.Instant;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -52,54 +51,25 @@ public record SlotFeedRequest(
 ) {
 
     /** Les étiquettes d'accessibilité demandées, normalisées et sans doublon. */
-    public java.util.Set<String> effectiveAccessibilityTags() {
-        if (accessibilityTags == null) {
-            return java.util.Set.of();
-        }
-        return accessibilityTags.stream()
-            .filter(java.util.Objects::nonNull)
-            .flatMap(value -> java.util.Arrays.stream(value.split(",")))
-            .map(String::strip)
-            .filter(value -> !value.isEmpty())
-            .map(value -> value.toUpperCase(java.util.Locale.ROOT))
-            .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+    public Set<String> effectiveAccessibilityTags() {
+        return SlotFilters.accessibilityTags(accessibilityTags);
     }
 
     /**
      * Les étiquettes de langue demandées, normalisées en minuscules et sans
      * doublon. Vide quand aucun filtre n'est demandé.
      */
-    public java.util.Set<String> effectiveLanguages() {
-        if (languages == null) {
-            return java.util.Set.of();
-        }
-        return languages.stream()
-            .filter(java.util.Objects::nonNull)
-            .flatMap(value -> java.util.Arrays.stream(value.split(",")))
-            .map(String::strip)
-            .filter(value -> !value.isEmpty())
-            .map(value -> value.toLowerCase(java.util.Locale.ROOT))
-            .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+    public Set<String> effectiveLanguages() {
+        return SlotFilters.languages(languages);
     }
 
     /**
      * Catégories effectivement demandées : l'union de {@code categoryId} et de
      * {@code categoryIds}, dédoublonnée.
      *
-     * <p>Les deux se cumulent plutôt que l'un ne masque l'autre : un client en
-     * cours de migration peut envoyer les deux sans qu'une des deux sélections
-     * disparaisse silencieusement.
-     *
      * @return l'ensemble des catégories, vide quand aucun filtre n'est demandé
      */
     public Set<UUID> effectiveCategoryIds() {
-        Set<UUID> effective = new LinkedHashSet<>();
-        if (categoryId != null) {
-            effective.add(categoryId);
-        }
-        if (categoryIds != null) {
-            categoryIds.stream().filter(java.util.Objects::nonNull).forEach(effective::add);
-        }
-        return effective;
+        return SlotFilters.categoryIds(categoryId, categoryIds);
     }
 }
