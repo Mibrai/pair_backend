@@ -1,0 +1,22 @@
+-- ============================================================
+-- V101 — l'extension unaccent, pour que « muller » trouve « Müller »
+--
+-- Relevé par le client le 04/09 : GET /users?query=Müller rend deux personnes,
+-- GET /users?query=muller n'en rend aucune. Le même mot, la même personne, zéro
+-- résultat — sur un clavier sans tréma, c'est-à-dire la plupart.
+--
+-- Le dépôt n'avait aucune insensibilité aux accents en SQL. Le client croyait le
+-- contraire, la recherche floue des programmes lui en donnant l'apparence : sa
+-- similarité par trigrammes laisse passer un mot long malgré un accent, parce
+-- qu'il reste assez de trigrammes communs pour franchir le seuil. C'est un effet
+-- de bord, pas une garantie, et sur un nom court il ne joue pas.
+--
+-- unaccent() n'est pas immuable et ne peut donc pas servir dans un index. Cela
+-- ne coûte rien ici : la recherche de personnes est un LIKE '%…%', qui n'en
+-- utilisait déjà aucun.
+--
+-- IF NOT EXISTS parce que la base de production peut déjà la porter, et parce
+-- qu'une migration qui échoue empêche l'application de démarrer.
+-- ============================================================
+
+CREATE EXTENSION IF NOT EXISTS unaccent;
