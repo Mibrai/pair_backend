@@ -8,6 +8,8 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.program.dto.CancelSlotRequest;
 import org.program.pair.domain.program.dto.JoinSlotRequest;
+import org.program.pair.domain.program.dto.SlotBoundsRequest;
+import org.program.pair.domain.program.dto.SlotBoundsResponse;
 import org.program.pair.domain.program.dto.SlotFeedItemDto;
 import org.program.pair.domain.program.dto.SlotFeedRequest;
 import org.program.pair.domain.program.dto.SlotParticipantDto;
@@ -35,6 +37,41 @@ public class SlotController {
             @AuthenticationPrincipal UserPrincipal principal,
             @Valid @ModelAttribute SlotFeedRequest request) {
         return slotService.getSlotFeed(request, principal.getId());
+    }
+
+    /**
+     * Les créneaux d'un rectangle — la géométrie d'un écran de carte.
+     *
+     * <p>Mêmes bornes et même pagination que {@code GET /api/map/bounds}, mêmes
+     * filtres que {@code GET /api/slots/feed}. Le client demandait le choix entre
+     * une couche {@code slots} ajoutée à {@code /map/bounds} et une route dédiée :
+     * c'est la seconde, et le choix est argumenté dans
+     * {@code modules/carte/REPONSE_BACKEND_2026-09-04.md}. En un mot,
+     * les deux onglets sont deux appels distincts, et les fondre en un ferait
+     * payer à chacun le calcul de l'autre — pendant que {@code truncated} et
+     * {@code totalInBounds}, aujourd'hui lus par le bandeau de l'onglet Activités,
+     * se mettraient à parler aussi des créneaux.
+     *
+     * <p>{@code /slots/feed} ne change pas : son disque et son plafond de 50 km
+     * sont justes pour « autour de moi, à telle distance ».
+     *
+     * <p><b>Un créneau dont la position n'est pas partagée n'apparaît pas ici</b>,
+     * là où le fil le rend sans coordonnées. Répondre « il est dans ce rectangle »
+     * est déjà le situer.
+     *
+     * @return les créneaux, {@code truncated} et {@code totalInBounds}
+     */
+    @Operation(summary = "Les créneaux d'une zone rectangulaire",
+        description = "L'onglet Créneaux de la carte. Contrairement à /slots/feed, aucune "
+            + "borne de rayon : la zone interrogée est exactement la zone affichée.")
+    @ApiResponse(responseCode = "200", description = "Créneaux de la zone, avec l'état de troncature")
+    @ApiResponse(responseCode = "400",
+        description = "Rectangle invalide (MAP_BOUNDS_INVALID) ou limit hors bornes (VALIDATION_ERROR)")
+    @GetMapping("/bounds")
+    public SlotBoundsResponse getSlotsInBounds(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @ModelAttribute SlotBoundsRequest request) {
+        return slotService.getSlotsInBounds(request, principal.getId());
     }
 
     @GetMapping("/{scheduleId}")
