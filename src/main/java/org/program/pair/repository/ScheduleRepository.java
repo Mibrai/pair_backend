@@ -211,23 +211,39 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
     List<Schedule> findRecurringStartedBefore(@Param("now") Instant now);
 
     /**
-     * Corps commun des deux formes du fil « autour de moi » — jointures, filtres,
-     * prédicat de blocage et classement — écrit une fois.
+     * Ce que « les créneaux visibles pour cette personne » veut dire, écrit une
+     * fois — sans la géométrie, qui est la seule chose que les deux fils ne
+     * partagent pas.
      *
-     * <p>Deux requêtes le partagent : {@link #findOpenSlotsInRadius}, qui rend les
-     * entités, et {@link #findOpenSlotIdsInRadius}, qui ne rend que les ids. Le
-     * recopier garantirait qu'une des deux diverge un jour, et le dépôt connaît
-     * déjà ce mode de panne — c'est l'argument que porte {@link BlockSql} pour le
-     * seul prédicat de blocage, et il vaut a fortiori pour un corps de cette
-     * taille. Partagé, un filtre ajouté ici s'applique aux deux formes : le fil ne
-     * peut pas montrer un créneau que sa variante bornée ignorerait, ni l'inverse.
+     * <p>Trois requêtes le portent : le fil par rayon ({@link #findOpenSlotsInRadius},
+     * {@link #findOpenSlotIdsInRadius}) et la carte par rectangle
+     * ({@link #findOpenSlotIdsInBounds}, {@link #countOpenSlotsInBounds}). Un
+     * filtre ajouté ici s'applique aux deux géométries : la carte ne peut pas
+     * montrer un créneau que le fil cacherait, ni l'inverse.
      *
-     * <p>La concaténation reste une <i>expression constante</i> au sens du langage,
-     * donc utilisable dans une annotation, parce que {@link BlockSql#NOT_BLOCKED_U}
-     * est lui-même une constante. Une méthode qui composerait la même chaîne ne
-     * compilerait pas ici.
+     * <p>C'est l'argument que {@link BlockSql} porte pour le seul prédicat de
+     * blocage, et il vaut a fortiori pour un corps de cette taille : le recopier
+     * garantirait qu'une des copies dérive un jour, et la dérive serait
+     * silencieuse — une requête qui filtre autrement ne lève rien, elle rend
+     * simplement autre chose.
+     *
+     * <p>Chaque appelant y ajoute ensuite son prédicat géographique, ses
+     * restrictions propres s'il en a, {@link BlockSql#NOT_BLOCKED_U}, puis son
+     * classement. L'ordre des {@code AND} est indifférent ; leur présence ne
+     * l'est pas.
+     *
+     * <p>La concaténation reste une <i>expression constante</i> au sens du
+     * langage, donc utilisable dans une annotation, parce que chaque morceau —
+     * celui-ci comme {@link BlockSql#NOT_BLOCKED_U} — est lui-même une constante.
+     * Une méthode qui composerait la même chaîne ne compilerait pas ici.
+     *
+     * <p><b>Aucun commentaire SQL dans ce corps.</b> L'analyseur de paramètres de
+     * Spring Data suit les guillemets simples sans savoir qu'il traverse un
+     * commentaire : une apostrophe française y casse le chargement du dépôt
+     * entier, au démarrage, avec un message qui ne la nomme pas. Les explications
+     * vivent donc dans les javadocs.
      */
-    String OPEN_SLOTS_IN_RADIUS_BODY = """
+    String OPEN_SLOTS_VISIBLE_BASE = """
         FROM schedules s
         JOIN programs p         ON s.program_id = p.id
         JOIN user_activities ua ON p.user_activity_id = ua.id
@@ -251,6 +267,9 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
                 SELECT COUNT(DISTINCT sat.tag) FROM schedule_accessibility_tags sat
                 WHERE sat.schedule_id = s.id AND sat.tag IN (:accessibilityTags)
               ) = :requiredTagCount)
+        """;
+
+    String OPEN_SLOTS_IN_RADIUS_BODY = OPEN_SLOTS_VISIBLE_BASE + """
           AND ST_DWithin(
                 s.location::geography,
                 ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
@@ -394,6 +413,141 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
         @Param("accessibilityTags") Collection<String> accessibilityTags,
         @Param("requiredTagCount") long requiredTagCount,
         @Param("zone") String zone
+    );
+
+    /**
+     * Le même fil, dans un <b>rectangle</b> — corps commun de la page et de son
+     * compte.
+     *
+     * <p>Il part de {@link #OPEN_SLOTS_VISIBLE_BASE}, qu'il partage avec le fil :
+     * une seule définition de « quels créneaux existent pour cette personne » pour
+     * les deux géométries. Un créneau que la carte montrerait et que le fil
+     * cacherait — ou l'inverse — serait un défaut, pas une fonctionnalité.
+     *
+     * <p><b>Ce qu'il ajoute, et pourquoi il l'ajoute seul.</b>
+     *
+     * <p>1. La géométrie. {@code &&} contre une {@code ST_MakeEnvelope} au lieu
+     * d'un {@code ST_DWithin} : c'est tout l'objet du lot. L'opérateur est
+     * indexable par le GiST sur {@code location}, et pour un point l'intersection
+     * de bbox équivaut à l'inclusion — même idiome que
+     * {@link #findLocatedScheduleIdsWithin}.
+     *
+     * <p>2. <b>La règle de lieu entre dans le {@code WHERE}</b>, et c'est le
+     * point le plus important de cette requête. Sur le fil, un créneau dont la
+     * position n'est pas partagée remonte quand même, avec {@code lat}/{@code lng}
+     * nuls : il est trouvable, il n'est pas situé. Ici la question posée <i>est</i>
+     * géographique — « qu'y a-t-il dans ce rectangle ? » — et y répondre pour un
+     * créneau à position masquée le situerait dans le rectangle. Zoomée assez
+     * près, la réponse <i>est</i> l'adresse. Le prédicat reproduit donc
+     * exactement {@code SlotAddressVisibility.resolve} : jamais un lieu
+     * {@code ONLINE} ni sans coordonnées, et sinon {@code PUBLIC}, ou
+     * {@code show_exact_address}, ou une participation {@code CONFIRMED} de celui
+     * qui regarde. Les deux doivent rester d'accord : si l'un des deux change,
+     * l'autre doit changer le même jour.
+     *
+     * <p>3. <b>Ses propres créneaux sont écartés</b>, comme sur le fil — où le
+     * filtre est en Java, sur la liste rendue. Ici il est en SQL : un
+     * post-filtrage ferait annoncer par {@code totalInBounds} un créneau que la
+     * page ne contient pas, et {@code truncated} s'allumerait sur du vide.
+     *
+     * <p><b>Le classement est chronologique, sans pondération.</b> Le fil range
+     * par jour, puis par les disponibilités déclarées de celui qui regarde, puis
+     * par heure et par distance. Rien de tout cela n'a de sens ici : il n'y a pas
+     * de centre d'où mesurer une distance, et l'ordre n'est pas montré — une
+     * carte n'a pas de premier pin. Il ne décide que d'une chose, ce qui survit à
+     * {@code limit}, et « les plus proches dans le temps » est la seule réponse
+     * qu'on puisse défendre devant quelqu'un qui n'en verra pas la moitié.
+     * {@code s.id} en second départage, pour que deux pages successives ne se
+     * recouvrent ni ne se manquent.
+     *
+     * <p><b>Aucun commentaire SQL dans le corps ci-dessous</b> — voir
+     * {@link #OPEN_SLOTS_VISIBLE_BASE} : une apostrophe française dans un
+     * commentaire casse le chargement du dépôt entier au démarrage.
+     */
+    String OPEN_SLOTS_IN_BOUNDS_BODY = OPEN_SLOTS_VISIBLE_BASE + """
+          AND (CAST(:viewerId AS uuid) IS NULL OR ua.user_id <> :viewerId)
+          AND s.location IS NOT NULL
+          AND s.place_type <> 'ONLINE'
+          AND (s.place_type = 'PUBLIC'
+               OR s.show_exact_address = TRUE
+               OR EXISTS (
+                    SELECT 1 FROM slot_participations sp
+                    WHERE sp.schedule_id = s.id
+                      AND sp.user_id = :viewerId
+                      AND sp.status = 'CONFIRMED'))
+          AND s.location && ST_MakeEnvelope(:west, :south, :east, :north, 4326)
+        """ + BlockSql.NOT_BLOCKED_U;
+
+    /**
+     * Les ids de la page — bornés, ordonnés, décalés.
+     *
+     * <p>Des ids et non des entités, pour la raison que documente
+     * {@link #findOpenSlotIdsInRadius} : une requête native ne porte pas de
+     * {@code JOIN FETCH}, et la reprise par {@link #findWithActivityDetailsByIds}
+     * évite le N+1 sur program → userActivity → activity → category.
+     *
+     * <p><b>L'ordre est porté par le SQL.</b> {@code findWithActivityDetailsByIds}
+     * interroge par {@code IN} et ne garantit rien : l'appelant doit réordonner
+     * selon la liste rendue ici. S'il ne le fait pas, le tri disparaît sans
+     * qu'aucune erreur ne soit levée.
+     */
+    @Query(value = "SELECT s.id " + OPEN_SLOTS_IN_BOUNDS_BODY + """
+        ORDER BY s.starts_at ASC, s.id ASC
+        LIMIT :limit OFFSET :offset
+        """, nativeQuery = true)
+    List<UUID> findOpenSlotIdsInBounds(
+        @Param("north") double north,
+        @Param("south") double south,
+        @Param("east") double east,
+        @Param("west") double west,
+        @Param("fromTs") Instant from,
+        @Param("toTs") Instant to,
+        @Param("activityId") UUID activityId,
+        @Param("filterByCategory") boolean filterByCategory,
+        @Param("categoryIds") Collection<UUID> categoryIds,
+        @Param("createdSince") Instant createdSince,
+        @Param("viewerId") UUID viewerId,
+        @Param("filterByLanguage") boolean filterByLanguage,
+        @Param("languages") Collection<String> languages,
+        @Param("filterByTags") boolean filterByTags,
+        @Param("accessibilityTags") Collection<String> accessibilityTags,
+        @Param("requiredTagCount") long requiredTagCount,
+        @Param("limit") int limit,
+        @Param("offset") int offset
+    );
+
+    /**
+     * Combien de créneaux la zone contient <b>vraiment</b>, avant {@code limit}.
+     *
+     * <p>Le même corps que la page, à la projection près — c'est la seule façon
+     * de garantir que {@code totalInBounds} compte exactement la population que
+     * {@code limit} tronque. Un {@code COUNT} qui aurait son propre {@code WHERE}
+     * finirait par annoncer des créneaux que la page n'a pas le droit de montrer,
+     * et ce total serait alors lui-même une fuite : dire « il y en a trois ici »
+     * situe trois créneaux dans le rectangle.
+     *
+     * <p>Une requête de plus par appel, assumée. La seule alternative — demander
+     * {@code limit + 1} lignes et en déduire la troncature — dirait « il y en a
+     * plus » sans jamais dire combien, et le client a demandé le compte.
+     */
+    @Query(value = "SELECT COUNT(*) " + OPEN_SLOTS_IN_BOUNDS_BODY, nativeQuery = true)
+    long countOpenSlotsInBounds(
+        @Param("north") double north,
+        @Param("south") double south,
+        @Param("east") double east,
+        @Param("west") double west,
+        @Param("fromTs") Instant from,
+        @Param("toTs") Instant to,
+        @Param("activityId") UUID activityId,
+        @Param("filterByCategory") boolean filterByCategory,
+        @Param("categoryIds") Collection<UUID> categoryIds,
+        @Param("createdSince") Instant createdSince,
+        @Param("viewerId") UUID viewerId,
+        @Param("filterByLanguage") boolean filterByLanguage,
+        @Param("languages") Collection<String> languages,
+        @Param("filterByTags") boolean filterByTags,
+        @Param("accessibilityTags") Collection<String> accessibilityTags,
+        @Param("requiredTagCount") long requiredTagCount
     );
 
     /**
