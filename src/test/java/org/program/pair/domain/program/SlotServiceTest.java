@@ -28,6 +28,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -90,11 +91,40 @@ class SlotServiceTest {
         UUID joinerId = UUID.randomUUID();
         Schedule slot = buildOpenSlot(hostId, Instant.now().plus(1, ChronoUnit.DAYS));
         when(scheduleRepository.lockById(slot.getId())).thenReturn(Optional.of(slot));
-        when(participationRepository.existsByScheduleIdAndUserId(slot.getId(), joinerId)).thenReturn(true);
+
+        // Une participation CONFIRMED, et non la seule existence d'une ligne :
+        // c'est tout le lot du 04/09. Le contrôle portait sur exists(), donc une
+        // ligne WITHDRAWN — celle que leaveSlot laisse derrière lui — valait
+        // encore refus, et se désinscrire était irréversible.
+        SlotParticipation confirmee = new SlotParticipation();
+        confirmee.setStatus(ParticipationStatus.CONFIRMED);
+        when(participationRepository.findByScheduleIdAndUserId(slot.getId(), joinerId))
+            .thenReturn(Optional.of(confirmee));
 
         assertThatThrownBy(() -> slotService.joinSlot(joinerId, slot.getId(), new JoinSlotRequest(null)))
             .isInstanceOf(BusinessException.class)
             .hasMessageContaining("déjà rejoint");
+    }
+
+    @Test
+    void joinSlot_devraitAccepter_apresUnDesistement() {
+        // Le pendant du test ci-dessus, et le défaut lui-même : la même ligne,
+        // dans l'état que laisse leaveSlot, ne doit plus valoir refus.
+        UUID hostId = UUID.randomUUID();
+        UUID joinerId = UUID.randomUUID();
+        Schedule slot = buildOpenSlot(hostId, Instant.now().plus(1, ChronoUnit.DAYS));
+        slot.getProgram().getUserActivity().getUser().setReceiveMessages(false);
+
+        SlotParticipation partie = new SlotParticipation();
+        partie.setStatus(ParticipationStatus.WITHDRAWN);
+        partie.setWithdrawnAt(Instant.now());
+        stubHappyPathJoin(slot, joinerId, Optional.of(partie));
+
+        assertThatCode(() -> slotService.joinSlot(joinerId, slot.getId(), new JoinSlotRequest(null)))
+            .doesNotThrowAnyException();
+
+        assertThat(partie.getStatus()).isEqualTo(ParticipationStatus.CONFIRMED);
+        assertThat(partie.getWithdrawnAt()).isNull();
     }
 
     @Test
@@ -141,8 +171,19 @@ class SlotServiceTest {
     }
 
     private void stubHappyPathJoin(Schedule slot, UUID joinerId) {
+        stubHappyPathJoin(slot, joinerId, Optional.empty());
+    }
+
+    /**
+     * @param participationExistante l'état dans lequel joinSlot trouve la ligne :
+     *        vide pour une première inscription, présente pour une réinscription
+     *        après désistement — les deux chemins que le lot du 04/09 sépare.
+     */
+    private void stubHappyPathJoin(Schedule slot, UUID joinerId,
+                                   Optional<SlotParticipation> participationExistante) {
         when(scheduleRepository.lockById(slot.getId())).thenReturn(Optional.of(slot));
-        when(participationRepository.existsByScheduleIdAndUserId(slot.getId(), joinerId)).thenReturn(false);
+        when(participationRepository.findByScheduleIdAndUserId(slot.getId(), joinerId))
+            .thenReturn(participationExistante);
         // Plus de stub du décompte de places : le recomptage qui suivait l'écriture
         // a quitté SlotService pour ParticipantCounter, qui est mocké. Le seul
         // décompte que joinSlot fait encore lui-même est le contrôle de capacité,
@@ -151,7 +192,10 @@ class SlotServiceTest {
         User joiner = new User();
         joiner.setId(joinerId);
         joiner.setDisplayName("Joiner");
-        when(userRepository.getReferenceById(joinerId)).thenReturn(joiner);
+        // lenient : la référence n'est demandée que pour poser une ligne neuve.
+        // Une réinscription réactive la ligne existante, dont le porteur est déjà
+        // renseigné — c'est précisément ce que ce chemin ne refait pas.
+        lenient().when(userRepository.getReferenceById(joinerId)).thenReturn(joiner);
         when(userRepository.findById(joinerId)).thenReturn(Optional.of(joiner));
         when(userService.getPublicProfile(any(), any())).thenReturn(UserPublicDto.identity(
             UUID.randomUUID(), "Host", null, null, "UNVERIFIED"));
