@@ -69,6 +69,9 @@ public class ActivityBrowseService {
             requesterId != null && request.effectiveMyActivitiesOnly(),
             requesterId != null && request.effectiveSubscribedOnly(),
             requesterId == null ? null : requesterId.toString(),
+            // La durée conventionnelle d'une séance sans fin déclarée, lue à son
+            // unique domicile plutôt que recopiée dans le SQL.
+            org.program.pair.domain.program.SlotTiming.DEFAULT_DURATION.toMinutes(),
             // Sort.unsorted() volontairement : l'ordre total est dans la requête,
             // laisser Spring en injecter un second le contredirait.
             PageRequest.of(request.effectivePage(), request.effectiveSize()));
@@ -117,7 +120,8 @@ public class ActivityBrowseService {
             request.effectiveRadiusMeters(),
             request.effectiveIncludeExpired(),
             toUuidArrayLiteral(request.categoryIds()),
-            requesterId == null ? null : requesterId.toString());
+            requesterId == null ? null : requesterId.toString(),
+            org.program.pair.domain.program.SlotTiming.DEFAULT_DURATION.toMinutes());
 
         Map<String, Long> byLevel = new LinkedHashMap<>();
         long total = 0;
