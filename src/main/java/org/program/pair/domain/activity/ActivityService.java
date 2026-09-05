@@ -117,21 +117,41 @@ public class ActivityService {
 
     @Transactional(readOnly = true)
     public Page<ActivityDto> searchActivities(UUID categoryId, String search, Pageable pageable) {
-        Page<Activity> activities;
-
-        if (categoryId != null && search != null && !search.isBlank()) {
-            activities = activityRepository.findByCategoryIdAndNameContainingIgnoreCase(
-                categoryId, search.strip(), pageable);
-        } else if (categoryId != null) {
-            activities = activityRepository.findByCategoryId(categoryId, pageable);
-        } else if (search != null && !search.isBlank()) {
-            activities = activityRepository.findByNameContainingIgnoreCase(
-                search.strip(), pageable);
-        } else {
-            activities = activityRepository.findAll(pageable);
+        if (search == null || search.isBlank()) {
+            Page<Activity> all = categoryId != null
+                ? activityRepository.findByCategoryId(categoryId, pageable)
+                : activityRepository.findAll(pageable);
+            return all.map(this::toActivityDto);
         }
 
-        return activities.map(this::toActivityDto);
+        String query = search.strip();
+
+        Page<Activity> exact = categoryId != null
+            ? activityRepository.searchByCategoryAndNameUnaccented(categoryId, query, pageable)
+            : activityRepository.searchByNameUnaccented(query, pageable);
+
+        if (exact.hasContent()) {
+            return exact.map(this::toActivityDto);
+        }
+
+        // Repli sur le rapprochement flou, et SEULEMENT quand la recherche
+        // exacte n'a rien rendu — jamais fusionné avec elle. Fusionner ferait
+        // remonter « Toga » à côté de « Yoga » sur une requête qui trouvait déjà
+        // son mot ; ici, la seule alternative au flou est une page vide.
+        //
+        // Sur une page au-delà de la première, on ne replie pas : une page vide
+        // y signifie « la liste est finie », pas « rien ne correspond », et y
+        // faire surgir des résultats d'une autre nature ferait apparaître à la
+        // page 3 des activités absentes des pages 1 et 2.
+        if (pageable.getPageNumber() > 0) {
+            return exact.map(this::toActivityDto);
+        }
+
+        Page<Activity> approchant = categoryId != null
+            ? activityRepository.searchByCategoryAndNameSimilar(categoryId, query, pageable)
+            : activityRepository.searchByNameSimilar(query, pageable);
+
+        return approchant.map(this::toActivityDto);
     }
 
     @Transactional(readOnly = true)

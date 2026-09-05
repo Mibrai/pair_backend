@@ -77,6 +77,13 @@ class MapUpcomingFilterIntegrationTest extends AbstractIntegrationTest {
     private static final double EMPTY_ZONE_LAT = 40.30;
     private static final double EMPTY_ZONE_LNG = -60.0;
 
+    // Zone de la frontière « commencée ≠ terminée » : une séance EN COURS et une
+    // séance ANNULÉE mais future. Isolée des deux autres, et assez large au zoom
+    // 20 pour que les deux marqueurs restent séparés.
+    private static final double BOUNDARY_ZONE_LNG = -80.0;
+    private static final double IN_PROGRESS_LAT = 20.10;
+    private static final double CANCELLED_LAT = 20.50;
+
     private static final String HOST_EMAIL = "map-upcoming-host@pair.app";
 
     private static boolean fixturesCreated = false;
@@ -101,6 +108,15 @@ class MapUpcomingFilterIntegrationTest extends AbstractIntegrationTest {
             EMPTY_ZONE_LAT, EMPTY_ZONE_LNG, Instant.now().minus(10, ChronoUnit.DAYS));
         createSchedule(host, "football", "Football — passé",
             EMPTY_ZONE_LAT + 0.2, EMPTY_ZONE_LNG, Instant.now().minus(9, ChronoUnit.DAYS));
+
+        // Commencée il y a 20 minutes, elle finit dans 40 (le helper pose
+        // endsAt = startsAt + 1 h).
+        createSchedule(host, "danse", "Danse — séance en cours",
+            IN_PROGRESS_LAT, BOUNDARY_ZONE_LNG, Instant.now().minus(20, ChronoUnit.MINUTES));
+
+        createScheduleWithStatus(host, "guitare", "Guitare — annulée",
+            CANCELLED_LAT, BOUNDARY_ZONE_LNG, Instant.now().plus(4, ChronoUnit.DAYS),
+            SlotStatus.CANCELLED);
 
         fixturesCreated = true;
     }
@@ -218,6 +234,53 @@ class MapUpcomingFilterIntegrationTest extends AbstractIntegrationTest {
     }
 
     /**
+     * Une séance qui a commencé n'est pas une séance passée.
+     *
+     * <p>Le créneau représentatif et {@code nextSessionAt} se choisissaient tous
+     * deux sur {@code startsAt.isAfter(now)}, et {@code keepUpcoming()} écarte le
+     * marqueur dont {@code nextSessionAt} est nul : l'activité <b>quittait donc la
+     * carte pendant que sa séance se déroulait</b>, à la minute même où elle
+     * prouvait qu'elle était vivante. Les deux bornes se lisent désormais sur la
+     * fin, via {@code SlotTiming}.
+     */
+    @Test
+    void uneSeanceEnCours_doitResterSurLaCarte() {
+        MapActivitiesResponse response = fetch(boundaryZone(20));
+
+        assertThat(response.activities())
+            .extracting(MapActivityMarkerDto::activityName)
+            .contains("Danse");
+
+        MapActivityMarkerDto danse = response.activities().stream()
+            .filter(m -> "Danse".equals(m.activityName()))
+            .findFirst().orElseThrow();
+        assertThat(danse.nextSessionAt())
+            .as("la séance en cours EST la prochaine séance")
+            .isNotNull();
+    }
+
+    /**
+     * Symétrique : un créneau annulé n'a plus de pin.
+     *
+     * <p>Les requêtes qui alimentent la carte ne filtrent pas sur le statut du
+     * créneau — contrairement à celles du fil, qui exigent {@code OPEN} ou
+     * {@code FULL}. Une séance annulée mais future devenait donc le créneau
+     * représentatif de son marqueur et le maintenait sur la carte.
+     */
+    @Test
+    void unCreneauAnnule_neDoitPasTenirUnMarqueurSurLaCarte() {
+        MapActivitiesResponse response = fetch(boundaryZone(20));
+
+        assertThat(response.activities())
+            .extracting(MapActivityMarkerDto::activityName)
+            .doesNotContain("Guitare");
+
+        // Et le compteur dit la même chose que la liste : un seul marqueur dans
+        // cette zone, celui de la séance en cours.
+        assertThat(response.totalInBounds()).isEqualTo(1);
+    }
+
+    /**
      * La seconde condition de la règle produit — « a au moins un programme » —
      * est structurellement vraie sur cette route : un marqueur naît d'un créneau
      * localisé rattaché à un programme. Ce test empêche cette invariance de
@@ -249,6 +312,15 @@ class MapUpcomingFilterIntegrationTest extends AbstractIntegrationTest {
         return zoom != null ? withBbox.queryParam("zoom", zoom) : withBbox;
     }
 
+    private Function<UriBuilder, java.net.URI> boundaryZone(Integer zoom) {
+        return b -> {
+            UriBuilder withBbox = b.path("/api/map/activities")
+                .queryParam("south", 19.5).queryParam("north", 21.5)
+                .queryParam("west", -80.5).queryParam("east", -79.5);
+            return (zoom != null ? withBbox.queryParam("zoom", zoom) : withBbox).build();
+        };
+    }
+
     private Function<UriBuilder, java.net.URI> emptyZone(Integer zoom) {
         return b -> {
             UriBuilder withBbox = b.path("/api/map/activities")
@@ -275,6 +347,12 @@ class MapUpcomingFilterIntegrationTest extends AbstractIntegrationTest {
 
     private void createSchedule(User owner, String activitySlug, String title,
                                 double lat, double lng, Instant startsAt) {
+        createScheduleWithStatus(owner, activitySlug, title, lat, lng, startsAt, SlotStatus.OPEN);
+    }
+
+    private void createScheduleWithStatus(User owner, String activitySlug, String title,
+                                          double lat, double lng, Instant startsAt,
+                                          SlotStatus status) {
         Activity activity = activityRepository.findBySlug(activitySlug).orElseThrow();
         UserActivity userActivity = userActivityRepository
             .findByUserIdAndActivityId(owner.getId(), activity.getId())
@@ -299,7 +377,7 @@ class MapUpcomingFilterIntegrationTest extends AbstractIntegrationTest {
             .endsAt(startsAt.plus(1, ChronoUnit.HOURS))
             .maxParticipants(8)
             .isOpenToPartners(true)
-            .status(SlotStatus.OPEN)
+            .status(status)
             .build());
     }
 
