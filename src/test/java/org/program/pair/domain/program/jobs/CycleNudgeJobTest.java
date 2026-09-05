@@ -156,10 +156,10 @@ class CycleNudgeJobTest {
     // ------------------------------------------------------------------
 
     @Test
-    void etape2_resteEteinte_tantQueSonDelaiNaPasEteMesure() {
-        // La valeur par défaut est zéro, et zéro veut dire « on ne sait pas
-        // encore ». Livrer J+3 sur une intuition ferait du module le harcèlement
-        // qu'il existe pour éviter.
+    void etape2_sEteintQuandSonDelaiEstNul() {
+        // Zéro est l'interrupteur de l'étape, pas seulement son état initial : il
+        // a permis de livrer le reste du module avant que le délai ne soit
+        // mesuré, et il reste le moyen de la couper sans redéployer.
         job.sendCycleNudges();
 
         verify(programRepository, never()).findStage2Candidates(any(), any());
