@@ -20,10 +20,128 @@ public interface ActivityRepository extends JpaRepository<Activity, UUID> {
 
     Page<Activity> findByCategoryId(UUID categoryId, Pageable pageable);
 
-    Page<Activity> findByNameContainingIgnoreCase(String name, Pageable pageable);
+    /**
+     * Le motif {@code LIKE}, accents ignorés et <b>jokers de l'utilisateur
+     * neutralisés</b>.
+     *
+     * <p>Les {@code replace} imbriqués ne sont pas décoratifs. Les requêtes
+     * dérivées de Spring Data ({@code …ContainingIgnoreCase}) échappent
+     * {@code %}, {@code _} et {@code \} dans l'argument avant de composer le
+     * motif ; une requête native écrite à la main, non. Sans eux, chercher
+     * « % » rend <b>tout le référentiel</b> — vérifié : 68 lignes sur 68 — et
+     * « cours_ » se met à trouver « course ». L'ordre compte : la barre oblique
+     * inverse d'abord, sinon on échapperait les échappements que l'on vient de
+     * poser.
+     *
+     * <p>Écrit une fois et partagé par les quatre requêtes qui en ont besoin
+     * (valeur et décompte, avec et sans catégorie) : quatre copies auraient fini
+     * par diverger, et le symptôme d'une copie oubliée est un décompte qui ne
+     * correspond pas à sa page.
+     *
+     * <p>Le repli par trigrammes, lui, reçoit la requête <b>brute</b> : il ne
+     * compose aucun motif, et les barres obliques ajoutées ici fausseraient la
+     * mesure de similarité.
+     */
+    String UNACCENTED_LIKE_PATTERN =
+        "unaccent(LOWER(CONCAT('%', replace(replace(replace(:name, '\\', '\\\\'), "
+        + "'%', '\\%'), '_', '\\_'), '%')))";
 
-    Page<Activity> findByCategoryIdAndNameContainingIgnoreCase(
-        UUID categoryId, String name, Pageable pageable);
+    /**
+     * Recherche par nom, <b>insensible à la casse ET aux accents</b>.
+     *
+     * <p>Remplace la requête dérivée {@code findByNameContainingIgnoreCase}, qui
+     * ne savait ignorer que la casse. Mesuré par le client le 04/09 :
+     * {@code course} rend « Course à pied », {@code COURSE} aussi, {@code yog}
+     * rend les quatre yogas — mais <b>{@code course a pied} ne rend rien</b>.
+     * C'est le cas le plus banal du français, et son coût est précisément ce que
+     * ce référentiel existe pour éviter : quelqu'un qui ne voit aucune
+     * suggestion crée le cinquième doublon de « Course à pied » au catalogue.
+     *
+     * <p>{@code unaccent} des deux côtés de la comparaison, comme
+     * {@link UserRepository#SEARCH_USERS_BODY} depuis V101. La fonction n'est pas
+     * immuable et ne peut donc pas servir dans un index ; cela ne coûte rien ici,
+     * un {@code LIKE '%…%'} n'en utilisait déjà aucun.
+     *
+     * <p>Une requête native, et non du JPQL : {@code unaccent} est une fonction
+     * PostgreSQL qu'aucun dialecte Hibernate n'expose.
+     */
+    @Query(value = "SELECT * FROM activities a WHERE unaccent(LOWER(a.name)) LIKE "
+        + UNACCENTED_LIKE_PATTERN,
+        countQuery = "SELECT COUNT(*) FROM activities a WHERE unaccent(LOWER(a.name)) LIKE "
+        + UNACCENTED_LIKE_PATTERN,
+        nativeQuery = true)
+    Page<Activity> searchByNameUnaccented(@Param("name") String name, Pageable pageable);
+
+    /** Même recherche, bornée à une catégorie. */
+    @Query(value = "SELECT * FROM activities a WHERE a.category_id = :categoryId "
+        + "AND unaccent(LOWER(a.name)) LIKE " + UNACCENTED_LIKE_PATTERN,
+        countQuery = "SELECT COUNT(*) FROM activities a WHERE a.category_id = :categoryId "
+        + "AND unaccent(LOWER(a.name)) LIKE " + UNACCENTED_LIKE_PATTERN,
+        nativeQuery = true)
+    Page<Activity> searchByCategoryAndNameUnaccented(@Param("categoryId") UUID categoryId,
+                                                     @Param("name") String name,
+                                                     Pageable pageable);
+
+    /**
+     * Rapprochement par trigrammes — la faute de frappe, pas l'accent.
+     *
+     * <p><b>Une quatrième couche, et elle ne s'exécute qu'en repli</b> : seulement
+     * quand la recherche exacte ci-dessus n'a rien rendu. La placer avant ferait
+     * remonter des résultats vaguement ressemblants au-dessus de résultats
+     * exacts — « Yoga » et « Toga » partagent trois trigrammes sur quatre, et la
+     * mesure ne sait pas qu'un seul des deux est un mot. C'est la règle que
+     * {@code V77__trigram_search.sql} pose déjà pour la recherche de programmes.
+     *
+     * <p>{@code corse} rend ainsi « Course à pied », ce que le client relevait
+     * comme absent le 04/09. L'index {@code idx_activities_name_trgm} existe
+     * depuis V77 ; {@code unaccent} le rend inopérant, ce qui est sans
+     * conséquence sur un référentiel de quelques centaines de lignes — le
+     * commentaire de V77 le dit déjà.
+     *
+     * <p><b>{@code word_similarity} et non {@code similarity}</b>, et l'ordre des
+     * arguments compte : la première mesure la requête contre le <i>meilleur
+     * fragment</i> du nom, la seconde contre le nom entier. Sur « corse » vs
+     * « Course à pied », mesuré sur le référentiel : {@code similarity} rend
+     * 0,250 — sous n'importe quel seuil utilisable — parce que les deux tiers du
+     * nom cible ne sont pas dans la requête. {@code word_similarity} rend 0,444.
+     * Le mot cherché est court, la cible ne l'est pas : c'est exactement le cas
+     * que {@code similarity} mesure mal.
+     *
+     * <p>Le seuil de 0,4 est mesuré, pas choisi : sur les sept fautes de frappe
+     * d'épreuve — corse, yoag, escallade, natasion, musculatoin, tenis,
+     * randonee — la bonne activité sort entre 0,400 et 0,727, quand le plancher
+     * de bruit de « corse » est à 0,167. Il est explicite plutôt que laissé à
+     * {@code pg_trgm.word_similarity_threshold} : un réglage de session invisible
+     * dans le code déciderait de ce que la recherche rend.
+     */
+    @Query(value = """
+        SELECT * FROM activities a
+        WHERE word_similarity(unaccent(LOWER(:name)), unaccent(LOWER(a.name))) >= 0.4
+        ORDER BY word_similarity(unaccent(LOWER(:name)), unaccent(LOWER(a.name))) DESC, a.name
+        """,
+        countQuery = """
+        SELECT COUNT(*) FROM activities a
+        WHERE word_similarity(unaccent(LOWER(:name)), unaccent(LOWER(a.name))) >= 0.4
+        """,
+        nativeQuery = true)
+    Page<Activity> searchByNameSimilar(@Param("name") String name, Pageable pageable);
+
+    /** Même repli, borné à une catégorie. */
+    @Query(value = """
+        SELECT * FROM activities a
+        WHERE a.category_id = :categoryId
+          AND word_similarity(unaccent(LOWER(:name)), unaccent(LOWER(a.name))) >= 0.4
+        ORDER BY word_similarity(unaccent(LOWER(:name)), unaccent(LOWER(a.name))) DESC, a.name
+        """,
+        countQuery = """
+        SELECT COUNT(*) FROM activities a
+        WHERE a.category_id = :categoryId
+          AND word_similarity(unaccent(LOWER(:name)), unaccent(LOWER(a.name))) >= 0.4
+        """,
+        nativeQuery = true)
+    Page<Activity> searchByCategoryAndNameSimilar(@Param("categoryId") UUID categoryId,
+                                                  @Param("name") String name,
+                                                  Pageable pageable);
 
     @Query("SELECT a FROM Activity a WHERE " +
            "(:categoryId IS NULL OR a.category.id = :categoryId) AND " +
