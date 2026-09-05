@@ -7,6 +7,7 @@ import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotAddressVisibility;
 import org.program.pair.domain.program.SlotAudience;
 import org.program.pair.domain.program.SlotParticipation;
+import org.program.pair.domain.program.SlotTiming;
 import org.program.pair.domain.publicslot.PublicSlotService;
 import org.program.pair.repository.ScheduleRepository;
 import org.program.pair.repository.SlotParticipationRepository;
@@ -82,8 +83,9 @@ public class SlotCalendarController {
     @Transactional
     @Operation(summary = "Tous mes créneaux à venir, en un fichier.",
         description = "Ce que j'organise et ce que j'ai rejoint, du plus proche au plus "
-            + "lointain. Les créneaux passés en sont exclus : un agenda se remplit vers "
-            + "l'avant.")
+            + "lointain. Les créneaux terminés en sont exclus — une séance en cours, "
+            + "elle, y figure : un agenda se remplit vers l'avant, mais le moment qu'on "
+            + "est en train de vivre n'est pas encore derrière soi.")
     public ResponseEntity<String> mine(@AuthenticationPrincipal UserPrincipal principal) {
         UUID userId = principal.getId();
         Instant now = Instant.now();
@@ -97,7 +99,13 @@ public class SlotCalendarController {
 
         List<SlotCalendarService.Entry> entries =
             Stream.concat(scheduleRepository.findHostedOpenSlots(userId).stream(), joined.stream())
-                .filter(s -> s != null && s.getStartsAt().isAfter(now))
+                // Terminé, et non commencé. Le filtre portait sur startsAt : un
+                // créneau quittait le fichier à la seconde où il démarrait, si
+                // bien qu'un agenda resynchronisé pendant une séance la perdait.
+                // Même convention que partout ailleurs — SlotTiming : fin
+                // déclarée, sinon deux heures.
+                .filter(s -> s != null && s.getStartsAt() != null
+                    && SlotTiming.endOf(s).isAfter(now))
                 .distinct()
                 .sorted(Comparator.comparing(Schedule::getStartsAt))
                 .map(s -> entryFor(s, userId))

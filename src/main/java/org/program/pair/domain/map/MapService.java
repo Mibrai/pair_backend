@@ -6,6 +6,8 @@ import org.program.pair.domain.activity.UserActivity;
 import org.program.pair.domain.map.dto.*;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.Schedule;
+import org.program.pair.domain.program.SlotStatus;
+import org.program.pair.domain.program.SlotTiming;
 import org.program.pair.domain.user.User;
 import org.program.pair.repository.*;
 import org.program.pair.shared.GeoBounds;
@@ -721,6 +723,18 @@ public class MapService {
         for (Schedule schedule : allSchedules) {
             if (schedule.getLocation() == null) continue;
 
+            // Un créneau annulé n'a plus de pin. Les requêtes qui alimentent la
+            // carte ne filtrent pas sur le statut — contrairement à celles du
+            // fil, qui exigent OPEN ou FULL — si bien qu'une séance annulée mais
+            // future pouvait devenir le créneau représentatif de son marqueur et
+            // le maintenir sur la carte alors qu'elle n'aura pas lieu.
+            //
+            // Écarté ICI, avant l'agrégation, et pour la raison exposée juste
+            // au-dessus à propos des blocages : totalInBounds, les count de
+            // clusters et truncated dérivent tous de la liste après agrégation.
+            // Un post-filtrage des marqueurs les fausserait tous.
+            if (schedule.getStatus() == SlotStatus.CANCELLED) continue;
+
             Program program = schedule.getProgram();
             if (program == null || program.getUserActivity() == null) continue;
 
@@ -787,10 +801,22 @@ public class MapService {
                 double lat = firstSchedule.getLocation().getY();
                 double lng = firstSchedule.getLocation().getX();
 
-                // Pick the schedule with the nearest upcoming starts_at for organizer info
+                // Le créneau représentatif : le plus proche de ceux qui ne sont
+                // pas TERMINÉS — la séance en cours comprise.
+                //
+                // Le filtre portait sur startsAt.isAfter(now), donc une séance
+                // commencée en sortait. Combiné au calcul de nextSessionAt
+                // ci-dessous et à keepUpcoming(), cela faisait DISPARAÎTRE le
+                // marqueur de la carte pendant que la séance se déroulait — à la
+                // minute même où elle prouvait qu'elle était vivante. C'est le
+                // troisième exemplaire du même défaut, avec nextSessionAt du
+                // ProgramDto et l'isExpired du catalogue d'activités.
+                //
+                // « Terminé » se lit sur SlotTiming, la convention unique du
+                // dépôt : fin déclarée, sinon deux heures.
                 Instant now = Instant.now();
                 Schedule representative = locationSchedules.stream()
-                    .filter(s -> s.getStartsAt() != null && s.getStartsAt().isAfter(now))
+                    .filter(s -> s.getStartsAt() != null && SlotTiming.endOf(s).isAfter(now))
                     .min(Comparator.comparing(Schedule::getStartsAt))
                     .orElse(firstSchedule);
 
@@ -804,8 +830,12 @@ public class MapService {
                 if (organizerName == null && repUser != null) organizerName = repUser.getDisplayName();
                 if (organizerAvatarUrl == null && repUser != null) organizerAvatarUrl = repUser.getAvatarUrl();
 
+                // Même borne, pour que le champ et le choix ci-dessus ne puissent
+                // pas se contredire : nul seulement si la séance représentative
+                // est réellement terminée. keepUpcoming() écarte le marqueur sur
+                // ce champ, et c'est donc lui qui décide de sa présence.
                 Instant nextSessionAt = representative.getStartsAt() != null
-                    && representative.getStartsAt().isAfter(now)
+                    && SlotTiming.endOf(representative).isAfter(now)
                     ? representative.getStartsAt() : null;
 
                 String address = representative.getPlaceType() == org.program.pair.domain.program.PlaceType.PUBLIC

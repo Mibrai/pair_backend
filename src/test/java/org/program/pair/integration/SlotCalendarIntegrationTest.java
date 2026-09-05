@@ -35,6 +35,7 @@ class SlotCalendarIntegrationTest extends AbstractIntegrationTest {
     private static final String ADDRESS = "12 rue tres precise";
 
     @Autowired ActivityRepository activityRepository;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @Test
     void leFichier_doitEtreServiCommeUnCalendrier() {
@@ -127,6 +128,32 @@ class SlotCalendarIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void mesCreneaux_doiventContenirLaSeanceEnCours() {
+        // « À venir » se mesurait sur le début : un créneau quittait le fichier à
+        // la seconde où il démarrait. Un agenda resynchronisé pendant une séance
+        // la perdait donc — au moment précis où l'on y cherche l'adresse.
+        //
+        // La borne se lit désormais sur la fin, avec la convention de SlotTiming.
+        String host = registerAndLogin();
+        UUID enCours = publishSlot(host, PlaceType.PUBLIC, 2);
+        backdate(enCours, Instant.now().minus(20, ChronoUnit.MINUTES),
+            Instant.now().plus(40, ChronoUnit.MINUTES));
+
+        assertThat(unfolded(mine(host))).contains("UID:" + enCours + "@meetdo.fun");
+    }
+
+    @Test
+    void mesCreneaux_doiventExclureUneSeanceTerminee() {
+        // La correction ne transforme pas l'agenda en historique.
+        String host = registerAndLogin();
+        UUID fini = publishSlot(host, PlaceType.PUBLIC, 2);
+        backdate(fini, Instant.now().minus(4, ChronoUnit.HOURS),
+            Instant.now().minus(2, ChronoUnit.HOURS));
+
+        assertThat(unfolded(mine(host))).doesNotContain("UID:" + fini + "@meetdo.fun");
+    }
+
+    @Test
     void mesCreneaux_doiventTenirDansUnSeulFichier_etExclureLePasse() {
         String host = registerAndLogin();
         UUID first = publishSlot(host, PlaceType.PUBLIC, 2);
@@ -153,6 +180,23 @@ class SlotCalendarIntegrationTest extends AbstractIntegrationTest {
      * pour un agenda — mais une URL s'y retrouve coupée en deux, et une
      * assertion qui l'ignore accuse le fichier d'un défaut qu'il n'a pas.
      */
+    /**
+     * Repositionne un créneau dans le temps. {@code starts_at} est posé par
+     * l'API lors de la création : le déplacer en SQL est le seul moyen de tester
+     * une séance en cours.
+     */
+    private void backdate(UUID scheduleId, Instant startsAt, Instant endsAt) {
+        jdbcTemplate.update("UPDATE schedules SET starts_at = ?, ends_at = ? WHERE id = ?",
+            java.sql.Timestamp.from(startsAt), java.sql.Timestamp.from(endsAt), scheduleId);
+    }
+
+    private byte[] mine(String token) {
+        return webTestClient.get().uri("/api/slots/mine/calendar.ics")
+            .headers(h -> h.setBearerAuth(token))
+            .exchange().expectStatus().isOk()
+            .expectBody().returnResult().getResponseBody();
+    }
+
     private static String unfolded(byte[] body) {
         return new String(body).replace("\r\n ", "").replace("\n ", "");
     }

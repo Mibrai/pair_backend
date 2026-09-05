@@ -43,11 +43,28 @@ public interface UserActivityRepository extends JpaRepository<UserActivity, UUID
      * la concaténation des pages est stable et sans doublon.
      *
      * <p><b>Expiration.</b> {@code isExpired} vaut vrai seulement si l'entrée est
-     * datée — au moins un créneau — et qu'aucune occurrence future n'existe. Une
-     * entrée sans aucun créneau n'est jamais expirée. Attention : les récurrences
-     * ne sont pas développées (demande 4 non livrée), donc {@code nextSessionAt}
-     * vaut ici le prochain {@code starts_at} brut, comme partout ailleurs dans
-     * cette API.
+     * datée — au moins un créneau — et qu'aucune occurrence non terminée
+     * n'existe. Une entrée sans aucun créneau n'est jamais expirée. Attention :
+     * les récurrences ne sont pas développées (demande 4 non livrée), donc
+     * {@code nextSessionAt} vaut ici le {@code starts_at} de la prochaine
+     * occurrence, comme partout ailleurs dans cette API.
+     *
+     * <p><b>« Non terminée » se mesure sur la fin, jamais sur le début</b>, et
+     * les créneaux annulés ne comptent pas. Le filtre portait sur
+     * {@code s.starts_at > NOW()} : une activité dont l'unique séance était en
+     * cours devenait donc expirée, et <b>quittait le catalogue pendant qu'elle se
+     * déroulait</b>. Ce n'est pas un champ mal rendu, c'est une disparition — et
+     * dans le sens le plus coûteux, puisque l'entrée disparaît à la minute où
+     * elle prouve qu'elle est vivante. Symétriquement, un créneau annulé mais
+     * futur alimentait {@code next_session_at} et faisait passer pour vivante une
+     * activité qui n'avait plus de pin.
+     *
+     * <p>{@code sessionFallbackMinutes} porte la durée conventionnelle d'une
+     * séance dont la fin n'est pas déclarée. Elle est <b>passée en paramètre</b>
+     * plutôt qu'écrite ici : sa valeur vit dans
+     * {@code SlotTiming.DEFAULT_DURATION} et nulle part ailleurs, et l'inscrire
+     * en SQL en ferait une seconde définition que rien ne signalerait le jour où
+     * les deux divergent.
      */
     @Query(value = """
         SELECT
@@ -103,7 +120,11 @@ public interface UserActivityRepository extends JpaRepository<UserActivity, UUID
         ) stats ON TRUE
         LEFT JOIN LATERAL (
             SELECT COUNT(*) AS schedule_count,
-                   MIN(s.starts_at) FILTER (WHERE s.starts_at > NOW()) AS next_session_at
+                   MIN(s.starts_at) FILTER (
+                       WHERE s.status <> 'CANCELLED'
+                         AND COALESCE(s.ends_at, s.starts_at
+                             + make_interval(mins => CAST(:sessionFallbackMinutes AS integer))) > NOW()
+                   ) AS next_session_at
             FROM schedules s
             JOIN programs p ON s.program_id = p.id
             WHERE p.user_activity_id = ua.id
@@ -155,7 +176,11 @@ public interface UserActivityRepository extends JpaRepository<UserActivity, UUID
         ) place ON TRUE
         LEFT JOIN LATERAL (
             SELECT COUNT(*) AS schedule_count,
-                   MIN(s.starts_at) FILTER (WHERE s.starts_at > NOW()) AS next_session_at
+                   MIN(s.starts_at) FILTER (
+                       WHERE s.status <> 'CANCELLED'
+                         AND COALESCE(s.ends_at, s.starts_at
+                             + make_interval(mins => CAST(:sessionFallbackMinutes AS integer))) > NOW()
+                   ) AS next_session_at
             FROM schedules s
             JOIN programs p ON s.program_id = p.id
             WHERE p.user_activity_id = ua.id
@@ -192,6 +217,7 @@ public interface UserActivityRepository extends JpaRepository<UserActivity, UUID
         @Param("myActivitiesOnly") boolean myActivitiesOnly,
         @Param("subscribedOnly") boolean subscribedOnly,
         @Param("viewerId") String viewerId,
+        @Param("sessionFallbackMinutes") long sessionFallbackMinutes,
         Pageable pageable
     );
 
@@ -244,7 +270,11 @@ public interface UserActivityRepository extends JpaRepository<UserActivity, UUID
         ) place ON TRUE
         LEFT JOIN LATERAL (
             SELECT COUNT(*) AS schedule_count,
-                   MIN(s.starts_at) FILTER (WHERE s.starts_at > NOW()) AS next_session_at
+                   MIN(s.starts_at) FILTER (
+                       WHERE s.status <> 'CANCELLED'
+                         AND COALESCE(s.ends_at, s.starts_at
+                             + make_interval(mins => CAST(:sessionFallbackMinutes AS integer))) > NOW()
+                   ) AS next_session_at
             FROM schedules s
             JOIN programs p ON s.program_id = p.id
             WHERE p.user_activity_id = ua.id
@@ -267,7 +297,8 @@ public interface UserActivityRepository extends JpaRepository<UserActivity, UUID
         @Param("radiusMeters") int radiusMeters,
         @Param("includeExpired") boolean includeExpired,
         @Param("categoryIds") String categoryIds,
-        @Param("viewerId") String viewerId
+        @Param("viewerId") String viewerId,
+        @Param("sessionFallbackMinutes") long sessionFallbackMinutes
     );
 
     boolean existsByUserIdAndActivityId(UUID userId, UUID activityId);

@@ -554,9 +554,21 @@ public class SlotService {
             .map(SlotParticipation::getSchedule)
             .toList();
 
+        // « À venir » se mesure sur la FIN, jamais sur le début.
+        //
+        // Le filtre portait sur startsAt : un créneau sortait de « mes créneaux »
+        // à la seconde où il démarrait — mesuré le 03/09, créneau commencé depuis
+        // 45 min absent, créneau à +2 h présent. C'est le moment où l'on ouvre
+        // l'application pour retrouver l'adresse, et c'est précisément là qu'elle
+        // cessait de la donner.
+        //
+        // La convention de fin est celle de SlotTiming, comme partout ailleurs :
+        // fin déclarée, sinon deux heures. Un créneau ne quitte donc cette liste
+        // qu'une fois réellement terminé.
+        Instant now = Instant.now();
         List<Schedule> slots = java.util.stream.Stream.concat(hosted.stream(), joined.stream())
             .distinct()
-            .filter(s -> !upcomingOnly || s.getStartsAt().isAfter(Instant.now()))
+            .filter(s -> !upcomingOnly || SlotTiming.endOf(s).isAfter(now))
             .sorted(java.util.Comparator.comparing(Schedule::getStartsAt))
             .toList();
 

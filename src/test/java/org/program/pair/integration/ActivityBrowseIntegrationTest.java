@@ -223,6 +223,37 @@ class ActivityBrowseIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void uneEntreeDontLaSeanceEstEnCours_neDoitPasQuitterLeCatalogue() {
+        // Le filtre portait sur s.starts_at > NOW() : une séance commencée
+        // sortait de « à venir », l'entrée devenait expirée, et elle DISPARAISSAIT
+        // du catalogue pendant qu'elle se déroulait — à la minute même où elle
+        // prouvait qu'elle était vivante. La borne se lit désormais sur la fin.
+        JsonNode entry = entryNamed(nearbyEntries(100_000), "Aviron");
+
+        assertThat(entry.get("isExpired").asBoolean()).isFalse();
+        assertThat(entry.get("nextSessionAt").isNull())
+            .as("la séance en cours EST la prochaine séance")
+            .isFalse();
+    }
+
+    @Test
+    void uneEntreeDontLUniqueCreneauEstAnnule_estExpiree() {
+        // Symétrique du précédent : un créneau annulé mais futur alimentait
+        // next_session_at et faisait passer pour vivante une entrée qui n'avait
+        // plus de pin sur la carte.
+        assertThat(nearbyEntries(100_000))
+            .extracting(e -> e.get("activityName").asText())
+            .doesNotContain("Squash");
+
+        JsonNode withExpired = browse(b -> query(b, 100_000)
+            .queryParam("includeExpired", true).queryParam("size", 100).build());
+
+        JsonNode squash = entryNamed(contentOf(withExpired), "Squash");
+        assertThat(squash.get("isExpired").asBoolean()).isTrue();
+        assertThat(squash.get("nextSessionAt").isNull()).isTrue();
+    }
+
+    @Test
     void uneEntreeSansCreneau_nEstJamaisExpiree() {
         JsonNode entry = entryNamed(nearbyEntries(100_000), "Escalade");
         assertThat(entry.get("isExpired").asBoolean()).isFalse();
@@ -475,6 +506,16 @@ class ActivityBrowseIntegrationTest extends AbstractIntegrationTest {
         // Datée mais sans séance à venir : expirée.
         program(declare(marc, "Judo"), "Judo passé", LAT, LNG,
             Instant.now().minus(2, ChronoUnit.DAYS));
+
+        // Séance EN COURS : commencée il y a 20 minutes, elle finit dans 40
+        // (le helper pose endsAt = startsAt + 1 h). Elle ne doit pas être
+        // expirée — voir le test qui s'y rapporte.
+        program(declare(lena, "Aviron"), "Aviron en cours", LAT, LNG,
+            Instant.now().minus(20, ChronoUnit.MINUTES));
+
+        // Unique séance ANNULÉE, mais future : plus de pin sur la carte, donc
+        // expirée.
+        cancelledProgram(declare(marc, "Squash"), "Squash annulé", LAT, LNG, future());
     }
 
     private User organizer(String email, String displayName) {
@@ -524,6 +565,24 @@ class ActivityBrowseIntegrationTest extends AbstractIntegrationTest {
             .maxParticipants(8)
             .isOpenToPartners(true)
             .status(SlotStatus.OPEN)
+            .build());
+    }
+
+    /** Même chose, mais le créneau est annulé. */
+    private void cancelledProgram(UserActivity userActivity, String title,
+                                  double lat, double lng, Instant startsAt) {
+        Program program = saveProgram(userActivity, title, startsAt);
+        scheduleRepository.save(Schedule.builder()
+            .program(program)
+            .placeName(title)
+            .placeType(PlaceType.PUBLIC)
+            .addressPublic("1 rue de l'Explorer")
+            .showExactAddress(true)
+            .location(geometryFactory.createPoint(new Coordinate(lng, lat)))
+            .startsAt(startsAt)
+            .endsAt(startsAt.plus(1, ChronoUnit.HOURS))
+            .status(SlotStatus.CANCELLED)
+            .cancelledAt(Instant.now())
             .build());
     }
 
