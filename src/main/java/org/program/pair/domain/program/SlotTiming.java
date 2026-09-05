@@ -1,7 +1,6 @@
 package org.program.pair.domain.program;
 
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 
 /**
  * Quand un créneau se termine, et de quelle séance on parle — les deux seules
@@ -26,8 +25,16 @@ import java.time.temporal.ChronoUnit;
  */
 public final class SlotTiming {
 
-    /** Durée conventionnelle d'une séance dont la fin n'est pas déclarée. */
-    private static final int DEFAULT_DURATION_HOURS = 2;
+    /**
+     * Durée conventionnelle d'une séance dont la fin n'est pas déclarée.
+     *
+     * <p><b>Publique, et c'est le point.</b> Un appelant qui doit présélectionner
+     * en SQL — {@code ProgramRepository.findStage7Candidates} — ne peut pas y
+     * écrire {@code endsAt}, faute de quoi la convention existerait en deux
+     * langages. Il élargit donc ses bornes de cette durée-ci, lue ici, et laisse
+     * la décision exacte au code Java. La valeur garde ainsi un seul domicile.
+     */
+    public static final java.time.Duration DEFAULT_DURATION = java.time.Duration.ofHours(2);
 
     private SlotTiming() {}
 
@@ -37,7 +44,7 @@ public final class SlotTiming {
     }
 
     private static Instant endOf(Instant startsAt, Instant endsAt) {
-        return endsAt != null ? endsAt : startsAt.plus(DEFAULT_DURATION_HOURS, ChronoUnit.HOURS);
+        return endsAt != null ? endsAt : startsAt.plus(DEFAULT_DURATION);
     }
 
     /**

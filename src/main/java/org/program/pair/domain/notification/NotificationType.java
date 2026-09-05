@@ -77,7 +77,24 @@ public enum NotificationType {
     // arrivé (perdu en chemin). Porte le nom, l'absence de validation et l'heure —
     // jamais le lieu de départ, ni le contact, ni la position, qui ne le regardent
     // pas. L'organisateur ne reçoit AUCUN des SMS d'alerte ; seulement ceci.
-    WATCH_LOST_ORGANIZER
+    WATCH_LOST_ORGANIZER,
+    // Relance de l'AUTEUR d'un programme le long de son cycle : il attend
+    // toujours sa date, il est publié sans un seul inscrit, ou son cycle vient
+    // de se refermer. L'étape concernée voyage dans le payload sous « stage ».
+    //
+    // Un type neuf, et non PROGRAM_REMINDER ou PROGRESSION_REMINDER recyclés :
+    // ces deux-là s'adressent aux INSCRITS d'un programme, celui-ci à son
+    // auteur. Comme NotificationPrefDto se coupe par type, les confondre ferait
+    // perdre les rappels de séance des programmes qu'on a rejoints à quiconque
+    // refuse d'être relancé sur ses propres brouillons — deux publics, un seul
+    // interrupteur.
+    //
+    // Ni critique, ni envoyée par e-mail, ni time-sensitive : c'est un
+    // engagement, pas une information indispensable. Le critère de CRITICAL —
+    // « que coûte le fait de l'apprendre trop tard ? » — répond ici « rien » :
+    // un programme sans date le sera encore demain matin. Les heures de silence
+    // s'y appliquent donc, ce que le contrat demande explicitement.
+    CYCLE_NUDGE
 ;
 
     /**

@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -316,4 +317,124 @@ public interface ProgramRepository extends JpaRepository<Program, UUID> {
     @Query("SELECT s FROM Schedule s WHERE s.program.id IN :programIds ORDER BY s.startsAt ASC")
     List<org.program.pair.domain.program.Schedule> findSchedulesByProgramIds(
         @Param("programIds") Collection<UUID> programIds);
+
+    // ------------------------------------------------------------------
+    // Relances de cycle (CYCLE_NUDGE). Voir CycleNudgeJob.
+    //
+    // Les trois requêtes PRÉSÉLECTIONNENT, elles ne décident pas. Chacune est
+    // délibérément PLUS LARGE que le prédicat exact, qui est appliqué ensuite en
+    // Java par ProgramCycle — même partage que RecurringSlotRolloverJob, où le
+    // SQL retient les créneaux commencés et où Java écarte ceux qui ne sont pas
+    // terminés.
+    //
+    // La raison n'est pas le confort : la définition de « terminée » (endsAt
+    // déclarée, sinon deux heures) vit dans SlotTiming et NULLE PART AILLEURS. La
+    // recopier ici en SQL en ferait une seconde définition, dans un langage où
+    // rien ne signalerait sa divergence — exactement ce que SlotTiming a été
+    // écrit pour empêcher.
+    //
+    // Les fenêtres sont bornées des DEUX côtés. La borne haute est le délai du
+    // contrat ; la borne basse évite qu'au premier passage le job ne relance
+    // tout l'historique d'un coup, et borne le balayage. Même forme que
+    // AttendancePromptJob, qui ne regarde que les séances finies depuis une à
+    // trois heures.
+    // ------------------------------------------------------------------
+
+    /**
+     * Étape 2 — le programme attend toujours sa date.
+     *
+     * <p>Exact, et sans repli Java : le prédicat ne porte que sur une existence
+     * et une date de création. Aucun {@code starts_at} n'y entre, donc le piège
+     * du « commencé vaut passé » ne s'y pose pas.
+     *
+     * <p>{@code status <> CANCELLED} et non {@code NOT EXISTS (schedule)} : un
+     * programme dont l'unique créneau a été annulé n'a plus de pin sur la carte,
+     * et c'est exactement la population cherchée.
+     */
+    @Query("""
+        SELECT p.id FROM Program p
+        WHERE p.status = org.program.pair.domain.program.ProgramStatus.ACTIVE
+          AND p.createdAt <= :until
+          AND p.createdAt > :from
+          AND NOT EXISTS (
+                SELECT 1 FROM Schedule s
+                WHERE s.program = p
+                  AND s.status <> org.program.pair.domain.program.SlotStatus.CANCELLED)
+          AND NOT EXISTS (
+                SELECT 1 FROM CycleNudge n WHERE n.program = p AND n.stage = 2)
+        """)
+    List<UUID> findStage2Candidates(@Param("from") Instant from, @Param("until") Instant until);
+
+    /**
+     * Étape 4 — publié, et toujours personne.
+     *
+     * <p>« Publié » est la création du plus ancien créneau non annulé : le moment
+     * où le programme a eu une date, donc un pin, donc une chance d'être rejoint.
+     * Ni {@code Program.createdAt}, qui date l'envie, ni
+     * {@code subscribersNotifiedAt}, que seul {@code ProgramService.addSchedule}
+     * renseigne.
+     *
+     * <p><b>Personne</b> se lit sur les deux mécanismes d'inscription, et non sur
+     * le seul {@code UserProgram} dont {@code enrolledCount} est tiré : quelqu'un
+     * peut avoir rejoint un créneau du programme sans s'inscrire au programme, et
+     * lui annoncer que personne ne s'est inscrit serait faux.
+     *
+     * <p>La dernière condition est le pré-filtre : elle affirme seulement qu'une
+     * séance commence après 48 h. Que ce soit la <i>prochaine</i>, et qu'aucune
+     * ne soit en cours entre-temps, est vérifié en Java —
+     * {@code ProgramCycle.nextUnfinishedStart}.
+     */
+    @Query("""
+        SELECT p.id FROM Program p JOIN p.schedules s
+        WHERE p.status = org.program.pair.domain.program.ProgramStatus.ACTIVE
+          AND s.status <> org.program.pair.domain.program.SlotStatus.CANCELLED
+          AND NOT EXISTS (
+                SELECT 1 FROM UserProgram up
+                WHERE up.program = p
+                  AND up.status = org.program.pair.domain.program.UserProgramStatus.ACTIVE)
+          AND NOT EXISTS (
+                SELECT 1 FROM SlotParticipation sp
+                WHERE sp.schedule.program = p
+                  AND sp.status IN (
+                      org.program.pair.domain.program.ParticipationStatus.INTERESTED,
+                      org.program.pair.domain.program.ParticipationStatus.CONFIRMED,
+                      org.program.pair.domain.program.ParticipationStatus.WAITLISTED))
+          AND NOT EXISTS (
+                SELECT 1 FROM CycleNudge n WHERE n.program = p AND n.stage = 4)
+          AND EXISTS (
+                SELECT 1 FROM Schedule f
+                WHERE f.program = p
+                  AND f.status <> org.program.pair.domain.program.SlotStatus.CANCELLED
+                  AND f.startsAt > :sessionAfter)
+        GROUP BY p.id
+        HAVING MIN(s.createdAt) <= :until AND MIN(s.createdAt) > :from
+        """)
+    List<UUID> findStage4Candidates(@Param("from") Instant from,
+                                    @Param("until") Instant until,
+                                    @Param("sessionAfter") Instant sessionAfter);
+
+    /**
+     * Étape 7 — le cycle vient de se refermer.
+     *
+     * <p>{@code MAX(s.startsAt)} et non l'horizon : l'horizon est toujours
+     * postérieur ou égal au dernier début, donc « horizon dépassé depuis 24 h »
+     * implique « dernier début dépassé depuis 24 h ». La présélection ne peut
+     * donc laisser échapper aucun programme dû, et Java tranche ensuite avec
+     * {@code ProgramCycle.closedBy}.
+     *
+     * <p>La borne basse reçue est déjà élargie de la durée conventionnelle d'une
+     * séance par l'appelant, pour la même raison prise dans l'autre sens : un
+     * horizon encore dans la fenêtre peut correspondre à un début qui en est
+     * sorti.
+     */
+    @Query("""
+        SELECT p.id FROM Program p JOIN p.schedules s
+        WHERE p.status = org.program.pair.domain.program.ProgramStatus.ACTIVE
+          AND s.status <> org.program.pair.domain.program.SlotStatus.CANCELLED
+          AND NOT EXISTS (
+                SELECT 1 FROM CycleNudge n WHERE n.program = p AND n.stage = 7)
+        GROUP BY p.id
+        HAVING MAX(s.startsAt) <= :until AND MAX(s.startsAt) > :from
+        """)
+    List<UUID> findStage7Candidates(@Param("from") Instant from, @Param("until") Instant until);
 }
