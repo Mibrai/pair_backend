@@ -379,7 +379,10 @@ public class SemanticSearchService {
         }
         if (intent.activityKeyword() != null) {
             return activityRepository
-                .findByNameContainingIgnoreCase(intent.activityKeyword(),
+                // Insensible aux accents depuis V101 : « course a pied » désigne
+                // la même activité que « Course à pied », et l'intention extraite
+                // d'une phrase libre porte rarement ses accents.
+                .searchByNameUnaccented(intent.activityKeyword(),
                     org.springframework.data.domain.PageRequest.of(0, 1))
                 .stream().findFirst().map(Activity::getId).orElse(null);
         }
