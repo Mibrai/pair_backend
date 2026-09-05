@@ -1,33 +1,78 @@
 # Module cycle — réponse du backend
 
-**Écrite le 2026-09-05**, en réponse à
+**Écrite le 2026-09-05, complétée le 2026-09-06**, en réponse à
 [`PROMPT_BACKEND_2026-09-03.md`](PROMPT_BACKEND_2026-09-03.md) (révisé le 04/09).
 
-Trois demandes sur cinq sont livrées. La demande 1 est bloquée sur un accès, et
-la demande 3 en dépend. Une réponse ferme à la question de la demande 5 est en
-§5 : **c'était `null`**, et le défaut allait plus loin que vous ne le pensiez.
+**Les cinq demandes sont livrées.** La mesure de la demande 1 a été faite le
+06/09 sur la production, et elle **lève la crainte qui justifiait de la faire
+passer avant tout le reste** (§1). Les seuils qui en découlent sont posés, et le
+sommeil est livré (§3). Réponse ferme à la question de la demande 5 en §5 :
+**c'était `null`**, et le défaut allait plus loin que vous ne le pensiez.
 
 ---
 
-## Demande 1 — la mesure : **bloquée, et c'est le seul blocage du lot**
+## Demande 1 — la mesure : **faite le 2026-09-06**
 
-La requête est écrite et validée. Elle n'a pas encore tourné sur les vraies
-données : la base de production n'est pas accessible depuis l'environnement de
-développement, et la lecture de son URL de connexion nous a été refusée.
+### Un avertissement avant les chiffres
 
-Elle a tourné sur la base locale, dont le résultat ne veut rien dire et le
-montre : 66 programmes, tous `ACTIVE`, aucun créneau `CANCELLED`, et un délai
-création → premier créneau qui vaut **exactement 0,00 ou 2,00 jour** selon la
-ligne. C'est la signature d'un jeu de données fabriqué. Nous ne vous rendrons pas
-ces chiffres-là comme s'ils répondaient à la question.
+**La base de production est peuplée aux deux tiers de fixtures.** Il fallait le
+voir avant de rendre le moindre percentile.
 
-**Conséquence, et elle est exactement celle que vous aviez anticipée** : N et M
-restent inconnus. L'étape 2 de la relance est écrite, testée et **éteinte**
-(§2), et le sommeil n'est pas livré (§3).
+112 programmes, 127 créneaux, 83 hors `ARCHIVED` pour 42 auteurs. Ventilés :
+25 du domaine `pair.app`, **32 de la migration `V27__reset_and_seed_germany`**
+(domaines `.de`), 26 pour le reste — le seul groupe qui contienne de vrais
+comptes.
 
----
+Le marqueur décisif n'est pas le domaine, c'est l'horloge : **56 des
+72 programmes datés ont un délai création → premier créneau de `0.000000` ou
+`2.000000` jour, à la microseconde près.** Deux requêtes HTTP ne sont pas à 86 µs
+d'intervalle. C'est ce qui produisait, en mesure brute, un p75 = p95 = **2,000**
+exactement — un résultat parfaitement rond qui a l'air d'une réponse.
 
-## Demande 2 — `CYCLE_NUDGE` : **livré**
+### Les trois réponses
+
+**Q1 — programmes sans aucun créneau non annulé : 11 sur 83, soit 13,3 %.** Tous
+les onze sont « aucun créneau », zéro « uniquement des annulés » (il n'y a que
+2 créneaux `CANCELLED` en base). Ventilés : 0 fixture, **8 du seed allemand**,
+**3 réels**.
+
+**Q2 — âge de ces programmes.** Brut : médiane 63,0 j, p75 65,5, p95 71,0. Mais
+huit sur onze sont du seed, dont l'âge médian est de 88 jours : c'est l'âge de la
+migration qu'on mesure. La population réelle est de **3 programmes**. Aucun
+percentile n'a de sens là-dessus, et nous ne vous en donnerons pas.
+
+**Q3 — délai création → premier créneau.** Après retrait des 56 fixtures,
+**14 observations organiques** :
+
+```
+0,0000 ×4   0,0004   0,0005   0,0006   0,0011 ×2   0,0049   0,0164
+1,0859      1,2532      22,7027
+```
+
+Médiane **73 secondes**. p75 **19 minutes**. p95 ≈ 8,8 jours.
+**Onze sur quatorze posent leur créneau en moins de trente minutes.**
+
+### Ce que cela décide
+
+Vous écriviez : « si la médiane de la question 3 est de neuf jours, alors une
+relance à J+3 s'adresse en majorité à des gens qui allaient le faire ». **La
+médiane est de 73 secondes.** Le comportement est bimodal — tout de suite ou
+jamais — et l'échantillon ne contient personne entre le troisième et le
+vingt-deuxième jour.
+
+À J+3, un programme sans créneau appartient donc presque sûrement à quelqu'un qui
+s'est arrêté. **La relance n'est pas le harcèlement que vous redoutiez**, et le
+choix du seuil importe beaucoup moins que vous ne le pensiez : n'importe quelle
+valeur entre 3 et 7 jours vise le même monde.
+
+Posés en conséquence : **N = 3** (relance) et **M = 7** (sommeil) — les valeurs
+de votre demande initiale, non plus par défaut mais parce que la mesure montre
+qu'elles ne coupent aucune intention en cours.
+
+**À remesurer vers cent programmes réels.** Quatorze points ne figent pas un
+seuil ; ils suffisent à écarter le risque que vous vouliez écarter.
+
+## Demande 2 — `CYCLE_NUDGE` : **livré, les trois étapes allumées**
 
 Le type existe, avec les trois déclencheurs. Un point de contrat a changé par
 rapport à votre tableau, et il vaut d'être lu (§2.2).
@@ -113,14 +158,13 @@ a trois mois n'est jamais candidat. Le prix est explicite : un service arrêté
 plus de sept jours perd les relances de cette période. C'est le compromis déjà
 retenu deux fois dans ce dépôt, et il est préférable à une salve.
 
-### 2.4 L'étape 2 est livrée mais **éteinte**
+### 2.4 L'étape 2 est allumée à J+3
 
-Elle s'allume en posant `meetdo.cycle.stage2-delay-days` — rien d'autre à
-redéployer. Elle vaut zéro tant que le délai réel n'est pas mesuré : la demande
-initiale proposait J+3, ce n'est pas une mesure. Si la médiane réelle est de neuf
-jours, relancer à J+3 s'adresse en majorité à des gens qui allaient le faire.
+`meetdo.cycle.stage2-delay-days=3`, sur la mesure du §1 et non sur une intuition.
+Zéro reste l'interrupteur : c'est lui qui a permis de livrer le reste du module
+avant de disposer du chiffre, et c'est lui qui coupe l'étape sans redéployer.
 
-C'est votre propre argument, et nous l'appliquons à la lettre.
+Sa fenêtre effective est **J+3 à J+7**, le sommeil prenant le relais ensuite.
 
 ### 2.5 Un détail d'affichage sur Android
 
@@ -133,37 +177,56 @@ autrement.
 
 ---
 
-## Demande 3 — le sommeil `DORMANT` : **non livré, en attente de la demande 1**
+## Demande 3 — le sommeil `DORMANT` : **livré**
 
-Comme vous le demandiez : une échéance annoncée dans l'app que le serveur
-n'applique pas est pire que pas d'échéance.
+Un `ProgramDormancyJob` passe chaque nuit à 3 h 50. Un programme `ACTIVE` resté
+sans aucun créneau non annulé **sept jours** après sa création devient `DORMANT`.
 
-L'audit a toutefois vérifié votre tableau, et il est **plus favorable que vous ne
-l'espériez**. Toutes les surfaces publiques filtrent déjà `p.status = 'ACTIVE'` :
+**Il n'a demandé aucun filtre nouveau**, et votre tableau est vérifié par des
+tests, pas par une lecture :
 
 | route | vérifié |
 |---|---|
-| `GET /programs?lat&lng` | en sort ✅ |
+| `GET /programs?lat&lng` | en sort ✅ *(test : le programme porte un créneau localisé, il est sur la carte, il en disparaît au sommeil)* |
 | `/activities/browse` (+ facettes, suggested) | en sort ✅ |
 | `/search` | en sort ✅ |
 | **`/slots/bounds`, `/slots/feed`** | en sort **deux fois** — `p.status = 'ACTIVE'` **et** `s.status IN ('OPEN','FULL')` ✅ votre troisième ligne est vérifiée |
-| `GET /users/me/programs` | c'est la liste des *inscriptions*. Celle de l'auteur est `GET /programs` → y reste ✅ |
-| `GET /programs/{id}` | répond normalement à son auteur ✅ |
+| `GET /users/me/programs` | c'est la liste des *inscriptions*. Celle de l'auteur est `GET /programs` → y reste ✅ *(testé)* |
+| `GET /programs/{id}` | répond normalement à son auteur ✅ *(testé)* |
 | `POST /programs/{id}/join` | refuse déjà tout ce qui n'est pas `ACTIVE` ✅ |
 
-Le réveil est déjà livré : `PATCH /programs/{id}` avec `{"status": "ACTIVE"}`
-fonctionne, réservé à l'auteur, dès que l'énumération connaît la valeur.
-`programs.status` n'a **aucune contrainte `CHECK`** : ajouter `DORMANT` ne coûte
-pas de migration.
+Ne s'endorment pas : un `DRAFT` (jamais publié), un `PAUSED` (décision de son
+auteur), ni un programme dont le créneau est **passé** — celui-là a eu sa date,
+il relève de l'étape 7 du cycle, pas d'une coquille vide.
 
-Il ne reste donc que la valeur et le job. Les deux partent dès que M est connu.
+**Aucune suppression, comme vous le demandiez.** Le job ne fait que changer un
+statut, et rien n'efface. `meetdo.cycle.dormancy-delay-days=0` l'éteint.
+
+### Le réveil : nous en avons fait plus que ce que vous prévoyiez
+
+`PATCH /programs/{id}` avec `{"status": "ACTIVE"}` fonctionne, réservé à
+l'auteur — c'est votre bouton « Le réveiller ».
+
+Mais **le réveil est aussi automatique côté serveur** dès qu'un créneau est posé,
+au lieu d'être laissé à l'appel que vous prévoyiez de déclencher. Le sommeil est
+un état serveur dont l'invariant est « pas de créneau vivant » : le faire dépendre
+d'un appel client, c'est accepter qu'un programme reste `DORMANT` avec un pin —
+invisible sur la carte alors que tout, dans l'app, dit qu'il devrait y être.
+Personne ne pourrait comprendre cet état, et rien ne le signalerait. Votre appel
+explicite reste utile et n'est pas remplacé.
 
 > ⚠️ **Une correction à apporter à votre plan.** `DELETE /programs/{id}`
 > **n'efface rien** : il pose `ARCHIVED` et `archived_at`. Votre bouton
 > « Supprimer définitivement » après trente jours de sommeil archiverait. Le
 > libellé promet autre chose que ce qui se passe.
 
----
+### L'ordre des deux délais
+
+Le sommeil doit rester postérieur à la relance : une fois `DORMANT`, le programme
+sort du balayage de l'étape 2, qui ne retient que les `ACTIVE`. La fenêtre
+effective de la relance est donc **J+3 à J+7**. Inverser les deux endormirait
+avant d'avoir prévenu ; le job le vérifie au démarrage et le signale plutôt que
+de le corriger en silence.
 
 ## Demande 4 — les accents : **livré, et le flou avec**
 
@@ -273,16 +336,21 @@ annulés. À arbitrer si un client le consomme.
 
 | demande | état |
 |---|---|
-| 1 — la mesure | ⛔ **bloquée** : il nous faut un accès en lecture à la production |
-| 2 — `CYCLE_NUDGE` | ✅ livré ; étape 2 éteinte tant que N est inconnu |
-| 3 — `DORMANT` | ⏸ en attente de M |
+| 1 — la mesure | ✅ faite le 06/09 ; à remesurer vers 100 programmes réels |
+| 2 — `CYCLE_NUDGE` | ✅ livré, les trois étapes allumées |
+| 3 — `DORMANT` | ✅ livré, M = 7 |
 | 4 — les accents | ✅ livré, flou compris |
 | 5 — `nextSessionAt` | ✅ livré sur les cinq surfaces |
 
 **Rien à changer côté client à la livraison.** Un type de notification inconnu
-retombe sur `system`, `status` reste une chaîne libre, et `nextSessionAt` ne
-change pas de type — seulement de valeur, dans le sens qui vous arrangeait.
+retombe sur `system`, `status` reste une chaîne libre — `DORMANT` n'y casse
+rien — et `nextSessionAt` ne change pas de type, seulement de valeur, dans le
+sens qui vous arrangeait.
 
-**Suite de tests** : 1140 tests, 142 classes, entièrement verte. Les 1076 tests
-antérieurs au module passent tous, et **aucune assertion existante n'a été
-modifiée** — les deux classes de test touchées le sont en ajout seul.
+**Deux points restent à arbitrer chez vous** : le libellé « Supprimer
+définitivement » (§3), et le fait que `GET /map/bounds` ne filtre ni le statut ni
+le temps des créneaux (§5).
+
+**Une chose vous appartient aussi** : la production contient deux tiers de
+fixtures (§1). Tant qu'elles y sont, toute mesure de comportement devra les
+écarter, et vos tableaux de bord les comptent.

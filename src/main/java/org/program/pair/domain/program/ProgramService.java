@@ -405,6 +405,7 @@ public class ProgramService {
 
         Schedule saved = scheduleRepository.save(schedule);
         ScheduleDto dto = toScheduleDto(saved, userId);
+        wakeIfDormant(program);
         refreshNextSessionAt(program);
         announceToSubscribersIfFirstSlot(program, saved);
         activityAlertService.evaluateAndNotify(saved);
@@ -588,6 +589,28 @@ public class ProgramService {
      * programme créé ou modifié porte immédiatement la bonne date au lieu de la
      * porter au prochain passage du job.
      */
+    /**
+     * Un programme endormi qui reçoit une date se réveille, sur-le-champ.
+     *
+     * <p><b>Tenu ici et non chez le client</b>, alors que celui-ci prévoit de
+     * déclencher {@code PATCH /programs/{id}} de son côté. Le sommeil est un état
+     * serveur dont l'invariant est « pas de créneau vivant » : le laisser
+     * dépendre d'un appel client, c'est accepter qu'un programme reste
+     * {@code DORMANT} avec un pin — invisible sur la carte, alors que tout, dans
+     * l'application, dit qu'il devrait y être. Personne ne pourrait comprendre
+     * cet état, et rien ne le signalerait.
+     *
+     * <p>La route explicite reste nécessaire et n'est pas remplacée : c'est elle
+     * que sert le bouton « Le réveiller », pour l'auteur qui veut ressortir son
+     * programme avant même de lui poser une date.
+     */
+    private void wakeIfDormant(Program program) {
+        if (program.getStatus() == ProgramStatus.DORMANT) {
+            program.setStatus(ProgramStatus.ACTIVE);
+            programRepository.save(program);
+        }
+    }
+
     private void refreshNextSessionAt(Program program) {
         Instant now = Instant.now();
         Instant next = scheduleRepository.findByProgramId(program.getId()).stream()
