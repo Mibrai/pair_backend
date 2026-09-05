@@ -125,16 +125,25 @@ public class CycleNudgeJob {
      * Délai avant de relancer un programme qui n'a toujours pas de date, en
      * jours — le {@code N} de l'étape 2.
      *
-     * <p><b>Zéro, et donc l'étape 2 est éteinte, tant que le délai réel n'a pas
-     * été mesuré.</b> La demande initiale proposait J+3 ; ce n'est pas une
-     * mesure, c'est une intuition. Si le délai médian entre la création d'un
-     * programme et son premier créneau se trouve être de neuf jours, relancer à
-     * J+3 s'adresse en majorité à des gens qui allaient le faire — et le module
-     * devient exactement le harcèlement qu'il existe pour éviter.
+     * <p><b>Trois, et c'est une mesure.</b> Relevé le 2026-09-06 sur la
+     * production : le délai médian entre la création d'un programme et son
+     * premier créneau vaut <b>73 secondes</b>, et onze observations organiques
+     * sur quatorze sont sous la demi-heure. Le comportement est bimodal — tout de
+     * suite, ou jamais — et l'échantillon ne contient personne entre le troisième
+     * et le vingt-deuxième jour. À J+3, un programme sans créneau appartient donc
+     * presque sûrement à quelqu'un qui s'est arrêté, et non à quelqu'un qui prend
+     * son temps : la crainte qui justifiait de mesurer avant de livrer est levée.
      *
-     * <p>Les étapes 4 et 7 ne dépendent d'aucune mesure et tournent, elles, dès
-     * le déploiement. Poser la valeur ici suffira à allumer la troisième, sans
-     * rien redéployer d'autre.
+     * <p>La mesure repose sur quatorze points, les fixtures de seed ayant dû être
+     * écartées — deux tiers de la base. À remesurer vers cent programmes réels.
+     *
+     * <p><b>Zéro éteint l'étape</b>, et c'est ce qui a permis de livrer le reste
+     * du module avant de disposer du chiffre.
+     *
+     * <p>La fenêtre effective de cette étape est <b>J+3 à J+7</b> : au-delà,
+     * {@code ProgramDormancyJob} passe le programme à {@code DORMANT}, et ce
+     * balayage-ci ne retient que les {@code ACTIVE}. C'est l'ordre voulu — on
+     * prévient, puis on endort.
      */
     @Value("${meetdo.cycle.stage2-delay-days:0}")
     private int stage2DelayDays;
