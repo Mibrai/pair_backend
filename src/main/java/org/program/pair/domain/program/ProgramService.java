@@ -723,11 +723,22 @@ public class ProgramService {
         // Les séances déjà en main, et non p.getSchedules() : la collection
         // paresseuse déclenchait une seconde lecture des mêmes lignes, juste
         // après celle qui a rempli la liste ci-dessus.
-        Instant nextSession = aggregates.schedules().stream()
-            .map(Schedule::getStartsAt)
-            .filter(t -> t != null && t.isAfter(now))
-            .min(Instant::compareTo)
-            .orElse(null);
+        //
+        // « À venir » se mesure sur la FIN, jamais sur le début, et les créneaux
+        // annulés ne comptent pas. Le calcul précédent — min(startsAt > now) —
+        // avait les deux défauts, et chacun se manifestait au pire moment :
+        //
+        //   1. une séance en cours en était exclue, donc nextSessionAt valait
+        //      null PENDANT la séance. Chez le client, schedules non vide +
+        //      nextSessionAt null vaut programIsExpired() : le programme quittait
+        //      la carte, ses tuiles grisaient et « Rejoindre » disparaissait à la
+        //      seconde où le cours commençait ;
+        //   2. un créneau ANNULÉ mais futur alimentait quand même le champ, si
+        //      bien qu'un programme sans un seul créneau vivant paraissait avoir
+        //      un pin sur la carte.
+        //
+        // Voir ProgramCycle, où cette frontière vit désormais seule.
+        Instant nextSession = ProgramCycle.nextUnfinishedStart(aggregates.schedules(), now);
 
         var ua       = p.getUserActivity();
         var user     = ua.getUser();

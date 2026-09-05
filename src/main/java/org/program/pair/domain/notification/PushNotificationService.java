@@ -657,6 +657,12 @@ public class PushNotificationService implements PushNotificationServiceInterface
             // qui doit faire rouvrir l'application pour y prendre le code de
             // retour. « Nouvelle notification » ne fait rouvrir personne.
             case WATCH_ARRIVAL_CONFIRMED -> msg(locale, "push.WATCH_ARRIVAL_CONFIRMED.title");
+            // Une relance de cycle ne dit pas la même chose selon l'étape : le
+            // programme attend sa date, il n'a personne, ou il vient de finir.
+            // Un titre unique aurait été si vague qu'il n'aurait rien fait
+            // rouvrir.
+            case CYCLE_NUDGE -> msg(locale, "push.CYCLE_NUDGE." + stage(payload) + ".title",
+                arg(payload, "programTitle"));
             // Valeurs legacy utilisées uniquement par les données de seed (V12/V13/V27) —
             // jamais émises par notify(), donc pas de titre push dédié.
             default -> msg(locale, "push.generic.title");
@@ -694,7 +700,26 @@ public class PushNotificationService implements PushNotificationServiceInterface
                 arg(payload, "activityName"), arg(payload, "placeName"));
             case PROGRAM_BROADCAST -> rawOr(payload, "messageBody", locale, "push.PROGRAM_BROADCAST.body");
             case WATCH_ARRIVAL_CONFIRMED -> msg(locale, "push.WATCH_ARRIVAL_CONFIRMED.body");
+            case CYCLE_NUDGE -> msg(locale, "push.CYCLE_NUDGE." + stage(payload) + ".body");
             default -> msg(locale, "push.generic.body");
+        };
+    }
+
+    /**
+     * L'étape du cycle portée par la charge, ramenée à une valeur dont la clé de
+     * traduction existe.
+     *
+     * <p>Les clés sont composées, et {@code MessageSource.getMessage} lève sur
+     * une clé absente : une étape inattendue — un producteur futur, une charge
+     * relue d'une version antérieure — ferait échouer la composition, donc
+     * l'envoi. Le repli sur l'étape 2 rend une phrase qui a un sens dans tous les
+     * cas, plutôt qu'une push qui n'arrive pas.
+     */
+    private static String stage(Map<String, Object> payload) {
+        String stage = arg(payload, "stage");
+        return switch (stage) {
+            case "4", "7" -> stage;
+            default -> "2";
         };
     }
 
