@@ -437,4 +437,34 @@ public interface ProgramRepository extends JpaRepository<Program, UUID> {
         HAVING MAX(s.startsAt) <= :until AND MAX(s.startsAt) > :from
         """)
     List<UUID> findStage7Candidates(@Param("from") Instant from, @Param("until") Instant until);
+
+    /**
+     * Programmes à endormir : actifs, créés avant {@code until}, et toujours
+     * sans aucun créneau non annulé.
+     *
+     * <p>Exacte, et sans repli en Java : le prédicat ne porte que sur une
+     * existence et une date de création. Aucun {@code starts_at} n'y entre, donc
+     * le piège du « commencé vaut passé » ne s'y pose pas — un programme dont
+     * l'unique créneau est passé a eu sa date, il ne dort pas.
+     *
+     * <p>{@code status <> CANCELLED} et non {@code NOT EXISTS (schedule)} : un
+     * programme dont le seul créneau a été annulé n'a plus de pin sur la carte,
+     * et c'est exactement la population que le sommeil vise.
+     *
+     * <p><b>Pas de borne basse ici</b>, contrairement aux trois requêtes de
+     * relance. Elles produisent des notifications, et une borne basse est ce qui
+     * évite d'en envoyer une salve au premier passage ; celle-ci ne produit qu'un
+     * changement d'état, réversible et sans destinataire. Retirer d'un coup les
+     * coquilles vides accumulées est précisément ce qu'on lui demande.
+     */
+    @Query("""
+        SELECT p.id FROM Program p
+        WHERE p.status = org.program.pair.domain.program.ProgramStatus.ACTIVE
+          AND p.createdAt <= :until
+          AND NOT EXISTS (
+                SELECT 1 FROM Schedule s
+                WHERE s.program = p
+                  AND s.status <> org.program.pair.domain.program.SlotStatus.CANCELLED)
+        """)
+    List<UUID> findDormancyCandidates(@Param("until") Instant until);
 }
