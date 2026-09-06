@@ -6,10 +6,13 @@ import org.program.pair.domain.auth.dto.AuthResponse;
 import org.program.pair.domain.auth.dto.LoginRequest;
 import org.program.pair.domain.auth.dto.RegisterRequest;
 import org.program.pair.domain.program.PlaceType;
+import org.program.pair.domain.program.Schedule;
+import org.program.pair.domain.program.SlotStatus;
 import org.program.pair.domain.program.dto.QuickSlotRequest;
 import org.program.pair.domain.program.dto.SlotBoundsResponse;
 import org.program.pair.domain.program.dto.SlotFeedItemDto;
 import org.program.pair.repository.ActivityRepository;
+import org.program.pair.repository.ScheduleRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 
@@ -56,6 +59,7 @@ class SlotBoundsIntegrationTest extends AbstractIntegrationTest {
     private static final AtomicInteger ZONE_SUIVANTE = new AtomicInteger();
 
     @Autowired ActivityRepository activityRepository;
+    @Autowired ScheduleRepository scheduleRepository;
 
     @Test
     void unRectangleAlEchelleDunPays_doitRendreLesCreneauxDesDeuxBouts() {
@@ -283,7 +287,160 @@ class SlotBoundsIntegrationTest extends AbstractIntegrationTest {
         assertThat(elargi.slots()).extracting(SlotFeedItemDto::scheduleId).contains(lointain);
     }
 
+    // — includePast : l'interrupteur « Afficher ce qui est terminé » —
+
+    /**
+     * Le défaut ne bouge pas, et c'est la moitié du lot qu'il ne faut pas
+     * perdre : une carte qui montrerait le passé sans qu'on le demande
+     * proposerait de rejoindre des séances finies.
+     */
+    @Test
+    void sansIncludePast_unCreneauTermine_neDoitPasRemonter() {
+        Zone zone = zoneDeserte();
+        String viewer = registerAndLogin();
+        assertThat(bounds(viewer, zone, null).totalInBounds()).isZero();
+
+        UUID termine = publishThenBury(registerAndLogin(), zone.lat(), zone.lng(),
+            Instant.now().minus(20, ChronoUnit.DAYS), SlotStatus.PAST);
+
+        SlotBoundsResponse response = bounds(viewer, zone, null);
+
+        assertThat(response.slots()).extracting(SlotFeedItemDto::scheduleId).doesNotContain(termine);
+        assertThat(response.totalInBounds()).isZero();
+    }
+
+    /**
+     * La demande 2 du lot « passé », mesurée par le client : {@code from} dans le
+     * passé ne changeait rien — 33 créneaux, 0 passé, quelle que soit la borne.
+     *
+     * <p>La fenêtre l'honorait pourtant. Ce qui écartait tout, c'était le filtre
+     * de statut : {@code AttendancePromptJob.closeElapsedSlots} fait passer chaque
+     * créneau terminé à {@code PAST} dans l'heure qui suit sa fin. D'où
+     * {@code includePast}, qui lève ce filtre-là et lui seul — et non une
+     * correction de {@code from}, qui n'avait rien de cassé.
+     */
+    @Test
+    void avecIncludePast_unCreneauTermine_doitRemonter_etCompter() {
+        Zone zone = zoneDeserte();
+        String viewer = registerAndLogin();
+        assertThat(boundsPast(viewer, zone).totalInBounds()).isZero();
+
+        UUID termine = publishThenBury(registerAndLogin(), zone.lat(), zone.lng(),
+            Instant.now().minus(20, ChronoUnit.DAYS), SlotStatus.PAST);
+
+        SlotBoundsResponse response = boundsPast(viewer, zone);
+
+        assertThat(response.slots()).extracting(SlotFeedItemDto::scheduleId).contains(termine);
+        // Le compte partage le WHERE de la page : sans cela, l'interrupteur
+        // ferait apparaître des pins que totalInBounds continuerait d'ignorer.
+        assertThat(response.totalInBounds()).isEqualTo(1);
+        // Et le client tient sa règle sur les dates rendues, pas sur un statut
+        // qu'il faudrait lui apprendre à lire : la séance est bien datée au passé.
+        assertThat(response.slots().get(0).startsAt()).isBefore(Instant.now());
+    }
+
+    /**
+     * {@code CANCELLED} n'entre pas, même avec l'interrupteur : un créneau annulé
+     * n'a pas eu lieu, et le poser sur une carte du passé raconterait une séance
+     * qui n'a jamais existé. {@code PAST} dit « c'était là » ; c'est tout ce que
+     * l'interrupteur demande.
+     */
+    @Test
+    void avecIncludePast_unCreneauAnnule_resteAbsent() {
+        Zone zone = zoneDeserte();
+        String viewer = registerAndLogin();
+
+        UUID annule = publishThenBury(registerAndLogin(), zone.lat(), zone.lng(),
+            Instant.now().minus(10, ChronoUnit.DAYS), SlotStatus.CANCELLED);
+
+        SlotBoundsResponse response = boundsPast(viewer, zone);
+
+        assertThat(response.slots()).extracting(SlotFeedItemDto::scheduleId).doesNotContain(annule);
+        assertThat(response.totalInBounds()).isZero();
+    }
+
+    /**
+     * La fenêtre est plafonnée à trois mois, et le dépassement est <b>refusé</b>,
+     * jamais ramené en silence à la borne. Même argument que le {@code limit} de
+     * cette route : un rectangle qui remonte à deux ans et rend trois mois est
+     * indiscernable d'un rectangle où il ne s'est rien passé avant.
+     */
+    @Test
+    void avecIncludePast_unFromTropAncien_doitEtreRefuse_pasEcreteEnSilence() {
+        webTestClient.get()
+            .uri(b -> b.path("/api/slots/bounds")
+                .queryParam("north", NORTH).queryParam("south", SOUTH)
+                .queryParam("east", EAST).queryParam("west", WEST)
+                .queryParam("includePast", true)
+                .queryParam("from", Instant.now().minus(400, ChronoUnit.DAYS)).build())
+            .headers(h -> h.setBearerAuth(registerAndLogin()))
+            .exchange().expectStatus().isBadRequest()
+            .expectBody().jsonPath("$.code").isEqualTo("SLOT_PAST_WINDOW_TOO_WIDE");
+    }
+
+    /**
+     * Le contre-test du précédent, et il compte : sans {@code includePast}, un
+     * {@code from} ancien reste accepté. Le plafond borne ce qu'on peut
+     * <i>découvrir</i> du passé, il n'ajoute pas un refus là où il n'y en avait
+     * pas — une carte qui se mettrait à refuser des requêtes qu'elle acceptait la
+     * veille casserait des clients publiés pour rien.
+     */
+    @Test
+    void sansIncludePast_unFromAncien_resteAccepte() {
+        webTestClient.get()
+            .uri(b -> b.path("/api/slots/bounds")
+                .queryParam("north", NORTH).queryParam("south", SOUTH)
+                .queryParam("east", EAST).queryParam("west", WEST)
+                .queryParam("from", Instant.now().minus(400, ChronoUnit.DAYS)).build())
+            .headers(h -> h.setBearerAuth(registerAndLogin()))
+            .exchange().expectStatus().isOk();
+    }
+
+    /**
+     * Le fil ne change pas. « À quoi puis-je encore me joindre » n'a pas de
+     * passé, et le corps de requête que les deux géométries partagent aurait pu,
+     * mal découpé, le leur donner à toutes les deux.
+     */
+    @Test
+    void leFil_neDoitJamaisVoirLePasse() {
+        Zone zone = zoneDeserte();
+        UUID termine = publishThenBury(registerAndLogin(), zone.lat(), zone.lng(),
+            Instant.now().minus(20, ChronoUnit.DAYS), SlotStatus.PAST);
+
+        assertThat(feed(registerAndLogin(), zone.lat(), zone.lng()))
+            .extracting(SlotFeedItemDto::scheduleId).doesNotContain(termine);
+    }
+
     // — helpers —
+
+    private SlotBoundsResponse boundsPast(String token, Zone zone) {
+        SlotBoundsResponse response = webTestClient.get()
+            .uri(b -> b.path("/api/slots/bounds")
+                .queryParam("north", zone.north()).queryParam("south", zone.south())
+                .queryParam("east", zone.east()).queryParam("west", zone.west())
+                .queryParam("includePast", true).build())
+            .headers(h -> h.setBearerAuth(token))
+            .exchange().expectStatus().isOk()
+            .expectBody(SlotBoundsResponse.class).returnResult().getResponseBody();
+        assertThat(response).isNotNull();
+        return response;
+    }
+
+    /**
+     * Un créneau terminé, tel que la production en fabrique : publié normalement
+     * — la création refuse une date passée, et c'est très bien — puis reculé dans
+     * le temps et passé au statut que {@code closeElapsedSlots} lui donnerait.
+     */
+    private UUID publishThenBury(String token, double lat, double lng,
+                                 Instant startsAt, SlotStatus status) {
+        UUID id = publishSlot(token, lat, lng);
+        Schedule slot = scheduleRepository.findById(id).orElseThrow();
+        slot.setStartsAt(startsAt);
+        slot.setEndsAt(startsAt.plus(1, ChronoUnit.HOURS));
+        slot.setStatus(status);
+        scheduleRepository.save(slot);
+        return id;
+    }
 
     private SlotBoundsResponse bounds(String token, double north, double south,
                                       double east, double west, Integer limit) {

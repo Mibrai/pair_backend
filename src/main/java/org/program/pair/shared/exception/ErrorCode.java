@@ -111,6 +111,11 @@ public enum ErrorCode {
     MAP_BOUNDS_INVALID,
     MAP_LIMIT_OUT_OF_RANGE,
     MAP_ZOOM_OUT_OF_RANGE,
+    // GET /slots/bounds avec includePast=true et un from plus ancien que la
+    // fenêtre autorisée. Nommé plutôt que ramené en silence à la borne : un
+    // rectangle qui remonte à deux ans et rend trois mois est indiscernable
+    // d'un rectangle où il ne s'est rien passé avant.
+    SLOT_PAST_WINDOW_TOO_WIDE,
 
     // — blocage d'utilisateur (BlockFilterService) —
     // L'appelant a bloqué la personne visée, ou en a été bloqué. Ce code n'est
