@@ -176,8 +176,26 @@ public class SlotService {
         GeoBounds.validateRectangle(
             request.north(), request.south(), request.east(), request.west());
 
-        Instant from = request.from() != null ? request.from() : Instant.now();
-        Instant to = request.to() != null ? request.to() : Instant.now().plus(7, ChronoUnit.DAYS);
+        Instant now = Instant.now();
+        boolean includePast = request.effectiveIncludePast();
+
+        // Le passé se demande, il ne s'obtient pas en reculant `from`. Sans
+        // includePast, la fenêtre honorait déjà n'importe quelle borne basse —
+        // mais aucun créneau terminé ne pouvait y répondre, parce qu'ils sont
+        // tous passés au statut PAST dans l'heure suivant leur fin. Le drapeau
+        // gouverne les deux choses ensemble : le statut admis, et jusqu'où la
+        // fenêtre a le droit de reculer.
+        Instant floor = now.minus(SlotBoundsRequest.PAST_WINDOW_DAYS, ChronoUnit.DAYS);
+        Instant defaultFrom = includePast ? floor : now;
+        Instant from = request.from() != null ? request.from() : defaultFrom;
+
+        if (includePast && from.isBefore(floor)) {
+            throw new ValidationException(ErrorCode.SLOT_PAST_WINDOW_TOO_WIDE,
+                "Le paramètre 'from' ne peut pas remonter à plus de "
+                    + SlotBoundsRequest.PAST_WINDOW_DAYS + " jours quand includePast=true.");
+        }
+
+        Instant to = request.to() != null ? request.to() : now.plus(7, ChronoUnit.DAYS);
 
         // Mêmes conventions de liaison que le fil : le drapeau porte « y a-t-il un
         // filtre », la liste ne doit jamais être vide même quand il est faux.
@@ -196,7 +214,8 @@ public class SlotService {
             filterByCategory, filterByCategory ? categoryIds : ScheduleRepository.NO_CATEGORY_FILTER,
             request.createdSince(), requesterId,
             filterByLanguage, filterByLanguage ? languages : ScheduleRepository.NO_LANGUAGE_FILTER,
-            filterByTags, filterByTags ? tags : ScheduleRepository.NO_TAG_FILTER, tags.size());
+            filterByTags, filterByTags ? tags : ScheduleRepository.NO_TAG_FILTER, tags.size(),
+            includePast);
 
         if (total == 0) {
             return new SlotBoundsResponse(List.of(), false, 0);
@@ -209,7 +228,7 @@ public class SlotService {
             request.createdSince(), requesterId,
             filterByLanguage, filterByLanguage ? languages : ScheduleRepository.NO_LANGUAGE_FILTER,
             filterByTags, filterByTags ? tags : ScheduleRepository.NO_TAG_FILTER, tags.size(),
-            request.limit(), request.offset());
+            includePast, request.limit(), request.offset());
 
         // Un offset au-delà du total rend une page vide sans que la zone le soit :
         // truncated doit alors valoir vrai, sans quoi le client conclurait de la

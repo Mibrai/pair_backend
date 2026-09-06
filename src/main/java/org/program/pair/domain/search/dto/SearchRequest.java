@@ -35,7 +35,23 @@ public record SearchRequest(
         + "Déclaratif, jamais vérifié.\n\n"
         + "Premier filtre structuré réellement lu par cette route : les champs "
         + "`filters` et `sort_by` qu'un client enverrait restent ignorés.")
-    java.util.List<String> accessibilityTags
+    java.util.List<String> accessibilityTags,
+
+    @Schema(description = "Garder les programmes terminés dans les résultats.\n\n"
+        + "**Défaut `true`, et c'est la seule différence avec le paramètre du même nom sur "
+        + "`GET /activities/browse`, dont le défaut est `false`.** La sémantique de la "
+        + "valeur est identique — `true` garde, `false` écarte ; c'est le défaut qui "
+        + "diffère, parce que le comportement d'origine des deux routes diffère. `browse` "
+        + "écartait déjà les entrées expirées avant que le paramètre n'existe ; `/search` "
+        + "les rendait déjà, et le client a demandé qu'elle continue : « on veut pouvoir "
+        + "retrouver un programme terminé ». Dans les deux cas le défaut reconduit ce que la "
+        + "route faisait la veille, donc aucune version publiée ne voit son écran changer "
+        + "sous elle.\n\n"
+        + "Envoyer `false` est ce qui rend `totalCount` et les compteurs par type exacts "
+        + "quand l'interrupteur « Afficher ce qui est terminé » est éteint : le filtre "
+        + "s'applique avant la pagination et avant le décompte, jamais après.",
+        defaultValue = "true")
+    Boolean includeExpired
 ) {
 
     /** Étiquettes demandées, normalisées et sans doublon. */
@@ -53,7 +69,13 @@ public record SearchRequest(
 
     /** Constructeur court, pour les appelants qui ne paginent pas. */
     public SearchRequest(String query, Double lat, Double lng, Integer radiusMeters) {
-        this(query, lat, lng, radiusMeters, null, null, null);
+        this(query, lat, lng, radiusMeters, null, null, null, null);
+    }
+
+    /** Constructeur de pagination, sans les filtres. */
+    public SearchRequest(String query, Double lat, Double lng, Integer radiusMeters,
+                         Integer page, Integer pageSize, java.util.List<String> accessibilityTags) {
+        this(query, lat, lng, radiusMeters, page, pageSize, accessibilityTags, null);
     }
 
     public int effectivePage() {
@@ -62,5 +84,10 @@ public record SearchRequest(
 
     public int effectivePageSize() {
         return pageSize != null ? pageSize : 20;
+    }
+
+    /** Voir la description du champ pour le pourquoi de ce défaut-là. */
+    public boolean effectiveIncludeExpired() {
+        return includeExpired == null || includeExpired;
     }
 }

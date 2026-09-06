@@ -9,8 +9,10 @@ import org.program.pair.domain.activity.Category;
 import org.program.pair.domain.activity.UserActivity;
 import org.program.pair.domain.program.LocationType;
 import org.program.pair.domain.program.Program;
+import org.program.pair.domain.program.ProgramTimeliness;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotAddressVisibility;
+import org.program.pair.domain.program.SlotTiming;
 import org.program.pair.domain.block.BlockFilterService;
 import org.program.pair.domain.search.dto.*;
 import org.program.pair.domain.search.embedding.LocalEmbeddingService;
@@ -174,6 +176,12 @@ public class SemanticSearchService {
         SearchRequest searchRequest = new SearchRequest(
             request.query(), request.lat(), request.lng(), radius);
 
+        // Une seule référence de temps pour toute la réponse : deux résultats ne
+        // peuvent pas comparer leur prochaine séance à deux « maintenant »
+        // différents, sans quoi la frontière du grisage se déplacerait à
+        // l'intérieur d'une même page.
+        Instant now = Instant.now();
+
         // 1. Couche déterministe : taxonomie d'activités canonique EN/DE/FR.
         // Garantit le matching cross-lingue sur les activités connues (ex: "Laufen"
         // -> slug "running" -> "course à pied"/"marche à pied"/"running"),
@@ -196,7 +204,8 @@ public class SemanticSearchService {
                     embeddingService.toVectorString(embedding),
                     request.lat(), request.lng(), radius, 1 - minSimilarity, CANDIDATE_LIMIT);
             recallResults = toSearchResultDtos(candidates,
-                resolveVenues(candidates, request.lat(), request.lng()));
+                resolveVenues(candidates, request.lat(), request.lng()),
+                resolveAgendas(candidates), now);
         }
 
         // 3. Fusion : les matchs taxonomiques (précision) priment, complétés par le
@@ -257,11 +266,25 @@ public class SemanticSearchService {
                 .toList();
         }
 
+        // Programmes terminés. Le filtre est ici — après le blocage, avant la
+        // découpe et avant countsByType — pour la même raison que lui : un
+        // « Programmes (12) » suivi de neuf résultats est pire que pas de
+        // compteur. Il ne porte que sur les programmes, et c'est structurel :
+        // searchSlots ne rend que des créneaux non terminés, donc leur isExpired
+        // vaut faux et le filtre les laisse tous passer.
+        //
+        // Le défaut est de TOUT garder, contrairement à /activities/browse —
+        // voir SearchRequest.includeExpired : chaque route reconduit ce qu'elle
+        // faisait avant que le paramètre n'existe.
+        if (!request.effectiveIncludeExpired() && !results.isEmpty()) {
+            results = results.stream().filter(r -> !r.isExpired()).toList();
+        }
+
         // 4. Créneaux correspondant à l'intention temporelle — priorité absolue :
         // un créneau dans 2h vaut plus qu'un programme sans date. Triés par
         // date croissante, puis complétés par les programmes (le reste de la
         // liste ci-dessus), jamais tronqués par la limite globale.
-        List<SearchResultDto> slotResults = searchSlots(request, intent, radius, requesterId);
+        List<SearchResultDto> slotResults = searchSlots(request, intent, radius, requesterId, now);
         int programBudget = Math.max(0, CANDIDATE_LIMIT - slotResults.size());
         List<SearchResultDto> boundedPrograms = results.size() > programBudget
             ? results.subList(0, programBudget)
@@ -278,13 +301,14 @@ public class SemanticSearchService {
      * public et actif, activité non masquée, statut OPEN/FULL, créneaux de
      * l'appelant exclus.
      */
-    private List<SearchResultDto> searchSlots(SearchRequest request, SearchIntent intent, int radius, UUID requesterId) {
+    private List<SearchResultDto> searchSlots(SearchRequest request, SearchIntent intent, int radius,
+                                              UUID requesterId, Instant now) {
         UUID activityId = resolveActivityId(intent);
         if (activityId == null) {
             return List.of();
         }
 
-        TimeHintParser.Window window = TimeHintParser.resolveWindow(intent.timeHint(), Instant.now());
+        TimeHintParser.Window window = TimeHintParser.resolveWindow(intent.timeHint(), now);
 
         // Le filtre d'accessibilité ne porte que sur les créneaux : une étiquette
         // décrit une séance et un lieu, pas un programme.
@@ -306,11 +330,12 @@ public class SemanticSearchService {
         // d'autre — les deux ordres coïncident pour qui n'a rien déclaré.
         return slots.stream()
             .filter(s -> !s.getProgram().getUserActivity().getUser().getId().equals(requesterId))
-            .map(s -> toSlotResultDto(s, request.lat(), request.lng(), requesterId))
+            .map(s -> toSlotResultDto(s, request.lat(), request.lng(), requesterId, now))
             .toList();
     }
 
-    private SearchResultDto toSlotResultDto(Schedule schedule, double viewerLat, double viewerLng, UUID requesterId) {
+    private SearchResultDto toSlotResultDto(Schedule schedule, double viewerLat, double viewerLng,
+                                            UUID requesterId, Instant now) {
         Program program = schedule.getProgram();
         UserActivity userActivity = program.getUserActivity();
         Activity activity = userActivity.getActivity();
@@ -319,6 +344,8 @@ public class SemanticSearchService {
 
         SlotAddressVisibility.Resolved place =
             SlotAddressVisibility.resolve(schedule, requesterId, slotParticipationRepository);
+
+        boolean stillAhead = SlotTiming.endOf(schedule).isAfter(now);
 
         Double distanceMeters = schedule.getLocation() != null
             ? GeoUtils.haversineMeters(viewerLat, viewerLng, schedule.getLocation().getY(), schedule.getLocation().getX())
@@ -333,7 +360,7 @@ public class SemanticSearchService {
             place.lat(),
             place.lng(),
             distanceMeters,
-            timeProximityScore(schedule.getStartsAt()),
+            timeProximityScore(schedule.getStartsAt(), now),
             activity.getName(),
             userActivity.getLevel() != null ? userActivity.getLevel().name() : null,
             userActivity.getFormat() != null ? userActivity.getFormat().name() : null,
@@ -355,13 +382,24 @@ public class SemanticSearchService {
             null,
             schedule.getStartsAt(),
             schedule.getEndsAt(),
-            schedule.getMaxParticipants()
+            schedule.getMaxParticipants(),
+            // Sur la maille créneau la question est plus simple que sur celle du
+            // programme, mais la réponse doit rester la même : « terminé » se
+            // mesure sur la FIN. Un créneau commencé il y a dix minutes n'est pas
+            // passé, et l'invariant « expiré ⇒ nextSessionAt nul » tient ici
+            // aussi. En pratique la requête ne rend que des créneaux OPEN/FULL
+            // dans une fenêtre qui part de maintenant, donc ces deux valeurs sont
+            // toujours « le début, et faux » — les calculer quand même plutôt que
+            // de les câbler est ce qui les empêchera de mentir le jour où la
+            // fenêtre changera.
+            stillAhead ? schedule.getStartsAt() : null,
+            !stillAhead
         );
     }
 
     /** Score décroissant avec l'éloignement temporel : un créneau proche prime. */
-    private Float timeProximityScore(Instant startsAt) {
-        long hoursUntilStart = Math.max(0, java.time.Duration.between(Instant.now(), startsAt).toHours());
+    private Float timeProximityScore(Instant startsAt, Instant now) {
+        long hoursUntilStart = Math.max(0, java.time.Duration.between(now, startsAt).toHours());
         return (float) (1.0 / (1.0 + hoursUntilStart));
     }
 
@@ -438,6 +476,25 @@ public class SemanticSearchService {
     }
 
     /**
+     * Les créneaux de chaque programme, en une seule requête — de quoi dire
+     * lesquels sont derrière nous.
+     *
+     * <p>Une lecture de plus par recherche, et pas une par résultat :
+     * {@code Program.schedules} est paresseuse, et la parcourir dans le mapping
+     * ferait deux cents allers-retours pour une page de vingt. C'est le même
+     * lot que {@code ProgramService.toDtoList} charge déjà pour la même raison,
+     * par la même méthode.
+     */
+    private Map<UUID, List<Schedule>> resolveAgendas(List<Program> programs) {
+        if (programs.isEmpty()) {
+            return Map.of();
+        }
+        List<UUID> ids = programs.stream().map(Program::getId).toList();
+        return programRepository.findSchedulesByProgramIds(ids).stream()
+            .collect(java.util.stream.Collectors.groupingBy(s -> s.getProgram().getId()));
+    }
+
+    /**
      * Un programme à distance n'a pas de lieu, donc pas de distance.
      *
      * <p>À ne pas confondre avec le champ {@code isOnline} de la réponse, qui
@@ -455,7 +512,9 @@ public class SemanticSearchService {
     // dépendances Spring/DB.
     List<SearchResultDto> toSearchResultDtos(
             List<org.program.pair.domain.program.Program> programs,
-            Map<UUID, ProgramVenue> venues) {
+            Map<UUID, ProgramVenue> venues,
+            Map<UUID, List<Schedule>> agendas,
+            Instant now) {
 
         return programs.stream().map(p -> {
             var ua    = p.getUserActivity();
@@ -467,6 +526,13 @@ public class SemanticSearchService {
             // organisateur : c'est tout l'objet de la correction. Absence de
             // séance localisée ou programme à distance ⇒ null, pas de repli.
             ProgramVenue venue = isRemote(p) ? null : venues.get(p.getId());
+
+            // Le même verdict que les quatre requêtes natives de
+            // FullTextSearchService, parce que c'est le même code qui le rend —
+            // voir ProgramTimeliness. Un programme absent de la carte des agendas
+            // n'a aucun créneau : jamais daté, donc jamais expiré.
+            ProgramTimeliness timeliness =
+                ProgramTimeliness.of(agendas.get(p.getId()), now);
 
             boolean isOnline = owner.getLastActiveAt() != null
                 && owner.getLastActiveAt().isAfter(java.time.Instant.now().minusSeconds(300));
@@ -515,7 +581,9 @@ public class SemanticSearchService {
                 null,   // city
                 p.getCreatedAt(),
                 p.getUpdatedAt(),
-                null, null, null // startsAt/endsAt/maxParticipants : spécifiques aux résultats "slot"
+                null, null, null, // startsAt/endsAt/maxParticipants : spécifiques aux résultats "slot"
+                timeliness.nextSessionAt(),
+                timeliness.isExpired()
             );
         }).toList();
     }

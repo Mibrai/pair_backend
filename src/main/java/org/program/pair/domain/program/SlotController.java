@@ -59,14 +59,26 @@ public class SlotController {
      * là où le fil le rend sans coordonnées. Répondre « il est dans ce rectangle »
      * est déjà le situer.
      *
+     * <p><b>{@code includePast} — l'interrupteur « Afficher ce qui est terminé ».</b>
+     * Ajouté le 05/09 : sans lui, un {@code from} dans le passé paraissait ignoré.
+     * Il ne l'était pas — c'est le filtre de statut qui écartait tout, les
+     * créneaux terminés passant à {@code PAST} dans l'heure qui suit leur fin.
+     * Rien à corriger sur {@code from}, donc, mais un drapeau à ajouter, et une
+     * fenêtre plafonnée à trois mois avec lui. Le fil, lui, ne change pas : « à
+     * quoi puis-je encore me joindre » n'a pas de passé.
+     *
      * @return les créneaux, {@code truncated} et {@code totalInBounds}
      */
     @Operation(summary = "Les créneaux d'une zone rectangulaire",
         description = "L'onglet Créneaux de la carte. Contrairement à /slots/feed, aucune "
-            + "borne de rayon : la zone interrogée est exactement la zone affichée.")
+            + "borne de rayon : la zone interrogée est exactement la zone affichée. "
+            + "includePast=true y fait entrer les séances déjà terminées, sur trois mois "
+            + "au plus.")
     @ApiResponse(responseCode = "200", description = "Créneaux de la zone, avec l'état de troncature")
     @ApiResponse(responseCode = "400",
-        description = "Rectangle invalide (MAP_BOUNDS_INVALID) ou limit hors bornes (VALIDATION_ERROR)")
+        description = "Rectangle invalide (MAP_BOUNDS_INVALID), limit hors bornes "
+            + "(VALIDATION_ERROR), ou from remontant au-delà de la fenêtre de passé "
+            + "autorisée (SLOT_PAST_WINDOW_TOO_WIDE)")
     @GetMapping("/bounds")
     public SlotBoundsResponse getSlotsInBounds(
             @AuthenticationPrincipal UserPrincipal principal,
