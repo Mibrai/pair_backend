@@ -44,7 +44,10 @@ public record SlotBoundsRequest(
         + "virgules.")
     List<UUID> categoryIds,
 
-    @Schema(description = "Début de la fenêtre de recherche. Défaut : maintenant.")
+    @Schema(description = "Début de la fenêtre de recherche, en ISO-8601 UTC — le suffixe "
+        + "`Z` est obligatoire, faute de quoi la conversion échoue en 400 VALIDATION_ERROR. "
+        + "Défaut : maintenant, ou il y a trois mois quand includePast=true.",
+        example = "2026-09-05T19:10:30Z")
     Instant from,
 
     @Schema(description = "Fin de la fenêtre de recherche. Défaut : maintenant + 7 jours — "
@@ -73,15 +76,47 @@ public record SlotBoundsRequest(
     @Min(1) @Max(MAX_LIMIT) Integer limit,
 
     @Schema(description = "Décalage de pagination, comme sur /map/bounds.", defaultValue = "0")
-    @Min(0) Integer offset
+    @Min(0) Integer offset,
+
+    @Schema(description = "Faire entrer les créneaux déjà terminés dans la réponse — "
+        + "l'interrupteur « Afficher ce qui est terminé » de l'onglet Créneaux.\n\n"
+        + "Sans lui, `from` dans le passé paraît ignoré : la fenêtre l'honore, mais tout "
+        + "créneau terminé est passé au statut `PAST` dans l'heure qui suit sa fin, et le "
+        + "filtre de statut les avait déjà tous écartés. `includePast=true` lève ce "
+        + "filtre-là, et lui seul : le programme doit toujours être actif et public, l'hôte "
+        + "actif, le lieu partagé. Les créneaux **annulés** restent absents dans tous les "
+        + "cas — ils n'ont pas eu lieu.\n\n"
+        + "La fenêtre est alors plafonnée à " + PAST_WINDOW_DAYS + " jours en arrière : "
+        + "un `from` plus ancien est refusé par un 400 SLOT_PAST_WINDOW_TOO_WIDE, jamais "
+        + "ramené en silence à la borne. Une carte-souvenir qui remonterait à deux ans est "
+        + "un balayage d'historique, pas un écran.",
+        defaultValue = "false")
+    Boolean includePast
 ) {
 
     /** Plafond de {@code limit}. Voir la description du champ pour le pourquoi. */
     public static final int MAX_LIMIT = 200;
 
+    /**
+     * Profondeur maximale du passé consultable, en jours.
+     *
+     * <p>Trois mois : ce que le client a chiffré — « trois mois suffiraient
+     * largement à l'usage visé », retrouver où avait lieu un cours du mois
+     * dernier. La borne existe parce que la question posée reste celle d'un
+     * écran de carte ; au-delà, c'est un historique, et un historique se
+     * pagine par date, pas par rectangle.
+     */
+    public static final int PAST_WINDOW_DAYS = 90;
+
     public SlotBoundsRequest {
         if (limit == null) limit = 100;
         if (offset == null) offset = 0;
+        if (includePast == null) includePast = false;
+    }
+
+    /** Jamais nul après le constructeur compact ; ce raccourci évite l'unboxing chez l'appelant. */
+    public boolean effectiveIncludePast() {
+        return Boolean.TRUE.equals(includePast);
     }
 
     /** Les catégories demandées, {@code categoryId} et {@code categoryIds} réunis. */

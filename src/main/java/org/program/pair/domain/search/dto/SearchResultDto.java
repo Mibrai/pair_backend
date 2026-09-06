@@ -76,6 +76,29 @@ public record SearchResultDto(
     @Schema(description = "Date de fin du créneau, si connue.")
     Instant endsAt,
     @Schema(description = "Capacité du créneau, pour afficher par ex. \"3 / 8\".")
-    Integer maxParticipants
+    Integer maxParticipants,
+
+    // — le temps, sur les deux mailles —
+    /**
+     * <p>Ajouté le 05/09 parce que rien, sur un résultat {@code program}, ne
+     * disait le temps : {@code startsAt} et {@code endsAt} ne parlent que des
+     * créneaux et valent {@code null} sur un programme. La recherche rendait
+     * donc — et rend toujours, c'est voulu — les programmes terminés, sans
+     * aucun moyen de les distinguer des vivants.
+     */
+    @Schema(description = "Début de la prochaine séance non terminée : celle qui vient, ou "
+        + "celle en cours. Pour resultType=\"program\", exactement le même verdict que "
+        + "ProgramDto.nextSessionAt ; pour resultType=\"slot\", le début du créneau lui-même. "
+        + "Nul quand il n'y a plus rien devant — et alors isExpired dit lequel des deux cas "
+        + "c'est : jamais daté, ou terminé.")
+    Instant nextSessionAt,
+
+    @Schema(description = "Le résultat est-il derrière nous ? Vrai seulement s'il est DATÉ — "
+        + "au moins un créneau — et qu'aucune occurrence non terminée n'existe. Même "
+        + "définition, au mot près, que BrowsedActivityDto.isExpired sur GET "
+        + "/activities/browse : un programme sans aucun créneau n'est JAMAIS expiré, et "
+        + "expiré implique nextSessionAt nul, sans exception. Une séance en cours ne compte "
+        + "pas comme passée — « terminé » se mesure sur la fin, jamais sur le début.")
+    boolean isExpired
 ) {
 }

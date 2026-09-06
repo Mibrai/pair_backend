@@ -2,6 +2,7 @@ package org.program.pair.domain.search;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.program.pair.domain.program.ProgramTimeliness;
 import org.program.pair.domain.search.dto.SearchRequest;
 import org.program.pair.domain.search.dto.SearchResultDto;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -72,8 +73,45 @@ public class FullTextSearchService {
               WHERE r.program_id = p.id)   AS review_count,
             (SELECT COUNT(*)::int
                FROM user_programs up
-              WHERE up.program_id = p.id AND up.status = 'ACTIVE') AS enrolled_count
+              WHERE up.program_id = p.id AND up.status = 'ACTIVE') AS enrolled_count,
+            agenda.schedule_count,
+            agenda.next_session_at
         """;
+
+    /**
+     * L'agenda du programme : de quoi dire s'il est derrière nous.
+     *
+     * <p>Deux colonnes, et elles se lisent ensemble — voir
+     * {@link org.program.pair.domain.program.ProgramTimeliness}, où le verdict
+     * est recomposé. Le {@code FILTER} reprend au caractère près celui de
+     * {@code UserActivityRepository.browse} : fin déclarée ou fin
+     * conventionnelle, jamais le début, et les créneaux annulés exclus de la
+     * prochaine séance mais comptés comme date.
+     *
+     * <p><b>Aucun paramètre positionnel.</b> C'est délibéré : la durée
+     * conventionnelle est interpolée dans le texte SQL — un {@code long} lu sur
+     * {@code SlotTiming}, jamais une saisie — plutôt qu'ajoutée à la liste des
+     * {@code ?}. Ce fichier documente déjà, longuement, ce que coûte un
+     * paramètre inséré au mauvais rang ; ce fragment s'insère donc sans rien
+     * décaler, quelle que soit la requête qui l'accueille.
+     *
+     * <p>Le {@code LEFT JOIN LATERAL} rend toujours une ligne, {@code COUNT(*)}
+     * valant zéro pour un programme sans créneau. Pas de {@code NULL} à
+     * distinguer côté Java, donc.
+     */
+    private static final String AGENDA_JOIN = """
+        LEFT JOIN LATERAL (
+            SELECT COUNT(*) AS schedule_count,
+                   MIN(sa.starts_at) FILTER (
+                       WHERE sa.status <> 'CANCELLED'
+                         AND COALESCE(sa.ends_at,
+                                      sa.starts_at + make_interval(mins => %d)) > NOW()
+                   ) AS next_session_at
+              FROM schedules sa
+             WHERE sa.program_id = p.id
+        ) agenda ON TRUE
+        """.formatted(
+            org.program.pair.domain.program.SlotTiming.DEFAULT_DURATION.toMinutes());
 
     /**
      * Situe le programme à sa séance localisée la plus proche du point interrogé.
@@ -105,6 +143,15 @@ public class FullTextSearchService {
              LIMIT 1
         ) venue ON TRUE
         """;
+
+    /**
+     * Les deux jointures latérales que toute recherche de programme porte : le
+     * lieu, puis l'agenda. Dans cet ordre, et énoncé une seule fois — l'ordre
+     * des paramètres positionnels de chaque requête en dépend, et
+     * {@link #AGENDA_JOIN} n'en consomme aucun précisément pour qu'ajouter
+     * l'agenda ne décale rien.
+     */
+    private static final String PROGRAM_JOINS = VENUE_JOIN + AGENDA_JOIN;
 
     /**
      * Le filtre de rayon, porté par le lieu de la séance.
@@ -171,7 +218,7 @@ public class FullTextSearchService {
             -- distance, et doivent suivre les résultats situés, pas les précéder.
             ORDER BY rank DESC, venue.distance_meters ASC NULLS LAST, p.id
             LIMIT ?
-            """.formatted(PROGRAM_SELECT, VENUE_JOIN, VENUE_WITHIN_RADIUS);
+            """.formatted(PROGRAM_SELECT, PROGRAM_JOINS, VENUE_WITHIN_RADIUS);
 
         try {
             List<Map<String, Object>> rows = jdbcTemplate.queryForList(
@@ -214,7 +261,7 @@ public class FullTextSearchService {
                 AND %s
             ORDER BY venue.distance_meters ASC NULLS LAST, p.id
             LIMIT ?
-            """.formatted(PROGRAM_SELECT, VENUE_JOIN, VENUE_WITHIN_RADIUS);
+            """.formatted(PROGRAM_SELECT, PROGRAM_JOINS, VENUE_WITHIN_RADIUS);
 
         try {
             List<Map<String, Object>> rows = jdbcTemplate.queryForList(
@@ -275,7 +322,7 @@ public class FullTextSearchService {
                 AND %s
             ORDER BY rank DESC, venue.distance_meters ASC NULLS LAST, p.id
             LIMIT ?
-            """.formatted(PROGRAM_SELECT, VENUE_JOIN, VENUE_WITHIN_RADIUS);
+            """.formatted(PROGRAM_SELECT, PROGRAM_JOINS, VENUE_WITHIN_RADIUS);
 
         try {
             // ATTENTION À L'ORDRE. Les paramètres sont positionnels, et les deux
@@ -339,7 +386,7 @@ public class FullTextSearchService {
                 AND %s
             ORDER BY venue.distance_meters ASC NULLS LAST, p.id
             LIMIT ?
-            """.formatted(PROGRAM_SELECT, VENUE_JOIN, labelConditions, VENUE_WITHIN_RADIUS);
+            """.formatted(PROGRAM_SELECT, PROGRAM_JOINS, labelConditions, VENUE_WITHIN_RADIUS);
 
         // L'ordre suit le texte SQL : la jointure latérale précède le WHERE.
         List<Object> params = new ArrayList<>();
@@ -412,6 +459,13 @@ public class FullTextSearchService {
         UUID categoryId     = toUuid(row.get("category_id"));
         UUID organizerId    = toUuid(row.get("user_id"));
 
+        // Les deux colonnes de AGENDA_JOIN se lisent ensemble, et le verdict se
+        // recompose là où il n'existe qu'une fois — pas ici.
+        ProgramTimeliness timeliness = ProgramTimeliness.fromAgenda(
+            row.get("schedule_count") != null ? ((Number) row.get("schedule_count")).longValue() : 0L,
+            row.get("next_session_at") != null
+                ? ((java.sql.Timestamp) row.get("next_session_at")).toInstant() : null);
+
         return new SearchResultDto(
             "program",
             toUuid(row.get("id")),
@@ -443,7 +497,9 @@ public class FullTextSearchService {
             null,   // city : non dénormalisé en DB, nullable
             createdAt,
             updatedAt,
-            null, null, null // startsAt/endsAt/maxParticipants : spécifiques aux résultats "slot"
+            null, null, null, // startsAt/endsAt/maxParticipants : spécifiques aux résultats "slot"
+            timeliness.nextSessionAt(),
+            timeliness.isExpired()
         );
     }
 

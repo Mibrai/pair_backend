@@ -227,10 +227,17 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
      * silencieuse — une requête qui filtre autrement ne lève rien, elle rend
      * simplement autre chose.
      *
-     * <p>Chaque appelant y ajoute ensuite son prédicat géographique, ses
-     * restrictions propres s'il en a, {@link BlockSql#NOT_BLOCKED_U}, puis son
-     * classement. L'ordre des {@code AND} est indifférent ; leur présence ne
-     * l'est pas.
+     * <p>Chaque appelant y ajoute ensuite <b>son prédicat de statut</b>
+     * ({@link #SLOTS_JOINABLE} ou {@link #SLOTS_JOINABLE_OR_PAST}), son prédicat
+     * géographique, ses restrictions propres s'il en a,
+     * {@link BlockSql#NOT_BLOCKED_U}, puis son classement. L'ordre des
+     * {@code AND} est indifférent ; leur présence ne l'est pas.
+     *
+     * <p><b>Le statut est sorti d'ici le 05/09</b>, et c'est le seul prédicat qui
+     * l'ait été. Il est la seule chose que les deux géométries ne peuvent plus
+     * partager : une carte doit savoir montrer ce qui est terminé, un fil de
+     * créneaux à rejoindre n'a pas de passé. Tout le reste — la visibilité, le
+     * blocage, les filtres — reste défini une fois.
      *
      * <p>La concaténation reste une <i>expression constante</i> au sens du
      * langage, donc utilisable dans une annotation, parce que chaque morceau —
@@ -249,7 +256,6 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
         JOIN user_activities ua ON p.user_activity_id = ua.id
         JOIN users u            ON ua.user_id = u.id
         WHERE s.is_open_to_partners = TRUE
-          AND s.status IN ('OPEN', 'FULL')
           AND s.starts_at BETWEEN :fromTs AND :toTs
           AND p.status = 'ACTIVE'
           AND p.is_public = TRUE
@@ -269,7 +275,42 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
               ) = :requiredTagCount)
         """;
 
-    String OPEN_SLOTS_IN_RADIUS_BODY = OPEN_SLOTS_VISIBLE_BASE + """
+    /**
+     * Les créneaux qu'on peut encore rejoindre — le statut, seul, sorti du corps
+     * commun le 05/09.
+     *
+     * <p>Il y était, et il ne pouvait plus y rester : la carte doit savoir
+     * montrer le passé, le fil non. {@code AttendancePromptJob.closeElapsedSlots}
+     * fait passer tout créneau terminé de {@code OPEN}/{@code FULL} à
+     * {@code PAST} une fois par heure ; ce prédicat-ci est donc, à lui seul, ce
+     * qui rendait {@code from} sans effet dans le passé sur
+     * {@code GET /slots/bounds}. La fenêtre honorait la valeur demandée, mais
+     * plus aucune ligne n'y répondait — un filtre qui paraît ignoré alors qu'un
+     * autre, deux lignes plus haut, a déjà tout écarté.
+     *
+     * <p>Le reste du corps commun ne bouge pas : ce qui est visible pour qui
+     * reste défini une seule fois, et la carte ne peut toujours pas montrer un
+     * créneau que le fil cacherait.
+     */
+    String SLOTS_JOINABLE = """
+          AND s.status IN ('OPEN', 'FULL')
+        """;
+
+    /**
+     * Les mêmes, plus ceux qui sont derrière nous, quand l'appelant le demande.
+     *
+     * <p>{@code CANCELLED} n'en fait pas partie et n'en fera pas partie : un
+     * créneau annulé n'a jamais eu lieu, et le poser sur une carte du passé
+     * raconterait une séance qui n'a pas existé. {@code PAST} dit « c'était
+     * là » ; c'est la seule chose que l'onglet « Afficher ce qui est terminé »
+     * demande.
+     */
+    String SLOTS_JOINABLE_OR_PAST = """
+          AND (s.status IN ('OPEN', 'FULL')
+               OR (CAST(:includePast AS boolean) = TRUE AND s.status = 'PAST'))
+        """;
+
+    String OPEN_SLOTS_IN_RADIUS_BODY = OPEN_SLOTS_VISIBLE_BASE + SLOTS_JOINABLE + """
           AND ST_DWithin(
                 s.location::geography,
                 ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
@@ -464,7 +505,7 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
      * {@link #OPEN_SLOTS_VISIBLE_BASE} : une apostrophe française dans un
      * commentaire casse le chargement du dépôt entier au démarrage.
      */
-    String OPEN_SLOTS_IN_BOUNDS_BODY = OPEN_SLOTS_VISIBLE_BASE + """
+    String OPEN_SLOTS_IN_BOUNDS_BODY = OPEN_SLOTS_VISIBLE_BASE + SLOTS_JOINABLE_OR_PAST + """
           AND (CAST(:viewerId AS uuid) IS NULL OR ua.user_id <> :viewerId)
           AND s.location IS NOT NULL
           AND s.place_type <> 'ONLINE'
@@ -512,6 +553,7 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
         @Param("filterByTags") boolean filterByTags,
         @Param("accessibilityTags") Collection<String> accessibilityTags,
         @Param("requiredTagCount") long requiredTagCount,
+        @Param("includePast") boolean includePast,
         @Param("limit") int limit,
         @Param("offset") int offset
     );
@@ -547,7 +589,8 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
         @Param("languages") Collection<String> languages,
         @Param("filterByTags") boolean filterByTags,
         @Param("accessibilityTags") Collection<String> accessibilityTags,
-        @Param("requiredTagCount") long requiredTagCount
+        @Param("requiredTagCount") long requiredTagCount,
+        @Param("includePast") boolean includePast
     );
 
     /**

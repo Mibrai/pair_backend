@@ -8,11 +8,15 @@ import org.program.pair.domain.program.LocationType;
 import org.program.pair.domain.program.MediaType;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.ProgramMedia;
+import org.program.pair.domain.program.Schedule;
+import org.program.pair.domain.program.SlotStatus;
 import org.program.pair.domain.search.dto.ProgramVenue;
 import org.program.pair.domain.search.dto.SearchResultDto;
 import org.program.pair.domain.user.User;
 import org.program.pair.domain.user.VerificationStatus;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -30,11 +34,19 @@ class SemanticSearchServiceTest {
     private final SemanticSearchService service =
         new SemanticSearchService(null, null, null, null, null, null, null, null, null, null, null, null, null);
 
+    /**
+     * L'instant de référence des tests de temporalité. Fixe, et passé
+     * explicitement : le verdict « expiré » se lit par rapport à un
+     * « maintenant », et le laisser à {@code Instant.now()} rendrait ces tests
+     * dépendants de l'horloge de la machine.
+     */
+    private static final Instant NOW = Instant.parse("2026-09-05T12:00:00Z");
+
     @Test
     void thumbnailUrl_devraitPrivilegierImageUrl_quandAucunMedia() {
         Program program = programWithImageAndMedia("https://example.com/cover.png", List.of());
 
-        List<SearchResultDto> results = service.toSearchResultDtos(List.of(program), Map.of());
+        List<SearchResultDto> results = service.toSearchResultDtos(List.of(program), Map.of(), Map.of(), NOW);
 
         assertThat(results).hasSize(1);
         assertThat(results.get(0).thumbnailUrl()).isEqualTo("https://example.com/cover.png");
@@ -49,7 +61,7 @@ class SemanticSearchServiceTest {
             .build();
         Program program = programWithImageAndMedia("https://example.com/cover.png", List.of(media));
 
-        List<SearchResultDto> results = service.toSearchResultDtos(List.of(program), Map.of());
+        List<SearchResultDto> results = service.toSearchResultDtos(List.of(program), Map.of(), Map.of(), NOW);
 
         assertThat(results.get(0).thumbnailUrl()).isEqualTo("https://example.com/cover.png");
     }
@@ -63,7 +75,7 @@ class SemanticSearchServiceTest {
             .build();
         Program program = programWithImageAndMedia(null, List.of(media));
 
-        List<SearchResultDto> results = service.toSearchResultDtos(List.of(program), Map.of());
+        List<SearchResultDto> results = service.toSearchResultDtos(List.of(program), Map.of(), Map.of(), NOW);
 
         assertThat(results.get(0).thumbnailUrl()).isEqualTo("https://example.com/gallery-0.png");
     }
@@ -72,7 +84,7 @@ class SemanticSearchServiceTest {
     void thumbnailUrl_devraitEtreNull_sansImageUrlEtSansMedia() {
         Program program = programWithImageAndMedia(null, List.of());
 
-        List<SearchResultDto> results = service.toSearchResultDtos(List.of(program), Map.of());
+        List<SearchResultDto> results = service.toSearchResultDtos(List.of(program), Map.of(), Map.of(), NOW);
 
         assertThat(results.get(0).thumbnailUrl()).isNull();
     }
@@ -90,7 +102,7 @@ class SemanticSearchServiceTest {
         ProgramVenue venue = new ProgramVenue(51.5513825, 7.0758985, 4_073.0);
 
         List<SearchResultDto> results =
-            service.toSearchResultDtos(List.of(program), Map.of(program.getId(), venue));
+            service.toSearchResultDtos(List.of(program), Map.of(program.getId(), venue), Map.of(), NOW);
 
         SearchResultDto result = results.get(0);
         assertThat(result.lat()).isEqualTo(51.5513825);
@@ -106,7 +118,7 @@ class SemanticSearchServiceTest {
     void sansSeanceLocalisee_lesCoordonneesDoiventEtreNulles() {
         Program program = programWithImageAndMedia(null, List.of());
 
-        List<SearchResultDto> results = service.toSearchResultDtos(List.of(program), Map.of());
+        List<SearchResultDto> results = service.toSearchResultDtos(List.of(program), Map.of(), Map.of(), NOW);
 
         SearchResultDto result = results.get(0);
         assertThat(result.lat()).isNull();
@@ -128,7 +140,7 @@ class SemanticSearchServiceTest {
             ProgramVenue residual = new ProgramVenue(51.55, 7.07, 4_073.0);
 
             List<SearchResultDto> results =
-                service.toSearchResultDtos(List.of(program), Map.of(program.getId(), residual));
+                service.toSearchResultDtos(List.of(program), Map.of(program.getId(), residual), Map.of(), NOW);
 
             SearchResultDto result = results.get(0);
             assertThat(result.lat()).as("%s", type).isNull();
@@ -148,10 +160,63 @@ class SemanticSearchServiceTest {
         ProgramVenue venue = new ProgramVenue(48.85, 2.35, 12.0);
 
         List<SearchResultDto> results =
-            service.toSearchResultDtos(List.of(program), Map.of(program.getId(), venue));
+            service.toSearchResultDtos(List.of(program), Map.of(program.getId(), venue), Map.of(), NOW);
 
         assertThat(results.get(0).lat()).isEqualTo(48.85);
         assertThat(results.get(0).distanceMeters()).isEqualTo(12.0);
+    }
+
+    /**
+     * Le champ que ce lot ajoute, sur le chemin qui ne passe pas par le SQL :
+     * le mapping d'entités du rappel sémantique. Sans ce test, les quatre
+     * requêtes natives pourraient rendre le verdict et celui-ci rester muet —
+     * un programme grisé ou non selon la couche qui l'a trouvé.
+     */
+    @Test
+    void unProgrammeDontToutesLesSeancesSontPassees_doitEtreDitExpire() {
+        Program program = programWithImageAndMedia(null, List.of());
+        Instant fini = NOW.minus(3, ChronoUnit.HOURS);
+
+        List<SearchResultDto> results = service.toSearchResultDtos(
+            List.of(program), Map.of(),
+            Map.of(program.getId(), List.of(slot(fini, null, SlotStatus.PAST))), NOW);
+
+        assertThat(results.get(0).isExpired()).isTrue();
+        assertThat(results.get(0).nextSessionAt()).isNull();
+    }
+
+    @Test
+    void unProgrammeAvecUneSeanceAVenir_doitPorterSonDebut_etNePasEtreExpire() {
+        Program program = programWithImageAndMedia(null, List.of());
+        Instant demain = NOW.plus(1, ChronoUnit.DAYS);
+
+        List<SearchResultDto> results = service.toSearchResultDtos(
+            List.of(program), Map.of(),
+            Map.of(program.getId(),
+                List.of(slot(demain, demain.plus(1, ChronoUnit.HOURS), SlotStatus.OPEN))), NOW);
+
+        assertThat(results.get(0).nextSessionAt()).isEqualTo(demain);
+        assertThat(results.get(0).isExpired()).isFalse();
+    }
+
+    /**
+     * Un programme absent de la carte des agendas n'a aucun créneau : il est
+     * vivant et sans date. C'est ce que rendent déjà tous les autres tests de ce
+     * fichier, qui passent {@code Map.of()} — celui-ci le dit à voix haute.
+     */
+    @Test
+    void unProgrammeSansAucuneSeance_neDoitPasEtreDitExpire() {
+        Program program = programWithImageAndMedia(null, List.of());
+
+        List<SearchResultDto> results =
+            service.toSearchResultDtos(List.of(program), Map.of(), Map.of(), NOW);
+
+        assertThat(results.get(0).isExpired()).isFalse();
+        assertThat(results.get(0).nextSessionAt()).isNull();
+    }
+
+    private static Schedule slot(Instant startsAt, Instant endsAt, SlotStatus status) {
+        return Schedule.builder().startsAt(startsAt).endsAt(endsAt).status(status).build();
     }
 
     private Program programWithImageAndMedia(String imageUrl, List<ProgramMedia> media) {
