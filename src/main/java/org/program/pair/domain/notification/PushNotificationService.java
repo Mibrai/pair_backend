@@ -663,6 +663,10 @@ public class PushNotificationService implements PushNotificationServiceInterface
             // rouvrir.
             case CYCLE_NUDGE -> msg(locale, "push.CYCLE_NUDGE." + stage(payload) + ".title",
                 arg(payload, "programTitle"));
+            // La découverte EST le produit de ce module : « Nouvelle notification »
+            // ne fait rouvrir personne, et le fil d'accueil ne touche que ceux qui
+            // reviennent d'eux-mêmes.
+            case AFFICHE_READY -> msg(locale, "push.AFFICHE_READY.title");
             // Valeurs legacy utilisées uniquement par les données de seed (V12/V13/V27) —
             // jamais émises par notify(), donc pas de titre push dédié.
             default -> msg(locale, "push.generic.title");
@@ -701,6 +705,9 @@ public class PushNotificationService implements PushNotificationServiceInterface
             case PROGRAM_BROADCAST -> rawOr(payload, "messageBody", locale, "push.PROGRAM_BROADCAST.body");
             case WATCH_ARRIVAL_CONFIRMED -> msg(locale, "push.WATCH_ARRIVAL_CONFIRMED.body");
             case CYCLE_NUDGE -> msg(locale, "push.CYCLE_NUDGE." + stage(payload) + ".body");
+            // Le titre du programme, quand la charge le porte : « ta séance de
+            // mardi » se reconnaît, « une séance » non. Repli traduit sinon.
+            case AFFICHE_READY -> rawOr(payload, "programTitle", locale, "push.AFFICHE_READY.body");
             default -> msg(locale, "push.generic.body");
         };
     }

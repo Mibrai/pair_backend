@@ -29,6 +29,17 @@ public record SlotRecapDto(
         + "la lire aurait daté ce souvenir de la semaine à venir.")
     Instant slotStartedAt,
 
+    @Schema(description = "Fin de la même SÉANCE. Le contrat ne portait que son début, "
+        + "alors que tout ce qui se compte après un moment se compte depuis sa fin : la "
+        + "fenêtre de contribution, la mise en avant d'une affiche. Le client ne pouvait "
+        + "pas la déduire — un créneau peut durer une heure ou six — et son repli, "
+        + "slotStartedAt + une durée conventionnelle, se trompait de la durée de la "
+        + "séance. Toujours renseignée : quand la fin n'est pas déclarée en base, c'est "
+        + "la convention du dépôt qui s'applique (SlotTiming.DEFAULT_DURATION), la même "
+        + "que pour la confirmation de présence.",
+        example = "2026-09-05T20:00:00Z")
+    Instant slotEndedAt,
+
     String placeName,
 
     @Schema(description = "Ville du créneau, jamais l'adresse exacte : celle-ci reste "

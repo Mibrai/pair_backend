@@ -227,6 +227,22 @@ public enum ErrorCode {
     // contact. Rien ne sortira d'elle — c'est ce qui a été accepté à l'armement.
     WATCH_NO_GUARDIAN,
 
+    // — affiches (AfficheService) —
+    // Publier une affiche suppose d'avoir été là : le déclencheur est
+    // Attendance.was_present, la présence et non l'organisation. C'est ce qui
+    // distingue cette publication de celle de la carte-souvenir, réservée à
+    // l'hôte — le simple participant n'avait jusqu'ici aucun endroit où publier.
+    AFFICHE_NOT_ATTENDEE,
+    // La clé de motif est vide, trop longue, ou porte autre chose que des
+    // lettres, chiffres, tiret, tiret bas et point. Le serveur ne lit pas le
+    // motif, mais il le rend à des tiers : la forme est donc contrainte même si
+    // le sens ne l'est pas.
+    AFFICHE_INVALID_MOTIF,
+    // L'audience reçue n'est ni NOBODY, ni SUBSCRIBERS, ni EVERYONE. Refusée
+    // plutôt que ramenée au défaut : quelqu'un qui croit avoir publié pour ses
+    // abonnés doit apprendre que non, pas découvrir le silence.
+    AFFICHE_INVALID_AUDIENCE,
+
     // — incidents (IncidentService) —
     // Un incident visant une personne doit désigner qui : sans cible, il ne peut
     // pas basculer dans la modération.
