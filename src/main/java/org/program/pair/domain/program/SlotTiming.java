@@ -89,6 +89,50 @@ public final class SlotTiming {
     }
 
     /**
+     * Durée d'une séance de ce créneau : sa durée déclarée, ou la durée
+     * conventionnelle quand la fin ne l'est pas.
+     *
+     * <p>C'est ce qui se <b>répète</b> d'une occurrence à l'autre — la ligne ne
+     * garde ni le début ni la fin des séances anciennes, mais leur durée est la
+     * même. Une durée nulle ou négative en base (deux dates saisies à l'envers)
+     * retombe sur la convention plutôt que de produire une séance qui se termine
+     * avant d'avoir commencé.
+     */
+    public static java.time.Duration durationOf(Schedule slot) {
+        if (slot.getEndsAt() == null) {
+            return DEFAULT_DURATION;
+        }
+        java.time.Duration declared = java.time.Duration.between(slot.getStartsAt(), slot.getEndsAt());
+        return declared.isZero() || declared.isNegative() ? DEFAULT_DURATION : declared;
+    }
+
+    /**
+     * La fin d'une séance nommée par son début, y compris pour une séance
+     * ancienne que la ligne ne décrit plus.
+     *
+     * <p>{@link #currentOccurrence} et {@link #lastRetiredOccurrence} ne couvrent
+     * que les deux séances que la ligne connaît encore — celle qu'elle porte et
+     * celle que le rollover vient de retirer. Au-delà, plus rien : une affiche
+     * publiée un mois après un cours hebdomadaire, ou une carte relue dans un an,
+     * demandent une fin que personne ne conserve.
+     *
+     * <p>La réponse est donc exacte pour ces deux séances-là — on lit la vraie
+     * fin — et reconstruite par la durée au-delà. L'ordre compte : reconstruire
+     * en premier ferait perdre une fin déclarée qu'on avait sous la main.
+     */
+    public static Instant occurrenceEndOf(Schedule slot, Instant occurrenceStart) {
+        SlotOccurrence current = currentOccurrence(slot);
+        if (current.startsAt().equals(occurrenceStart)) {
+            return current.endsAt();
+        }
+        SlotOccurrence retired = lastRetiredOccurrence(slot);
+        if (retired != null && retired.startsAt().equals(occurrenceStart)) {
+            return retired.endsAt();
+        }
+        return occurrenceStart.plus(durationOf(slot));
+    }
+
+    /**
      * Le créneau a-t-il une séance terminée à cet instant ? Vrai dès qu'une
      * occurrence est derrière nous, y compris quand le rollover a déjà
      * repositionné la ligne dans le futur.

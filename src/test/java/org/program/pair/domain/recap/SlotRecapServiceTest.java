@@ -64,11 +64,15 @@ class SlotRecapServiceTest extends RecapTestFixtures {
 
     SlotRecapService service;
 
+    /** Ce que le service a annoncé au reste de l'application. */
+    final List<Object> published = new java.util.ArrayList<>();
+
     @BeforeEach
     void setUp() {
+        published.clear();
         service = new SlotRecapService(recapRepository, vibeVoteRepository, consentRepository,
             attendanceRepository, scheduleRepository, userRepository, userService, slotAudience,
-            new HtmlSanitizer());
+            new HtmlSanitizer(), published::add);
 
         when(scheduleRepository.findById(any())).thenAnswer(i -> Optional.of(slotById(i.getArgument(0))));
         when(recapRepository.save(any())).thenAnswer(i -> i.getArgument(0));
@@ -326,5 +330,67 @@ class SlotRecapServiceTest extends RecapTestFixtures {
 
     private static ErrorCode codeOf(Throwable ex) {
         return ((HasErrorCode) ex).getErrorCode();
+    }
+
+    // ————————————————————————— ce que la carte annonce —————————————————————————
+
+    /**
+     * La NAISSANCE de la carte est annoncée, et elle seule : c'est l'instant où
+     * la séance entre dans {@code /recaps/mine}, donc l'instant où une affiche
+     * devient calculable pour tous ceux qui y étaient.
+     */
+    @Test
+    void laNaissanceDeLaCarte_estAnnoncee() {
+        Schedule slot = endedSlot(2);
+        UUID attendee = UUID.randomUUID();
+        presenceIs(slot, attendee, true);
+        when(recapRepository.findByScheduleIdAndOccurrenceStart(any(), any())).thenReturn(Optional.empty());
+
+        service.voteVibes(attendee, slot.getId(), List.of("RELAXED"));
+
+        assertThat(published).singleElement()
+            .isInstanceOfSatisfying(SlotRecapOpenedEvent.class, event -> {
+                assertThat(event.scheduleId()).isEqualTo(slot.getId());
+                assertThat(event.occurrenceStart()).isEqualTo(slot.getStartsAt());
+                assertThat(event.openedBy()).isEqualTo(attendee);
+            });
+    }
+
+    /**
+     * Une contribution de plus sur une carte déjà ouverte n'annonce rien : c'est
+     * ce qui garantit « au plus une notification par séance et par personne »
+     * sans avoir à tenir le moindre compteur.
+     */
+    @Test
+    void uneContributionDePlus_nAnnonceRien() {
+        Schedule slot = endedSlot(2);
+        UUID attendee = UUID.randomUUID();
+        presenceIs(slot, attendee, true);
+
+        SlotRecap existante = new SlotRecap();
+        existante.setId(UUID.randomUUID());
+        existante.setSchedule(slot);
+        existante.setOccurrenceStart(slot.getStartsAt());
+        existante.setOccurrenceEnd(slot.getEndsAt());
+        existante.setVisibility(RecapVisibility.PRIVATE);
+        when(recapRepository.findByScheduleIdAndOccurrenceStart(any(), any()))
+            .thenReturn(Optional.of(existante));
+
+        service.voteVibes(attendee, slot.getId(), List.of("RELAXED"));
+
+        assertThat(published).isEmpty();
+    }
+
+    /** Une contribution refusée n'annonce rien non plus. */
+    @Test
+    void uneContributionRefusee_nAnnonceRien() {
+        Schedule slot = endedSlot(2);
+        UUID stranger = UUID.randomUUID();
+        presenceIs(slot, stranger, false);
+
+        assertThatThrownBy(() -> service.voteVibes(stranger, slot.getId(), List.of("RELAXED")))
+            .isInstanceOf(ForbiddenException.class);
+
+        assertThat(published).isEmpty();
     }
 }

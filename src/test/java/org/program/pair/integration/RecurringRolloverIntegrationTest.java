@@ -174,7 +174,12 @@ class RecurringRolloverIntegrationTest extends AbstractIntegrationTest {
         ZonedDateTime now = ZonedDateTime.now(ZONE);
         ZonedDateTime monday = now.with(java.time.temporal.TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
             .withHour(18).withMinute(30).withSecond(0).withNano(0);
-        if (!monday.toInstant().isBefore(Instant.now())) {
+        // La séance semée doit être TERMINÉE, pas seulement commencée : le job
+        // écarte délibérément les séances en cours, et ne pas la reculer rendait
+        // ces tests rouges tous les lundis entre 18h30 et 20h00 — la seule heure
+        // où un lundi « déjà passé » est en réalité en train d'avoir lieu. Un
+        // jour entier de marge couvre toutes les durées semées ici.
+        if (monday.toInstant().isAfter(Instant.now().minus(1, ChronoUnit.DAYS))) {
             monday = monday.minusWeeks(1);
         }
         return monday.toInstant();
