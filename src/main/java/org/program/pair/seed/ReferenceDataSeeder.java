@@ -16,7 +16,6 @@ import org.program.pair.repository.CategoryRepository;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.io.ClassPathResource;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -128,7 +127,24 @@ public class ReferenceDataSeeder implements CommandLineRunner {
         generateMissingEmbeddings();
     }
 
-    @Async
+    /**
+     * Génère les vecteurs manquants, <b>de façon synchrone</b>.
+     *
+     * <p>Cette méthode portait un {@code @Async} qui n'a jamais rien fait :
+     * {@code seedActivities()} l'appelle sur {@code this}, donc sans passer par
+     * le proxy Spring, seul capable d'honorer l'annotation. Les journaux de
+     * production le montrent noir sur blanc — la méthode s'exécute sur le fil
+     * {@code main}, au démarrage, avant que Tomcat n'accepte la première requête.
+     *
+     * <p>L'annotation est retirée plutôt que rendue effective. La rendre
+     * effective demanderait de sortir l'appel de la classe, et ferait surtout
+     * repartir en arrière-plan une boucle qui écrit en base : c'est précisément
+     * la configuration qui a produit « No active transaction for update or
+     * delete query ». La transaction est désormais garantie par
+     * {@link org.program.pair.repository.ActivityRepository#updateEmbedding},
+     * qui protège les deux cas ; le nom de la méthode ne promet plus ce qu'elle
+     * ne fait pas.
+     */
     public void generateMissingEmbeddings() {
         if (!embeddingService.isEnabled()) {
             log.info("Modèle d'embeddings désactivé, génération ignorée");
