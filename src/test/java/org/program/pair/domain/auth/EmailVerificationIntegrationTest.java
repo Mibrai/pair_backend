@@ -3,7 +3,6 @@ package org.program.pair.domain.auth;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
 import org.program.pair.AbstractIntegrationTest;
 import org.program.pair.domain.email.ResendEmailService;
 import org.program.pair.domain.user.User;
@@ -18,10 +17,8 @@ import java.time.Instant;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.verify;
 
 /**
  * Vérification d'adresse e-mail — ticket client du 2026-08-25.
@@ -37,12 +34,14 @@ class EmailVerificationIntegrationTest extends AbstractIntegrationTest {
     @Autowired private EmailVerificationService emailVerificationService;
 
     /**
-     * Le seul moyen de lire le lien réellement envoyé. Il est construit dans
-     * {@code EmailService} et n'apparaît nulle part ailleurs : sans ce mock, la
-     * forme du lien — le maillon que le lot du 26 août a cassé puis refait — ne
-     * serait vérifiée par rien.
+     * Il ne sert plus à lire le lien — l'e-mail passe par l'outbox depuis le
+     * 07/09, et son corps s'y lit en clair — mais à faire croire au service
+     * qu'un fournisseur est configuré : sans cela, {@code EmailService} prend son
+     * repli de développement, journalise le lien et ne dépose rien.
      */
     @MockitoBean private ResendEmailService resendEmailService;
+
+    @Autowired private org.program.pair.repository.OutboxMessageRepository outboxRepository;
 
     @BeforeEach
     void envoiActif() {
@@ -275,15 +274,75 @@ class EmailVerificationIntegrationTest extends AbstractIntegrationTest {
         // Le motif dans le fichier d'association et la route /v/{token} ne
         // servent à rien si l'e-mail continue d'envoyer l'ancienne adresse :
         // iOS ne regarde que le lien écrit dans le message.
+        //
+        // Le corps se lit désormais dans l'outbox plutôt que sur un mock : c'est
+        // exactement ce qui partira, alors qu'un appel capturé ne prouvait que ce
+        // qu'on avait demandé d'envoyer.
         String email = uniqueEmail("forme-du-lien");
         inscrire(email);
 
-        ArgumentCaptor<String> corps = ArgumentCaptor.forClass(String.class);
-        verify(resendEmailService).sendHtmlEmail(any(), any(), corps.capture());
-
-        assertThat(corps.getValue())
+        assertThat(corpsDeposePour(email))
             .contains("/v/" + jetonDe(email))
             .doesNotContain("/api/auth/verify-email");
+    }
+
+    @Test
+    @DisplayName("l'e-mail est déposé dans l'outbox, et le compte passe à PENDING")
+    void lEmailPasseParLOutbox() {
+        // Le cœur du lot du 07/09 : cet e-mail était le seul à partir par un
+        // appel direct, donc le seul dont l'identifiant Resend était jeté, donc
+        // le seul dont le rebond n'était rapporté à personne.
+        String email = uniqueEmail("par-loutbox");
+        inscrire(email);
+
+        assertThat(outboxRepository.findAll())
+            .filteredOn(m -> email.equals(m.getRecipient()))
+            .singleElement()
+            .satisfies(m -> {
+                assertThat(m.getPurpose())
+                    .isEqualTo(org.program.pair.domain.outbox.OutboxPurpose.EMAIL_VERIFICATION);
+                assertThat(m.getUserId()).isNotNull();
+            });
+
+        assertThat(userRepository.findByEmail(email).orElseThrow()
+                .getVerificationEmailDelivery())
+            .isEqualTo(org.program.pair.domain.user.VerificationEmailDelivery.PENDING);
+    }
+
+    @Test
+    @DisplayName("l'e-mail est rédigé dans la langue demandée")
+    void lEmailSuitAcceptLanguage() {
+        // Il était un littéral français en dur : un germanophone, dont l'écran
+        // d'inscription s'appelle Registrieren, recevait du français.
+        String allemand = uniqueEmail("langue-de");
+        inscrireEn(allemand, "de");
+        assertThat(corpsDeposePour(allemand)).contains("Adresse bestätigen");
+
+        String anglais = uniqueEmail("langue-en");
+        inscrireEn(anglais, "en");
+        assertThat(corpsDeposePour(anglais)).contains("Verify my address");
+
+        // Sans en-tête, le repli reste le français — comportement d'avant.
+        String defaut = uniqueEmail("langue-defaut");
+        inscrire(defaut);
+        assertThat(corpsDeposePour(defaut)).contains("Vérifier mon adresse");
+    }
+
+    private String corpsDeposePour(String email) {
+        return outboxRepository.findAll().stream()
+            .filter(m -> email.equals(m.getRecipient()))
+            .map(org.program.pair.domain.outbox.OutboxMessage::getBody)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Aucun e-mail déposé pour " + email));
+    }
+
+    private void inscrireEn(String email, String langue) {
+        webTestClient.post().uri("/api/auth/register")
+            .contentType(MediaType.APPLICATION_JSON)
+            .header("Accept-Language", langue)
+            .bodyValue(Map.of("email", email, "password", "MotDePasse1!", "displayName", "Testeur"))
+            .exchange()
+            .expectStatus().isCreated();
     }
 
     @Test
