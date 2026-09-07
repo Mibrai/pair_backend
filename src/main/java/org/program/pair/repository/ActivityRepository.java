@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 import java.util.Optional;
@@ -258,6 +259,32 @@ public interface ActivityRepository extends JpaRepository<Activity, UUID> {
         @Param("limit") int limit
     );
 
+    /**
+     * Pose le vecteur d'une activité.
+     *
+     * <p><b>{@code @Transactional} n'est pas décoratif ici</b>, et c'est le seul
+     * endroit où il pouvait être posé utilement. Spring Data ouvre une
+     * transaction en lecture seule autour des méthodes héritées de
+     * {@code SimpleJpaRepository}, mais une requête {@code @Modifying} déclarée
+     * à la main n'en hérite pas : sans transaction active, Hibernate refuse
+     * l'écriture avec « No active transaction for update or delete query ».
+     *
+     * <p>Les appelants ne peuvent pas tous la fournir.
+     * {@code IndexationService.backfillActivityEmbeddings} est bien
+     * {@code @Transactional}, mais {@code ReferenceDataSeeder} appelle
+     * {@code generateMissingEmbeddings()} sur {@code this} : le proxy est
+     * court-circuité, et toute annotation posée sur cette méthode — {@code @Async}
+     * comme {@code @Transactional} — est sans effet. Le dépôt, lui, est toujours
+     * atteint à travers son proxy. Constaté en production le 07/09 : 125 activités
+     * sans vecteur, « Embeddings générés: 0, échecs: 125 » à chaque démarrage,
+     * donc absentes de la recherche sémantique depuis des semaines.
+     *
+     * <p>La propagation par défaut ({@code REQUIRED}) rejoint la transaction de
+     * l'appelant quand il y en a une — le comportement d'{@code IndexationService}
+     * ne change pas — et en ouvre une sinon. Une par activité côté seeder : un
+     * vecteur qui échoue n'annule pas les précédents.
+     */
+    @Transactional
     @Modifying
     @Query(value = "UPDATE activities SET embedding = CAST(:embedding AS vector) WHERE id = :id", nativeQuery = true)
     void updateEmbedding(@Param("id") UUID id, @Param("embedding") String embeddingVectorString);

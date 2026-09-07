@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
@@ -148,6 +149,22 @@ public interface ProgramRepository extends JpaRepository<Program, UUID> {
     @Query("SELECT COUNT(p) FROM Program p WHERE p.userActivity.user.id = :userId AND p.status = 'ACTIVE'")
     int countActiveByUserId(@Param("userId") UUID userId);
 
+    /**
+     * Pose le vecteur d'un programme.
+     *
+     * <p>Même correction, même raison que
+     * {@link ActivityRepository#updateEmbedding} : une requête
+     * {@code @Modifying} déclarée à la main n'hérite d'aucune transaction, et
+     * {@code DemoDataSeeder} l'appelle depuis un {@code CommandLineRunner} qui
+     * n'en ouvre pas. La panne y était plus discrète que côté activités — le
+     * {@code catch} du seeder la réduit à un {@code log.warn} — mais elle
+     * laissait les programmes de démonstration hors de la recherche sémantique.
+     *
+     * <p>{@code IndexationService.backfillProgramEmbeddings} fournit déjà une
+     * transaction ; la propagation par défaut la rejoint et ne change rien pour
+     * lui.
+     */
+    @Transactional
     @Modifying
     @Query(value = "UPDATE programs SET embedding = CAST(:embedding AS vector) WHERE id = :id", nativeQuery = true)
     void updateEmbedding(@Param("id") UUID id, @Param("embedding") String embeddingVectorString);
