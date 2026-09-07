@@ -1,5 +1,6 @@
 package org.program.pair.domain.user;
 
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.attendance.PracticeStatsService;
@@ -13,6 +14,7 @@ import org.program.pair.domain.program.ProgramService;
 import org.program.pair.domain.program.dto.ProgramDto;
 import org.program.pair.domain.user.dto.*;
 import org.program.pair.shared.exception.UserNotFoundException;
+import org.program.pair.shared.security.RateLimiter;
 import org.program.pair.shared.security.UserPrincipal;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
@@ -40,6 +42,8 @@ public class UserController {
     private final ProgramService programService;
     private final PracticeStatsService practiceStatsService;
     private final BlockFilterService blockFilterService;
+    private final EmailChangeService emailChangeService;
+    private final RateLimiter rateLimiter;
 
     @GetMapping
     public Page<UserPublicDto> searchUsers(
@@ -202,6 +206,35 @@ public class UserController {
             @AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody ChangePasswordRequest request) {
         userService.changePassword(principal.getId(), request);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * Demander le passage à une nouvelle adresse (V105).
+     *
+     * <p>Le pendant de {@code change-password}, qui manquait — et dont l'absence
+     * rendait définitive une faute de frappe à l'inscription, sur un compte qui
+     * ne pouvait alors plus rien recevoir ni jamais être vérifié. C'est la suite
+     * qui manquait à l'état {@code BOUNCED} de {@code verificationEmailDelivery} :
+     * sans elle, ce champ nomme un problème et laisse devant une porte fermée.
+     *
+     * <p><b>{@code 200} ne veut pas dire que l'adresse a changé</b>, seulement
+     * qu'un lien est parti vers elle. Le compte ne bascule qu'au clic ; jusque-là
+     * {@code GET /users/me} rend toujours l'ancienne adresse, et c'est
+     * volontaire — elle reste l'identifiant de connexion tant que la nouvelle
+     * n'a pas prouvé qu'elle reçoit.
+     *
+     * <p>Le limiteur est celui du renvoi de vérification : la route déclenche un
+     * e-mail vers une adresse choisie par l'appelant, ce qui est exactement ce
+     * que ce budget borne.
+     */
+    @PostMapping("/me/change-email")
+    public ResponseEntity<Void> changeEmail(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody ChangeEmailRequest request,
+            HttpServletRequest httpRequest) {
+        rateLimiter.checkResendVerification(httpRequest.getRemoteAddr(), request.email());
+        emailChangeService.demanderChangement(principal.getId(), request.email());
         return ResponseEntity.ok().build();
     }
 

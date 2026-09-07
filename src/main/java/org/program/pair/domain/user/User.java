@@ -168,4 +168,42 @@ public class User {
     @Column(name = "joined_slots_count", nullable = false)
     @Builder.Default
     private Integer joinedSlotsCount = 0;
+
+    /**
+     * Ce qu'est devenu le dernier e-mail de vérification envoyé à ce compte (V105).
+     *
+     * <p>Porté ici et non calculé depuis l'outbox, contrairement à
+     * {@code alertDelivery} : la purge de l'outbox efface les messages partis
+     * depuis sept jours, et l'état retomberait à {@code NONE} sur un compte dont
+     * l'adresse avait rebondi — c'est-à-dire qu'il mentirait précisément dans le
+     * cas pour lequel il existe.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "verification_email_delivery", nullable = false, length = 12)
+    @Builder.Default
+    private VerificationEmailDelivery verificationEmailDelivery = VerificationEmailDelivery.NONE;
+
+    /**
+     * L'identifiant Resend du dernier e-mail de vérification remis au
+     * fournisseur, ou nul tant qu'aucun ne l'a été.
+     *
+     * <p>Il n'est pas là pour être lu — il n'est exposé nulle part — mais pour
+     * décider si un accusé de remise concerne encore ce compte : après un renvoi,
+     * un rebond portant sur l'envoi précédent ne doit pas écraser le sort du
+     * nouveau.
+     */
+    @Column(name = "verification_email_message_id", length = 128)
+    private String verificationEmailMessageId;
+
+    /**
+     * L'adresse demandée par un changement, tant que son lien n'a pas été cliqué.
+     *
+     * <p><b>Ce n'est pas l'adresse du compte.</b> La bascule se fait au clic et
+     * jamais avant : l'adresse est aussi l'identifiant de connexion, et basculer
+     * à la demande enfermerait dehors quelqu'un qui se serait trompé deux fois —
+     * or se tromper une première fois est exactement la raison d'être de cette
+     * route.
+     */
+    @Column(name = "pending_email", length = 255)
+    private String pendingEmail;
 }

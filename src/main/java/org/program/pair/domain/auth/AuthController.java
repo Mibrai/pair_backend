@@ -32,7 +32,7 @@ public class AuthController {
     @ResponseStatus(HttpStatus.CREATED)
     public AuthResponse register(@Valid @RequestBody RegisterRequest request,
                                   HttpServletRequest httpRequest) {
-        rateLimiter.checkRegister(httpRequest.getRemoteAddr());
+        rateLimiter.checkRegister(httpRequest.getRemoteAddr(), request.email());
         return authService.register(request);
     }
 
@@ -107,7 +107,7 @@ public class AuthController {
     public ResponseEntity<Void> resendVerification(
             @Valid @RequestBody ResendVerificationRequest request,
             HttpServletRequest httpRequest) {
-        rateLimiter.checkResendVerification(httpRequest.getRemoteAddr());
+        rateLimiter.checkResendVerification(httpRequest.getRemoteAddr(), request.email());
         authService.resendVerificationEmail(request.email());
         return ResponseEntity.ok().build();
     }
@@ -116,7 +116,7 @@ public class AuthController {
     public ResponseEntity<Void> forgotPassword(
             @Valid @RequestBody ForgotPasswordRequest request,
             HttpServletRequest httpRequest) {
-        rateLimiter.checkPasswordReset(httpRequest.getRemoteAddr());
+        rateLimiter.checkPasswordReset(httpRequest.getRemoteAddr(), request.email());
         authService.sendPasswordResetEmail(request.email());
         // Toujours 200 même si l'email n'existe pas (éviter l'énumération)
         return ResponseEntity.ok().build();

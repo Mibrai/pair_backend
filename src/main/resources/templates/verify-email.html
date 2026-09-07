@@ -42,7 +42,7 @@
      celui du lien reçu par e-mail, quand c'est un navigateur qui la demande.
      Il n'existe pas de frontend web à qui déléguer, et en déployer un pour
      cette seule page ne se justifiait pas. -->
-<div class="card" th:classappend="${etat.name() == 'VERIFIE' or etat.name() == 'DEJA_VERIFIE'} ? 'ok' : ''">
+<div class="card" th:classappend="${etat.name() == 'VERIFIE' or etat.name() == 'DEJA_VERIFIE' or etat.name() == 'ADRESSE_CHANGEE'} ? 'ok' : ''">
     <p class="marque">meetDo</p>
 
     <div th:switch="${etat.name()}">
@@ -75,6 +75,30 @@
             <p class="repli">Ce bouton n'ouvre l'application que depuis le
                 téléphone où elle est installée. Sinon, cette page n'a plus
                 d'utilité : vous pouvez la fermer.</p>
+        </div>
+
+        <!-- Changement d'adresse (V105). Le lien est le même et la page aussi ;
+             seul le texte diffère, parce que ce qui vient de se passer diffère :
+             ce n'est pas un compte qui s'active, c'est une adresse qui en
+             remplace une autre. -->
+        <div th:case="'ADRESSE_CHANGEE'">
+            <h1>Votre nouvelle adresse est confirmée</h1>
+            <p>Votre compte répond désormais à cette adresse : c'est elle qu'il
+                faudra saisir pour vous connecter, et c'est là que nous vous
+                écrirons.</p>
+            <a class="retour" href="meetdo://verify">Retourner dans meetDo</a>
+            <p class="repli">Ce bouton n'ouvre l'application que depuis le
+                téléphone où elle est installée. Sinon, cette page n'a plus
+                d'utilité : vous pouvez la fermer.</p>
+        </div>
+
+        <div th:case="'ADRESSE_INDISPONIBLE'">
+            <h1>Cette adresse n'est plus disponible</h1>
+            <p>Ce lien était bon, mais l'adresse que vous demandiez a été
+                inscrite par quelqu'un d'autre entre votre demande et ce clic.</p>
+            <p>Votre compte n'a pas changé : il répond toujours à votre adresse
+                précédente, et vous pouvez en demander une autre depuis
+                l'application.</p>
         </div>
 
         <div th:case="'EXPIRE'">

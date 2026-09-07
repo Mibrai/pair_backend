@@ -21,5 +21,27 @@ public enum ResultatVerification {
     EXPIRE,
 
     /** Jeton absent de la base : lien tronqué, altéré, ou purgé depuis longtemps. */
-    INCONNU
+    INCONNU,
+
+    /**
+     * Le lien portait un <b>changement</b> d'adresse, et il vient de prendre
+     * effet : le compte répond désormais à la nouvelle adresse (V105).
+     *
+     * <p>Un état à part de {@link #VERIFIE}, parce que la page doit dire quelque
+     * chose de différent — quelqu'un qui vient de corriger une faute de frappe
+     * n'a pas besoin d'apprendre que son compte est « actif », il a besoin de
+     * lire l'adresse qui vaut désormais.
+     */
+    ADRESSE_CHANGEE,
+
+    /**
+     * Le lien de changement était bon, mais l'adresse demandée a été inscrite
+     * par quelqu'un d'autre entre la demande et le clic.
+     *
+     * <p>Rare, et pourtant le seul cas où refuser est obligatoire : l'adresse est
+     * l'identifiant de connexion, et deux comptes ne peuvent pas la partager. La
+     * demande est abandonnée, l'ancienne adresse reste en place — ce qui laisse
+     * le compte utilisable, et permet d'en redemander une autre.
+     */
+    ADRESSE_INDISPONIBLE
 }

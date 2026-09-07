@@ -46,7 +46,8 @@ Le système d'email est composé de deux couches:
 |---------|------|
 | `src/main/java/org/program/pair/shared/email/EmailService.java` | Service principal utilisé par l'application |
 | `src/main/java/org/program/pair/domain/email/ResendEmailService.java` | Intégration API Resend |
-| `src/main/java/org/program/pair/domain/email/EmailTemplateService.java` | Génération de templates HTML |
+| `src/main/java/org/program/pair/domain/outbox/OutboxService.java` | File des e-mails rattachés à un compte, et report de l'état de remise |
+| `src/main/java/org/program/pair/domain/outbox/ResendWebhookController.java` | Accusé de remise Resend (`POST /public/resend-webhook`) |
 | `src/main/resources/application-railway.properties` | Configuration production Railway |
 
 ## Configuration

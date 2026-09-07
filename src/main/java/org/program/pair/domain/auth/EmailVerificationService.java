@@ -7,7 +7,6 @@ import org.program.pair.domain.user.VerificationStatus;
 import org.program.pair.repository.AuthTokenRepository;
 import org.program.pair.repository.UserRepository;
 import org.program.pair.shared.email.EmailService;
-import org.program.pair.shared.exception.InvalidTokenException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,7 +39,24 @@ public class EmailVerificationService {
     @Transactional
     public void sendVerificationEmail(User user) {
         String token = emettre(user, AuthTokenType.EMAIL_VERIFICATION, VALIDITE_VERIFICATION);
-        emailService.sendVerificationEmail(user.getEmail(), token);
+        emailService.sendVerificationEmail(user, token);
+    }
+
+    /**
+     * Demande le passage à une nouvelle adresse : le lien part <b>vers elle</b>,
+     * et rien ne bouge sur le compte tant qu'il n'est pas cliqué.
+     *
+     * <p>L'adresse demandée est posée en attente sur le compte. Elle n'y sert
+     * qu'à deux choses : retrouver quoi basculer au clic, et empêcher — par
+     * l'index unique de V105 — que deux comptes convoitent la même. Ce n'est pas
+     * une garantie suffisante à elle seule, d'où la seconde vérification au clic.
+     */
+    @Transactional
+    public void demanderChangementEmail(User user, String nouvelleAdresse) {
+        user.setPendingEmail(nouvelleAdresse);
+        userRepository.save(user);
+        String token = emettre(user, AuthTokenType.EMAIL_CHANGE, VALIDITE_VERIFICATION);
+        emailService.sendEmailChangeEmail(user, nouvelleAdresse, token);
     }
 
     /**
@@ -54,12 +70,24 @@ public class EmailVerificationService {
     public ResultatVerification verifier(String token) {
         Optional<AuthToken> trouve =
             authTokenRepository.findByTokenAndType(token, AuthTokenType.EMAIL_VERIFICATION);
-
-        if (trouve.isEmpty()) {
-            return ResultatVerification.INCONNU;
+        if (trouve.isPresent()) {
+            return verifierAdresse(trouve.get());
         }
 
-        AuthToken jeton = trouve.get();
+        // Un lien de changement d'adresse emprunte le même chemin — même route,
+        // même page. Le distinguer par l'URL aurait demandé un second chemin
+        // dans le fichier d'association Apple, donc une seconde occasion de
+        // diverger, pour un lien que l'utilisateur ne lit pas.
+        Optional<AuthToken> changement =
+            authTokenRepository.findByTokenAndType(token, AuthTokenType.EMAIL_CHANGE);
+        if (changement.isPresent()) {
+            return appliquerChangement(changement.get());
+        }
+
+        return ResultatVerification.INCONNU;
+    }
+
+    private ResultatVerification verifierAdresse(AuthToken jeton) {
         if (jeton.estConsomme()) {
             return ResultatVerification.DEJA_VERIFIE;
         }
@@ -80,17 +108,54 @@ public class EmailVerificationService {
     }
 
     /**
-     * Variante levant une exception, pour les appelants qui attendent un
-     * contrat JSON binaire (l'app mobile, qui appelle la route en Accept: JSON).
+     * La bascule d'adresse, au clic et pas avant.
+     *
+     * <p><b>L'unicité est revérifiée ici</b>, et pas seulement à la demande :
+     * entre les deux, il s'écoule jusqu'à vingt-quatre heures pendant lesquelles
+     * quelqu'un peut avoir inscrit cette adresse pour de bon. L'index unique de
+     * V105 ne couvre que les adresses <i>en attente</i> ; celle-ci pourrait être
+     * devenue l'adresse ferme d'un autre compte.
+     *
+     * <p>Le compte devient vérifié par la même occasion : le clic prouve que
+     * l'adresse existe et qu'elle reçoit, ce qui est exactement ce que la
+     * vérification demande. Faire recommencer un cycle de vérification ensuite
+     * ferait redemander à quelqu'un la preuve qu'il vient de donner.
      */
-    @Transactional
-    public void verifyToken(String token) {
-        ResultatVerification resultat = verifier(token);
-        switch (resultat) {
-            case VERIFIE, DEJA_VERIFIE -> { }
-            case EXPIRE -> throw new InvalidTokenException("Token de vérification expiré.");
-            case INCONNU -> throw new InvalidTokenException("Token de vérification invalide.");
+    private ResultatVerification appliquerChangement(AuthToken jeton) {
+        if (jeton.estConsomme()) {
+            return ResultatVerification.DEJA_VERIFIE;
         }
+        if (jeton.estExpire()) {
+            return ResultatVerification.EXPIRE;
+        }
+
+        User user = jeton.getUser();
+        String nouvelle = user.getPendingEmail();
+        if (nouvelle == null || nouvelle.isBlank()) {
+            // Demande annulée, ou déjà appliquée par un autre jeton.
+            return ResultatVerification.DEJA_VERIFIE;
+        }
+        if (userRepository.existsByEmail(nouvelle)) {
+            user.setPendingEmail(null);
+            userRepository.save(user);
+            jeton.setConsumedAt(Instant.now());
+            authTokenRepository.save(jeton);
+            log.info("Changement d'adresse abandonné pour {} : adresse prise entre-temps",
+                user.getId());
+            return ResultatVerification.ADRESSE_INDISPONIBLE;
+        }
+
+        user.setEmail(nouvelle);
+        user.setPendingEmail(null);
+        user.setVerificationStatus(VerificationStatus.EMAIL_VERIFIED);
+        user.setVerifiedAt(Instant.now());
+        userRepository.save(user);
+
+        jeton.setConsumedAt(Instant.now());
+        authTokenRepository.save(jeton);
+
+        log.info("Adresse changée et vérifiée pour l'utilisateur {}", user.getId());
+        return ResultatVerification.ADRESSE_CHANGEE;
     }
 
     @Transactional

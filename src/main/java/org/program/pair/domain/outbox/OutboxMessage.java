@@ -69,6 +69,18 @@ public class OutboxMessage {
     @Column(name = "watch_id")
     private UUID watchId;
 
+    /**
+     * Le compte concerné, pour les messages qui en visent un. Nul pour une
+     * alerte de veille, dont le destinataire est un proche sans compte meetDo.
+     */
+    @Column(name = "user_id")
+    private UUID userId;
+
+    /** À quoi sert ce message — c'est lui qui dit quoi faire de son accusé de remise. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "purpose", nullable = false, length = 20)
+    private OutboxPurpose purpose = OutboxPurpose.WATCH_ALERT;
+
     /** Identifiant du message chez le fournisseur, une fois accepté. Pour l'accusé de remise. */
     @Column(name = "provider_message_id", length = 128)
     private String providerMessageId;
@@ -111,6 +123,33 @@ public class OutboxMessage {
         return m;
     }
 
+    /**
+     * L'e-mail de vérification d'une adresse.
+     *
+     * <p>Il passe par l'outbox depuis le lot du 07/09, et c'est tout l'objet de
+     * ce lot : c'était le seul de nos courriers à partir par un appel direct,
+     * donc le seul dont l'identifiant Resend n'était pas conservé, donc le seul
+     * dont le rebond n'était rapporté à personne. Il y gagne trois choses qu'il
+     * n'avait pas — la durabilité au redéploiement, les essais, et un envoi qui
+     * ne se fait plus dans la transaction d'inscription.
+     *
+     * <p><b>Le corps est composé par l'appelant</b>, sur le fil de la requête,
+     * et non ici : c'est là, et seulement là, que la langue demandée par
+     * l'appareil est encore connue.
+     */
+    public static OutboxMessage verificationEmail(UUID userId, String address,
+                                                  String subject, String html, int priority) {
+        OutboxMessage m = new OutboxMessage();
+        m.channel = OutboxChannel.EMAIL;
+        m.purpose = OutboxPurpose.EMAIL_VERIFICATION;
+        m.recipient = address;
+        m.subject = subject;
+        m.body = html;
+        m.priority = priority;
+        m.userId = userId;
+        return m;
+    }
+
     public UUID getId() { return id; }
     public OutboxChannel getChannel() { return channel; }
     public String getRecipient() { return recipient; }
@@ -120,6 +159,8 @@ public class OutboxMessage {
     public OutboxStatus getStatus() { return status; }
     public int getAttempts() { return attempts; }
     public UUID getWatchId() { return watchId; }
+    public UUID getUserId() { return userId; }
+    public OutboxPurpose getPurpose() { return purpose; }
     public String getProviderMessageId() { return providerMessageId; }
     public OutboxDelivery getDeliveryState() { return deliveryState; }
     public void setDeliveryState(OutboxDelivery deliveryState) { this.deliveryState = deliveryState; }
