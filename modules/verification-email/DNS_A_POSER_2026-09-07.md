@@ -35,6 +35,15 @@ d'expédition qui lui manque.
 > (`From:`, `Return-Path:`, `Authentication-Results:`) d'un e-mail reçu et nous
 > les rend : trente secondes de leur côté, et la question est tranchée sans aller
 > chercher la variable.
+>
+> **Le DNS seul ne tranche pas, et c'est vérifié.** Au 07/09,
+> `resend._domainkey.meetdo.fun` porte bien une clé et
+> `resend._domainkey.send.meetdo.fun` est vide — donc DKIM n'existe QUE sur
+> l'apex. Mais cela ne prouve pas où est le `From:` : si les envois partaient de
+> `send.meetdo.fun`, son SPF suffirait à faire passer DMARC par alignement de
+> l'enveloppe, DKIM absent ou non. **Les deux montages « marchent » aujourd'hui,
+> et c'est précisément ce qui rend le défaut invisible.** Seul l'en-tête d'un
+> e-mail reçu dit lequel est en place.
 
 ---
 
@@ -63,6 +72,11 @@ coûte un message.
 poser l'enregistrement : les rapports sont des pièces jointes XML quotidiennes,
 et une adresse qui rebondit ferait taire ce qu'on cherche justement à entendre.
 
+> ✅ **Fait le 07/09.** La boîte est créée, et `meetdo.fun` porte bien ses MX
+> Hostinger (`mx1`/`mx2.hostinger.com`) : elle recevra. Il ne reste que
+> l'enregistrement TXT ci-dessus, qui n'est pas encore posé — relevé du 07/09 au
+> soir : `_dmarc.meetdo.fun` vaut toujours `"v=DMARC1; p=none"`, sans `rua=`.
+
 ---
 
 ## (b) SES autorisé dans le SPF de l'apex
@@ -84,14 +98,22 @@ envoi part avec un `Return-Path` en `@meetdo.fun` — un second expéditeur, une
 bibliothèque différente, un SMTP direct — il est en softfail. L'enregistrement
 ci-dessus supprime cette dépendance à une condition qu'aucun test ne surveille.
 
-**Attention au nombre de recherches DNS.** SPF en autorise dix ; en dépliant, on
-arrive à un total qui reste sous la limite, mais c'est à revérifier après pose :
+**Le nombre de recherches DNS a été compté, et il passe largement.** SPF en
+autorise dix ; en dépliant les deux `include:` le 07/09 :
 
-```
-$ dig +short TXT meetdo.fun          # doit porter les deux include:
-$ dig +short TXT _spf.mail.hostinger.com
-$ dig +short TXT amazonses.com
-```
+| # | Recherche | Contenu |
+|---|---|---|
+| 1 | `include:_spf.mail.hostinger.com` | deux `include:` imbriqués |
+| 2 | └─ `include:relay.mail.hostinger.com` | `ip4`/`ip6` seulement |
+| 3 | └─ `include:relay.mailchannels.net` | `ip4` seulement |
+| 4 | `include:amazonses.com` | `ip4`/`ip6` seulement, **aucun `include:` imbriqué** |
+
+**4 sur 10.** Aucune des trois feuilles n'ajoute de recherche, donc le total est
+stable : ce n'est pas une marge qui se consommera toute seule.
+
+Relevé du 07/09 au soir : `meetdo.fun` vaut toujours
+`"v=spf1 include:_spf.mail.hostinger.com ~all"` — l'enregistrement n'est pas
+encore posé.
 
 ---
 
