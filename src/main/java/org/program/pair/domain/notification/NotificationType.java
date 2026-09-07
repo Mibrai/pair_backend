@@ -94,7 +94,22 @@ public enum NotificationType {
     // « que coûte le fait de l'apprendre trop tard ? » — répond ici « rien » :
     // un programme sans date le sera encore demain matin. Les heures de silence
     // s'y appliquent donc, ce que le contrat demande explicitement.
-    CYCLE_NUDGE
+    CYCLE_NUDGE,
+    // « Ton affiche est prête » — à ceux qui étaient présents à une séance, au
+    // moment où sa carte-souvenir naît de sa première contribution. C'est
+    // l'instant, et le seul, où une affiche devient calculable : avant, la séance
+    // n'apparaît dans aucune carte, donc dans rien que le client puisse composer.
+    //
+    // AU PLUS UNE PAR SÉANCE ET PAR PERSONNE, garantie non par un compteur mais
+    // par le schéma : la carte naît une fois (uq_recap_occurrence), et
+    // l'événement qui porte cette notification n'est publié qu'à cette
+    // naissance-là.
+    //
+    // Ni critique, ni envoyée par e-mail, ni time-sensitive. Le critère de
+    // CRITICAL — « que coûte le fait de l'apprendre trop tard ? » — répond ici
+    // « rien » : l'affiche sera encore là demain matin, et se découvre aussi dans
+    // le fil d'accueil. Les heures de silence s'y appliquent donc pleinement.
+    AFFICHE_READY
 ;
 
     /**

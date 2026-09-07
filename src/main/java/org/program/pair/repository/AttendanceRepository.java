@@ -43,6 +43,24 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
     Optional<Attendance> findByScheduleIdAndUserIdAndAttendedAt(
         UUID scheduleId, UUID userId, Instant occurrenceStart);
 
+    /**
+     * La séance la plus récente de ce créneau où cette personne était
+     * <b>réellement</b> présente.
+     *
+     * <p>Sert au module « affiche », dont le contrat désigne une affiche par le
+     * seul {@code scheduleId} : sur une série hebdomadaire il faut bien décider
+     * de quelle séance on parle, et c'est la dernière vécue qui est la bonne
+     * réponse par défaut — les autres se nomment explicitement.
+     *
+     * <p><b>Passe par les présences et non par {@code SlotTiming}</b>, à rebours
+     * du reste du module souvenir. La ligne de créneau ne connaît que deux
+     * séances, celle qu'elle porte et celle que le rollover vient de retirer :
+     * un cours suivi il y a un mois n'y figure plus, alors que la présence, elle,
+     * ne s'efface pas. Une affiche doit rester publiable sur un souvenir ancien.
+     */
+    Optional<Attendance> findFirstByScheduleIdAndUserIdAndWasPresentTrueOrderByAttendedAtDesc(
+        UUID scheduleId, UUID userId);
+
     /** Présents confirmés sur un créneau — un effectif, jamais un score. */
     @Query("SELECT COUNT(a) FROM Attendance a WHERE a.schedule.id = :scheduleId AND a.wasPresent = true")
     int countPresentByScheduleId(@Param("scheduleId") UUID scheduleId);
