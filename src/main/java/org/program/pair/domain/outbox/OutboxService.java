@@ -4,7 +4,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.email.ResendEmailService;
 import org.program.pair.domain.sms.SmsService;
+import org.program.pair.domain.user.User;
+import org.program.pair.domain.user.VerificationEmailDelivery;
 import org.program.pair.repository.OutboxMessageRepository;
+import org.program.pair.repository.UserRepository;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +34,12 @@ public class OutboxService {
     public static final int PRIORITE_ALERTE = 0;
     /** Priorité d'un e-mail de version longue : juste après l'alerte immédiate. */
     public static final int PRIORITE_EMAIL = 1;
+    /**
+     * Priorité d'un e-mail de vérification : après tout ce qui touche à une
+     * veille. Quelqu'un qui attend son lien d'inscription peut attendre dix
+     * secondes de plus ; quelqu'un dont le proche n'est pas rentré, non.
+     */
+    public static final int PRIORITE_VERIFICATION = 2;
 
     /** Au-delà, le message est déclaré en échec plutôt que réessayé indéfiniment. */
     private static final int MAX_ESSAIS = 5;
@@ -40,6 +49,16 @@ public class OutboxService {
     private final OutboxMessageRepository repository;
     private final SmsService smsService;
     private final ResendEmailService emailService;
+
+    /**
+     * Pour reporter sur le compte ce qu'un e-mail de vérification devient.
+     *
+     * <p>L'état pourrait se lire depuis cette table, comme {@code alertDelivery}
+     * le fait pour une veille — mais la purge efface les messages partis depuis
+     * sept jours, et l'état retomberait alors à {@code NONE} sur un compte dont
+     * l'adresse avait rebondi. Il vit donc sur le compte, et l'outbox l'y pousse.
+     */
+    private final UserRepository userRepository;
 
     // ------------------------------------------------------------------ dépôt
 
@@ -51,6 +70,33 @@ public class OutboxService {
     @Transactional
     public void enqueueEmail(String address, String subject, String html, int priority, UUID watchId) {
         repository.save(OutboxMessage.email(address, subject, html, priority, watchId));
+    }
+
+    /**
+     * Dépose l'e-mail de vérification d'un compte, et pose son état à
+     * {@code PENDING}.
+     *
+     * <p>Le corps arrive composé : la langue se lit sur le fil de la requête,
+     * qui n'existe plus au moment du balayage.
+     *
+     * <p><b>Le destinataire est passé à part, et n'est pas toujours l'adresse du
+     * compte.</b> Un changement d'adresse envoie son lien à l'adresse
+     * <i>demandée</i> — c'est tout l'intérêt : elle seule peut prouver qu'elle
+     * existe et qu'elle reçoit. L'état, lui, reste celui du compte, car c'est le
+     * même écran qui le lit.
+     *
+     * <p><b>L'identifiant du message précédent est effacé.</b> Un renvoi rend
+     * caduc ce qu'on savait de l'envoi d'avant, et c'est cet effacement qui fait
+     * qu'un accusé tardif portant sur l'ancien message ne viendra pas écraser le
+     * sort du nouveau.
+     */
+    @Transactional
+    public void enqueueVerificationEmail(User user, String recipient, String subject, String html) {
+        repository.save(OutboxMessage.verificationEmail(
+            user.getId(), recipient, subject, html, PRIORITE_VERIFICATION));
+        user.setVerificationEmailMessageId(null);
+        user.setVerificationEmailDelivery(VerificationEmailDelivery.PENDING);
+        userRepository.save(user);
     }
 
     // ------------------------------------------------------------------ envoi
@@ -112,6 +158,60 @@ public class OutboxService {
                 return; // pas de régression d'un arrivé vers un retardé.
             }
             message.setDeliveryState(nouveau);
+            reporterSurLeCompte(message, VerificationEmailDelivery.depuis(nouveau));
+        });
+    }
+
+    /**
+     * Reporte sur le compte ce qu'on vient d'apprendre d'un e-mail de
+     * vérification. Sans effet pour tout autre message.
+     *
+     * <p><b>Le message doit être celui que le compte attend.</b> Un rebond
+     * concernant le premier renvoi peut arriver après que le second a été
+     * délivré — les accusés ne sont pas ordonnés. Comparer les identifiants est
+     * ce qui empêche un fait périmé de faire mentir l'écran ; sans cela, le
+     * bouton « renvoyer » aggraverait l'affichage au lieu de le corriger.
+     */
+    private void reporterSurLeCompte(OutboxMessage message, VerificationEmailDelivery candidat) {
+        if (message.getPurpose() != OutboxPurpose.EMAIL_VERIFICATION
+                || message.getUserId() == null || candidat == null) {
+            return;
+        }
+        userRepository.findById(message.getUserId()).ifPresent(user -> {
+            if (!java.util.Objects.equals(
+                    user.getVerificationEmailMessageId(), message.getProviderMessageId())) {
+                return; // accusé portant sur un envoi que ce compte a remplacé.
+            }
+            if (user.getVerificationEmailDelivery().cedeLaPlaceA(candidat)) {
+                user.setVerificationEmailDelivery(candidat);
+                userRepository.save(user);
+            }
+        });
+    }
+
+    /**
+     * L'issue de la remise au fournisseur, portée sur le compte.
+     *
+     * <p>{@code SENT} dès que Resend accepte, {@code FAILED} quand les essais
+     * sont épuisés — ou qu'il a refusé tout de suite, ce que produirait un compte
+     * d'envoi resté en mode d'essai. Tant que des essais restent, l'état ne bouge
+     * pas : {@code PENDING} est exact, et afficher un échec réparable serait
+     * inviter à corriger une adresse qui n'a rien.
+     */
+    private void reporterLEnvoiSurLeCompte(OutboxMessage message) {
+        if (message.getPurpose() != OutboxPurpose.EMAIL_VERIFICATION
+                || message.getUserId() == null) {
+            return;
+        }
+        userRepository.findById(message.getUserId()).ifPresent(user -> {
+            if (message.getStatus() == OutboxStatus.SENT) {
+                user.setVerificationEmailMessageId(message.getProviderMessageId());
+                user.setVerificationEmailDelivery(VerificationEmailDelivery.SENT);
+                userRepository.save(user);
+            } else if (message.getStatus() == OutboxStatus.FAILED) {
+                user.setVerificationEmailDelivery(VerificationEmailDelivery.FAILED);
+                userRepository.save(user);
+            }
         });
     }
 
@@ -134,9 +234,11 @@ public class OutboxService {
                         message.getRecipient(), message.getSubject(), message.getBody());
                     if (id != null) {
                         message.markSent(id, now);
+                        reporterLEnvoiSurLeCompte(message);
                         yield true;
                     }
                     message.markAttemptFailed(now, MAX_ESSAIS);
+                    reporterLEnvoiSurLeCompte(message);
                     yield false;
                 }
             };
@@ -144,6 +246,7 @@ public class OutboxService {
             log.error("Envoi outbox {} en échec ({}): {}",
                 message.getId(), message.getChannel(), e.getMessage());
             message.markAttemptFailed(now, MAX_ESSAIS);
+            reporterLEnvoiSurLeCompte(message);
             return false;
         }
     }

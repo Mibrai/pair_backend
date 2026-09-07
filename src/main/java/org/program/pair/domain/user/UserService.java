@@ -391,7 +391,8 @@ public class UserService {
             user.getOnboardingCompletedAt(),
             user.getOnboardingStep() == null ? null : user.getOnboardingStep().name(),
             user.getGuidelinesVersion(),
-            Guidelines.acceptanceRequired(guidelinesVersion, user.getGuidelinesVersion())
+            Guidelines.acceptanceRequired(guidelinesVersion, user.getGuidelinesVersion()),
+            user.getVerificationEmailDelivery().name()
         );
     }
 }

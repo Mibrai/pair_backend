@@ -220,27 +220,33 @@ public class ResendEmailService {
 - Logging détaillé (succès/échecs)
 - Mode désactivé pour développement
 
-### 3. EmailTemplateService (Domain)
+### 3. L'outbox (Domain) — pour les e-mails rattachés à un compte
 
-**Package**: `org.program.pair.domain.email`
+**Package**: `org.program.pair.domain.outbox`
 
-**Responsabilité**: Génération de templates HTML
+**Responsabilité**: porter un e-mail transactionnel de sa composition à son
+accusé de remise.
 
 ```java
-@Service
-public class EmailTemplateService {
-    private final ResendEmailService resendEmailService;
-    
-    // Template generation
-    public boolean sendWelcomeEmail(String to, String userName);
-    public boolean sendCustomEmail(String to, String template, Map<String, Object> data);
-}
+outboxService.enqueueVerificationEmail(user, destinataire, sujet, html);
+//  ↓ OutboxSweepJob, toutes les 10 s
+//  ↓ ResendEmailService.sendHtmlEmailReturningId  → l'identifiant est CONSERVÉ
+//  ↓ POST /public/resend-webhook (signature Svix)
+//  ↓ OutboxService.recordDelivery → users.verification_email_delivery
 ```
 
-**Caractéristiques**:
-- Templates HTML stylisés
-- Variables dynamiques
-- Réutilisable pour différents types d'emails
+**Pourquoi ce détour plutôt qu'un appel direct** (lot du 07/09) : l'e-mail de
+vérification partait par un appel HTTP bloquant, dans la transaction
+d'inscription, et son identifiant Resend était jeté. Un rebond arrivait donc
+chez nous, ne trouvait aucune ligne à recouper, et repartait en silence — sur le
+seul courrier dont dépend la première minute de chaque utilisateur.
+
+**Ce qui s'y branche** : la vérification d'adresse et le changement d'adresse.
+Le reste — réinitialisation de mot de passe, accord d'un contact de confiance,
+e-mail de notification — reste en appel direct, faute d'état de remise à porter.
+
+> **`EmailTemplateService` a été supprimé le 07/09.** Il n'avait aucun appelant
+> et bâtissait ses liens sur `app.frontend-url`, un front web inexistant.
 
 ---
 

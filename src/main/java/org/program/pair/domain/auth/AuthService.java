@@ -86,14 +86,15 @@ public class AuthService {
         return buildAuthResponse(user);
     }
 
-    public void verifyEmail(String token) {
-        emailVerificationService.verifyToken(token);
-    }
-
     /**
-     * Même vérification, rendue sous forme d'état plutôt que d'exception, pour
-     * que la page servie au navigateur puisse dire lequel des quatre cas s'est
-     * produit.
+     * L'issue d'une vérification, rendue comme un état.
+     *
+     * <p>C'est la seule forme, depuis le 07/09 : la variante qui levait a été
+     * retirée. Une exception levée dans la transaction du service annulait ce que
+     * la vérification venait d'écrire — sans effet tant que les seuls refus
+     * n'écrivaient rien, mais faux dès qu'un changement d'adresse peut être
+     * abandonné en chemin. La traduction en refus HTTP vit désormais dans
+     * {@link ReponseVerificationEmail}, hors transaction.
      */
     public ResultatVerification verifierEmailPourNavigateur(String token) {
         return emailVerificationService.verifier(token);

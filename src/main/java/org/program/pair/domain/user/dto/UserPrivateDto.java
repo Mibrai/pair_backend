@@ -49,5 +49,19 @@ public record UserPrivateDto(
         + "en a besoin au démarrage, et un second appel réseau au lancement se voit. "
         + "Calculé par le serveur — comparer des versions des deux côtés finit par "
         + "diverger. Le détail est sur /api/users/me/guidelines.")
-    boolean guidelinesAcceptanceRequired
+    boolean guidelinesAcceptanceRequired,
+
+    @Schema(description = "Ce qu'est devenu le DERNIER e-mail de vérification envoyé à "
+        + "ce compte — un état, pas un journal : un renvoi le ramène à PENDING. "
+        + "`NONE` aucun envoi tenté · `PENDING` déposé, pas encore remis au fournisseur · "
+        + "`SENT` le fournisseur l'a pris, ce qui ne dit pas qu'il est arrivé · "
+        + "`DELIVERED` arrivé, l'accusé de remise le dit · "
+        + "`BOUNCED` l'adresse a refusé le message — c'est le cas qui appelle "
+        + "POST /api/users/me/change-email · "
+        + "`FAILED` nous n'avons pas pu le remettre au fournisseur ; ce n'est pas un "
+        + "défaut de l'adresse. "
+        + "Traiter une valeur inconnue comme SENT plutôt qu'échouer : COMPLAINED "
+        + "pourra s'ajouter.",
+        allowableValues = {"NONE", "PENDING", "SENT", "DELIVERED", "BOUNCED", "FAILED"})
+    String verificationEmailDelivery
 ) {}

@@ -3,6 +3,9 @@ package org.program.pair.shared.email;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.email.ResendEmailService;
 import org.program.pair.domain.notification.NotificationType;
+import org.program.pair.domain.outbox.OutboxService;
+import org.program.pair.domain.user.User;
+import org.program.pair.shared.i18n.Messages;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -22,8 +25,6 @@ public class EmailService {
      */
     private final java.util.function.Function<UUID, String> recipientEmail;
 
-    @Value("${email.from:noreply@pair.app}")
-    private String fromAddress;
 
     /**
      * Racine publique de l'API, sur laquelle sont bâtis les liens envoyés par
@@ -39,33 +40,120 @@ public class EmailService {
     @Value("${email.base-url:http://localhost:3000}")
     private String baseUrl;
 
+    private final OutboxService outbox;
+    private final Messages messages;
+
     public EmailService(ResendEmailService resendEmailService,
-                        org.program.pair.repository.UserRepository userRepository) {
+                        org.program.pair.repository.UserRepository userRepository,
+                        OutboxService outbox,
+                        Messages messages) {
         this.resendEmailService = resendEmailService;
+        this.outbox = outbox;
+        this.messages = messages;
         this.recipientEmail = userId -> userRepository.findById(userId)
-            .map(org.program.pair.domain.user.User::getEmail)
+            .map(User::getEmail)
             .orElse(null);
     }
 
-    public void sendVerificationEmail(String email, String token) {
+    /**
+     * L'e-mail de vérification d'une adresse — déposé dans l'outbox, pas envoyé
+     * d'ici.
+     *
+     * <p><b>Pourquoi l'outbox, depuis le 07/09.</b> Cet e-mail partait par un
+     * appel HTTP direct, bloquant, <b>à l'intérieur de la transaction
+     * d'inscription</b>, et son identifiant Resend était jeté par
+     * {@code sendHtmlEmail}. Trois conséquences, dont une seule se voyait :
+     * l'inscription attendait un aller-retour vers le fournisseur ; un
+     * redéploiement au mauvais moment perdait l'envoi ; et surtout l'accusé de
+     * remise — écrit le 1er septembre pour les alertes — ne pouvait rapporter
+     * aucun rebond, faute de ligne à recouper. C'était le seul de nos courriers
+     * dans ce cas.
+     *
+     * <p><b>Le corps est composé ici, et non au balayage</b>, parce que la langue
+     * se lit sur le fil de la requête : au moment où l'outbox enverra, le
+     * {@code LocaleContextHolder} sera vide et l'{@code Accept-Language} de
+     * l'appareil aura disparu. C'est la même raison qui fait que le sujet est
+     * résolu maintenant.
+     *
+     * <p>Le repli de développement est conservé : sans fournisseur configuré, le
+     * lien part dans les journaux et rien n'est déposé — une file qui
+     * s'accumulerait pour être refusée cinq fois ne rendrait service à personne.
+     */
+    public void sendVerificationEmail(User user, String token) {
+        String verifyUrl = lienVerification(token);
         if (!resendEmailService.isEnabled()) {
-            log.info("[DEV] Verification link for {}: {}", email, lienVerification(token));
+            log.info("[DEV] Verification link for {}: {}", user.getEmail(), verifyUrl);
             return;
         }
-        String verifyUrl = lienVerification(token);
-        String html = """
-            <h2>Vérifiez votre adresse email</h2>
-            <p>Cliquez sur le lien suivant pour activer votre compte Pair :</p>
-            <a href="%s" style="background:#4F46E5;color:white;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">
-              Vérifier mon email
-            </a>
-            <p>Ce lien expire dans 24 heures.</p>
-            """.formatted(verifyUrl);
+        outbox.enqueueVerificationEmail(user, user.getEmail(),
+            messages.get("email.verification.subject"),
+            corpsVerification(verifyUrl));
+    }
 
-        boolean sent = resendEmailService.sendHtmlEmail(email, "Vérifiez votre adresse Pair", html);
-        if (!sent) {
-            log.error("Failed to send verification email to {}", email);
+    /**
+     * Le lien qui confirme une <b>nouvelle</b> adresse, envoyé à cette
+     * nouvelle adresse et à elle seule.
+     *
+     * <p>C'est le seul endroit où le destinataire n'est pas l'adresse du compte,
+     * et c'est la raison d'être de la route : celle qui figure encore sur le
+     * compte est précisément celle qui ne reçoit pas. Le message est aussi la
+     * preuve demandée — une adresse qui ne peut pas recevoir ce lien ne
+     * remplacera jamais l'ancienne.
+     */
+    public void sendEmailChangeEmail(User user, String nouvelleAdresse, String token) {
+        String verifyUrl = lienVerification(token);
+        if (!resendEmailService.isEnabled()) {
+            log.info("[DEV] Email change link for {}: {}", nouvelleAdresse, verifyUrl);
+            return;
         }
+        outbox.enqueueVerificationEmail(user, nouvelleAdresse,
+            messages.get("email.change.subject"),
+            corpsChangement(verifyUrl, nouvelleAdresse));
+    }
+
+    private String corpsChangement(String verifyUrl, String nouvelleAdresse) {
+        return """
+            <div style="font-family:system-ui,sans-serif;line-height:1.5;">
+              <h2 style="font-size:1.15rem;">%s</h2>
+              <p>%s</p>
+              <a href="%s" style="background:#4F46E5;color:white;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;font-weight:600;">
+                %s
+              </a>
+              <p style="color:#6b757d;font-size:14px;margin-top:20px;">%s</p>
+            </div>
+            """.formatted(
+                escape(messages.get("email.change.title")),
+                escape(messages.get("email.change.intro", nouvelleAdresse)),
+                verifyUrl,
+                escape(messages.get("email.change.button")),
+                escape(messages.get("email.change.expiry")));
+    }
+
+    /**
+     * Le corps de l'e-mail de vérification, dans la langue demandée.
+     *
+     * <p>Il était un littéral français en dur — ni {@code Accept-Language}, ni
+     * préférence de compte. Un utilisateur allemand, dont l'écran d'inscription
+     * s'appelle pourtant <i>Registrieren</i>, recevait du français : de quoi
+     * classer le message en indésirable sans le lire, et ne jamais signaler
+     * qu'on l'avait reçu. La machinerie existait et servait partout ailleurs.
+     */
+    private String corpsVerification(String verifyUrl) {
+        return """
+            <div style="font-family:system-ui,sans-serif;line-height:1.5;">
+              <h2 style="font-size:1.15rem;">%s</h2>
+              <p>%s</p>
+              <a href="%s" style="background:#4F46E5;color:white;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;font-weight:600;">
+                %s
+              </a>
+              <p style="color:#6b757d;font-size:14px;margin-top:20px;">%s</p>
+            </div>
+            """.formatted(
+                escape(messages.get("email.verification.title")),
+                escape(messages.get("email.verification.intro")),
+                verifyUrl,
+                escape(messages.get("email.verification.button")),
+                escape(messages.get("email.verification.expiry")));
     }
 
     /**

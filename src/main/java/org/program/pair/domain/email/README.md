@@ -34,42 +34,43 @@ resend.from-email=infos@meetdo.fun
 resend.from-name=MeetDo
 ```
 
-### EmailTemplateService
+### EmailTemplateService — supprimé le 2026-09-07
 
-Service de génération de templates HTML pour emails transactionnels.
+Cette classe n'avait **aucun appelant**, et construisait ses liens sur
+`app.frontend-url`, un front web qui n'existe sur aucun de nos serveurs. Nous
+l'avions signalée au client le 26/08 comme « le défaut du 25 août, endormie »,
+en promettant de la traiter pour elle-même ; il l'a redemandée le 07/09. Elle est
+supprimée plutôt que réparée : une classe morte qui ne demande qu'un appelant
+pour renvoyer des liens dans le vide n'a pas de raison d'attendre son réveil.
+`app.frontend-url` est parti avec elle, faute de lecteur.
 
-**Responsabilités**:
-- Templates HTML stylisés
-- Personnalisation avec données dynamiques
-- Boutons CTA, headers, footers
-- Utilise `ResendEmailService` pour l'envoi
+## Les deux chemins de l'e-mail
 
-**Usage**:
-```java
-@Autowired
-private EmailTemplateService emailTemplateService;
-
-emailTemplateService.sendWelcomeEmail("user@example.com", "John");
-```
-
-**Templates disponibles**:
-- Welcome email (à implémenter)
-- Notification digest (à implémenter)
-- Custom HTML templates
-
-## Relation avec EmailService
-
-Le package `org.program.pair.shared.email.EmailService` est le wrapper utilisé par l'application. Il délègue à `ResendEmailService`.
+Depuis le lot du 07/09, tout ce qui est **transactionnel et rattaché à un
+compte** passe par l'outbox. C'est ce qui donne à ces envois la durabilité au
+redéploiement, les essais, et surtout la conservation de l'identifiant Resend —
+sans lequel l'accusé de remise ne peut rapporter aucun rebond.
 
 ```
-Application
+Vérification d'adresse, changement d'adresse
     ↓
-EmailService (shared.email)
+EmailService (shared.email)        ← compose le corps, dans la langue de la requête
     ↓
-ResendEmailService (domain.email)
-    ↓
-Resend API
+OutboxService.enqueueVerificationEmail   ← dépose en base, PENDING sur le compte
+    ↓  (OutboxSweepJob, toutes les 10 s)
+ResendEmailService.sendHtmlEmailReturningId
+    ↓                                    ↖ l'identifiant est conservé
+Resend API                                  ↓
+    ↓                        POST /public/resend-webhook
+email.delivered / bounced  ────────────────→ OutboxService.recordDelivery
+                                             ↓
+                                  users.verification_email_delivery
 ```
+
+Les autres envois — réinitialisation de mot de passe, accord d'un contact de
+confiance, e-mail de notification — restent en appel direct : ils n'ont pas
+d'état de remise à porter sur un compte. Le jour où l'un d'eux en aurait besoin,
+c'est le chemin ci-dessus qu'il faut lui donner, et non un second mécanisme.
 
 ## Configuration
 
@@ -91,10 +92,16 @@ Les emails ne sont pas envoyés, les liens sont affichés dans les logs:
 # Railway variables
 RESEND_ENABLED=true
 RESEND_API_KEY=re_xxxx
-RESEND_FROM_EMAIL=infos@meetdo.fun
+RESEND_FROM_EMAIL=infos@meetdo.fun     # le domaine du From: — voir ci-dessous
 RESEND_FROM_NAME=MeetDo
-FRONTEND_URL=https://meetdo.fun
+RESEND_WEBHOOK_SECRET=whsec_xxxx       # sans lui, les accusés de remise sont rejetés en 401
 ```
+
+**`RESEND_FROM_EMAIL` décide de quel domaine doit porter SPF et DKIM.** Au
+07/09, l'apex `meetdo.fun` porte la clé DKIM mais son SPF n'autorise pas SES ;
+`send.meetdo.fun` a l'inverse. La configuration ne tient que par l'alignement
+relâché de DMARC. Les deux enregistrements à poser sont écrits dans
+`modules/verification-email/DNS_A_POSER_2026-09-07.md`.
 
 ## Tests
 
@@ -203,21 +210,6 @@ grep "Resend API error" logs/app.log
 ```
 
 ## Évolutions futures
-
-### Webhooks Resend
-
-Recevoir des notifications sur l'état de livraison:
-
-```java
-@PostMapping("/api/webhooks/resend")
-public void handleResendWebhook(@RequestBody ResendWebhookEvent event) {
-    switch (event.getType()) {
-        case "email.delivered" -> handleDelivered(event);
-        case "email.bounced" -> handleBounced(event);
-        case "email.complained" -> handleComplaint(event);
-    }
-}
-```
 
 ### Templates visuels Resend
 

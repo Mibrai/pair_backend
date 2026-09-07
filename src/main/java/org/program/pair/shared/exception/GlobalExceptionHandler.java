@@ -104,10 +104,22 @@ public class GlobalExceptionHandler {
         return new ErrorResponse(ErrorCode.EMAIL_EXISTS.name(), ex.getMessage(), Instant.now());
     }
 
+    /**
+     * Le refus d'un quota.
+     *
+     * <p><b>Passe par {@code errorFor} depuis le 07/09</b>, et donc par la
+     * traduction. Il construisait sa réponse à la main, ce qui court-circuitait
+     * {@code messageOf} : le code {@code RATE_LIMITED} était bien porté — le
+     * client s'y fie — mais le message restait le littéral français du limiteur,
+     * quelle que soit la langue demandée. Le même défaut que le corps de l'e-mail
+     * de vérification, au même moment du parcours : quelqu'un qui découvre
+     * l'application, et à qui on refuse son premier geste dans une langue qu'il
+     * ne lit pas.
+     */
     @ExceptionHandler(TooManyRequestsException.class)
     @ResponseStatus(HttpStatus.TOO_MANY_REQUESTS)
     public ErrorResponse handleRateLimit(TooManyRequestsException ex) {
-        return new ErrorResponse(ErrorCode.RATE_LIMITED.name(), ex.getMessage(), Instant.now());
+        return errorFor(ex, ErrorCode.RATE_LIMITED);
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
