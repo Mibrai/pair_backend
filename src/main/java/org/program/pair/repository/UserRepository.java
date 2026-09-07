@@ -19,6 +19,16 @@ public interface UserRepository extends JpaRepository<User, UUID> {
 
     boolean existsByEmail(String email);
 
+    /**
+     * Cette adresse est-elle déjà convoitée par un changement en attente ?
+     *
+     * <p>L'index unique partiel de V105 l'interdit de toute façon ; sans cette
+     * question, l'interdiction se manifesterait par une violation de contrainte
+     * — donc un 500 — là où il s'agit d'un refus ordinaire, que l'appelant doit
+     * pouvoir lire et corriger.
+     */
+    boolean existsByPendingEmail(String pendingEmail);
+
     @Query(value = """
         SELECT u.* FROM users u
         WHERE u.is_active = true

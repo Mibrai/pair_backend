@@ -176,13 +176,65 @@ class RateLimiterTest {
         RateLimiter limiteur = new RateLimiter(horloge);
 
         for (int i = 0; i < 3; i++) {
-            limiteur.checkPasswordReset(IP);
+            limiteur.checkPasswordReset(IP, "moi@example.org");
         }
-        assertThatThrownBy(() -> limiteur.checkPasswordReset(IP))
+        assertThatThrownBy(() -> limiteur.checkPasswordReset(IP, "moi@example.org"))
             .isInstanceOf(TooManyRequestsException.class);
 
         horloge.avancer(Duration.ofHours(1).plusMinutes(1));
-        assertThatCode(() -> limiteur.checkPasswordReset(IP)).doesNotThrowAnyException();
+        assertThatCode(() -> limiteur.checkPasswordReset(IP, "moi@example.org"))
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    void troisPersonnesDerriereUnMemeNat_sInscriventToutesLesTrois() {
+        // Le défaut signalé le 07/09 : le budget serré était sur la connexion, et
+        // s'inscrire ensemble depuis un même réseau est le mode d'arrivée normal.
+        // Six comptes distincts depuis une seule IP passent désormais — l'ancien
+        // plafond en refusait le sixième.
+        RateLimiter limiteur = new RateLimiter();
+
+        for (int i = 0; i < 6; i++) {
+            String email = "invite" + i + "@example.org";
+            assertThatCode(() -> limiteur.checkRegister(IP, email))
+                .doesNotThrowAnyException();
+        }
+    }
+
+    @Test
+    void uneMemeAdresse_resteBorneeMemeEnChangeantDeConnexion() {
+        // Le budget serré a changé de clé, il n'a pas disparu : c'est l'adresse
+        // visée qui le porte, donc changer d'IP ne le contourne pas.
+        RateLimiter limiteur = new RateLimiter();
+
+        for (int i = 0; i < 3; i++) {
+            limiteur.checkResendVerification("10.0.0." + i, "cible@example.org");
+        }
+        assertThatThrownBy(() ->
+            limiteur.checkResendVerification("10.0.0.99", "cible@example.org"))
+            .isInstanceOf(TooManyRequestsException.class);
+    }
+
+    @Test
+    void unRefusParAdresse_neConsommePasLeBudgetDeLaConnexion() {
+        // Les deux budgets sont vérifiés avant que l'un ou l'autre ne soit
+        // consommé : sinon une tentative refusée rapprocherait du refus suivant,
+        // le mode de panne que ce limiteur existe pour avoir supprimé.
+        RateLimiter limiteur = new RateLimiter();
+
+        for (int i = 0; i < 3; i++) {
+            limiteur.checkResendVerification(IP, "sature@example.org");
+        }
+        for (int i = 0; i < 10; i++) {
+            assertThatThrownBy(() ->
+                limiteur.checkResendVerification(IP, "sature@example.org"))
+                .isInstanceOf(TooManyRequestsException.class);
+        }
+
+        // La connexion n'a consommé que les trois appels retenus : une autre
+        // adresse depuis la même IP passe toujours.
+        assertThatCode(() -> limiteur.checkResendVerification(IP, "autre@example.org"))
+            .doesNotThrowAnyException();
     }
 
     @Test

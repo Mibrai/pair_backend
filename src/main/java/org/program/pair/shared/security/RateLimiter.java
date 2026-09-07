@@ -41,6 +41,13 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p><b>Seuls les échecs comptent.</b> Une connexion réussie ne consomme rien et
  * vide même le compteur du compte : ce qu'il s'agit de ralentir, c'est la
  * recherche d'un mot de passe, pas l'usage.
+ *
+ * <p><b>Le couple adresse + connexion vaut pour les quatre routes</b> depuis le
+ * 07/09. Il n'était posé que sur la connexion, alors que le raisonnement qui
+ * l'avait fait écrire — une adresse IP ne désigne pas une personne — vaut mot
+ * pour mot pour l'inscription et pour les envois d'e-mail. Il y valait même
+ * davantage : un refus de connexion se réessaie, un refus d'inscription tombe au
+ * tout premier geste de quelqu'un qui découvre l'application.
  */
 @Component
 public class RateLimiter {
@@ -58,9 +65,38 @@ public class RateLimiter {
     private static final int ECHECS_PAR_ADRESSE = 50;
 
     private static final Duration FENETRE_INSCRIPTION = Duration.ofHours(1);
-    private static final int INSCRIPTIONS_PAR_ADRESSE = 5;
+
+    /**
+     * Inscriptions tolérées depuis une même connexion.
+     *
+     * <p><b>Cinq auparavant, et c'était le mauvais nombre au mauvais endroit.</b>
+     * Signalé par le chantier mobile le 07/09 : s'inscrire à plusieurs, au même
+     * endroit et le même soir, est le mode d'arrivée normal sur meetDo. Derrière
+     * un NAT associatif ou un partage de connexion, la sixième personne d'un
+     * groupe se voyait refuser la création de son compte — un 429 au tout premier
+     * geste, et pour une raison qu'aucun écran ne peut rendre compréhensible.
+     * Le budget serré vit désormais sur l'adresse e-mail visée.
+     */
+    private static final int INSCRIPTIONS_PAR_IP = 30;
+
+    /** Inscriptions tolérées sur une même adresse : au-delà, ce n'est plus une hésitation. */
+    private static final int INSCRIPTIONS_PAR_COMPTE = 5;
 
     private static final Duration FENETRE_EMAIL = Duration.ofHours(1);
+
+    /**
+     * E-mails déclenchés depuis une même connexion. Large pour la même raison que
+     * ci-dessus : le renvoi est demandé par des gens qui n'ont rien reçu, et
+     * trois personnes sur un même réseau consommaient le quota les unes des
+     * autres — exactement au moment où l'e-mail manquant les y poussait toutes.
+     */
+    private static final int EMAILS_PAR_IP = 20;
+
+    /**
+     * E-mails déclenchés vers une même adresse. C'est <b>ici</b> que le budget
+     * doit être serré : ce qu'il s'agit de borner, c'est le courrier envoyé à
+     * quelqu'un, pas le nombre de personnes derrière un routeur.
+     */
     private static final int EMAILS_PAR_ADRESSE = 3;
 
     private final Map<String, Deque<Instant>> compteurs = new ConcurrentHashMap<>();
@@ -122,23 +158,32 @@ public class RateLimiter {
         }
     }
 
-    public void checkRegister(String ip) {
-        consommer("register:" + ip, INSCRIPTIONS_PAR_ADRESSE, FENETRE_INSCRIPTION,
+    /**
+     * L'inscription, bornée sur l'adresse visée <b>et</b> sur la connexion.
+     *
+     * <p>Le patron est celui de {@link #checkLogin}, propagé le 07/09 aux trois
+     * routes voisines : il y était écrit depuis le 1er septembre, avec le
+     * raisonnement sur le NAT, et il n'avait pas quitté la connexion.
+     */
+    public void checkRegister(String ip, String email) {
+        consommerCouple("register", ip, email,
+            INSCRIPTIONS_PAR_IP, INSCRIPTIONS_PAR_COMPTE, FENETRE_INSCRIPTION,
             "Trop d'inscriptions. Réessayez dans une heure.");
     }
 
     /**
-     * Renvoi d'un lien de vérification. Même budget que la réinitialisation de
-     * mot de passe : les deux déclenchent un e-mail vers une adresse choisie
-     * par l'appelant, et c'est cet envoi qu'il s'agit de borner.
+     * Renvoi d'un lien de vérification — et demande de changement d'adresse, qui
+     * déclenche le même envoi vers une adresse choisie par l'appelant.
      */
-    public void checkResendVerification(String ip) {
-        consommer("resend:" + ip, EMAILS_PAR_ADRESSE, FENETRE_EMAIL,
+    public void checkResendVerification(String ip, String email) {
+        consommerCouple("resend", ip, email,
+            EMAILS_PAR_IP, EMAILS_PAR_ADRESSE, FENETRE_EMAIL,
             "Trop de demandes. Réessayez dans une heure.");
     }
 
-    public void checkPasswordReset(String ip) {
-        consommer("reset:" + ip, EMAILS_PAR_ADRESSE, FENETRE_EMAIL,
+    public void checkPasswordReset(String ip, String email) {
+        consommerCouple("reset", ip, email,
+            EMAILS_PAR_IP, EMAILS_PAR_ADRESSE, FENETRE_EMAIL,
             "Trop de demandes. Réessayez dans une heure.");
     }
 
@@ -175,12 +220,40 @@ public class RateLimiter {
         return "login:ip:" + ip;
     }
 
-    /** Vérifie sans consommer : les routes d'envoi d'e-mail, elles, consomment. */
-    private void consommer(String cle, int budget, Duration fenetre, String message) {
-        if (depasse(cle, budget, fenetre)) {
+    /**
+     * Les deux clés d'une même route : la connexion, largement ; l'adresse visée,
+     * serrée.
+     *
+     * <p><b>Les deux budgets sont vérifiés avant que l'un ou l'autre ne soit
+     * consommé.</b> Consommer au fil de la vérification ferait qu'un refus sur la
+     * seconde clé aurait quand même entamé la première — une tentative refusée
+     * rapprocherait du refus suivant, ce qui est précisément le mode de panne que
+     * le commentaire de tête dit avoir supprimé.
+     *
+     * <p>L'adresse peut être absente : la borne par connexion s'applique alors
+     * seule, ce qui reste le comportement d'avant pour un appelant qui n'en
+     * fournit pas.
+     */
+    private void consommerCouple(String prefixe, String ip, String email,
+                                 int budgetIp, int budgetCompte,
+                                 Duration fenetre, String message) {
+        String cleIp = prefixe + ":ip:" + ip;
+        boolean parCompte = email != null && !email.isBlank();
+        String cleCompte = parCompte
+            ? prefixe + ":compte:" + email.strip().toLowerCase()
+            : null;
+
+        if (parCompte && depasse(cleCompte, budgetCompte, fenetre)) {
             throw new TooManyRequestsException(message);
         }
-        inscrire(cle, fenetre);
+        if (depasse(cleIp, budgetIp, fenetre)) {
+            throw new TooManyRequestsException(message);
+        }
+
+        if (parCompte) {
+            inscrire(cleCompte, fenetre);
+        }
+        inscrire(cleIp, fenetre);
     }
 
     private boolean depasse(String cle, int budget, Duration fenetre) {
