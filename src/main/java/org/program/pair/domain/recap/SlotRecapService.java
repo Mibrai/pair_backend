@@ -30,6 +30,7 @@ import org.program.pair.shared.exception.ForbiddenException;
 import org.program.pair.shared.exception.ResourceNotFoundException;
 import org.program.pair.shared.exception.ValidationException;
 import org.program.pair.shared.sanitizer.HtmlSanitizer;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -93,6 +94,16 @@ public class SlotRecapService {
     private final SlotAudience slotAudience;
     private final HtmlSanitizer sanitizer;
 
+    /**
+     * Par où sort {@link SlotRecapOpenedEvent}, et rien d'autre.
+     *
+     * <p>La carte-souvenir annonce ce qu'elle sait — une carte s'est ouverte —
+     * sans connaître ceux qui l'écoutent. C'est ce qui permet au module
+     * « affiche » d'en tirer sa notification sans que ce service ait à savoir
+     * qu'il existe.
+     */
+    private final ApplicationEventPublisher events;
+
     // ————————————————————————— contribution —————————————————————————
 
     /**
@@ -109,7 +120,7 @@ public class SlotRecapService {
 
         Set<SlotVibe> vibes = parseVibes(rawVibes);
 
-        SlotRecap recap = openRecap(slot, occurrence);
+        SlotRecap recap = openRecap(userId, slot, occurrence);
         vibeVoteRepository.deleteByRecapIdAndUserId(recap.getId(), userId);
 
         User voter = userRepository.getReferenceById(userId);
@@ -141,7 +152,7 @@ public class SlotRecapService {
         requirePresence(userId, scheduleId, occurrence);
         requireWindowOpen(occurrence);
 
-        SlotRecap recap = openRecap(slot, occurrence);
+        SlotRecap recap = openRecap(userId, slot, occurrence);
         RecapParticipantConsent consent = consentRepository
             .findByRecapIdAndUserId(recap.getId(), userId)
             .orElseGet(() -> {
@@ -179,7 +190,7 @@ public class SlotRecapService {
         attendance.setMemoryIsPublic(attendance.getMemoryPhotoUrl() != null && isPublic);
         attendanceRepository.save(attendance);
 
-        return toDto(touch(openRecap(slot, occurrence)), userId);
+        return toDto(touch(openRecap(userId, slot, occurrence)), userId);
     }
 
     // ————————————————————————— hôte —————————————————————————
@@ -191,7 +202,7 @@ public class SlotRecapService {
         SlotOccurrence occurrence = requireEndedOccurrence(slot);
         requireWindowOpen(occurrence);
 
-        SlotRecap recap = openRecap(slot, occurrence);
+        SlotRecap recap = openRecap(userId, slot, occurrence);
         recap.setHostNote(note == null || note.isBlank() ? null : sanitizer.sanitize(note).strip());
 
         return toDto(touch(recap), userId);
@@ -220,7 +231,7 @@ public class SlotRecapService {
                 "Attendez qu'au moins une autre personne confirme sa présence pour rendre cette carte publique.");
         }
 
-        SlotRecap recap = openRecap(slot, occurrence);
+        SlotRecap recap = openRecap(userId, slot, occurrence);
         recap.setVisibility(visibility);
         if (visibility.isPublic() && recap.getPublishedAt() == null) {
             recap.setPublishedAt(Instant.now());
@@ -423,8 +434,20 @@ public class SlotRecapService {
         }
     }
 
-    /** Crée la carte de cette séance si c'est la première contribution, la rend sinon. */
-    private SlotRecap openRecap(Schedule slot, SlotOccurrence occurrence) {
+    /**
+     * Crée la carte de cette séance si c'est la première contribution, la rend
+     * sinon.
+     *
+     * <p>La création — et elle seule — publie {@link SlotRecapOpenedEvent} :
+     * c'est l'instant où la séance entre dans {@code /api/recaps/mine}, donc
+     * l'instant où une affiche devient calculable pour tous ceux qui y étaient.
+     * L'événement est consommé après commit ; il ne part donc pas si la
+     * contribution qui l'a provoqué échoue.
+     *
+     * @param contributorId qui contribue — transmis à l'événement pour n'avoir
+     *                      pas à lui annoncer ce qu'il vient de faire
+     */
+    private SlotRecap openRecap(UUID contributorId, Schedule slot, SlotOccurrence occurrence) {
         return recapRepository
             .findByScheduleIdAndOccurrenceStart(slot.getId(), occurrence.startsAt())
             .orElseGet(() -> {
@@ -435,7 +458,10 @@ public class SlotRecapService {
                 recap.setVisibility(RecapVisibility.PRIVATE);
                 recap.setAttendeeCount(attendanceRepository.countPresentByOccurrence(
                     slot.getId(), occurrence.startsAt()));
-                return recapRepository.save(recap);
+                SlotRecap opened = recapRepository.save(recap);
+                events.publishEvent(new SlotRecapOpenedEvent(
+                    slot.getId(), occurrence.startsAt(), contributorId));
+                return opened;
             });
     }
 
@@ -518,6 +544,9 @@ public class SlotRecapService {
             category != null ? category.getName() : null,
             category != null ? category.getColorRamp() : null,
             recap.getOccurrenceStart(),
+            // Figée à la naissance de la carte, comme la fenêtre qui en découle :
+            // relire la ligne de créneau daterait ce souvenir de la séance à venir.
+            recap.getOccurrenceEnd(),
             slot.getPlaceName(),
             slot.getCity(),
             recap.getAttendeeCount() != null ? recap.getAttendeeCount() : 0,

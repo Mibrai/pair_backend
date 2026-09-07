@@ -59,7 +59,7 @@ class SlotRecapVisibilityTest extends RecapTestFixtures {
     void setUp() {
         service = new SlotRecapService(recapRepository, vibeVoteRepository, consentRepository,
             attendanceRepository, scheduleRepository, userRepository, userService, slotAudience,
-            new HtmlSanitizer());
+            new HtmlSanitizer(), event -> { });
 
         when(userService.getPublicProfile(any(), any())).thenAnswer(i -> publicProfile(i.getArgument(0)));
         when(vibeVoteRepository.countByVibe(any())).thenReturn(List.of());
