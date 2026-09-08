@@ -5,7 +5,12 @@ import org.program.pair.repository.SlotParticipationRepository;
 import org.program.pair.repository.UserProgramRepository;
 import org.springframework.stereotype.Component;
 
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
 
@@ -72,6 +77,59 @@ public class SlotAudience {
      * créneaux, et sans lui un rappel partirait à des gens inscrits à une tout
      * autre séance du même programme.
      */
+    /**
+     * Parmi ces créneaux, lesquels comptent cette personne dans leur audience ?
+     *
+     * <p>Le jumeau groupé de {@link #participantIds}, pour l'unique question que
+     * se posent les surfaces de lecture : « et moi, j'y suis ? ». Deux requêtes
+     * pour tout un lot, là où la version unitaire en coûte deux <b>par
+     * créneau</b> — sur une page de cartes-souvenirs, c'était deux allers-retours
+     * transatlantiques par programme affiché.
+     *
+     * <p><b>La définition de l'audience n'est pas recopiée</b> : ce sont les
+     * trois mêmes façons d'être inscrit, lues sur les deux mêmes dépôts, avec le
+     * même filtre sur la séance pour les suiveurs de programme. Ce qui change
+     * est le nombre d'appels, jamais le critère — une seconde définition se
+     * manifesterait par quelqu'un vu comme inscrit sur un écran et pas sur
+     * l'autre, sans qu'aucune erreur ne le dise.
+     */
+    public Set<UUID> slotsWhereParticipant(UUID userId, Collection<Schedule> slots) {
+        if (userId == null || slots == null || slots.isEmpty()) {
+            return Set.of();
+        }
+        Map<UUID, Schedule> parId = new LinkedHashMap<>();
+        for (Schedule slot : slots) {
+            parId.put(slot.getId(), slot);
+        }
+
+        Set<UUID> resultat = new LinkedHashSet<>();
+
+        // 1. hôte — lu sur l'arbre déjà chargé, sans requête.
+        for (Schedule slot : parId.values()) {
+            if (hostId(slot).anyMatch(userId::equals)) {
+                resultat.add(slot.getId());
+            }
+        }
+
+        // 2. rejoint directement. On part de la personne et non des créneaux :
+        // ses inscriptions sont bornées par sa propre activité, et le dépôt sait
+        // déjà les rendre — inutile d'ajouter une requête au dépôt pour l'autre
+        // sens.
+        participationRepository.findByUserIdAndStatus(userId, ParticipationStatus.CONFIRMED).stream()
+            .filter(p -> p.getSchedule() != null && parId.containsKey(p.getSchedule().getId()))
+            .forEach(p -> resultat.add(p.getSchedule().getId()));
+
+        // 3. suiveur du programme, POUR CETTE SÉANCE — le filtre sur le créneau
+        // est celui de programFollowerIds, et pour la même raison : un programme
+        // porte plusieurs créneaux, et s'en passer ferait de tout suiveur un
+        // inscrit à chacun d'eux.
+        userProgramRepository.findByUserIdAndStatus(userId, UserProgramStatus.ACTIVE).stream()
+            .filter(up -> up.getSchedule() != null && parId.containsKey(up.getSchedule().getId()))
+            .forEach(up -> resultat.add(up.getSchedule().getId()));
+
+        return resultat;
+    }
+
     private Stream<UUID> programFollowerIds(Schedule slot) {
         Program program = slot.getProgram();
         if (program == null) {

@@ -168,6 +168,31 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
          + "AND s.startsAt > :after ORDER BY s.startsAt ASC LIMIT 1")
     Optional<Schedule> findNextOpenSlot(@Param("programId") UUID programId, @Param("after") Instant after);
 
+    /**
+     * La prochaine séance ouverte de <b>chacun</b> de ces programmes.
+     *
+     * <p>Le jumeau groupé de {@link #findNextOpenSlot}, aux mêmes conditions au
+     * mot près : {@code OPEN} seul, strictement après l'instant donné, la plus
+     * proche d'abord. Une page de cartes-souvenirs posait la question une fois
+     * par carte, soit trente-cinq fois pour trois programmes.
+     *
+     * <p>Native, et pas JPQL : {@code DISTINCT ON} est ce qui permet de ne
+     * garder que la première ligne de chaque programme en un seul passage.
+     * L'{@code ORDER BY} doit commencer par {@code program_id} — c'est une
+     * exigence de {@code DISTINCT ON}, pas un choix de tri —, et c'est
+     * {@code starts_at} qui décide ensuite laquelle est « la prochaine ».
+     */
+    @Query(value = """
+        SELECT DISTINCT ON (s.program_id) s.*
+        FROM schedules s
+        WHERE s.program_id IN (:programIds)
+          AND s.status = 'OPEN'
+          AND s.starts_at > :after
+        ORDER BY s.program_id, s.starts_at ASC
+        """, nativeQuery = true)
+    List<Schedule> findNextOpenSlots(@Param("programIds") Collection<UUID> programIds,
+                                     @Param("after") Instant after);
+
     @Query("SELECT s FROM Schedule s WHERE s.status IN ('OPEN', 'FULL') " +
            "AND ((s.endsAt IS NOT NULL AND s.endsAt BETWEEN :from AND :to) " +
            "OR (s.endsAt IS NULL AND s.startsAt BETWEEN :fromStart AND :toStart))")
