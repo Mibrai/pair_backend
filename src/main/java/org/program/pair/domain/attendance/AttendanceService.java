@@ -2,6 +2,7 @@ package org.program.pair.domain.attendance;
 
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.attendance.dto.AttendanceDto;
+import org.program.pair.domain.attendance.dto.ConfirmedAttendanceDto;
 import org.program.pair.domain.attendance.dto.PendingAttendanceDto;
 import org.program.pair.domain.badge.BadgeService;
 import org.program.pair.domain.program.ParticipationStatus;
@@ -197,6 +198,27 @@ public class AttendanceService {
                 hostedIds.contains(p.slot().getId()) ? "HOST" : "PARTICIPANT"
             ))
             .toList();
+    }
+
+    /**
+     * Toute l'histoire de quelqu'un : une entrée par séance où il a confirmé sa
+     * présence — {@code GET /api/attendances/mine}.
+     *
+     * <p><b>Ce n'est pas {@code /recaps/mine} avec d'autres champs.</b> Cette
+     * liste se lit dans les présences et ne touche jamais les cartes-souvenirs :
+     * une séance vécue y figure même si personne n'y a jamais voté d'ambiance,
+     * écrit un mot ni partagé de photo — donc même si aucune carte n'existe. Le
+     * client calcule ses transitions dessus (« première fois », « dixième
+     * séance »), et les calculer sur les cartes les ferait dépendre de la
+     * contribution d'un tiers : voir {@link ConfirmedAttendanceDto} pour les
+     * deux défauts que cela ferme, et {@code AttendanceRepository} pour le coût.
+     *
+     * <p>Aucun filtre de visibilité : on lit sa propre histoire, et il n'existe
+     * personne à qui la cacher.
+     */
+    @Transactional(readOnly = true)
+    public List<ConfirmedAttendanceDto> getMine(UUID userId) {
+        return attendanceRepository.findConfirmedForUser(userId);
     }
 
     private AttendanceDto toDto(Attendance a) {
