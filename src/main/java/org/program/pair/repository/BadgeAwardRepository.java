@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -27,6 +28,18 @@ public interface BadgeAwardRepository extends JpaRepository<BadgeAward, BadgeAwa
      */
     @Query("SELECT a FROM BadgeAward a JOIN FETCH a.badge WHERE a.user.id = :userId")
     List<BadgeAward> findByUserIdWithBadge(@Param("userId") UUID userId);
+
+    /**
+     * Les badges de <b>plusieurs</b> personnes, en une requête.
+     *
+     * <p>La variante ci-dessus règle le N+1 <i>par badge</i> ; celle-ci règle
+     * celui <i>par profil</i>, qui est le suivant sur le chemin. Une page qui
+     * rend trente-cinq cartes-souvenirs de trois hôtes payait trente-cinq
+     * lectures pour trois réponses distinctes — et un aller-retour vaut ~200 ms
+     * entre le service européen et la base américaine.
+     */
+    @Query("SELECT a FROM BadgeAward a JOIN FETCH a.badge WHERE a.user.id IN :userIds")
+    List<BadgeAward> findByUserIdsWithBadge(@Param("userIds") Collection<UUID> userIds);
 
     Optional<BadgeAward> findByUserIdAndBadgeId(UUID userId, UUID badgeId);
 

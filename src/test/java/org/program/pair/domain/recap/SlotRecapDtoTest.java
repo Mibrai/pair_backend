@@ -62,18 +62,17 @@ class SlotRecapDtoTest extends RecapTestFixtures {
             new HtmlSanitizer(), event -> { });
 
         when(userService.getPublicProfile(any(), any())).thenAnswer(i -> publicProfile(i.getArgument(0)));
-        when(vibeVoteRepository.countByVibe(any())).thenReturn(List.of());
-        when(vibeVoteRepository.findVibesByRecapIdAndUserId(any(), any())).thenReturn(List.of());
-        when(consentRepository.findConsentingUserIds(any())).thenReturn(List.of());
-        when(attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(any(), any())).thenReturn(List.of());
+        when(vibeVoteRepository.countByVibeForRecaps(any())).thenReturn(List.of());
+        when(vibeVoteRepository.findVibesByRecapIdsAndUserId(any(), any())).thenReturn(List.of());
+        when(consentRepository.findConsentingByRecapIds(any())).thenReturn(List.of());
+        when(attendanceRepository.findPresentForOccurrences(any(), any())).thenReturn(List.of());
         when(slotAudience.participantIds(any())).thenReturn(List.of());
     }
 
     @Test
     void nextSlot_estNul_siAucunCreneauFuturOuvertSurCeProgramme() {
         Schedule slot = publicRecapOn(endedSlot(2));
-        when(scheduleRepository.findNextOpenSlot(eq(slot.getProgram().getId()), any()))
-            .thenReturn(Optional.empty());
+        when(scheduleRepository.findNextOpenSlots(any(), any())).thenReturn(List.of());
 
         SlotRecapDto dto = service.get(slot.getId(), UUID.randomUUID());
 
@@ -86,8 +85,7 @@ class SlotRecapDtoTest extends RecapTestFixtures {
     void nextSlot_designeLaProchaineSeanceOuverteDuMemeProgramme() {
         Schedule slot = publicRecapOn(endedSlot(2));
         Schedule next = futureOpenSlot(slot.getProgram(), 48);
-        when(scheduleRepository.findNextOpenSlot(eq(slot.getProgram().getId()), any()))
-            .thenReturn(Optional.of(next));
+        when(scheduleRepository.findNextOpenSlots(any(), any())).thenReturn(List.of(next));
 
         UUID reader = UUID.randomUUID();
         SlotRecapDto dto = service.get(slot.getId(), reader);
@@ -102,11 +100,11 @@ class SlotRecapDtoTest extends RecapTestFixtures {
     void nextSlot_saitQueJyAiDejaMaPlace() {
         Schedule slot = publicRecapOn(endedSlot(2));
         Schedule next = futureOpenSlot(slot.getProgram(), 48);
-        when(scheduleRepository.findNextOpenSlot(eq(slot.getProgram().getId()), any()))
-            .thenReturn(Optional.of(next));
+        when(scheduleRepository.findNextOpenSlots(any(), any())).thenReturn(List.of(next));
 
         UUID reader = UUID.randomUUID();
-        when(slotAudience.participantIds(next)).thenReturn(List.of(reader));
+        when(slotAudience.slotsWhereParticipant(eq(reader), any()))
+            .thenReturn(java.util.Set.of(next.getId()));
 
         assertThat(service.get(slot.getId(), reader).nextSlot().alreadyJoined()).isTrue();
     }
@@ -117,11 +115,11 @@ class SlotRecapDtoTest extends RecapTestFixtures {
 
         // La requête rend déjà les ambiances triées ; le service ne doit ni
         // retrier à l'envers, ni en laisser passer une quatrième.
-        when(vibeVoteRepository.countByVibe(any())).thenReturn(List.of(
-            new Object[]{SlotVibe.FRIENDLY, 7L},
-            new Object[]{SlotVibe.RELAXED, 5L},
-            new Object[]{SlotVibe.GOOD_LAUGH, 2L},
-            new Object[]{SlotVibe.OUTDOORS, 1L}
+        when(vibeVoteRepository.countByVibeForRecaps(any())).thenReturn(List.of(
+            new Object[]{carte.getId(), SlotVibe.FRIENDLY, 7L},
+            new Object[]{carte.getId(), SlotVibe.RELAXED, 5L},
+            new Object[]{carte.getId(), SlotVibe.GOOD_LAUGH, 2L},
+            new Object[]{carte.getId(), SlotVibe.OUTDOORS, 1L}
         ));
 
         SlotRecapDto dto = service.get(slot.getId(), UUID.randomUUID());
@@ -140,7 +138,7 @@ class SlotRecapDtoTest extends RecapTestFixtures {
             sharedPhoto(slot, "deux.jpg"),
             sharedPhoto(slot, "trois.jpg"),
             sharedPhoto(slot, "quatre.jpg"));
-        when(attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(slot.getId(), slot.getStartsAt())).thenReturn(withPhotos);
+        when(attendanceRepository.findPresentForOccurrences(any(), any())).thenReturn(withPhotos);
 
         SlotRecapDto dto = service.get(slot.getId(), UUID.randomUUID());
 
@@ -151,8 +149,8 @@ class SlotRecapDtoTest extends RecapTestFixtures {
     @Test
     void laCarte_neRendAucunLibelleDAmbiance_seulementLaValeur() {
         Schedule slot = publicRecapOn(endedSlot(2));
-        when(vibeVoteRepository.countByVibe(any()))
-            .thenReturn(List.<Object[]>of(new Object[]{SlotVibe.BEGINNER_FRIENDLY, 3L}));
+        when(vibeVoteRepository.countByVibeForRecaps(any()))
+            .thenReturn(List.<Object[]>of(new Object[]{carte.getId(), SlotVibe.BEGINNER_FRIENDLY, 3L}));
 
         SlotRecapDto dto = service.get(slot.getId(), UUID.randomUUID());
 
@@ -166,8 +164,9 @@ class SlotRecapDtoTest extends RecapTestFixtures {
     void canContribute_estFaux_pourQuiNEtaitPasLa() {
         Schedule slot = publicRecapOn(endedSlot(2));
         UUID reader = UUID.randomUUID();
-        when(attendanceRepository.existsByScheduleIdAndUserIdAndAttendedAtAndWasPresentTrue(slot.getId(), reader, slot.getStartsAt()))
-            .thenReturn(false);
+        // Quelqu'un d'autre y était : la carte a des présents, mais pas lui.
+        when(attendanceRepository.findPresentForOccurrences(any(), any()))
+            .thenReturn(List.of(presentAttendance(slot, UUID.randomUUID())));
 
         assertThat(service.get(slot.getId(), reader).canContribute()).isFalse();
     }
@@ -176,8 +175,8 @@ class SlotRecapDtoTest extends RecapTestFixtures {
     void canContribute_estFaux_uneFoisLaFenetreRefermee() {
         Schedule slot = publicRecapOn(endedSlot(8 * 24));
         UUID attendee = UUID.randomUUID();
-        when(attendanceRepository.existsByScheduleIdAndUserIdAndAttendedAtAndWasPresentTrue(slot.getId(), attendee, slot.getStartsAt()))
-            .thenReturn(true);
+        when(attendanceRepository.findPresentForOccurrences(any(), any()))
+            .thenReturn(List.of(presentAttendance(slot, attendee)));
 
         assertThat(service.get(slot.getId(), attendee).canContribute()).isFalse();
     }
@@ -186,8 +185,10 @@ class SlotRecapDtoTest extends RecapTestFixtures {
     void myVibes_rendCeQueJaiDejaVote() {
         Schedule slot = publicRecapOn(endedSlot(2));
         UUID attendee = UUID.randomUUID();
-        when(vibeVoteRepository.findVibesByRecapIdAndUserId(any(), eq(attendee)))
-            .thenReturn(List.of(SlotVibe.FOCUSED, SlotVibe.TECHNICAL));
+        when(vibeVoteRepository.findVibesByRecapIdsAndUserId(any(), eq(attendee)))
+            .thenReturn(List.of(
+                new Object[]{carte.getId(), SlotVibe.FOCUSED},
+                new Object[]{carte.getId(), SlotVibe.TECHNICAL}));
 
         assertThat(service.get(slot.getId(), attendee).myVibes())
             .containsExactly("FOCUSED", "TECHNICAL");
@@ -208,10 +209,20 @@ class SlotRecapDtoTest extends RecapTestFixtures {
 
     // — décor —
 
+    /**
+     * La carte que {@link #publicRecapOn} vient de poser.
+     *
+     * <p>Nécessaire depuis que les lectures sont groupées : les requêtes rendent
+     * des lignes préfixées par l'identifiant de la carte, et une simulation doit
+     * donc pouvoir le nommer.
+     */
+    private SlotRecap carte;
+
     private Schedule publicRecapOn(Schedule slot) {
-        SlotRecap recap = recapFor(slot);
-        recap.setVisibility(RecapVisibility.PUBLIC);
-        when(recapRepository.findByScheduleIdOrderByOccurrenceStartDesc(slot.getId())).thenReturn(List.of(recap));
+        carte = recapFor(slot);
+        carte.setVisibility(RecapVisibility.PUBLIC);
+        when(recapRepository.findByScheduleIdOrderByOccurrenceStartDesc(slot.getId()))
+            .thenReturn(List.of(carte));
         return slot;
     }
 

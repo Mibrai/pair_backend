@@ -62,10 +62,10 @@ class SlotRecapVisibilityTest extends RecapTestFixtures {
             new HtmlSanitizer(), event -> { });
 
         when(userService.getPublicProfile(any(), any())).thenAnswer(i -> publicProfile(i.getArgument(0)));
-        when(vibeVoteRepository.countByVibe(any())).thenReturn(List.of());
-        when(vibeVoteRepository.findVibesByRecapIdAndUserId(any(), any())).thenReturn(List.of());
-        when(consentRepository.findConsentingUserIds(any())).thenReturn(List.of());
-        when(attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(any(), any())).thenReturn(List.of());
+        when(vibeVoteRepository.countByVibeForRecaps(any())).thenReturn(List.of());
+        when(vibeVoteRepository.findVibesByRecapIdsAndUserId(any(), any())).thenReturn(List.of());
+        when(consentRepository.findConsentingByRecapIds(any())).thenReturn(List.of());
+        when(attendanceRepository.findPresentForOccurrences(any(), any())).thenReturn(List.of());
         when(slotAudience.participantIds(any())).thenReturn(List.of());
     }
 
@@ -172,7 +172,7 @@ class SlotRecapVisibilityTest extends RecapTestFixtures {
         partage.setMemoryPhotoUrl("/api/media/files/partage.jpg");
         partage.setMemoryIsPublic(true);
 
-        when(attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(slot.getId(), slot.getStartsAt()))
+        when(attendanceRepository.findPresentForOccurrences(any(), any()))
             .thenReturn(List.of(prive, partage));
 
         SlotRecapDto dto = service.get(slot.getId(), UUID.randomUUID());
@@ -188,9 +188,9 @@ class SlotRecapVisibilityTest extends RecapTestFixtures {
         recap.setAttendeeCount(5);
         when(recapRepository.findByScheduleIdOrderByOccurrenceStartDesc(slot.getId())).thenReturn(List.of(recap));
 
-        when(attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(slot.getId(), slot.getStartsAt()))
+        when(attendanceRepository.findPresentForOccurrences(any(), any()))
             .thenReturn(List.of(presentAttendance(slot, UUID.randomUUID())));
-        when(consentRepository.findConsentingUserIds(recap.getId())).thenReturn(List.of());
+        when(consentRepository.findConsentingByRecapIds(any())).thenReturn(List.of());
 
         SlotRecapDto dto = service.get(slot.getId(), UUID.randomUUID());
 
@@ -206,9 +206,10 @@ class SlotRecapVisibilityTest extends RecapTestFixtures {
         when(recapRepository.findByScheduleIdOrderByOccurrenceStartDesc(slot.getId())).thenReturn(List.of(recap));
 
         UUID hostId = hostIdOf(slot);
-        when(attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(slot.getId(), slot.getStartsAt()))
+        when(attendanceRepository.findPresentForOccurrences(any(), any()))
             .thenReturn(List.of(presentAttendance(slot, hostId)));
-        when(consentRepository.findConsentingUserIds(recap.getId())).thenReturn(List.of(hostId));
+        when(consentRepository.findConsentingByRecapIds(any()))
+            .thenReturn(List.<Object[]>of(new Object[]{recap.getId(), hostId}));
 
         SlotRecapDto dto = service.get(slot.getId(), hostId);
 

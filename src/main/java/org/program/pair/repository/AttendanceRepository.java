@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -81,6 +82,31 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
         UUID scheduleId, Instant occurrenceStart, UUID userId);
 
     List<Attendance> findByScheduleIdAndWasPresentTrue(UUID scheduleId);
+
+    /**
+     * Les présences confirmées de <b>plusieurs</b> séances, en une requête.
+     *
+     * <p>Remplace un appel par carte de la variante ci-dessous, qui servait à
+     * la fois les photos publiques, les participants nommés et le droit de
+     * contribuer — trois lectures d'une même liste, payées carte par carte.
+     *
+     * <p>Les deux bornes sont croisées, pas appariées : la requête peut donc
+     * ramener la présence d'une séance du 8 sur un créneau dont seule celle du
+     * 15 était demandée. C'est l'appelant qui réapparie sur le couple
+     * {@code (schedule_id, attended_at)} — le sur-ensemble est borné par la
+     * page de cartes, et une requête de trop coûte moins qu'un aller-retour par
+     * carte. Voir {@code SlotRecapService.RenderContext}.
+     */
+    @Query("""
+        SELECT a FROM Attendance a
+        JOIN FETCH a.user
+        WHERE a.schedule.id IN :scheduleIds
+          AND a.attendedAt IN :occurrenceStarts
+          AND a.wasPresent = true
+        """)
+    List<Attendance> findPresentForOccurrences(
+        @Param("scheduleIds") Collection<UUID> scheduleIds,
+        @Param("occurrenceStarts") Collection<Instant> occurrenceStarts);
 
     List<Attendance> findByScheduleIdAndAttendedAtAndWasPresentTrue(
         UUID scheduleId, Instant occurrenceStart);
