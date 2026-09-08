@@ -37,7 +37,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doReturn;
 
 /**
  * Demande 2 de docs/specs/PROMPT_BACKEND_EVOLUTIONS_2026-08.md : pagination de
@@ -79,7 +79,7 @@ class SearchPaginationIntegrationTest extends AbstractIntegrationTest {
             createSeven();
             fixturesCreated = true;
         }
-        when(embeddingService.generateEmbedding(any())).thenReturn(new float[384]);
+        doReturn(new float[384]).when(embeddingService).generateEmbedding(any());
     }
 
     @Test

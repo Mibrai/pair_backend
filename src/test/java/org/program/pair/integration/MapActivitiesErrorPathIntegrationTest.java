@@ -14,7 +14,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 
 /**
  * Une carte vide et une carte en panne ne doivent pas se ressembler.
@@ -58,7 +59,7 @@ class MapActivitiesErrorPathIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void zoneSansAucuneDonnee_doitRendre200EtUneListeVide() {
-        when(scheduleRepository.findAllWithActivityDetails()).thenReturn(List.of());
+        doReturn(List.of()).when(scheduleRepository).findAllWithActivityDetails();
 
         webTestClient.get()
             .uri("/api/map/activities")
@@ -78,8 +79,8 @@ class MapActivitiesErrorPathIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void defaillanceDuDepot_doitRendre500EtPasUneCarteVide() {
-        when(scheduleRepository.findAllWithActivityDetails())
-            .thenThrow(new DataAccessResourceFailureException("base injoignable"));
+        doThrow(new DataAccessResourceFailureException("base injoignable"))
+            .when(scheduleRepository).findAllWithActivityDetails();
 
         webTestClient.get()
             .uri("/api/map/activities")

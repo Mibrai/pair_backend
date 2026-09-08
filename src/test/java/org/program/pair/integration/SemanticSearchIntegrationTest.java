@@ -77,7 +77,7 @@ class SemanticSearchIntegrationTest extends AbstractIntegrationTest {
         // conserve la requête brute comme activityKeyword pour le repli plein
         // texte, une phrase complète y introduirait des mots courants qui
         // matcheraient de vrais programmes et fausserait ce test.
-        when(embeddingService.generateEmbedding(any())).thenReturn(new float[384]);
+        doReturn(new float[384]).when(embeddingService).generateEmbedding(any());
 
         // Créer un utilisateur et se connecter
         String token = registerAndLogin("noresult@pair.app");
@@ -116,7 +116,7 @@ class SemanticSearchIntegrationTest extends AbstractIntegrationTest {
 
         // "yoga" est résolue par la taxonomie sans mock nécessaire ; vecteur nul
         // pour forcer le repli plein texte / taxonomie.
-        when(embeddingService.generateEmbedding(any())).thenReturn(new float[384]);
+        doReturn(new float[384]).when(embeddingService).generateEmbedding(any());
 
         // Créer un chercheur
         String searcherToken = registerAndLogin("searcher2@pair.app");

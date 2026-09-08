@@ -37,7 +37,7 @@ import java.time.temporal.ChronoUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doReturn;
 
 /**
  * POST /api/search doit désormais renvoyer des créneaux (resultType="slot"),
@@ -158,7 +158,7 @@ class SearchSlotsIntegrationTest extends AbstractIntegrationTest {
     // texte, sans mock) ; seul l'embedding est forcé à un vecteur nul pour isoler
     // le chemin plein texte / créneaux.
     private void forceFulltextFallback() {
-        when(embeddingService.generateEmbedding(any())).thenReturn(new float[384]);
+        doReturn(new float[384]).when(embeddingService).generateEmbedding(any());
     }
 
     /**

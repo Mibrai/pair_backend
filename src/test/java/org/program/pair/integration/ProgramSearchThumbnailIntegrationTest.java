@@ -41,6 +41,25 @@ class ProgramSearchThumbnailIntegrationTest extends AbstractIntegrationTest {
     @Autowired ProgramRepository programRepository;
     @Autowired ProgramMediaRepository programMediaRepository;
     @Autowired UserRepository userRepository;
+    @Autowired org.program.pair.repository.CategoryRepository categoryRepository;
+
+    /**
+     * Le nom de l'activité créée pour le test en cours, et donc le mot-clé de
+     * recherche.
+     *
+     * <p>Les trois tests cherchaient {@code "yoga"}, l'activité du référentiel.
+     * Cela tenait tant que chaque classe partait d'une base vierge. Depuis que la
+     * suite partage un conteneur, la recherche rend les programmes « yoga » de
+     * toutes les autres classes et du seed V103 — tous à Paris, donc à la même
+     * distance — et {@code searchByActivity} trie par distance puis par
+     * {@code p.id} avant de couper à 20. Le programme visé sortait de la fenêtre,
+     * pour une raison qui n'a rien à voir avec ce que le test vérifie.
+     *
+     * <p>Chaque test crée donc sa propre activité, au nom unique. La requête
+     * {@code LOWER(a.name) LIKE LOWER(?)} ne peut alors ramener que le programme
+     * de ce test-là, quel que soit ce que les autres classes ont écrit.
+     */
+    private String motCleRecherche;
 
     @Test
     void searchByActivity_devraitRenvoyerImageUrl_quandPasDeGalerie() {
@@ -73,8 +92,8 @@ class ProgramSearchThumbnailIntegrationTest extends AbstractIntegrationTest {
     }
 
     private SearchResultDto searchAndFind(java.util.UUID programId) {
-        SearchRequest request = new SearchRequest("yoga", 48.8566, 2.3522, null);
-        List<SearchResultDto> results = fullTextSearchService.searchByActivity("yoga", request, 20);
+        SearchRequest request = new SearchRequest(motCleRecherche, 48.8566, 2.3522, null);
+        List<SearchResultDto> results = fullTextSearchService.searchByActivity(motCleRecherche, request, 20);
         return results.stream()
             .filter(r -> r.id().equals(programId))
             .findFirst()
@@ -86,10 +105,23 @@ class ProgramSearchThumbnailIntegrationTest extends AbstractIntegrationTest {
         updateLocation(token, 48.8566, 2.3522);
 
         User owner = userRepository.findByEmail(email).orElseThrow();
-        Activity yoga = activityRepository.findBySlug("yoga").orElseThrow();
+
+        String suffixe = java.util.UUID.randomUUID().toString().substring(0, 8);
+        motCleRecherche = "yoga-vignette-" + suffixe;
+        org.program.pair.domain.activity.Category categorie = categoryRepository.save(
+            org.program.pair.domain.activity.Category.builder()
+                .name("Vignettes " + suffixe)
+                .icon("image")
+                .colorRamp("sky-blue")
+                .build());
+        Activity activite = activityRepository.save(Activity.builder()
+            .name(motCleRecherche)
+            .slug(motCleRecherche)
+            .category(categorie)
+            .build());
 
         UserActivity userActivity = userActivityRepository.save(
-            UserActivity.builder().user(owner).activity(yoga).build());
+            UserActivity.builder().user(owner).activity(activite).build());
 
         Program program = programRepository.save(Program.builder()
             .userActivity(userActivity)

@@ -165,7 +165,27 @@ class CircleFindIntegrationTest extends AbstractIntegrationTest {
         webTestClient.get().uri("/api/users?query={q}", activite)
             .headers(h -> h.setBearerAuth(chercheur))
             .exchange().expectStatus().isOk();
-        jdbc().update("UPDATE programs SET is_public = FALSE");
+        // Bornée à l'organisateur de CE test, et non « UPDATE programs SET
+        // is_public = FALSE » sur toute la table.
+        //
+        // Sans WHERE, l'ordre verrouillait chaque ligne de programs. Tant que
+        // chaque classe avait sa propre base, cela ne touchait que ses trois
+        // programmes ; depuis que la suite partage un conteneur, il attend les
+        // verrous de toutes les autres classes et rendrait privés leurs
+        // programmes au passage. Constaté le 08/09 : la suite s'arrêtait ici,
+        // fil main bloqué en lecture socket sur Postgres, sans jamais repartir —
+        // aucun test en échec, aucun message, juste une suite qui ne finit pas.
+        //
+        // Le nom d'affichage est le même identifiant que celui sur lequel les
+        // assertions de ce test portent déjà : s'il était ambigu, le test serait
+        // faux avant même cette ligne.
+        jdbc().update("""
+            UPDATE programs SET is_public = FALSE
+            WHERE user_activity_id IN (
+                SELECT ua.id FROM user_activities ua
+                JOIN users u ON u.id = ua.user_id
+                WHERE u.display_name = ?)
+            """, "Discret Organisateur");
 
         assertThat(noms(chercheur, activite)).doesNotContain("Discret Organisateur");
     }

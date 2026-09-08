@@ -38,7 +38,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doReturn;
 
 /**
  * {@code POST /api/search} — de quoi reconnaître un programme terminé.
@@ -95,7 +95,7 @@ class SearchExpiredProgramIntegrationTest extends AbstractIntegrationTest {
             accountsCreated = true;
         }
         host = userRepository.findByEmail(HOST_EMAIL).orElseThrow();
-        when(embeddingService.generateEmbedding(any())).thenReturn(new float[384]);
+        doReturn(new float[384]).when(embeddingService).generateEmbedding(any());
     }
 
     /** La demande du client, littéralement. */

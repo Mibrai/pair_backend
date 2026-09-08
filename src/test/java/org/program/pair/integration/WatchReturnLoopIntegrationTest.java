@@ -51,7 +51,7 @@ class WatchReturnLoopIntegrationTest extends AbstractIntegrationTest {
     @Test
     void auFilDesJalons_lesRappelsPuisLescalade_partent() {
         Compte moi = compte();
-        UUID watchId = armer(moi, "0612345678", "proche@example.org");
+        UUID watchId = armer(moi, uniqueMobile(), uniqueEmail("proche"));
         arriver(moi, watchId, null);
         reculerEcheance(watchId, 90); // 90 min après l'échéance : tout est dû.
 
