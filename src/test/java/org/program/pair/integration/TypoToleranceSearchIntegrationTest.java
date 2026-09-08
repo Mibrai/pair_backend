@@ -24,7 +24,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doReturn;
 
 /**
  * Lot D7 — tolérance aux fautes de frappe.
@@ -55,7 +55,7 @@ class TypoToleranceSearchIntegrationTest extends AbstractIntegrationTest {
         // « Laufne » ne matche ni la taxonomie ni le plein texte : sans le repli,
         // la réponse est vide, et son auteur en conclut que l'application n'a rien
         // près de chez lui plutôt qu'il s'est trompé d'une lettre.
-        when(embeddingService.generateEmbedding(any())).thenReturn(new float[384]);
+        doReturn(new float[384]).when(embeddingService).generateEmbedding(any());
         Fixture f = fixture("typo-a");
 
         assertFinds(f.searcher, "Laufne", f.programId);
@@ -65,7 +65,7 @@ class TypoToleranceSearchIntegrationTest extends AbstractIntegrationTest {
     void uneFauteDeFrappe_doitAussiPorterSurLeTitreDuProgramme() {
         // Quelqu'un qui tape « Sortie du dimnche » vise un titre, pas une
         // activité : la similarité retient la meilleure des deux.
-        when(embeddingService.generateEmbedding(any())).thenReturn(new float[384]);
+        doReturn(new float[384]).when(embeddingService).generateEmbedding(any());
         Fixture f = fixture("typo-b");
 
         assertFinds(f.searcher, "Sortie du dimnche", f.programId);
@@ -74,7 +74,7 @@ class TypoToleranceSearchIntegrationTest extends AbstractIntegrationTest {
     @Test
     void uneRequeteExacte_doitContinuerDeFonctionner() {
         // La garantie de non-régression du lot : le repli ne s'interpose pas.
-        when(embeddingService.generateEmbedding(any())).thenReturn(new float[384]);
+        doReturn(new float[384]).when(embeddingService).generateEmbedding(any());
         Fixture f = fixture("typo-c");
 
         assertFinds(f.searcher, "Laufen", f.programId);
@@ -85,7 +85,7 @@ class TypoToleranceSearchIntegrationTest extends AbstractIntegrationTest {
         // Le seuil existe pour cela. Une liste de résultats sans rapport se lit
         // comme une panne du produit, là où une liste vide se lit comme une
         // absence — et c'est bien une absence.
-        when(embeddingService.generateEmbedding(any())).thenReturn(new float[384]);
+        doReturn(new float[384]).when(embeddingService).generateEmbedding(any());
         Fixture f = fixture("typo-d");
 
         SearchResponse response = search(f.searcher, "zzzqqqwwwxxx");

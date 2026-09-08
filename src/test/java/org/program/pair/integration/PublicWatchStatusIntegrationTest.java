@@ -133,7 +133,7 @@ class PublicWatchStatusIntegrationTest extends AbstractIntegrationTest {
     /** Arme, valide l'arrivée, puis pousse jusqu'à l'escalade. backupPhone facultatif. */
     private UUID escalader(Compte owner, String backupPhone) {
         UUID scheduleId = creerCreneau(owner);
-        UUID guardianId = contactAccepte(owner, "0612345678", "principal@example.org");
+        UUID guardianId = contactAccepte(owner, uniqueMobile(), uniqueEmail("principal"));
         var body = new java.util.HashMap<String, Object>();
         body.put("scheduleId", scheduleId.toString());
         body.put("guardianId", guardianId.toString());

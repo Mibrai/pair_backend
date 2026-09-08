@@ -193,7 +193,7 @@ class WatchExitsIntegrationTest extends AbstractIntegrationTest {
         UUID guardianId = UUID.fromString(String.valueOf(webTestClient.post().uri("/api/guardians")
             .headers(h -> h.setBearerAuth(owner.token()))
             .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(Map.of("name", "Proche", "phone", "0612345678", "email", "proche@example.org"))
+            .bodyValue(Map.of("name", "Proche", "phone", uniqueMobile(), "email", uniqueEmail("proche")))
             .exchange().expectStatus().isCreated()
             .expectBody(Map.class).returnResult().getResponseBody().get("id")));
         String token = guardianRepository.findByIdAndOwnerId(guardianId, owner.id())

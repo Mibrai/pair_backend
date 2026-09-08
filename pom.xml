@@ -311,18 +311,56 @@
 
     <build>
         <plugins>
-            <!-- Un fork JVM par classe de test : les tests @SpringBootTest partagent
-                 sinon des ressources par JVM (les compteurs en mémoire du
-                 RateLimiter, le pool Reactor Netty global) entre classes
-                 indépendantes, provoquant des échecs aléatoires (plafond atteint,
-                 timeouts réseau) quand la suite tourne en entier plutôt que classe
-                 par classe. -->
+            <!-- Une seule JVM pour toute la suite.
+
+                 Elle en forkait une PAR CLASSE. La raison d'origine tenait : les
+                 tests @SpringBootTest partagent sinon des ressources par JVM —
+                 compteurs en mémoire du RateLimiter, pool Reactor Netty global —
+                 entre classes indépendantes, ce qui provoquait des échecs
+                 aléatoires quand la suite tournait en entier.
+
+                 Elle a cessé de tenir entièrement : AbstractIntegrationTest a
+                 depuis gagné un @BeforeEach resetRateLimiter(), qui traite la
+                 première moitié du problème à la source. Et le port du connecteur
+                 HTTP additionnel est passé à 0 dans application-test.properties,
+                 ce qui traite la seconde.
+
+                 Ce que le fork par classe coûtait, mesuré le 07/09 : sur les
+                 19,05 s d'une classe d'intégration, la JVM et le scan du
+                 classpath en prennent environ 8,5, et le contexte Spring 8,87 —
+                 ce dernier étant reconstruit à chaque fois puisque le cache de
+                 contexte meurt avec la JVM. Le conteneur Postgres, lui, ne pèse
+                 que 1,70 s : ce n'était pas là qu'était le problème.
+
+                 Avec reuseForks=true et le conteneur singleton
+                 d'AbstractIntegrationTest, la JVM démarre une fois et Spring
+                 réutilise ses contextes. En contrepartie, les classes ne sont
+                 plus isolées ni en mémoire ni en base : un test qui dépend de
+                 l'ordre le fait désormais savoir. -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <reuseForks>false</reuseForks>
+                    <reuseForks>true</reuseForks>
                     <forkCount>1</forkCount>
+                    <!-- Remède à « Unable to find a @SpringBootConfiguration by
+                         searching packages upwards » : avec reuseForks=true, la
+                         recherche de configuration de Spring s'exécute sur un autre
+                         fil (FutureTask dans la trace) et ne voit plus target/classes
+                         à travers le chargeur système de Surefire. Constaté le 08/09
+                         sur ActivitySearchAccentIntegrationTest et
+                         NextSessionAtIntegrationTest, vertes en isolation, rouges
+                         derrière onze autres classes dans la même JVM.
+                         useManifestOnlyJar=false répare pareil, au même coût. -->
+                    <useSystemClassLoader>false</useSystemClassLoader>
+                    <!-- Une JVM unique garde tout en mémoire, et le cache de contexte
+                         de Spring en conserve 32 par défaut : autant d'applications
+                         complètes vivantes en même temps. Le 08/09, la suite se
+                         faisait tuer faute de mémoire à la 47e classe, deux fois au
+                         même endroit. Quatre contextes suffisent — le but du
+                         conteneur singleton est justement qu'ils soient presque tous
+                         identiques donc réutilisés. -->
+                    <argLine>-Xmx3g -Dspring.test.context.cache.maxSize=3</argLine>
                     <!-- Charge un vrai modèle ONNX (~120 Mo, téléchargement réseau) :
                          exclu par défaut, exécuter avec -DexcludedGroups= . -->
                     <excludedGroups>${excludedGroups}</excludedGroups>
