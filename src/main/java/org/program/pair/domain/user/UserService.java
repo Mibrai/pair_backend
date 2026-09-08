@@ -6,6 +6,7 @@ import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
+import org.program.pair.domain.trust.BadgeAward;
 import org.program.pair.domain.attendance.ReliabilitySignal;
 import org.program.pair.domain.guidelines.Guidelines;
 import org.program.pair.domain.subscription.SubscriptionService;
@@ -25,11 +26,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.Collection;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @Transactional
@@ -64,6 +69,58 @@ public class UserService {
     public UserPublicDto getPublicProfile(UUID targetId, UUID requesterId) {
         User target = findActiveUser(targetId);
         return toPublicDto(target, requesterId);
+    }
+
+    /**
+     * Les profils publics de <b>plusieurs</b> personnes, pour le même lecteur.
+     *
+     * <p>Le jumeau groupé de {@link #getPublicProfile}. Celui-ci coûte trois
+     * requêtes par personne — nombre d'abonnés, suis-je abonné, badges — et
+     * cinq surfaces internes l'appellent en boucle. Sur les cartes-souvenirs
+     * d'un compte réel, c'était 105 requêtes pour trois hôtes distincts.
+     *
+     * <p><b>La règle de visibilité n'est pas recopiée</b> : les deux chemins
+     * finissent dans la même fabrique privée, qui décide seule de ce qu'un
+     * profil montre. Ce qui change ici est uniquement la façon dont ses trois
+     * entrées sont rassemblées. Une seconde définition aurait servi des profils
+     * plus bavards sur une page que sur une autre, sans qu'aucune erreur ne le
+     * dise.
+     *
+     * <p><b>Rend moins d'entrées qu'on ne lui en demande</b> quand une personne
+     * est inconnue ou désactivée : là où la variante unitaire lève, celle-ci
+     * omet, et laisse l'appelant décider. Aucun appelant n'a le droit de traiter
+     * une absence comme un profil vide.
+     */
+    @Transactional(readOnly = true)
+    public Map<UUID, UserPublicDto> getPublicProfiles(Collection<UUID> userIds, UUID requesterId) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Map.of();
+        }
+        Set<UUID> ids = new LinkedHashSet<>(userIds);
+
+        List<User> users = userRepository.findAllById(ids).stream()
+            .filter(u -> Boolean.TRUE.equals(u.getIsActive()))
+            .toList();
+        if (users.isEmpty()) {
+            return Map.of();
+        }
+        Set<UUID> actifs = users.stream().map(User::getId).collect(Collectors.toSet());
+
+        Map<UUID, Long> abonnes = subscriptionService.countAuthorSubscribers(actifs);
+        Set<UUID> suivis = subscriptionService.subscribedAuthorIds(requesterId, actifs);
+        Map<UUID, List<BadgeAward>> badges = badgeAwardRepository.findByUserIdsWithBadge(actifs)
+            .stream()
+            .collect(Collectors.groupingBy(award -> award.getUser().getId()));
+
+        Map<UUID, UserPublicDto> profils = new LinkedHashMap<>();
+        for (User user : users) {
+            profils.put(user.getId(), toPublicDto(
+                user,
+                abonnes.getOrDefault(user.getId(), 0L),
+                suivis.contains(user.getId()),
+                badges.getOrDefault(user.getId(), List.of())));
+        }
+        return profils;
     }
 
     /**
@@ -304,6 +361,19 @@ public class UserService {
      * mapping est appelé une fois par participant sur certaines pages.
      */
     private UserPublicDto toPublicDto(User user, long subscriberCount, boolean subscribed) {
+        return toPublicDto(user, subscriberCount, subscribed, null);
+    }
+
+    /**
+     * @param awardsDejaCharges les badges de cette personne quand un appelant les
+     *                          a déjà rapatriés pour tout un lot ; {@code null}
+     *                          quand il faut les lire ici. C'est le SEUL écart
+     *                          entre le rendu unitaire et le rendu groupé — la
+     *                          décision de visibilité, elle, reste écrite une
+     *                          fois, plus bas.
+     */
+    private UserPublicDto toPublicDto(User user, long subscriberCount, boolean subscribed,
+                                      List<BadgeAward> awardsDejaCharges) {
         PrivacySettings privacy = user.getPrivacySettings() != null
             ? user.getPrivacySettings()
             : new PrivacySettings();
@@ -330,7 +400,9 @@ public class UserService {
         // donc conditionné, et il passe par le dépôt qui rapatrie le badge dans
         // la même requête — sinon chaque code lu ci-dessous en coûterait une.
         List<String> badgeCodes = detailsVisible
-            ? badgeAwardRepository.findByUserIdWithBadge(user.getId()).stream()
+            ? (awardsDejaCharges != null
+                    ? awardsDejaCharges
+                    : badgeAwardRepository.findByUserIdWithBadge(user.getId())).stream()
                 .map(award -> {
                     try {
                         return award.getBadge().getCode();

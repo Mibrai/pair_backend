@@ -37,8 +37,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -273,36 +275,27 @@ public class SlotRecapService {
      */
     @Transactional(readOnly = true)
     public List<SlotRecapDto> getForProgram(UUID programId, UUID requesterId) {
-        return recapRepository.findForProgram(programId, requesterId).stream()
-            .map(recap -> toDto(recap, requesterId))
-            .toList();
+        return render(recapRepository.findForProgram(programId, requesterId), requesterId);
     }
 
     /** Cartes publiques d'une activité du catalogue — la page activité. */
     @Transactional(readOnly = true)
     public List<SlotRecapDto> getForActivity(UUID activityId, UUID requesterId) {
-        return recapRepository.findPublicForActivity(activityId).stream()
-            .map(recap -> toDto(recap, requesterId))
-            .toList();
+        return render(recapRepository.findPublicForActivity(activityId), requesterId);
     }
 
     /** Cartes publiques des créneaux animés par quelqu'un — son profil. */
     @Transactional(readOnly = true)
     public List<SlotRecapDto> getForHost(UUID userId, UUID requesterId) {
-        return recapRepository.findPublicForHost(userId).stream()
-            .map(recap -> toDto(recap, requesterId))
-            .toList();
+        return render(recapRepository.findPublicForHost(userId), requesterId);
     }
 
     /** Les cartes publiques autour de moi. */
     @Transactional(readOnly = true)
     public List<SlotRecapDto> getFeed(RecapFeedRequest request, UUID requesterId) {
-        return recapRepository
+        return render(recapRepository
             .findPublicInRadius(request.lat(), request.lng(), request.radiusMeters(), FEED_LIMIT,
-                requesterId)
-            .stream()
-            .map(recap -> toDto(recap, requesterId))
-            .toList();
+                requesterId), requesterId);
     }
 
     /**
@@ -314,10 +307,9 @@ public class SlotRecapService {
      */
     @Transactional(readOnly = true)
     public List<SlotRecapDto> getMine(UUID userId) {
-        return recapRepository.findMine(userId).stream()
+        return render(recapRepository.findMine(userId).stream()
             .filter(recap -> isHostActive(recap.getSchedule()))
-            .map(recap -> toDto(recap, userId))
-            .toList();
+            .toList(), userId);
     }
 
     /**
@@ -520,8 +512,41 @@ public class SlotRecapService {
     }
 
     // ————————————————————————— rendu —————————————————————————
+    //
+    // Tout ce qui suit obéit à une seule règle, et elle est arrivée tard :
+    // AUCUNE lecture ne se fait carte par carte.
+    //
+    // Le contrat n'a pas bougé d'un champ ; c'est le nombre d'allers-retours
+    // qui a changé. GET /recaps/mine coûtait HUIT requêtes par carte — trois
+    // pour le profil de l'hôte, une pour les ambiances dominantes, une pour les
+    // miennes, une pour les présences, une pour les consentements, une pour la
+    // prochaine séance. Sur les 35 cartes d'un compte réel : ~288 requêtes.
+    //
+    // Ce n'était pas cher en calcul, c'était cher en DISTANCE : la base est à
+    // San Francisco et le service en Europe, soit ~200 ms l'aller-retour. 288
+    // requêtes font une minute, et le client abandonne à trente secondes — la
+    // liste n'arrivait jamais, et le module « affiche » qui en dérive
+    // entièrement restait muet sans que rien ne le signale.
+    //
+    // D'où {@link RenderContext} : tout ce qui se lit pour un LOT de cartes est
+    // chargé une fois, avant de composer la première. Les lectures d'une seule
+    // carte passent par le même chemin, avec un lot d'un élément — un second
+    // chemin de rendu aurait fini par diverger du premier, et c'est le rendu
+    // qui porte les règles de confidentialité.
 
+    /** Un lot de cartes, rendu en un nombre de requêtes qui ne dépend pas de sa taille. */
+    private List<SlotRecapDto> render(List<SlotRecap> recaps, UUID viewerId) {
+        RenderContext context = new RenderContext(recaps, viewerId);
+        return recaps.stream().map(recap -> toDto(recap, viewerId, context)).toList();
+    }
+
+    /** Une carte seule — le même rendu, sur un lot d'un élément. */
     private SlotRecapDto toDto(SlotRecap recap, UUID viewerId) {
+        List<SlotRecap> lot = List.of(recap);
+        return toDto(recap, viewerId, new RenderContext(lot, viewerId));
+    }
+
+    private SlotRecapDto toDto(SlotRecap recap, UUID viewerId, RenderContext context) {
         Schedule slot = recap.getSchedule();
         Program program = slot.getProgram();
         UserActivity userActivity = program != null ? program.getUserActivity() : null;
@@ -532,10 +557,11 @@ public class SlotRecapService {
         Instant windowClosesAt = windowCloseOf(recap.getOccurrenceEnd());
         boolean windowOpen = Instant.now().isBefore(windowClosesAt);
 
+        List<Attendance> presences = context.presences(recap);
+
         boolean canContribute = windowOpen
             && viewerId != null
-            && attendanceRepository.existsByScheduleIdAndUserIdAndAttendedAtAndWasPresentTrue(
-                slot.getId(), viewerId, recap.getOccurrenceStart());
+            && presences.stream().anyMatch(a -> viewerId.equals(a.getUser().getId()));
 
         return new SlotRecapDto(
             slot.getId(),
@@ -550,28 +576,20 @@ public class SlotRecapService {
             slot.getPlaceName(),
             slot.getCity(),
             recap.getAttendeeCount() != null ? recap.getAttendeeCount() : 0,
-            topVibes(recap),
-            publicPhotos(recap),
+            context.topVibes(recap),
+            publicPhotos(presences),
             recap.getHostNote(),
-            host != null ? userService.getPublicProfile(host.getId(), viewerId) : null,
-            visibleAttendees(recap, slot, viewerId),
-            nextSlot(program, viewerId),
+            host != null ? context.profile(host.getId()) : null,
+            visibleAttendees(recap, host, presences, context),
+            context.nextSlot(program),
             recap.getVisibility().name(),
             canContribute,
             // Nulle une fois la fenêtre refermée : il n'y a plus de délai à
             // annoncer, et une date passée serait affichée comme un compte à
             // rebours négatif.
             windowOpen ? windowClosesAt : null,
-            myVibes(recap, viewerId)
+            context.myVibes(recap)
         );
-    }
-
-    /** Trois ambiances au maximum, de la plus choisie à la moins choisie. */
-    private List<VibeCountDto> topVibes(SlotRecap recap) {
-        return vibeVoteRepository.countByVibe(recap.getId()).stream()
-            .limit(MAX_TOP_VIBES)
-            .map(row -> new VibeCountDto(((SlotVibe) row[0]).name(), ((Number) row[1]).intValue()))
-            .toList();
     }
 
     /**
@@ -580,9 +598,8 @@ public class SlotRecapService {
      * seulement côté client, il laisserait passer des images que personne n'a
      * accepté de publier.
      */
-    private List<String> publicPhotos(SlotRecap recap) {
-        return attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(
-                recap.getSchedule().getId(), recap.getOccurrenceStart()).stream()
+    private static List<String> publicPhotos(List<Attendance> presences) {
+        return presences.stream()
             .filter(a -> Boolean.TRUE.equals(a.getMemoryIsPublic()))
             .map(Attendance::getMemoryPhotoUrl)
             .filter(Objects::nonNull)
@@ -595,17 +612,17 @@ public class SlotRecapService {
      * explicitement accepté de l'être. L'hôte n'y figure pas — il a son propre
      * champ, et l'y répéter le ferait apparaître deux fois sur la carte.
      */
-    private List<UserPublicDto> visibleAttendees(SlotRecap recap, Schedule slot, UUID viewerId) {
-        List<UUID> consenting = consentRepository.findConsentingUserIds(recap.getId());
+    private List<UserPublicDto> visibleAttendees(SlotRecap recap, User host,
+                                                 List<Attendance> presences,
+                                                 RenderContext context) {
+        List<UUID> consenting = context.consenting(recap);
         if (consenting.isEmpty()) {
             return List.of();
         }
-        User host = hostOf(slot);
         UUID hostId = host != null ? host.getId() : null;
 
         List<UserPublicDto> visible = new ArrayList<>();
-        for (Attendance attendance : attendanceRepository.findByScheduleIdAndAttendedAtAndWasPresentTrue(
-                slot.getId(), recap.getOccurrenceStart())) {
+        for (Attendance attendance : presences) {
             UUID attendeeId = attendance.getUser().getId();
             if (attendeeId.equals(hostId) || !consenting.contains(attendeeId)) {
                 continue;
@@ -613,36 +630,190 @@ public class SlotRecapService {
             if (!Boolean.TRUE.equals(attendance.getUser().getIsActive())) {
                 continue;
             }
-            visible.add(userService.getPublicProfile(attendeeId, viewerId));
+            visible.add(context.profile(attendeeId));
         }
         return visible;
     }
 
     /**
-     * La prochaine séance ouverte du même programme — le champ qui convertit un
-     * lecteur en participant. Nul franchement quand il n'y en a pas.
+     * Tout ce qu'un lot de cartes doit lire, chargé une fois.
+     *
+     * <p>Trois requêtes groupées à la construction — ambiances, mes ambiances,
+     * consentements — plus une pour les présences. Le profil d'une personne et
+     * la prochaine séance d'un programme se résolvent à la demande, mais
+     * <b>une seule fois chacun</b> : trois hôtes pour trente-cinq cartes, c'est
+     * trois profils, pas trente-cinq.
+     *
+     * <p>Le lecteur est fixé pour tout le contexte, et c'est ce qui autorise ces
+     * mémorisations : {@code subscribed} sur un profil et {@code alreadyJoined}
+     * sur une prochaine séance dépendent de lui. Un contexte réutilisé d'un
+     * lecteur à l'autre rendrait à l'un les relations de l'autre — c'est pour
+     * cela qu'il naît et meurt avec l'appel, et n'est jamais un champ du
+     * service.
      */
-    private NextSlotDto nextSlot(Program program, UUID viewerId) {
-        if (program == null) {
-            return null;
-        }
-        Optional<Schedule> next = scheduleRepository.findNextOpenSlot(program.getId(), Instant.now());
-        return next.map(slot -> new NextSlotDto(
-            slot.getId(),
-            slot.getStartsAt(),
-            slot.getPlaceName(),
-            slot.getParticipantCount() != null ? slot.getParticipantCount() : 0,
-            slot.getMaxParticipants(),
-            viewerId != null && slotAudience.participantIds(slot).contains(viewerId)
-        )).orElse(null);
-    }
+    private final class RenderContext {
 
-    private List<String> myVibes(SlotRecap recap, UUID viewerId) {
-        if (viewerId == null) {
-            return List.of();
+        private final UUID viewerId;
+        private final Map<UUID, List<VibeCountDto>> topVibes = new HashMap<>();
+        private final Map<UUID, List<String>> myVibes = new HashMap<>();
+        private final Map<UUID, List<UUID>> consenting = new HashMap<>();
+        private final Map<Occurrence, List<Attendance>> presences = new HashMap<>();
+        private final Map<UUID, UserPublicDto> profiles = new HashMap<>();
+        private final Map<UUID, Optional<NextSlotDto>> nextSlots = new HashMap<>();
+
+        /** La séance d'une carte : le couple qui identifie une présence. */
+        private record Occurrence(UUID scheduleId, Instant startsAt) {}
+
+        RenderContext(List<SlotRecap> recaps, UUID viewerId) {
+            this.viewerId = viewerId;
+            if (recaps.isEmpty()) {
+                return;
+            }
+
+            List<UUID> recapIds = recaps.stream().map(SlotRecap::getId).toList();
+
+            // Les ambiances dominantes arrivent triées par carte puis par
+            // décompte : le plafond de trois se prend donc en tête de chaque
+            // groupe, exactement comme le faisait la requête par carte.
+            for (Object[] row : vibeVoteRepository.countByVibeForRecaps(recapIds)) {
+                List<VibeCountDto> pourLaCarte =
+                    topVibes.computeIfAbsent((UUID) row[0], k -> new ArrayList<>());
+                if (pourLaCarte.size() < MAX_TOP_VIBES) {
+                    pourLaCarte.add(new VibeCountDto(
+                        ((SlotVibe) row[1]).name(), ((Number) row[2]).intValue()));
+                }
+            }
+
+            if (viewerId != null) {
+                for (Object[] row : vibeVoteRepository.findVibesByRecapIdsAndUserId(recapIds, viewerId)) {
+                    myVibes.computeIfAbsent((UUID) row[0], k -> new ArrayList<>())
+                        .add(((SlotVibe) row[1]).name());
+                }
+            }
+
+            for (Object[] row : consentRepository.findConsentingByRecapIds(recapIds)) {
+                consenting.computeIfAbsent((UUID) row[0], k -> new ArrayList<>())
+                    .add((UUID) row[1]);
+            }
+
+            // Les deux bornes sont croisées et non appariées : la requête peut
+            // ramener la présence d'une séance qu'aucune carte du lot ne
+            // demande. On réapparie donc ici, sur le couple exact — une carte
+            // ne doit jamais hériter des présents d'une autre semaine.
+            Set<UUID> scheduleIds = new LinkedHashSet<>();
+            Set<Instant> starts = new LinkedHashSet<>();
+            for (SlotRecap recap : recaps) {
+                scheduleIds.add(recap.getSchedule().getId());
+                starts.add(recap.getOccurrenceStart());
+            }
+            for (Attendance attendance : attendanceRepository
+                    .findPresentForOccurrences(scheduleIds, starts)) {
+                presences.computeIfAbsent(
+                        new Occurrence(attendance.getSchedule().getId(), attendance.getAttendedAt()),
+                        k -> new ArrayList<>())
+                    .add(attendance);
+            }
+
+            // Les profils en dernier : on ne sait quels participants sont
+            // nommables qu'une fois les consentements lus. Hôtes et participants
+            // nommés partent ensemble — c'est le même lecteur, donc le même
+            // calcul d'abonnement, et les séparer coûterait deux fois trois
+            // requêtes pour rien.
+            Set<UUID> aResoudre = new LinkedHashSet<>();
+            for (SlotRecap recap : recaps) {
+                User host = hostOf(recap.getSchedule());
+                if (host != null) {
+                    aResoudre.add(host.getId());
+                }
+            }
+            consenting.values().forEach(aResoudre::addAll);
+            profiles.putAll(userService.getPublicProfiles(aResoudre, viewerId));
+
+            // La prochaine séance : une question par PROGRAMME, posée une fois
+            // pour tous. Puis une seule interrogation d'audience pour savoir
+            // lesquelles je rejoins déjà — la version unitaire en coûtait deux
+            // par créneau.
+            Set<UUID> programIds = new LinkedHashSet<>();
+            for (SlotRecap recap : recaps) {
+                Program program = recap.getSchedule().getProgram();
+                if (program != null) {
+                    programIds.add(program.getId());
+                }
+            }
+            if (!programIds.isEmpty()) {
+                List<Schedule> prochaines =
+                    scheduleRepository.findNextOpenSlots(programIds, Instant.now());
+                Set<UUID> rejointes = slotAudience.slotsWhereParticipant(viewerId, prochaines);
+                for (Schedule prochaine : prochaines) {
+                    nextSlots.put(prochaine.getProgram().getId(), Optional.of(new NextSlotDto(
+                        prochaine.getId(),
+                        prochaine.getStartsAt(),
+                        prochaine.getPlaceName(),
+                        prochaine.getParticipantCount() != null ? prochaine.getParticipantCount() : 0,
+                        prochaine.getMaxParticipants(),
+                        rejointes.contains(prochaine.getId()))));
+                }
+                // Un programme sans séance à venir : la réponse est « aucune »,
+                // et elle doit être mémorisée comme telle, sans quoi le repli
+                // unitaire la redemanderait carte par carte.
+                for (UUID programId : programIds) {
+                    nextSlots.putIfAbsent(programId, Optional.empty());
+                }
+            }
         }
-        return vibeVoteRepository.findVibesByRecapIdAndUserId(recap.getId(), viewerId).stream()
-            .map(SlotVibe::name)
-            .toList();
+
+        List<VibeCountDto> topVibes(SlotRecap recap) {
+            return topVibes.getOrDefault(recap.getId(), List.of());
+        }
+
+        List<String> myVibes(SlotRecap recap) {
+            return myVibes.getOrDefault(recap.getId(), List.of());
+        }
+
+        List<UUID> consenting(SlotRecap recap) {
+            return consenting.getOrDefault(recap.getId(), List.of());
+        }
+
+        List<Attendance> presences(SlotRecap recap) {
+            return presences.getOrDefault(
+                new Occurrence(recap.getSchedule().getId(), recap.getOccurrenceStart()), List.of());
+        }
+
+        /**
+         * Le profil public de quelqu'un, résolu une fois par personne et par lot.
+         *
+         * <p>Le repli unitaire n'est pas mort : la lecture groupée <b>omet</b>
+         * les comptes inconnus ou désactivés, là où la variante unitaire lève.
+         * Repasser par elle conserve donc la décision d'erreur telle qu'elle
+         * était — un profil manquant ne doit pas devenir un profil vide au
+         * détour d'une optimisation.
+         */
+        UserPublicDto profile(UUID userId) {
+            return profiles.computeIfAbsent(userId, id -> userService.getPublicProfile(id, viewerId));
+        }
+
+        /**
+         * La prochaine séance ouverte du même programme — le champ qui convertit
+         * un lecteur en participant. Nulle franchement quand il n'y en a pas.
+         *
+         * <p>Résolue une fois par PROGRAMME : trente-cinq cartes d'un cours
+         * hebdomadaire ne posent qu'une seule fois la question « et la
+         * prochaine ? ».
+         */
+        NextSlotDto nextSlot(Program program) {
+            if (program == null) {
+                return null;
+            }
+            return nextSlots.computeIfAbsent(program.getId(), programId ->
+                    scheduleRepository.findNextOpenSlot(programId, Instant.now())
+                        .map(slot -> new NextSlotDto(
+                            slot.getId(),
+                            slot.getStartsAt(),
+                            slot.getPlaceName(),
+                            slot.getParticipantCount() != null ? slot.getParticipantCount() : 0,
+                            slot.getMaxParticipants(),
+                            viewerId != null && slotAudience.participantIds(slot).contains(viewerId))))
+                .orElse(null);
+        }
     }
 }

@@ -78,9 +78,22 @@ public interface SlotRecapRepository extends JpaRepository<SlotRecap, UUID> {
      * <p>La jointure porte sur la séance ({@code attendedAt = occurrenceStart})
      * et non sur le créneau : être venu une fois à un cours hebdomadaire ne
      * fait pas de ses autres semaines mes souvenirs.
+     *
+     * <p><b>L'arbre est ramené avec les cartes</b>, jusqu'à l'hôte et à la
+     * catégorie. Sans ces jointures, le rendu le dépliait paresseusement en six
+     * requêtes de plus — un coût fixe, mais payé au prix d'un aller-retour
+     * transatlantique chacune. {@code LEFT} partout et non {@code INNER} : une
+     * carte dont le programme ou l'activité manque doit encore sortir, le rendu
+     * sait déjà lire ces absences.
      */
     @Query("""
         SELECT r FROM SlotRecap r
+        LEFT JOIN FETCH r.schedule s
+        LEFT JOIN FETCH s.program p
+        LEFT JOIN FETCH p.userActivity ua
+        LEFT JOIN FETCH ua.user
+        LEFT JOIN FETCH ua.activity act
+        LEFT JOIN FETCH act.category
         WHERE EXISTS (
             SELECT 1 FROM Attendance a
             WHERE a.schedule.id = r.schedule.id
