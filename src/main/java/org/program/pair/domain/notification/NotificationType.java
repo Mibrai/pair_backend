@@ -224,6 +224,61 @@ public enum NotificationType {
         WATCH_RETURN_REMINDER, WATCH_ARRIVAL_PROMPT, WATCH_GUARDIAN_ALERT,
         WATCH_ARRIVAL_CONFIRMED);
 
+    /**
+     * Les notifications dont <b>le serveur compose le texte de bout en bout</b>,
+     * et auxquelles le client ne doit pas appliquer son gabarit.
+     *
+     * <p>Le nom reprend celui du prédicat côté iOS ({@code serveurCompose}) : les
+     * deux décrivent le même fait, et les lire sous le même mot évite qu'ils
+     * divergent sans qu'on le voie.
+     *
+     * <p><b>Ce que l'appartenance à cet ensemble change concrètement</b> : la
+     * charge APNs part <b>sans {@code mutable-content} et sans {@code category}</b>
+     * (voir {@code PushNotificationService.applyTemplateKeys}). Ce sont les deux
+     * clés qui réveillent les extensions iOS — la première l'extension de service,
+     * la seconde l'extension de contenu — et il faut couper <b>les deux</b> : le
+     * client repose lui-même {@code categoryIdentifier} depuis son extension de
+     * service, si bien que couper {@code category} seul ne referme rien tant que
+     * {@code mutable-content} fait tourner cette extension ; et couper
+     * {@code mutable-content} seul laisse notre {@code category} réveiller
+     * l'extension de contenu au déploiement. Chacune prise isolément laisse un
+     * chemin ouvert.
+     *
+     * <p><b>{@code AFFICHE_READY} y est pour une raison datée, pas par nature.</b>
+     * Sa charge porte {@code programTitle}, {@code placeName} et {@code sessionAt},
+     * et les extensions iOS livrées composaient depuis ces clés sans garde : la vue
+     * déployée affichait le titre du programme, la date d'une séance déjà faite et
+     * l'adresse en seconde ligne d'un écran verrouillé — répété chaque semaine sur
+     * une pratique récurrente, le schéma de vie que le module de veille existe pour
+     * empêcher. Le correctif client est écrit et testé, mais il vit dans un binaire
+     * derrière une revue App Store ; cette coupure est ce qui referme le défaut
+     * chez les personnes qui ont l'application <i>aujourd'hui</i>.
+     *
+     * <p><b>Elle est temporaire, et sa date de retrait est
+     * {@link #FIN_DE_COUPURE_AFFICHE_READY}.</b> Passée cette date, chaque push
+     * concernée le dit dans les journaux ({@code PushNotificationService.cutoffExpired}) :
+     * un rappel qui se voit là où la coupure s'applique, sans faire tomber un build
+     * un matin sur un changement que personne n'a fait. Le client s'est engagé à
+     * nous écrire le numéro de build correctif ; à défaut, on retire au plus tard à
+     * cette date et on le prévient.
+     */
+    private static final java.util.Set<NotificationType> SERVER_COMPOSED =
+        java.util.EnumSet.of(AFFICHE_READY);
+
+    /**
+     * Jusqu'à quand {@link #SERVER_COMPOSED} peut contenir {@code AFFICHE_READY}.
+     *
+     * <p>Six semaines après la coupure, l'échéance que le client a lui-même posée :
+     * elles couvrent largement une revue App Store. Passée cette date sans build
+     * correctif annoncé, la ligne est à retirer — « un garde-fou qu'on oublie est
+     * pire qu'un défaut qu'on connaît », et c'est de leur plume.
+     *
+     * <p>Reporter cette date est une décision, pas un ajustement : elle se prend
+     * avec le client, jamais pour faire reverdir un test.
+     */
+    public static final java.time.LocalDate FIN_DE_COUPURE_AFFICHE_READY =
+        java.time.LocalDate.of(2026, 10, 15);
+
     /** Vrai si cette notification passe outre les heures de silence. */
     public boolean isCritical() {
         return CRITICAL.contains(this);
@@ -240,5 +295,14 @@ public enum NotificationType {
      */
     public boolean isTimeSensitive() {
         return TIME_SENSITIVE.contains(this);
+    }
+
+    /**
+     * Vrai si le serveur compose le texte de bout en bout et que les extensions
+     * iOS ne doivent pas y toucher — donc si la charge part sans
+     * {@code mutable-content} ni {@code category}. Voir {@link #SERVER_COMPOSED}.
+     */
+    public boolean isServerComposed() {
+        return SERVER_COMPOSED.contains(this);
     }
 }

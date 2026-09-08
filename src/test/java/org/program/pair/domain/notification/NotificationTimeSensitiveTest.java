@@ -59,7 +59,8 @@ class NotificationTimeSensitiveTest {
     void lApsTimeSensitive_seConstruitSansErreur() {
         // La clé interruption-level est posée en donnée personnalisée de l'aps ;
         // on vérifie au moins que le builder l'accepte et produit un aps non nul.
-        Aps aps = PushNotificationService.visibleApsTimeSensitive(3);
+        Aps aps = PushNotificationService.visibleApsTimeSensitive(
+            3, NotificationType.WATCH_RETURN_REMINDER);
         assertThat(aps).isNotNull();
     }
 }
