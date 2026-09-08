@@ -16,7 +16,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doReturn;
 
 /**
  * Demande 3 (a, b) de docs/specs/PROMPT_BACKEND_EVOLUTIONS_2026-08.md, avec les
@@ -45,7 +45,7 @@ class AcceptLanguageIntegrationTest extends AbstractIntegrationTest {
             token = registerAndLogin(EMAIL);
             accountCreated = true;
         }
-        when(embeddingService.generateEmbedding(any())).thenReturn(new float[384]);
+        doReturn(new float[384]).when(embeddingService).generateEmbedding(any());
     }
 
     // — clarification —

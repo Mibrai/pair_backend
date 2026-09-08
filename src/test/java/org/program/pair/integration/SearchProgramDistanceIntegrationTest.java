@@ -39,7 +39,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doReturn;
 
 /**
  * Un résultat {@code program} doit porter le lieu de sa séance, jamais le
@@ -103,7 +103,7 @@ class SearchProgramDistanceIntegrationTest extends AbstractIntegrationTest {
         // rendait, et qu'aucune assertion de ce fichier ne doit revoir.
         host.setLocation(geometryFactory.createPoint(new Coordinate(BERLIN_LNG, BERLIN_LAT)));
         userRepository.save(host);
-        when(embeddingService.generateEmbedding(any())).thenReturn(new float[384]);
+        doReturn(new float[384]).when(embeddingService).generateEmbedding(any());
     }
 
     /** La demande du client, littéralement. */

@@ -52,6 +52,20 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ActivityBrowseIntegrationTest extends AbstractIntegrationTest {
 
+    /**
+     * Le nom d'affichage de l'activité-fixture, distinct de celui du
+     * référentiel.
+     *
+     * <p>La classe fabriquait déjà sa propre activité — {@code slugOf} lui donne
+     * un slug {@code browse-fixture-…} — mais lui laissait le nom « Yoga », celui
+     * de l'activité du référentiel. Les assertions filtrent sur
+     * {@code activityName} : dès que la base est partagée, les personnes qui ont
+     * déclaré le vrai « Yoga » ailleurs dans la suite tombent dans le même
+     * filtre, et {@code hasSize(2)} en trouve davantage. Le slug était unique,
+     * le nom ne l'était pas — et c'est le nom que le test regarde.
+     */
+    private static final String YOGA = "Yoga-browse";
+
     @Autowired UserRepository userRepository;
     @Autowired ActivityRepository activityRepository;
     @Autowired UserActivityRepository userActivityRepository;
@@ -88,7 +102,7 @@ class ActivityBrowseIntegrationTest extends AbstractIntegrationTest {
         List<JsonNode> entries = nearbyEntries(100_000);
 
         List<JsonNode> yoga = entries.stream()
-            .filter(e -> "Yoga".equals(e.get("activityName").asText()))
+            .filter(e -> YOGA.equals(e.get("activityName").asText()))
             .toList();
 
         assertThat(yoga)
@@ -285,7 +299,7 @@ class ActivityBrowseIntegrationTest extends AbstractIntegrationTest {
         // l'autre, jamais sur un ensemble exact : d'autres méthodes de cette
         // classe déclarent d'autres activités pour le même appelant, et JUnit ne
         // garantit pas leur ordre.
-        declareForCaller("Yoga", false);
+        declareForCaller(YOGA, false);
 
         List<String> names = contentOf(browse(b -> query(b, 100_000)
             .queryParam("size", 100)
@@ -293,8 +307,8 @@ class ActivityBrowseIntegrationTest extends AbstractIntegrationTest {
             .build()))
             .stream().map(e -> e.get("activityName").asText()).toList();
 
-        assertThat(names).contains("Yoga");
-        assertThat(names.stream().filter("Yoga"::equals).count())
+        assertThat(names).contains(YOGA);
+        assertThat(names.stream().filter(YOGA::equals).count())
             .as("les deux organisateurs de Yoga, pas un seul")
             .isEqualTo(2);
         assertThat(names)
@@ -325,10 +339,10 @@ class ActivityBrowseIntegrationTest extends AbstractIntegrationTest {
         // Deux entrées de la même activité, une seule suivie : le cumul doit
         // rendre celle-là et pas l'autre. C'est ce qui distingue un ET d'un OU,
         // et l'assertion tient quel que soit l'ordre des méthodes.
-        declareForCaller("Yoga", false);
+        declareForCaller(YOGA, false);
 
         List<JsonNode> allYoga = nearbyEntries(100_000).stream()
-            .filter(e -> "Yoga".equals(e.get("activityName").asText()))
+            .filter(e -> YOGA.equals(e.get("activityName").asText()))
             .toList();
         assertThat(allYoga).hasSize(2);
 
@@ -485,11 +499,11 @@ class ActivityBrowseIntegrationTest extends AbstractIntegrationTest {
 
         // Deux « Yoga », deux organisateurs : le cas que la jointure par nom
         // fusionnait en une seule carte.
-        UserActivity lenaYoga = declare(lena, "Yoga");
+        UserActivity lenaYoga = declare(lena, YOGA);
         program(lenaYoga, "Yoga Lena 1", LAT, LNG, future());
         program(lenaYoga, "Yoga Lena 2", LAT, LNG, future());
 
-        UserActivity marcYoga = declare(marc, "Yoga");
+        UserActivity marcYoga = declare(marc, YOGA);
         program(marcYoga, "Yoga Marc", LAT, LNG, future());
 
         // Sans aucun programme : doit exister, et porter son organisateur.
