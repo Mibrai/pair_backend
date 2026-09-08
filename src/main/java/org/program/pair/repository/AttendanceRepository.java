@@ -1,6 +1,7 @@
 package org.program.pair.repository;
 
 import org.program.pair.domain.attendance.Attendance;
+import org.program.pair.domain.attendance.dto.ConfirmedAttendanceDto;
 import org.program.pair.domain.user.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -143,6 +144,61 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
     @Query("SELECT a.user FROM Attendance a WHERE a.schedule.id = :scheduleId " +
            "AND a.user.id <> :userId AND a.wasPresent = true")
     List<User> findPresentCoParticipants(@Param("scheduleId") UUID scheduleId, @Param("userId") UUID userId);
+
+    /**
+     * Toute l'histoire d'une personne : une entrée par séance où elle a confirmé
+     * sa présence — {@code GET /api/attendances/mine}.
+     *
+     * <p><b>Elle ne touche jamais {@code slot_recaps}</b>, et c'est la propriété
+     * qui la justifie. Une entrée existe pour une présence confirmée dont la
+     * séance n'a <i>aucune</i> carte-souvenir : la carte naît de la première
+     * contribution, et lire son passé à travers elle le fait dépendre de ce
+     * qu'un tiers a bien voulu y déposer. Voir {@link
+     * org.program.pair.domain.attendance.dto.ConfirmedAttendanceDto} pour les
+     * deux défauts que cela ferme.
+     *
+     * <p><b>{@code wasPresent = true} et non « une réponse existe »</b> : une
+     * présence confirmée se lit <i>confirmée présente</i>. Quelqu'un qui a
+     * répondu « je n'y étais pas » ne doit pas voir une transition se déclencher
+     * sur une séance qu'il a manquée.
+     *
+     * <p><b>Sans pagination</b>, et de la séance la plus récente à la plus
+     * ancienne. C'est l'histoire entière parce que c'est ce que le client
+     * calcule dessus : une histoire tronquée rouvrirait exactement le défaut que
+     * cette route ferme, en faisant réapparaître un premier passage que la page
+     * suivante contredit.
+     *
+     * <p><b>Une seule requête, quel que soit le nombre de présences</b> — rien
+     * n'est une entité, cinq colonnes sont projetées et les jointures sont
+     * faites en SQL. Mesuré au harnais de comptage : 1 requête pour 15
+     * présences. C'est ce qui compte, plus que le calcul : la base est à San
+     * Francisco et le service en Europe, soit ~200 ms l'aller-retour.
+     *
+     * <p><b>Des {@code LEFT JOIN} explicites, et non la navigation de chemin</b>
+     * qu'emploie {@link #countByActivityForUser} juste au-dessus. Écrire
+     * {@code a.schedule.program.userActivity.activity.category} produit des
+     * jointures <b>internes</b>. Les cinq clés étrangères de cette chaîne sont
+     * {@code NOT NULL} aujourd'hui, donc aucune ligne ne peut être perdue ; le
+     * jour où l'une d'elles deviendrait facultative, une jointure interne ferait
+     * <b>disparaître des présences de l'histoire</b> sans que rien ne le
+     * signale — et une présence manquante ici, c'est précisément le motif servi
+     * à froid que la route existe pour empêcher. Le sens de l'erreur doit aller
+     * vers une activité nulle, jamais vers une séance oubliée.
+     */
+    @Query("""
+        SELECT new org.program.pair.domain.attendance.dto.ConfirmedAttendanceDto(
+            s.id, a.attendedAt, act.id, act.name, c.colorRamp)
+        FROM Attendance a
+          LEFT JOIN a.schedule s
+          LEFT JOIN s.program p
+          LEFT JOIN p.userActivity ua
+          LEFT JOIN ua.activity act
+          LEFT JOIN act.category c
+        WHERE a.user.id = :userId
+          AND a.wasPresent = true
+        ORDER BY a.attendedAt DESC
+        """)
+    List<ConfirmedAttendanceDto> findConfirmedForUser(@Param("userId") UUID userId);
 
     @Query(value = """
         SELECT EXISTS (
