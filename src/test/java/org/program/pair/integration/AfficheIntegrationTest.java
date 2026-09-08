@@ -222,9 +222,128 @@ class AfficheIntegrationTest extends AbstractIntegrationTest {
             .isEqualTo(card.slotEndedAt().plus(7, ChronoUnit.DAYS));
     }
 
+    /**
+     * B7 : l'affiche porte de quoi se composer seule.
+     *
+     * <p>L'assertion qui compte n'est pas que les deux champs soient renseignés,
+     * c'est qu'ils portent <b>exactement</b> ce que la carte-souvenir de la même
+     * séance annonce. Les deux routes lisent la même chaîne
+     * {@code Schedule → Program → UserActivity → Activity → Category}, et c'est
+     * délibéré : deux chemins vers la même valeur divergent le jour où l'un des
+     * replis change, et personne ne remarquerait qu'une affiche et une
+     * carte-souvenir d'une même séance annoncent deux activités.
+     *
+     * <p>Le décor le rend d'autant plus parlant que la carte-souvenir est ici
+     * lisible — l'hôte vient de l'écrire. En production c'est l'inverse dans le
+     * cas majoritaire : elle est refusée en 404 tant que l'hôte ne l'a pas
+     * publiée, et c'est précisément pourquoi l'affiche ne peut pas aller y
+     * chercher son titre.
+     */
+    @Test
+    void lAfficheAnnonceLaMemeActiviteQueLaCarteSouvenirDeLaSeance() {
+        Fixture f = endedSlot("aff-activite");
+        confirmPresence(f.hostToken, f.scheduleId);
+        confirmPresence(f.guestToken, f.scheduleId);
+
+        SlotRecapDto card = webTestClient.patch()
+            .uri("/api/slots/{id}/recap/note", f.scheduleId)
+            .headers(h -> h.setBearerAuth(f.hostToken))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue("{\"note\":\"Belle séance.\"}")
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody(SlotRecapDto.class)
+            .returnResult()
+            .getResponseBody();
+
+        AfficheDto affiche = publishAffiche(f.guestToken, f.scheduleId, "PREMIERE_FOIS", "EVERYONE");
+
+        assertThat(card).isNotNull();
+        assertThat(card.activityName()).isNotBlank();
+        assertThat(card.categoryColorRamp()).isNotBlank();
+
+        assertThat(affiche.activityName())
+            .as("même chaîne que la carte-souvenir, volontairement")
+            .isEqualTo(card.activityName());
+        assertThat(affiche.categoryColorRamp())
+            .as("la teinte aussi : deux sources pour une couleur finiraient par diverger")
+            .isEqualTo(card.categoryColorRamp());
+
+        // Et la ligne que l'ajout ne doit pas franchir : l'auteur publie ce que
+        // SA pratique a écrit, jamais la fiche de la séance de l'hôte.
+        assertThat(affichesOf(f.guestToken, f.guestId))
+            .singleElement()
+            .satisfies(a -> {
+                assertThat(a.activityName()).isEqualTo(card.activityName());
+                assertThat(a.categoryColorRamp()).isEqualTo(card.categoryColorRamp());
+            });
+    }
+
+    /**
+     * B8 : la bande d'affiches n'a pas de liste hôte pour apporter les visages.
+     *
+     * <p>Ce qui n'est pas rendu ici ne peut être résolu que par un
+     * {@code GET /users/{id}} par identifiant — la requête par personne que cette
+     * route existe pour éviter.
+     */
+    @Test
+    void laBandeRecoitLeNomEtLAvatarDeCeuxQuElleADroitDeMontrer() {
+        Fixture f = endedSlot("aff-bande");
+        confirmPresence(f.guestToken, f.scheduleId);
+
+        User auteur = userRepository.findById(f.guestId).orElseThrow();
+        auteur.setAvatarUrl("https://cdn.pair.app/aff-bande/auteur.jpg");
+        userRepository.save(auteur);
+
+        String tiers = registerAndLogin("aff-bande-tiers@pair.app");
+
+        Instant avant = Instant.now().minus(1, ChronoUnit.MINUTES);
+        publishAffiche(f.guestToken, f.scheduleId, "PREMIERE_FOIS", "EVERYONE");
+
+        assertThat(updatesSince(tiers, avant))
+            .filteredOn(u -> u.userId().equals(f.guestId))
+            .singleElement()
+            .satisfies(u -> {
+                assertThat(u.displayName())
+                    .as("sans le nom, la bande ne peut pas dessiner cette personne")
+                    .isEqualTo(auteur.getDisplayName());
+                assertThat(u.avatarUrl())
+                    .isEqualTo("https://cdn.pair.app/aff-bande/auteur.jpg");
+                assertThat(u.latestPublishedAt()).isAfter(avant);
+            });
+    }
+
+    /**
+     * Le nom et l'avatar restent derrière le filtre d'audience : ils ne sont pas
+     * rendus « en plus », ils sont rendus <b>avec</b> une affiche qu'on a le droit
+     * de voir. Une bande qui nommerait quelqu'un dont elle ne peut pas ouvrir
+     * l'affiche promettrait ce qui n'existe pas.
+     */
+    @Test
+    void unTiersSansDroit_neRecoitNiLAnneauNiLeNom() {
+        Fixture f = endedSlot("aff-bande-fermee");
+        confirmPresence(f.guestToken, f.scheduleId);
+
+        String tiers = registerAndLogin("aff-bande-fermee-tiers@pair.app");
+
+        Instant avant = Instant.now().minus(1, ChronoUnit.MINUTES);
+        publishAffiche(f.guestToken, f.scheduleId, "PREMIERE_FOIS", "SUBSCRIBERS");
+
+        assertThat(updatesSince(tiers, avant))
+            .as("le nom fuiterait ce que l'audience protège, comme l'anneau")
+            .extracting(AfficheUpdateDto::userId)
+            .doesNotContain(f.guestId);
+    }
+
     // ————————————————————————— décor —————————————————————————
 
-    private record Fixture(UUID scheduleId, String hostToken, String guestToken,
+    /**
+     * {@code guestId} évite aux tests de retrouver l'auteur par son e-mail : la
+     * base est partagée entre classes depuis le conteneur unique, et une
+     * recherche par adresse codée en dur est exactement la fixture qu'on ne veut
+     * plus multiplier.
+     */
+    private record Fixture(UUID scheduleId, UUID guestId, String hostToken, String guestToken,
                            Instant livedStart, Instant livedEnd) {}
 
     /** Un créneau terminé il y a deux heures, son hôte, et un participant inscrit. */
@@ -270,7 +389,8 @@ class AfficheIntegrationTest extends AbstractIntegrationTest {
             .status(ParticipationStatus.CONFIRMED)
             .build());
 
-        return new Fixture(schedule.getId(), hostToken, guestToken, livedStart, livedEnd);
+        return new Fixture(schedule.getId(), guest.getId(), hostToken, guestToken,
+            livedStart, livedEnd);
     }
 
     private void confirmPresence(String token, UUID scheduleId) {

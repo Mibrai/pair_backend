@@ -28,8 +28,45 @@ public interface AfficheRepository extends JpaRepository<Affiche, UUID> {
     /**
      * Toutes les affiches de quelqu'un — la lecture de son propre profil, seule
      * à voir aussi les {@code NOBODY}.
+     *
+     * <p><b>{@code LEFT JOIN FETCH} sur toute la chaîne jusqu'à la
+     * catégorie</b>, parce que {@code AfficheDto} porte désormais
+     * {@code activityName} et {@code categoryColorRamp} : sans lui, le rendu
+     * marche {@code Schedule → Program → UserActivity → Activity → Category} à la
+     * demande, une fois par niveau.
+     *
+     * <p>Mesuré au harnais de comptage, sur une galerie de 1 puis de 15
+     * affiches : <b>6 requêtes en naïf, 1 avec le fetch</b>. Le coût marginal par
+     * affiche est nul dans les deux cas — {@code hibernate.default_batch_fetch_size=32}
+     * ({@code application.properties}) résout les quinze créneaux en un seul
+     * {@code WHERE id = ANY(?)}, puis les programmes, puis les activités. Ce ne
+     * sont donc pas cinq requêtes <i>par affiche</i> mais cinq en tout, et c'est
+     * la raison pour laquelle ce fetch a failli être jugé inutile.
+     *
+     * <p>Il ne l'est pas : la base est à San Francisco et le service en Europe,
+     * soit ~200 ms l'aller-retour. <b>Cinq allers-retours fixes valent une
+     * seconde</b> sur une galerie, quelle que soit sa taille. Et le plafond de 32
+     * n'est garanti par rien : au-delà, le rendu naïf repart par paliers, le
+     * fetch non.
+     *
+     * <p><b>{@code LEFT} et non {@code INNER}, délibérément.</b> Les cinq clés
+     * étrangères de la chaîne sont {@code NOT NULL} aujourd'hui, donc les deux
+     * écritures rendent les mêmes lignes. Le jour où l'une d'elles deviendrait
+     * facultative, une jointure interne ferait <b>disparaître des affiches</b> de
+     * la galerie de leur auteur — silencieusement, et sans qu'aucun test du lot
+     * ne puisse le voir.
      */
-    List<Affiche> findByUserIdOrderByPublishedAtDesc(UUID userId);
+    @Query("""
+        SELECT a FROM Affiche a
+          LEFT JOIN FETCH a.schedule s
+          LEFT JOIN FETCH s.program p
+          LEFT JOIN FETCH p.userActivity ua
+          LEFT JOIN FETCH ua.activity act
+          LEFT JOIN FETCH act.category
+        WHERE a.user.id = :userId
+        ORDER BY a.publishedAt DESC
+        """)
+    List<Affiche> findByUserIdOrderByPublishedAtDesc(@Param("userId") UUID userId);
 
     /**
      * Les affiches de quelqu'un dont l'audience figure dans l'ensemble donné.
@@ -40,9 +77,26 @@ public interface AfficheRepository extends JpaRepository<Affiche, UUID> {
      * remonte jamais jusqu'au rendu. Passer {@code NOBODY} dans cet ensemble
      * n'aurait aucun sens et n'arrive nulle part — seul le propriétaire lit ses
      * affiches muettes, par la méthode ci-dessus.
+     *
+     * <p>Même {@code LEFT JOIN FETCH} que ci-dessus, et pour la même raison : les
+     * deux lectures composent le même {@code AfficheDto}, donc paient le même
+     * rendu. En doter une seule ferait de l'autre la lente, sans que rien ne le
+     * signale — c'est le mode de panne que ce module vient précisément de payer
+     * sur {@code /recaps/mine}.
      */
+    @Query("""
+        SELECT a FROM Affiche a
+          LEFT JOIN FETCH a.schedule s
+          LEFT JOIN FETCH s.program p
+          LEFT JOIN FETCH p.userActivity ua
+          LEFT JOIN FETCH ua.activity act
+          LEFT JOIN FETCH act.category
+        WHERE a.user.id = :userId AND a.audience IN :audiences
+        ORDER BY a.publishedAt DESC
+        """)
     List<Affiche> findByUserIdAndAudienceInOrderByPublishedAtDesc(
-        UUID userId, Collection<AfficheAudience> audiences);
+        @Param("userId") UUID userId,
+        @Param("audiences") Collection<AfficheAudience> audiences);
 
     /**
      * La plus récente des affiches de quelqu'un sur ce créneau.
@@ -78,9 +132,24 @@ public interface AfficheRepository extends JpaRepository<Affiche, UUID> {
      *
      * <p>L'appelant lui-même est exclu : il sait ce qu'il a publié, et un anneau
      * sur son propre avatar n'appelle aucune ouverture.
+     *
+     * <p><b>{@code display_name} et {@code avatar_url} ne coûtent rien</b>, et
+     * c'est mesuré : une requête avant, une requête après. La jointure sur
+     * {@code users} était <i>déjà</i> là, pour deux conditions qui n'ont rien à
+     * voir avec un nom — {@code u.is_active} et le prédicat de blocage de
+     * {@link BlockSql#NOT_BLOCKED_U}, qui désigne {@code u.id}. Les deux colonnes
+     * montent dans le {@code SELECT} d'une table de toute façon parcourue.
+     *
+     * <p><b>Elles entrent aussi dans le {@code GROUP BY}, et ce n'est pas une
+     * maladresse à corriger.</b> {@code GROUP BY a.user_id} seul ne suffit pas à
+     * Postgres pour laisser sortir {@code u.display_name} : la dépendance
+     * fonctionnelle qu'il reconnaît porte sur {@code u.id}, la clé primaire de la
+     * table jointe, et non sur {@code a.user_id} — même si la jointure rend les
+     * deux égales. Le coût est nul, la clé de regroupement étant déjà
+     * l'identifiant de la personne.
      */
     @Query(value = """
-        SELECT a.user_id, MAX(a.published_at) AS latest
+        SELECT a.user_id, MAX(a.published_at) AS latest, u.display_name, u.avatar_url
         FROM affiches a
         JOIN users u ON u.id = a.user_id
         LEFT JOIN subscriptions sub
@@ -92,7 +161,7 @@ public interface AfficheRepository extends JpaRepository<Affiche, UUID> {
           AND (a.audience = 'EVERYONE'
                OR (a.audience = 'SUBSCRIBERS' AND sub.id IS NOT NULL))
         """ + BlockSql.NOT_BLOCKED_U + """
-        GROUP BY a.user_id
+        GROUP BY a.user_id, u.display_name, u.avatar_url
         ORDER BY latest DESC
         LIMIT :limit
         """, nativeQuery = true)
