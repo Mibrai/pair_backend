@@ -297,13 +297,13 @@ public class PushNotificationService implements PushNotificationServiceInterface
      */
     private ApnsConfig apnsConfig(NotificationType type, Map<String, Object> payload, int badge) {
         if (!type.isTimeSensitive()) {
-            return ApnsConfig.builder().setAps(visibleAps(badge)).build();
+            return ApnsConfig.builder().setAps(visibleAps(badge, type)).build();
         }
 
         ApnsConfig.Builder builder = ApnsConfig.builder()
             .putHeader("apns-push-type", "alert")
             .putHeader("apns-priority", "10")
-            .setAps(visibleApsTimeSensitive(badge));
+            .setAps(visibleApsTimeSensitive(badge, type));
 
         String watchId = payload == null ? null : String.valueOf(payload.get("watchId"));
         if (watchId != null && !watchId.isBlank() && !"null".equals(watchId)) {
@@ -388,17 +388,20 @@ public class PushNotificationService implements PushNotificationServiceInterface
      * Bloc {@code aps} d'une push <b>visible</b>.
      *
      * <p>{@code mutable-content} et {@code category} sont les deux clés sans
-     * lesquelles l'extension Notification Content d'iOS ne se déclenche pas. Elles
-     * sont posées avant que l'extension existe, et sont inertes d'ici là : l'ordre
-     * inverse ferait d'elle du code mort le jour de sa livraison.
+     * lesquelles les extensions d'iOS ne se déclenchent pas. Elles ont été posées
+     * avant que ces extensions existent, et étaient inertes d'ici là : l'ordre
+     * inverse en aurait fait du code mort le jour de leur livraison.
+     *
+     * <p>Elles ne sont plus posées <b>inconditionnellement</b> : voir
+     * {@link #applyTemplateKeys}, qui les retire aux types dont le serveur compose
+     * le texte de bout en bout.
      */
-    static Aps visibleAps(int badge) {
-        return Aps.builder()
+    static Aps visibleAps(int badge, NotificationType type) {
+        Aps.Builder aps = Aps.builder()
             .setBadge(badge)
-            .setSound("default")
-            .setMutableContent(true)
-            .setCategory(APNS_TEMPLATE_CATEGORY)
-            .build();
+            .setSound("default");
+        applyTemplateKeys(aps, type);
+        return aps.build();
     }
 
     /**
@@ -410,15 +413,79 @@ public class PushNotificationService implements PushNotificationServiceInterface
      * ce qui produit exactement {@code "aps": { …, "interruption-level":
      * "time-sensitive" }} dans la charge. C'est ce que lit iOS pour afficher malgré
      * un mode Concentration.
+     *
+     * <p>Le niveau d'interruption et les clés de gabarit sont <b>indépendants</b> :
+     * un type peut devoir percer un mode Concentration <i>et</i> ne pas être
+     * recomposé par le client. C'est pourquoi la coupure passe par
+     * {@link #applyTemplateKeys} plutôt que par une branche qui rendrait un
+     * {@code aps} sans time-sensitive — une telle branche aurait fait taire une
+     * alerte de veille en croyant ne retirer qu'un gabarit.
      */
-    static Aps visibleApsTimeSensitive(int badge) {
-        return Aps.builder()
+    static Aps visibleApsTimeSensitive(int badge, NotificationType type) {
+        Aps.Builder aps = Aps.builder()
             .setBadge(badge)
             .setSound("default")
-            .setMutableContent(true)
-            .setCategory(APNS_TEMPLATE_CATEGORY)
-            .putCustomData("interruption-level", "time-sensitive")
-            .build();
+            .putCustomData("interruption-level", "time-sensitive");
+        applyTemplateKeys(aps, type);
+        return aps.build();
+    }
+
+    /**
+     * Pose — ou ne pose pas — les deux clés qui réveillent les extensions iOS.
+     *
+     * <p><b>Rien pour les types dont le serveur compose le texte de bout en
+     * bout</b> ({@link NotificationType#isServerComposed()}), et il faut couper les
+     * <b>deux</b> clés, pas une : le client repose lui-même
+     * {@code categoryIdentifier} depuis son extension de service, donc retirer
+     * {@code category} seul ne referme rien tant que {@code mutable-content} fait
+     * tourner cette extension ; et retirer {@code mutable-content} seul laisse
+     * notre {@code category} réveiller l'extension de contenu au déploiement.
+     * Chacune prise isolément laisse un chemin ouvert — c'est le client qui a
+     * établi les deux, en lisant son propre code.
+     *
+     * <p>Sans ces clés, iOS affiche le {@code title} et le {@code body} que nous
+     * envoyons, tels quels. Ils sont réels et composés côté serveur : c'est
+     * exactement le comportement voulu pour ces types.
+     *
+     * <p>Le cas d'usage est daté et documenté sur {@code NotificationType.SERVER_COMPOSED} ;
+     * il n'est pas destiné à grossir sans décision.
+     */
+    private static void applyTemplateKeys(Aps.Builder aps, NotificationType type) {
+        if (type != null && type.isServerComposed()) {
+            if (cutoffExpired(type, java.time.LocalDate.now())) {
+                log.warn("La coupure des extensions iOS sur {} a dépassé son échéance ({}) : "
+                        + "elle devait être retirée au signal du client, ou à cette date. "
+                        + "Voir NotificationType.SERVER_COMPOSED.",
+                    type, NotificationType.FIN_DE_COUPURE_AFFICHE_READY);
+            }
+            return;
+        }
+        aps.setMutableContent(true).setCategory(APNS_TEMPLATE_CATEGORY);
+    }
+
+    /**
+     * La coupure est-elle en place au-delà de la date convenue avec le client ?
+     *
+     * <p><b>Un rappel qui se voit sans rien casser.</b> La version précédente de ce
+     * garde-fou était une assertion datée : la suite rougissait d'elle-même le
+     * {@code 2026-10-15}. C'était efficace et brutal — un build cassé un matin, sur
+     * un changement que personne n'avait fait. Le signal vit donc là où la coupure
+     * s'applique réellement : un {@code WARN} par push concernée, dans les
+     * journaux de production, à partir du lendemain de l'échéance.
+     *
+     * <p>Le volume ne pose pas de problème : ce type part une fois par personne et
+     * par séance, et une ligne qu'on voit rarement mais toujours au bon moment vaut
+     * mieux qu'une ligne noyée dans un démarrage.
+     *
+     * <p><b>La date est un paramètre, et c'est ce qui rend ce garde-fou
+     * testable</b> : l'éprouver sur {@code LocalDate.now()} donnerait un test dont
+     * le résultat change avec le calendrier — exactement le défaut qu'on vient de
+     * retirer.
+     */
+    static boolean cutoffExpired(NotificationType type, java.time.LocalDate today) {
+        return type != null
+            && type.isServerComposed()
+            && today.isAfter(NotificationType.FIN_DE_COUPURE_AFFICHE_READY);
     }
 
     /**
