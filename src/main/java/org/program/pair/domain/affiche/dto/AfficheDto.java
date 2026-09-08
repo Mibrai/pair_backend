@@ -14,11 +14,23 @@ import java.util.UUID;
  * sans quoi deux affiches d'un même cours hebdomadaire seraient
  * indiscernables, et {@code featuredUntil}, qui est la réponse à la demande 3.
  *
+ * <p><b>{@code activityName} et {@code categoryColorRamp} disent de quoi
+ * l'affiche parle</b>, et ils ont été ajoutés après coup, sur une décision
+ * produit qui n'appartenait pas au serveur. Le motif seul ne suffit pas : sur
+ * une galerie réelle de quinze affiches, trois séances partageaient le même
+ * motif <i>et</i> la même catégorie — donc le même emoji et le même dégradé — et
+ * donnaient trois carreaux rigoureusement identiques. Le nom de l'activité n'est
+ * pas de l'ornement : c'est ce qui distingue une affiche d'une autre.
+ *
  * <p><b>Ce que ce DTO ne porte pas, et ne portera pas par inadvertance</b> : ni
- * le titre du programme, ni le nom du lieu, ni la moindre photo. L'auteur a
- * consenti à publier <i>une affiche</i>, pas la fiche de la séance. Ce qui
- * n'existe pas au contrat ne peut pas être affiché par erreur demain — c'est la
- * même raison d'être que la liste courte de {@code SlotRecapDto}.
+ * le titre du programme, ni le nom du lieu, ni la moindre photo. La phrase reste
+ * vraie mot pour mot après l'ajout, et c'est ce qui confirme que les deux
+ * nouveaux champs sont du bon côté de la ligne : en publiant, l'auteur décide de
+ * dire « j'ai fait de l'escalade ». C'est <b>lui</b> qui le décide, et il ne
+ * publie pas pour autant la fiche de la séance — la carte-souvenir de l'hôte
+ * reste privée, et rien de ce qu'elle porte d'autre ne sort. Ce qui n'existe pas
+ * au contrat ne peut pas être affiché par erreur demain — c'est la même raison
+ * d'être que la liste courte de {@code SlotRecapDto}.
  */
 public record AfficheDto(
 
@@ -31,6 +43,22 @@ public record AfficheDto(
         + "créneau, qu'un rollover a pu avancer. C'est ce champ qui distingue deux "
         + "affiches d'un même cours hebdomadaire.")
     Instant slotStartedAt,
+
+    @Schema(description = "Le nom de l'activité vécue, sans quoi deux affiches de même "
+        + "motif et de même catégorie sont deux carreaux identiques : le visuel seul ne "
+        + "les distingue pas. Publié parce que l'auteur, en publiant, décide de dire ce "
+        + "qu'il a pratiqué — jamais le titre du programme ni le lieu, qui appartiennent "
+        + "à la séance et non à lui. Même valeur que SlotRecapDto.activityName, lue par "
+        + "la même chaîne.",
+        example = "Escalade")
+    String activityName,
+
+    @Schema(description = "La rampe de couleur de la catégorie de l'activité — un nom de "
+        + "rampe résolu dans la palette du client, jamais un hexadécimal. Même valeur que "
+        + "SlotRecapDto.categoryColorRamp, et lue par la même chaîne : deux chemins pour "
+        + "la même teinte finiraient par diverger.",
+        example = "red-orange")
+    String categoryColorRamp,
 
     @Schema(description = "La clé de motif transmise à la publication, rendue telle quelle. "
         + "Le serveur ne l'interprète pas : le texte et le visuel restent côté client.",

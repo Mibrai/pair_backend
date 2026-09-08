@@ -80,7 +80,10 @@ public class AfficheController {
         description = "L'audience est appliquée ICI : un lecteur sans droit reçoit un "
             + "tableau vide — jamais 403, qui révélerait ce qu'il n'a pas à savoir. Chez "
             + "soi, tout se voit, y compris les affiches réglées sur NOBODY. Trié de la "
-            + "publication la plus récente à la plus ancienne.")
+            + "publication la plus récente à la plus ancienne. Chaque affiche porte "
+            + "activityName et categoryColorRamp — de quoi la composer sans demander la "
+            + "carte-souvenir de la séance, qui reste refusée tant que l'hôte ne l'a pas "
+            + "publiée ; ni le titre du programme ni le lieu n'en sortent pour autant.")
     public List<AfficheDto> forUser(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID userId) {
@@ -88,13 +91,17 @@ public class AfficheController {
     }
 
     @GetMapping("/affiches/updates")
-    @Operation(summary = "Qui a publié depuis — l'anneau sur l'avatar",
-        description = "Un identifiant et une date, rien d'autre : ni motif, ni texte, ni "
-            + "image. Déjà filtré par l'audience de chacun — un anneau posé sans ce filtre "
-            + "révélerait l'existence d'une affiche à qui n'a pas le droit de la voir. "
-            + "L'appelant lui-même est exclu. since absent vaut sept jours ; plus ancien "
-            + "que trente jours, il est ramené à trente. Un appel au démarrage et au retour "
-            + "d'arrière-plan suffit.")
+    @Operation(summary = "Qui a publié depuis — l'anneau sur l'avatar, et la bande d'affiches",
+        description = "Un identifiant, une date, un nom et un avatar : ni motif, ni texte, "
+            + "ni image d'affiche. Le nom et l'avatar servent la bande d'affiches, qui n'a "
+            + "pas de liste hôte pour les apporter et ne peut donc dessiner personne sans "
+            + "eux ; les résoudre par un GET /users/{id} serait la requête par personne que "
+            + "cette route existe pour éviter. Déjà filtré par l'audience de chacun — un "
+            + "anneau posé sans ce filtre révélerait l'existence d'une affiche à qui n'a "
+            + "pas le droit de la voir, et le nom rendu ici est donc celui de gens qui ont "
+            + "décidé de vous rendre leur affiche visible. L'appelant lui-même est exclu. "
+            + "since absent vaut sept jours ; plus ancien que trente jours, il est ramené à "
+            + "trente. Un appel au démarrage et au retour d'arrière-plan suffit.")
     public List<AfficheUpdateDto> updates(
             @AuthenticationPrincipal UserPrincipal principal,
             @Parameter(description = "Borne basse, exclusive, en ISO-8601 UTC.",

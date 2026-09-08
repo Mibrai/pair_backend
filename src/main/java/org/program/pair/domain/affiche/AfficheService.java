@@ -4,8 +4,12 @@ import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.affiche.dto.AfficheDto;
 import org.program.pair.domain.affiche.dto.AfficheRequests;
 import org.program.pair.domain.affiche.dto.AfficheUpdateDto;
+import org.program.pair.domain.activity.Activity;
+import org.program.pair.domain.activity.Category;
+import org.program.pair.domain.activity.UserActivity;
 import org.program.pair.domain.attendance.Attendance;
 import org.program.pair.domain.block.BlockFilterService;
+import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotTiming;
 import org.program.pair.domain.user.User;
@@ -198,9 +202,11 @@ public class AfficheService {
      * Qui a publié depuis {@code since}, parmi ceux dont j'ai le droit de voir
      * les affiches — l'anneau sur l'avatar.
      *
-     * <p>Un identifiant et une date, rien d'autre. L'état « vue » reste sur
-     * l'appareil : aucun accusé de lecture par affiche et par lecteur n'est tenu
-     * ici, et c'est le client qui l'a demandé ainsi.
+     * <p>Un identifiant, une date, et de quoi dessiner un visage — voir
+     * {@link AfficheUpdateDto} pour ce que les deux derniers champs paient et ce
+     * qu'ils n'exposent pas. L'état « vue » reste sur l'appareil : aucun accusé de
+     * lecture par affiche et par lecteur n'est tenu ici, et c'est le client qui
+     * l'a demandé ainsi.
      */
     @Transactional(readOnly = true)
     public List<AfficheUpdateDto> updatesSince(UUID viewerId, Instant since) {
@@ -212,7 +218,13 @@ public class AfficheService {
         }
 
         return afficheRepository.findUpdatesSince(viewerId, from, UPDATES_LIMIT).stream()
-            .map(row -> new AfficheUpdateDto((UUID) row[0], toInstant(row[1])))
+            .map(row -> new AfficheUpdateDto(
+                (UUID) row[0],
+                toInstant(row[1]),
+                (String) row[2],
+                // Nullable en base, et rendu nul tel quel : le client a déjà son
+                // repli d'avatar, le même que sur toutes les autres listes.
+                (String) row[3]))
             .toList();
     }
 
@@ -310,10 +322,34 @@ public class AfficheService {
 
     // ————————————————————————— rendu —————————————————————————
 
+    /**
+     * L'affiche telle qu'elle se lit.
+     *
+     * <p><b>{@code activityName} et {@code categoryColorRamp} sont lus par la
+     * même chaîne que {@code SlotRecapService.toDto}</b> — {@code Schedule →
+     * Program → UserActivity → Activity → Category} — et volontairement par la
+     * même. Deux chemins vers la même valeur, ce sont deux chemins qui divergent
+     * le jour où l'un des replis change, et personne ne remarquerait que
+     * l'affiche et la carte-souvenir d'une même séance annoncent deux activités.
+     *
+     * <p>Les gardes-null en cascade sont ceux de la carte-souvenir, au geste
+     * près. Les cinq clés étrangères de la chaîne sont {@code NOT NULL}, donc
+     * aucune branche nulle n'est atteignable aujourd'hui — mais un rendu qui
+     * lèverait une {@code NullPointerException} le jour où l'une d'elles
+     * s'assouplit ferait échouer la galerie entière pour une teinte manquante.
+     */
     private AfficheDto toDto(Affiche affiche) {
+        Schedule slot = affiche.getSchedule();
+        Program program = slot.getProgram();
+        UserActivity userActivity = program != null ? program.getUserActivity() : null;
+        Activity activity = userActivity != null ? userActivity.getActivity() : null;
+        Category category = activity != null ? activity.getCategory() : null;
+
         return new AfficheDto(
-            affiche.getSchedule().getId(),
+            slot.getId(),
             affiche.getOccurrenceStart(),
+            activity != null ? activity.getName() : null,
+            category != null ? category.getColorRamp() : null,
             affiche.getMotif(),
             affiche.getPublishedAt(),
             affiche.getAudience().name(),

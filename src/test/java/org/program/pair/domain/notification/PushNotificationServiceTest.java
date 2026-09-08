@@ -513,11 +513,108 @@ class PushNotificationServiceTest {
         // Sans ces deux clés, l'extension Notification Content ne se déclenche
         // pas : elle serait du code mort le jour de sa livraison. Elles sont
         // inertes tant qu'elle n'existe pas, d'où leur pose anticipée.
-        Map<String, Object> fields = apsFields(PushNotificationService.visibleAps(3));
+        Map<String, Object> fields =
+            apsFields(PushNotificationService.visibleAps(3, NotificationType.NEW_MESSAGE));
 
         assertThat(fields).containsEntry("category", "MEETDO_TEMPLATE");
         assertThat(fields.get("mutable-content")).isIn(1, 1L, true);
         assertThat(fields).containsEntry("badge", 3);
+    }
+
+    // ─── La coupure des extensions iOS sur les types composés par le serveur ──
+
+    /**
+     * Les deux clés, et pas une.
+     *
+     * <p>Le client repose lui-même {@code categoryIdentifier} depuis son
+     * extension de service : couper {@code category} seul ne referme rien tant
+     * que {@code mutable-content} fait tourner cette extension. Et couper
+     * {@code mutable-content} seul laisse notre {@code category} réveiller
+     * l'extension de contenu au déploiement. Ce test échoue si l'une des deux
+     * revient — c'est-à-dire si le défaut se rouvre par moitié, ce qui est
+     * exactement la façon dont il se rouvrirait.
+     */
+    @Test
+    void pushComposeeParLeServeur_neDoitReveillerAucuneExtension() throws Exception {
+        Map<String, Object> fields =
+            apsFields(PushNotificationService.visibleAps(3, NotificationType.AFFICHE_READY));
+
+        assertThat(fields)
+            .as("les deux clés réveillent chacune une extension : aucune ne doit rester")
+            .doesNotContainKeys("mutable-content", "category");
+
+        // Ce qui reste est ce qui doit rester : la notification s'affiche, avec
+        // le titre et le corps que le serveur compose.
+        assertThat(fields).containsEntry("badge", 3);
+        assertThat(fields).containsEntry("sound", "default");
+    }
+
+    /**
+     * La coupure ne doit pas déborder sur les autres types : c'est un cas daté,
+     * pas un changement de politique. Un {@code isServerComposed()} qui
+     * répondrait vrai pour tout le monde rendrait muettes toutes les vues
+     * déployées de l'application sans qu'aucun autre test ne le dise.
+     */
+    @Test
+    void laCoupure_neToucheQueLeTypeVise() {
+        assertThat(NotificationType.AFFICHE_READY.isServerComposed()).isTrue();
+
+        assertThat(java.util.Arrays.stream(NotificationType.values())
+            .filter(NotificationType::isServerComposed)
+            .toList())
+            .as("un seul type est concerné, et son ajout est une décision")
+            .containsExactly(NotificationType.AFFICHE_READY);
+    }
+
+    /**
+     * Le garde-fou d'échéance : il se signale, il ne casse rien.
+     *
+     * <p>La coupure est temporaire — elle referme chez les personnes qui ont
+     * l'application aujourd'hui un défaut dont le correctif client attend une
+     * revue App Store. Le client s'est engagé à nous écrire le numéro de build
+     * correctif ; à défaut, il demande qu'on retire la ligne au plus tard le
+     * {@code 2026-10-15} et qu'on le prévienne — « un garde-fou qu'on oublie est
+     * pire qu'un défaut qu'on connaît », et la phrase est de lui.
+     *
+     * <p><b>Le rappel est un {@code WARN} au moment de l'envoi</b>, pas une
+     * assertion datée qui ferait rougir la suite un matin sur un changement que
+     * personne n'a fait. Ce test-ci éprouve le prédicat aux trois positions qui
+     * comptent — avant l'échéance, le jour même, le lendemain — sur une date
+     * <b>passée en paramètre</b> : l'éprouver sur {@code LocalDate.now()} rendrait
+     * son résultat dépendant du calendrier, c'est-à-dire rétablirait exactement ce
+     * qu'on vient de retirer.
+     */
+    @Test
+    void laCoupure_seSignaleLeLendemainDeSonEcheance() {
+        java.time.LocalDate echeance = NotificationType.FIN_DE_COUPURE_AFFICHE_READY;
+
+        assertThat(PushNotificationService.cutoffExpired(
+            NotificationType.AFFICHE_READY, echeance.minusDays(1)))
+            .as("avant l'échéance, la coupure est à sa place et ne dit rien")
+            .isFalse();
+
+        assertThat(PushNotificationService.cutoffExpired(
+            NotificationType.AFFICHE_READY, echeance))
+            .as("le jour même est encore dans la fenêtre convenue")
+            .isFalse();
+
+        assertThat(PushNotificationService.cutoffExpired(
+            NotificationType.AFFICHE_READY, echeance.plusDays(1)))
+            .as("le lendemain, chaque push concernée doit le dire dans les journaux")
+            .isTrue();
+    }
+
+    /**
+     * Un type que la coupure ne concerne pas ne se signale jamais, même bien après
+     * l'échéance : ce {@code WARN} nomme une dette précise, et une alerte qui parle
+     * de tout ne se lit plus.
+     */
+    @Test
+    void lEcheance_neConcerneQueLesTypesCoupes() {
+        assertThat(PushNotificationService.cutoffExpired(
+            NotificationType.NEW_MESSAGE,
+            NotificationType.FIN_DE_COUPURE_AFFICHE_READY.plusYears(1)))
+            .isFalse();
     }
 
     @Test

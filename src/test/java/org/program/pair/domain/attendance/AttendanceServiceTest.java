@@ -7,6 +7,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.program.pair.domain.activity.Activity;
 import org.program.pair.domain.activity.UserActivity;
+import org.program.pair.domain.attendance.dto.ConfirmedAttendanceDto;
 import org.program.pair.domain.badge.BadgeService;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.Schedule;
@@ -30,6 +31,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -109,6 +112,28 @@ class AttendanceServiceTest {
         List<?> result = attendanceService.getRecommendableCoParticipants(userId, scheduleId);
 
         assertThat(result).isEmpty();
+    }
+
+
+    /**
+     * L'histoire se lit dans les PRÉSENCES, jamais à travers les
+     * cartes-souvenirs : {@code getMine} délègue à la requête des présences
+     * confirmées et ne touche pas au service des cartes. C'est toute la
+     * propriété que {@code GET /api/attendances/mine} vend au client — une
+     * séance sans carte doit y figurer — et elle se perdrait en silence si
+     * quelqu'un rebranchait un jour cette lecture sur {@code SlotRecapService}.
+     */
+    @Test
+    void getMine_litLesPresences_etJamaisLesCartesSouvenirs() {
+        UUID userId = UUID.randomUUID();
+        ConfirmedAttendanceDto entree = new ConfirmedAttendanceDto(
+            UUID.randomUUID(), Instant.now().minus(3, ChronoUnit.DAYS),
+            UUID.randomUUID(), "Escalade", "green-teal");
+        doReturn(List.of(entree)).when(attendanceRepository).findConfirmedForUser(userId);
+
+        assertThat(attendanceService.getMine(userId)).containsExactly(entree);
+
+        verifyNoInteractions(recapService);
     }
 
     private Schedule buildSlot(UUID hostId, Instant startsAt) {

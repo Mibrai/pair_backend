@@ -39,6 +39,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -126,6 +127,29 @@ class AfficheServiceTest {
         assertThat(dto.slotStartedAt()).isEqualTo(seance);
         assertThat(dto.motif()).isEqualTo("PREMIERE_FOIS");
         assertThat(dto.audience()).isEqualTo("EVERYONE");
+        assertThat(dto.activityName())
+            .as("sans le nom de l'activité, deux affiches de même motif et même "
+                + "catégorie sont deux carreaux identiques")
+            .isEqualTo("Escalade");
+        assertThat(dto.categoryColorRamp()).isEqualTo("slate-cobalt");
+    }
+
+    /**
+     * La chaîne {@code Schedule → Program → UserActivity → Activity → Category}
+     * est celle de la carte-souvenir, et un maillon absent ne doit pas faire
+     * échouer la galerie entière pour une teinte manquante : les deux champs
+     * tombent à nul, le reste de l'affiche est rendu.
+     */
+    @Test
+    void uneChaineDActiviteIncomplete_neCasseNiLAfficheNiLaGalerie() {
+        slot.getProgram().setUserActivity(null);
+
+        AfficheDto dto = service.publish(present, slot.getId(), publish("PREMIERE_FOIS", "EVERYONE"));
+
+        assertThat(dto.activityName()).isNull();
+        assertThat(dto.categoryColorRamp()).isNull();
+        assertThat(dto.motif()).isEqualTo("PREMIERE_FOIS");
+        assertThat(dto.scheduleId()).isEqualTo(slot.getId());
     }
 
     /**
@@ -255,10 +279,13 @@ class AfficheServiceTest {
 
     @Test
     void chezSoi_toutSeVoit_ycomprisCeQueNulNeVoit() {
-        when(afficheRepository.findByUserIdOrderByPublishedAtDesc(present))
-            .thenReturn(List.of(published(AfficheAudience.NOBODY, "PREMIERE_FOIS", Instant.now())));
+        doReturn(List.of(published(AfficheAudience.NOBODY, "PREMIERE_FOIS", Instant.now())))
+            .when(afficheRepository).findByUserIdOrderByPublishedAtDesc(present);
 
-        assertThat(service.forUser(present, present)).hasSize(1);
+        assertThat(service.forUser(present, present))
+            .extracting(AfficheDto::activityName, AfficheDto::categoryColorRamp)
+            .as("la galerie compose sans demander la carte-souvenir de la séance")
+            .containsExactly(org.assertj.core.api.Assertions.tuple("Escalade", "slate-cobalt"));
         verify(afficheRepository, never()).findByUserIdAndAudienceInOrderByPublishedAtDesc(any(), any());
     }
 
@@ -363,14 +390,44 @@ class AfficheServiceTest {
         UUID lecteur = UUID.randomUUID();
         UUID publieur = UUID.randomUUID();
         Instant quand = Instant.now().minus(2, ChronoUnit.HOURS).truncatedTo(ChronoUnit.MILLIS);
-        when(afficheRepository.findUpdatesSince(any(), any(), anyInt())).thenReturn(List.of(
-            new Object[]{publieur, Timestamp.from(quand)},
-            new Object[]{lecteur, quand.atOffset(java.time.ZoneOffset.UTC)}));
+        doReturn(List.of(
+            new Object[]{publieur, Timestamp.from(quand), "Camille", "https://cdn/camille.jpg"},
+            new Object[]{lecteur, quand.atOffset(java.time.ZoneOffset.UTC), "Dominique", null}))
+            .when(afficheRepository).findUpdatesSince(any(), any(), anyInt());
 
         List<AfficheUpdateDto> updates = service.updatesSince(lecteur, null);
 
         assertThat(updates).extracting(AfficheUpdateDto::latestPublishedAt)
             .containsExactly(quand, quand);
+    }
+
+    /**
+     * La bande d'affiches n'a pas de liste hôte pour apporter les visages : ce
+     * qu'elle ne reçoit pas ici, elle ne peut le résoudre que par une requête par
+     * personne — précisément ce que cette route existe pour éviter.
+     */
+    @Test
+    void lAnneauRendLeNomEtLAvatar_pourQueLaBandePuisseDessiner() {
+        UUID lecteur = UUID.randomUUID();
+        UUID publieur = UUID.randomUUID();
+        UUID sansPhoto = UUID.randomUUID();
+        Instant quand = Instant.now().minus(1, ChronoUnit.HOURS).truncatedTo(ChronoUnit.MILLIS);
+
+        doReturn(List.of(
+            new Object[]{publieur, Timestamp.from(quand), "Camille", "https://cdn/camille.jpg"},
+            new Object[]{sansPhoto, Timestamp.from(quand), "Dominique", null}))
+            .when(afficheRepository).findUpdatesSince(any(), any(), anyInt());
+
+        List<AfficheUpdateDto> updates = service.updatesSince(lecteur, null);
+
+        assertThat(updates)
+            .extracting(AfficheUpdateDto::userId, AfficheUpdateDto::displayName,
+                AfficheUpdateDto::avatarUrl)
+            .containsExactly(
+                org.assertj.core.api.Assertions.tuple(publieur, "Camille", "https://cdn/camille.jpg"),
+                // Un avatar absent reste nul : le client a déjà son repli, et en
+                // fabriquer un ici le lui imposerait.
+                org.assertj.core.api.Assertions.tuple(sansPhoto, "Dominique", null));
     }
 
     // ————————————————————————— dépublier —————————————————————————
@@ -465,9 +522,20 @@ class AfficheServiceTest {
 
         User host = activeUser(UUID.randomUUID());
 
+        // Une catégorie distinctive, et pas une valeur banale : c'est elle qui
+        // porte la rampe rendue au contrat, et un « Sport / red-orange » du
+        // référentiel se confondrait avec la valeur qu'une autre source
+        // fournirait par accident.
+        org.program.pair.domain.activity.Category category =
+            new org.program.pair.domain.activity.Category();
+        category.setId(UUID.randomUUID());
+        category.setName("Verticalité");
+        category.setColorRamp("slate-cobalt");
+
         org.program.pair.domain.activity.Activity activity = new org.program.pair.domain.activity.Activity();
         activity.setId(UUID.randomUUID());
         activity.setName("Escalade");
+        activity.setCategory(category);
 
         org.program.pair.domain.activity.UserActivity userActivity =
             new org.program.pair.domain.activity.UserActivity();
