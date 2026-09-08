@@ -60,7 +60,7 @@ class WatchOutboundIntegrationTest extends AbstractIntegrationTest {
     @Test
     void troisDemandesSansArrivee_puisPerduEnChemin() {
         Compte moi = compte();
-        UUID watchId = armer(moi, "0612345678", "aller@example.org");
+        UUID watchId = armer(moi, uniqueMobile(), uniqueEmail("aller"));
         reculerBaseAller(watchId, 60); // 60 min après le début : tout est dû.
 
         outboundJob.tick();

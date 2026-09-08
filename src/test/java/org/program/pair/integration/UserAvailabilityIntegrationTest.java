@@ -35,8 +35,22 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class UserAvailabilityIntegrationTest extends AbstractIntegrationTest {
 
-    private static final double LAT = 48.5734;
-    private static final double LNG = 7.7521;
+    /**
+     * Un lieu qui n'appartient qu'à cette classe.
+     *
+     * <p>Huit classes d'intégration posaient leurs créneaux sur le même point de
+     * Strasbourg (48.5734, 7.7521). Tant que chacune avait sa base, elles ne se
+     * voyaient pas. Depuis que la suite partage un conteneur, le fil lu dans un
+     * rayon de 20 km rend aussi les créneaux des autres : les assertions d'ordre
+     * se font bousculer par des créneaux dont ce test ignore l'existence, et
+     * l'échec ne dit rien de ce qu'il vérifie.
+     *
+     * <p>Déplacer le décor est plus sûr que filtrer les résultats : le test
+     * continue de lire le fil tel que l'application le rend, sans assertion
+     * affaiblie pour contourner le bruit.
+     */
+    private static final double LAT = 45.1885;   // Grenoble
+    private static final double LNG = 5.7245;
     private static final ZoneId ZONE = ZoneId.of("Europe/Paris");
 
     @Autowired ActivityRepository activityRepository;

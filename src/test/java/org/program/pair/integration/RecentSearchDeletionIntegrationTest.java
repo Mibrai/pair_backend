@@ -24,7 +24,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doReturn;
 
 /**
  * Demande 6 de docs/specs/PROMPT_BACKEND_EVOLUTIONS_2026-08.md : GET
@@ -161,7 +161,7 @@ class RecentSearchDeletionIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void refaireUneRechercheSupprimee_doitLaReintroduireDansLHistorique() {
-        when(embeddingService.generateEmbedding(any())).thenReturn(new float[384]);
+        doReturn(new float[384]).when(embeddingService).generateEmbedding(any());
 
         runSearch("yoga");
         UUID firstId = getRecent(ownerToken).get(0).id();

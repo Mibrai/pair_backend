@@ -24,7 +24,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doReturn;
 
 /**
  * Vérifie le matching cross-lingue EN/DE/FR de la recherche : une requête dans
@@ -50,7 +50,20 @@ class MultilingualSearchIntegrationTest extends AbstractIntegrationTest {
     void recherche_laufen_jogging_courseAPied_doiventToutesRemonterLeMemeProgramme() {
         // Vecteur nul : force le repli plein texte/taxonomie, seule la couche
         // taxonomie déterministe est testée ici.
-        when(embeddingService.generateEmbedding(any())).thenReturn(new float[384]);
+        // doReturn(...).when(...) et non when(...).thenReturn(...).
+        //
+        // La seconde forme APPELLE d'abord generateEmbedding sur le mock, puis
+        // rattache la réponse à la dernière invocation vue. Tant que chaque classe
+        // avait sa JVM, personne d'autre ne touchait ce mock dans cet intervalle.
+        // Depuis que le contexte Spring est partagé entre classes, des tâches
+        // d'indexation issues des classes précédentes appellent encore
+        // embeddingService.isEnabled() pendant ce temps : Mockito rattachait alors
+        // le float[] à isEnabled() et levait « float[] cannot be returned by
+        // isEnabled() » — un échec qui ne dit rien de ce que ce test vérifie, et
+        // qui n'apparaît que selon l'ordonnancement.
+        //
+        // doReturn n'appelle pas la méthode : la fenêtre disparaît.
+        doReturn(new float[384]).when(embeddingService).generateEmbedding(any());
 
         String organizerToken = registerAndLogin("organizer-multi@pair.app");
         updateLocation(organizerToken, 48.8566, 2.3522);
