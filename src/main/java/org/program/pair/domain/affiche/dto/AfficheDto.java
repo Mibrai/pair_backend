@@ -22,15 +22,30 @@ import java.util.UUID;
  * donnaient trois carreaux rigoureusement identiques. Le nom de l'activité n'est
  * pas de l'ornement : c'est ce qui distingue une affiche d'une autre.
  *
- * <p><b>Ce que ce DTO ne porte pas, et ne portera pas par inadvertance</b> : ni
- * le titre du programme, ni le nom du lieu, ni la moindre photo. La phrase reste
- * vraie mot pour mot après l'ajout, et c'est ce qui confirme que les deux
- * nouveaux champs sont du bon côté de la ligne : en publiant, l'auteur décide de
- * dire « j'ai fait de l'escalade ». C'est <b>lui</b> qui le décide, et il ne
- * publie pas pour autant la fiche de la séance — la carte-souvenir de l'hôte
- * reste privée, et rien de ce qu'elle porte d'autre ne sort. Ce qui n'existe pas
- * au contrat ne peut pas être affiché par erreur demain — c'est la même raison
- * d'être que la liste courte de {@code SlotRecapDto}.
+ * <p><b>{@code categoryName} et {@code cityLabel} sont entrés ensuite, et ils
+ * n'ont pas le même statut que les deux précédents.</b> Ils rendent dessinable
+ * l'affiche <i>de quelqu'un d'autre</i> : sans eux, une affiche de première
+ * catégorie ou de première ville n'entre pas dans la bande du fil, faute de la
+ * variable dont sa phrase a besoin — et le client ne fabrique aucune variable
+ * manquante, ce qui est la bonne règle.
+ *
+ * <p><b>La ville n'est pas le lieu, et la distinction fait tout le travail.</b>
+ * {@code placeName} n'est pas ici et n'y sera pas : le nom d'une salle, répété
+ * sur une série d'affiches publiques, dessine un emploi du temps — c'est la
+ * raison pour laquelle le motif dont le lieu est le sujet est sorti de la
+ * sélection du client, et la garde de publication le refuse de toute façon. Une
+ * ville ne dessine pas cela ; elle dit où l'on vit, ce que dit déjà toute la
+ * surface publique de l'application. C'est la même valeur que
+ * {@code SlotRecapDto.cityLabel}, et la carte-souvenir la rend depuis toujours à
+ * des gens qui n'étaient pas là.
+ *
+ * <p><b>Ce que ce DTO ne porte toujours pas</b> : ni le titre du programme, ni
+ * le nom du lieu, ni la moindre photo, ni rien de la carte-souvenir de l'hôte,
+ * qui reste privée. En publiant, l'auteur décide de dire « j'ai fait de
+ * l'escalade, à Grenoble, pour la première fois » — c'est <b>lui</b> qui le
+ * décide, et il ne publie pas pour autant la fiche de la séance. Ce qui n'existe
+ * pas au contrat ne peut pas être affiché par erreur demain : c'est la même
+ * raison d'être que la liste courte de {@code SlotRecapDto}.
  */
 public record AfficheDto(
 
@@ -53,12 +68,28 @@ public record AfficheDto(
         example = "Escalade")
     String activityName,
 
+    @Schema(description = "Le NOM de la catégorie, sans quoi l'affiche d'un tiers portant "
+        + "un motif de catégorie n'a pas la variable de sa phrase et n'entre pas dans la "
+        + "bande. Ne se déduit pas de categoryColorRamp et ne s'y remplace pas : deux "
+        + "catégories peuvent partager une rampe, et une rampe ne se dit pas. Même valeur "
+        + "que SlotRecapDto.categoryName.",
+        example = "Sports de montagne")
+    String categoryName,
+
     @Schema(description = "La rampe de couleur de la catégorie de l'activité — un nom de "
         + "rampe résolu dans la palette du client, jamais un hexadécimal. Même valeur que "
         + "SlotRecapDto.categoryColorRamp, et lue par la même chaîne : deux chemins pour "
         + "la même teinte finiraient par diverger.",
         example = "red-orange")
     String categoryColorRamp,
+
+    @Schema(description = "La ville de la séance, jamais le nom du lieu ni l'adresse : "
+        + "celle-ci reste soumise aux règles de visibilité du créneau, et une affiche se "
+        + "lit par des gens qui n'y étaient pas. Même valeur que SlotRecapDto.cityLabel. "
+        + "Nulle quand la ville n'est pas renseignée — elle n'est jamais devinée à partir "
+        + "des coordonnées.",
+        nullable = true, example = "Grenoble")
+    String cityLabel,
 
     @Schema(description = "La clé de motif transmise à la publication, rendue telle quelle. "
         + "Le serveur ne l'interprète pas : le texte et le visuel restent côté client.",

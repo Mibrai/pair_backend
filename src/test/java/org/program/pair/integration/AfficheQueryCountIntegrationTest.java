@@ -165,21 +165,38 @@ class AfficheQueryCountIntegrationTest extends AbstractIntegrationTest {
      * test existe pour que la seule autre issue — un {@code GET /users/{id}} par
      * personne, soit dix secondes pour dessiner cinquante avatars — ne puisse
      * pas rentrer par la porte de derrière.
+     *
+     * <p><b>Et une requête encore après les quatre champs d'affichage</b>, qui
+     * ont coûté cinq jointures et un {@code DISTINCT ON} à la place d'un
+     * {@code GROUP BY}. C'est le changement le plus lourd du lot : il est le seul
+     * à toucher une requête plutôt qu'à projeter une colonne de plus.
+     *
+     * <p><b>Deux auteurs de quarante affiches, et une fenêtre qui les
+     * embrasse.</b> Le décor date chaque affiche d'un jour de plus que la
+     * précédente ; une fenêtre de deux jours n'en aurait donc laissé passer
+     * qu'une par personne, et n'aurait rien éprouvé du tout — le
+     * {@code DISTINCT ON} n'aurait eu aucune ligne à départager. C'est en
+     * demandant vingt-neuf jours qu'on lui donne quarante affiches à réduire à
+     * une, deux fois, et qu'on vérifie que la réduction se paie dans la requête
+     * et non en allers-retours.
      */
     @Test
     void laBandeDAffiches_tientEnUneRequete() {
-        Auteur auteur = decor("aqc-bande", 3);
+        decor("aqc-bande-a", AU_DESSUS_DU_PLAFOND_DE_LOT);
+        decor("aqc-bande-b", AU_DESSUS_DU_PLAFOND_DE_LOT);
         UUID lecteur = nouvelUtilisateur("aqc-bande-lecteur").getId();
-        Instant depuis = Instant.now().minus(2, ChronoUnit.DAYS);
+        // Juste en deçà d'UPDATES_MAX_LOOKBACK, que le service ramènerait à 30
+        // jours de toute façon : la fenêtre doit couvrir le décor, pas le border.
+        Instant depuis = Instant.now().minus(29, ChronoUnit.DAYS);
 
         Mesure bande = mesure(() -> afficheService.updatesSince(lecteur, depuis).size());
 
         System.out.printf("%n  GET /api/affiches/updates : %d requête(s), %d personne(s)%n",
             bande.requetes, bande.lignes);
 
-        assertThat(bande.lignes).as("l'auteur du décor a publié, il doit figurer").isPositive();
+        assertThat(bande.lignes).as("les deux auteurs du décor ont publié").isGreaterThanOrEqualTo(2);
         assertThat(bande.requetes)
-            .as("un nom et un avatar ne valent pas une requête par personne")
+            .as("ni un visage ni son affiche ne valent une requête par personne")
             .isEqualTo(1);
     }
 
@@ -191,6 +208,13 @@ class AfficheQueryCountIntegrationTest extends AbstractIntegrationTest {
      * n'est chargé paresseusement. Cette route se lit sans pagination et sur
      * l'historique entier d'une personne — c'est précisément le genre de liste
      * où un chargement par ligne ne se voit qu'en production.
+     *
+     * <p><b>Huit colonnes maintenant, et toujours une requête.</b> La catégorie,
+     * la ville et l'hôte se lisent sur une chaîne que la projection parcourait
+     * déjà pour la rampe et le nom d'activité ; seul {@code ua.user} est une
+     * jointure neuve, et une jointure de plus n'est pas un aller-retour de plus.
+     * C'est le comptage que le client demandait de repasser sur quarante entrées
+     * avant de brancher quoi que ce soit dessus.
      */
     @Test
     void lHistoireDesPresences_tientEnUneRequete() {

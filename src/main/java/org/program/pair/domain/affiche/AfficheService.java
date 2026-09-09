@@ -202,11 +202,11 @@ public class AfficheService {
      * Qui a publié depuis {@code since}, parmi ceux dont j'ai le droit de voir
      * les affiches — l'anneau sur l'avatar.
      *
-     * <p>Un identifiant, une date, et de quoi dessiner un visage — voir
-     * {@link AfficheUpdateDto} pour ce que les deux derniers champs paient et ce
-     * qu'ils n'exposent pas. L'état « vue » reste sur l'appareil : aucun accusé de
-     * lecture par affiche et par lecteur n'est tenu ici, et c'est le client qui
-     * l'a demandé ainsi.
+     * <p>Un identifiant, une date, de quoi dessiner un visage et de quoi dessiner
+     * sa dernière affiche — voir {@link AfficheUpdateDto} pour ce que ces champs
+     * paient et ce qu'ils n'exposent pas. L'état « vue » reste sur l'appareil :
+     * aucun accusé de lecture par affiche et par lecteur n'est tenu ici, et c'est
+     * le client qui l'a demandé ainsi.
      */
     @Transactional(readOnly = true)
     public List<AfficheUpdateDto> updatesSince(UUID viewerId, Instant since) {
@@ -224,7 +224,19 @@ public class AfficheService {
                 (String) row[2],
                 // Nullable en base, et rendu nul tel quel : le client a déjà son
                 // repli d'avatar, le même que sur toutes les autres listes.
-                (String) row[3]))
+                (String) row[3],
+                // Les quatre champs de la dernière affiche visible. Ils viennent
+                // tous de la MÊME ligne — c'est ce que le DISTINCT ON garantit —
+                // donc le motif rendu ici est bien celui de l'affiche que
+                // latestPublishedAt date.
+                (String) row[4],
+                toInstant(row[5]),
+                // Nuls seulement si la chaîne d'activité l'était : les cinq clés
+                // étrangères sont NOT NULL, et les LEFT JOIN de la requête font
+                // pencher l'erreur vers une activité absente plutôt que vers un
+                // visage disparu de la bande.
+                (String) row[6],
+                (String) row[7]))
             .toList();
     }
 
@@ -349,7 +361,15 @@ public class AfficheService {
             slot.getId(),
             affiche.getOccurrenceStart(),
             activity != null ? activity.getName() : null,
+            category != null ? category.getName() : null,
             category != null ? category.getColorRamp() : null,
+            // Lue sur le créneau et non figée à la publication, à rebours de
+            // occurrenceEnd juste en dessous : une salle qui déménage change de
+            // ville, et c'est la ville d'aujourd'hui qui est la bonne réponse —
+            // personne ne cherche une affiche sous le nom d'une ville que le
+            // créneau a quittée. La fin de séance, elle, date un souvenir : la
+            // relire le déplacerait.
+            slot.getCity(),
             affiche.getMotif(),
             affiche.getPublishedAt(),
             affiche.getAudience().name(),
@@ -360,11 +380,17 @@ public class AfficheService {
     /**
      * L'instant d'une agrégation SQL native.
      *
-     * <p>{@code MAX(published_at)} n'a pas de type applicatif déclaré : selon le
-     * pilote et la version d'Hibernate, il revient en {@link Timestamp} ou en
-     * {@link OffsetDateTime}. Les deux se lisent ici plutôt que dans une seule
-     * branche qui casserait à la montée de version — et le prix d'une erreur
-     * serait une date d'anneau fausse, ce qui ne se voit pas.
+     * <p>Une colonne d'horodatage rendue par une requête native n'a pas de type
+     * applicatif déclaré : selon le pilote et la version d'Hibernate, elle revient
+     * en {@link Timestamp} ou en {@link OffsetDateTime}. Les deux se lisent ici
+     * plutôt que dans une seule branche qui casserait à la montée de version — et
+     * le prix d'une erreur serait une date d'anneau fausse, ce qui ne se voit pas.
+     *
+     * <p>Deux colonnes y passent, et elles ne disent pas la même chose :
+     * {@code published_at} date la <b>publication</b>, {@code occurrence_start} la
+     * <b>séance</b>. C'était déjà vrai du temps où seule la première sortait
+     * d'ici ; c'est maintenant visible dans la bande, où une affiche publiée hier
+     * peut parler d'un mois de juillet.
      */
     private static Instant toInstant(Object value) {
         if (value == null) {
