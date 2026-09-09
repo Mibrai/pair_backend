@@ -21,6 +21,7 @@ import org.program.pair.domain.program.ProgramStatus;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotStatus;
 import org.program.pair.domain.user.User;
+import org.program.pair.domain.user.UserService;
 import org.program.pair.repository.ActivityRepository;
 import org.program.pair.repository.AfficheRepository;
 import org.program.pair.repository.AttendanceRepository;
@@ -44,8 +45,8 @@ import java.util.function.IntSupplier;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Les trois routes du lot ne doivent pas coûter <b>plus cher quand elles rendent
- * plus de choses</b>.
+ * Les routes du lot ne doivent pas coûter <b>plus cher quand elles rendent plus
+ * de choses</b>.
  *
  * <p>Ce n'est pas une mesure de durée : nos tests tournent sur un Postgres local
  * où l'aller-retour vaut 0,1 ms, et une durée relevée ici ne voudrait rien dire.
@@ -80,6 +81,7 @@ class AfficheQueryCountIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired AfficheService afficheService;
     @Autowired AttendanceService attendanceService;
+    @Autowired UserService userService;
     @Autowired AfficheRepository afficheRepository;
     @Autowired UserRepository userRepository;
     @Autowired ActivityRepository activityRepository;
@@ -229,6 +231,36 @@ class AfficheQueryCountIntegrationTest extends AbstractIntegrationTest {
         assertThat(histoire.requetes)
             .as("l'histoire entière doit tenir en une requête, jointures comprises")
             .isEqualTo(1);
+    }
+
+    /**
+     * {@code GET /api/users/me} — le profil privé, et son drapeau d'affiche.
+     *
+     * <p>Ce que ce test garde n'est pas le nombre absolu : c'est que le drapeau
+     * soit un <b>booléen</b> jusqu'au bout. Un {@code EXISTS} coûte une requête,
+     * la même à une affiche qu'à quarante ; une lecture de liste ramenée à
+     * « est-elle vide ? » coûterait une requête aussi, et passerait donc un
+     * comptage naïf — mais son coût suivrait la galerie, et cela se verrait au
+     * relevé plutôt qu'au garde-fou.
+     *
+     * <p>C'est aussi le seul endroit où la crainte du client pouvait se réaliser :
+     * un {@code EXISTS} corrélé payé par lecture de profil. Il ne l'est pas — ce
+     * DTO ne se construit que pour soi-même, jamais dans une liste.
+     */
+    @Test
+    void leProfilPrive_neCoutePasPlusCherQuandLaGalerieGrossit() {
+        Auteur petite = decor("aqc-profil-1", 1);
+        Auteur grande = decor("aqc-profil-40", AU_DESSUS_DU_PLAFOND_DE_LOT);
+
+        Mesure une = mesure(() -> userService.getMyProfile(petite.id()) == null ? 0 : 1);
+        Mesure quarante = mesure(() -> userService.getMyProfile(grande.id()) == null ? 0 : 1);
+
+        System.out.printf("%n  GET /api/users/me : %d requête(s) à 1 affiche, %d à %d%n",
+            une.requetes, quarante.requetes, AU_DESSUS_DU_PLAFOND_DE_LOT);
+
+        assertThat(quarante.requetes)
+            .as("hasPublishedAffiche est un booléen : son coût ne suit pas la galerie")
+            .isEqualTo(une.requetes);
     }
 
     // ————————————————————————— mesure —————————————————————————

@@ -11,6 +11,7 @@ import org.program.pair.domain.attendance.ReliabilitySignal;
 import org.program.pair.domain.guidelines.Guidelines;
 import org.program.pair.domain.subscription.SubscriptionService;
 import org.program.pair.domain.user.dto.*;
+import org.program.pair.repository.AfficheRepository;
 import org.program.pair.repository.BadgeAwardRepository;
 import org.program.pair.repository.UserRepository;
 import org.program.pair.shared.exception.InvalidCredentialsException;
@@ -47,6 +48,23 @@ public class UserService {
     private final SubscriptionService subscriptionService;
     private final HtmlSanitizer sanitizer;
     private final PasswordEncoder passwordEncoder;
+    /**
+     * Pour le seul {@code hasPublishedAffiche} du profil privé.
+     *
+     * <p>Une dépendance de plus au constructeur, ce que la note ci-dessous sur
+     * {@code guidelinesVersion} apprend à éviter : {@code UserServiceTest} monte
+     * ce service par {@code @InjectMocks} avec la liste <b>exacte</b> de ses
+     * dépendances, et une doublure manquante n'échoue pas là où on l'ajoute —
+     * elle fait tomber toute méthode qui rend un profil, y compris celles qui ne
+     * parlent que de bio. La doublure est posée dans le même mouvement que ce
+     * champ.
+     *
+     * <p>Le service des affiches n'est volontairement <b>pas</b> injecté à sa
+     * place : il porte l'audience, la publication et les gardes de présence,
+     * dont ce drapeau n'a que faire. Un booléen sur l'existence d'une ligne se
+     * demande au dépôt.
+     */
+    private final AfficheRepository afficheRepository;
     private final GeometryFactory geometryFactory = new GeometryFactory(
         new PrecisionModel(), 4326);
 
@@ -464,7 +482,12 @@ public class UserService {
             user.getOnboardingStep() == null ? null : user.getOnboardingStep().name(),
             user.getGuidelinesVersion(),
             Guidelines.acceptanceRequired(guidelinesVersion, user.getGuidelinesVersion()),
-            user.getVerificationEmailDelivery().name()
+            user.getVerificationEmailDelivery().name(),
+            // Toutes audiences confondues, NOBODY compris : la question est « ai-je
+            // fait ce geste ? ». Une requête, comme le compteur d'abonnés
+            // au-dessus, et sur une réponse que le client charge déjà au
+            // démarrage — c'est tout l'objet du champ.
+            afficheRepository.existsByUserId(user.getId())
         );
     }
 }

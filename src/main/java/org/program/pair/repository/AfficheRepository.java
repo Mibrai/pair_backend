@@ -113,6 +113,25 @@ public interface AfficheRepository extends JpaRepository<Affiche, UUID> {
     long countByUserId(UUID userId);
 
     /**
+     * Cette personne a-t-elle déjà publié une affiche, une seule fois ?
+     *
+     * <p>Porte {@code UserPrivateDto.hasPublishedAffiche}. Un booléen et non le
+     * {@code countByUserId} juste au-dessus, alors que celui-ci répondrait : le
+     * fil ne demande ni <i>lesquelles</i> ni <i>combien</i>, et lire une liste
+     * pour répondre par oui ou non est le coût que ce champ existe pour retirer.
+     *
+     * <p><b>Sans filtre d'audience, et c'est le point délicat.</b> Une affiche
+     * réglée sur {@code NOBODY} compte. La question posée n'est pas « quelqu'un
+     * peut-il la voir ? » mais « ai-je déjà fait ce geste ? » — et publier pour
+     * soi seul est un geste posé. Le drapeau ne fuite rien pour autant : il ne
+     * voyage que sur {@code UserPrivateDto}, que seules les quatre routes de son
+     * propre compte rendent. Sur {@code UserPublicDto}, il dirait à un tiers
+     * qu'une affiche existe là où l'audience a précisément décidé du contraire —
+     * c'est le raisonnement de l'anneau, et il vaut ici sans changement.
+     */
+    boolean existsByUserId(UUID userId);
+
+    /**
      * Qui a publié depuis {@code since}, parmi ceux dont j'ai le droit de voir
      * les affiches — l'anneau sur l'avatar, en une requête.
      *
