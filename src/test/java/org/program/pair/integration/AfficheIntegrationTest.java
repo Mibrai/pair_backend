@@ -240,7 +240,7 @@ class AfficheIntegrationTest extends AbstractIntegrationTest {
      * chercher son titre.
      */
     @Test
-    void lAfficheAnnonceLaMemeActiviteQueLaCarteSouvenirDeLaSeance() {
+    void lAfficheAnnonceLaMemeChaineQueLaCarteSouvenirDeLaSeance() {
         Fixture f = endedSlot("aff-activite");
         confirmPresence(f.hostToken, f.scheduleId);
         confirmPresence(f.guestToken, f.scheduleId);
@@ -260,7 +260,9 @@ class AfficheIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(card).isNotNull();
         assertThat(card.activityName()).isNotBlank();
+        assertThat(card.categoryName()).isNotBlank();
         assertThat(card.categoryColorRamp()).isNotBlank();
+        assertThat(card.cityLabel()).isEqualTo("Lyon");
 
         assertThat(affiche.activityName())
             .as("même chaîne que la carte-souvenir, volontairement")
@@ -268,6 +270,12 @@ class AfficheIntegrationTest extends AbstractIntegrationTest {
         assertThat(affiche.categoryColorRamp())
             .as("la teinte aussi : deux sources pour une couleur finiraient par diverger")
             .isEqualTo(card.categoryColorRamp());
+        assertThat(affiche.categoryName())
+            .as("le NOM de la catégorie, que la rampe ne remplace pas")
+            .isEqualTo(card.categoryName());
+        assertThat(affiche.cityLabel())
+            .as("la ville, la même colonne que la carte — jamais le nom du lieu")
+            .isEqualTo(card.cityLabel());
 
         // Et la ligne que l'ajout ne doit pas franchir : l'auteur publie ce que
         // SA pratique a écrit, jamais la fiche de la séance de l'hôte.
@@ -275,8 +283,44 @@ class AfficheIntegrationTest extends AbstractIntegrationTest {
             .singleElement()
             .satisfies(a -> {
                 assertThat(a.activityName()).isEqualTo(card.activityName());
+                assertThat(a.categoryName()).isEqualTo(card.categoryName());
                 assertThat(a.categoryColorRamp()).isEqualTo(card.categoryColorRamp());
+                assertThat(a.cityLabel()).isEqualTo(card.cityLabel());
             });
+    }
+
+    /**
+     * La ville est entrée, le <b>lieu</b> non — et c'est la distinction qui porte
+     * tout le reste.
+     *
+     * <p>Un nom de salle répété sur une série d'affiches publiques dessine un
+     * emploi du temps ; c'est la raison pour laquelle le motif dont le lieu est
+     * le sujet est sorti de la sélection du client, et la garde de publication le
+     * refuse de toute façon. Le test regarde le <b>corps JSON brut</b> et non le
+     * DTO : c'est la seule façon de prouver qu'un champ n'est pas là, et la seule
+     * qui tienne si quelqu'un l'ajoute demain sans y penser.
+     */
+    @Test
+    void laVilleEstPubliee_maisJamaisLeNomDuLieu() {
+        Fixture f = endedSlot("aff-lieu");
+        confirmPresence(f.guestToken, f.scheduleId);
+        publishAffiche(f.guestToken, f.scheduleId, "PREMIERE_VILLE", "EVERYONE");
+
+        String corps = webTestClient.get()
+            .uri("/api/users/{id}/affiches", f.guestId)
+            .headers(h -> h.setBearerAuth(f.guestToken))
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody(String.class)
+            .returnResult()
+            .getResponseBody();
+
+        assertThat(corps).contains("\"cityLabel\":\"Lyon\"");
+        assertThat(corps)
+            .as("le nom du lieu n'est pas au contrat, et ne doit pas y entrer par mégarde")
+            .doesNotContain("placeName")
+            .doesNotContain("Mur des Lilas")
+            .doesNotContain("Rue des Lilas");
     }
 
     /**
@@ -311,6 +355,131 @@ class AfficheIntegrationTest extends AbstractIntegrationTest {
                     .isEqualTo("https://cdn.pair.app/aff-bande/auteur.jpg");
                 assertThat(u.latestPublishedAt()).isAfter(avant);
             });
+    }
+
+    /**
+     * B14 : la bande porte les champs d'affichage de la <b>dernière</b> affiche
+     * visible, et de celle-là seule.
+     *
+     * <p>C'est la propriété que l'agrégation précédente ne pouvait pas tenir.
+     * {@code MAX(published_at)} rendait une <i>date</i> ; il aurait fallu inventer
+     * un {@code MAX(motif)} pour rendre le reste, qui aurait donné le motif
+     * alphabétiquement dernier — celui d'une affiche que la date ne désigne pas.
+     * Le visage aurait annoncé le motif d'une publication et la date d'une autre.
+     *
+     * <p>Le décor pose donc deux affiches de la même personne, sur deux séances
+     * différentes et sous deux motifs différents. La bande doit rendre <b>une
+     * ligne</b>, celle de la plus récente, entière.
+     */
+    @Test
+    void laBandePorteLaDerniereAfficheEntiere_etUneSeuleLigneParPersonne() {
+        Fixture f = endedSlot("aff-derniere");
+        confirmPresence(f.guestToken, f.scheduleId);
+
+        Instant seanceAncienne = Instant.now().minus(20, ChronoUnit.DAYS).truncatedTo(ChronoUnit.MILLIS);
+        UUID ancienCreneau = autreCreneauTermine("aff-derniere-2", f.guestId, seanceAncienne);
+        confirmPresence(f.guestToken, ancienCreneau);
+
+        String tiers = registerAndLogin("aff-derniere-tiers@pair.app");
+        Instant avant = Instant.now().minus(1, ChronoUnit.MINUTES);
+
+        // L'ancienne séance publiée D'ABORD, la récente ENSUITE : c'est la
+        // seconde publication qui doit gagner, et son motif se trie avant celui
+        // de la première — un MAX() aurait rendu l'autre.
+        publishAffiche(f.guestToken, ancienCreneau, "RETOUR_APRES_PAUSE", "EVERYONE");
+        AfficheDto derniere = publishAffiche(f.guestToken, f.scheduleId, "PREMIERE_CATEGORIE", "EVERYONE");
+
+        assertThat(derniere).isNotNull();
+        assertThat(updatesSince(tiers, avant))
+            .filteredOn(u -> u.userId().equals(f.guestId))
+            .as("une personne, une ligne — jamais une ligne par affiche")
+            .singleElement()
+            .satisfies(u -> {
+                assertThat(u.motif())
+                    .as("le motif de la dernière publication, pas le dernier motif par ordre")
+                    .isEqualTo("PREMIERE_CATEGORIE");
+                assertThat(u.slotStartedAt())
+                    .as("la séance de CETTE affiche, et non celle de l'autre")
+                    .isEqualTo(derniere.slotStartedAt())
+                    .isNotEqualTo(seanceAncienne);
+                assertThat(u.activityName()).isEqualTo(derniere.activityName());
+                assertThat(u.categoryColorRamp()).isEqualTo(derniere.categoryColorRamp());
+                assertThat(u.latestPublishedAt()).isAfter(avant);
+            });
+    }
+
+    /**
+     * <b>« Dernière » veut dire « dernière que ce lecteur a le droit de voir »</b>,
+     * et c'est la propriété la plus délicate du lot.
+     *
+     * <p>Le décor est celui qui fuit si l'ordre des opérations est faux : une
+     * affiche publique ancienne, puis une affiche <b>réservée aux abonnés</b> plus
+     * récente. Un tiers non abonné doit voir la personne — elle a bien publié
+     * quelque chose pour lui — mais avec le motif et la séance de l'<i>ancienne</i>.
+     *
+     * <p>Rendre le motif de la plus récente serait la fuite exacte que ce module
+     * passe son temps à éviter : pas l'affiche elle-même, mais ce qu'elle
+     * raconte. C'est le {@code WHERE} qui l'empêche, parce qu'il s'applique
+     * <b>avant</b> le {@code DISTINCT ON} : l'affiche réservée n'entre jamais dans
+     * l'ensemble que celui-ci départage. L'inverse — filtrer après avoir réduit à
+     * une ligne par personne — ferait disparaître la personne au lieu de la fuir,
+     * ce qui est un autre bug et non une protection.
+     */
+    @Test
+    void laDerniereAfficheDeLaBande_estLaDerniereQuOnADroitDeVoir() {
+        Fixture f = endedSlot("aff-derniere-visible");
+        confirmPresence(f.guestToken, f.scheduleId);
+
+        Instant seanceAncienne = Instant.now().minus(15, ChronoUnit.DAYS).truncatedTo(ChronoUnit.MILLIS);
+        UUID creneauPublic = autreCreneauTermine("aff-derniere-visible-2", f.guestId, seanceAncienne);
+        confirmPresence(f.guestToken, creneauPublic);
+
+        String tiers = registerAndLogin("aff-derniere-visible-tiers@pair.app");
+        Instant avant = Instant.now().minus(1, ChronoUnit.MINUTES);
+
+        // L'ancienne est ouverte à tous ; la récente est réservée aux abonnés,
+        // et le tiers n'en est pas un.
+        AfficheDto publique = publishAffiche(f.guestToken, creneauPublic, "PREMIERE_FOIS", "EVERYONE");
+        publishAffiche(f.guestToken, f.scheduleId, "PREMIERE_CATEGORIE", "SUBSCRIBERS");
+
+        assertThat(publique).isNotNull();
+        assertThat(updatesSince(tiers, avant))
+            .filteredOn(u -> u.userId().equals(f.guestId))
+            .singleElement()
+            .satisfies(u -> {
+                assertThat(u.motif())
+                    .as("le motif de l'affiche réservée ne doit pas sortir par la bande")
+                    .isEqualTo("PREMIERE_FOIS");
+                assertThat(u.slotStartedAt())
+                    .as("ni la séance dont elle parle")
+                    .isEqualTo(publique.slotStartedAt())
+                    .isEqualTo(seanceAncienne);
+                assertThat(u.latestPublishedAt())
+                    .as("la date suit la même ligne : celle de l'affiche visible")
+                    .isEqualTo(publique.publishedAt());
+            });
+    }
+
+    /**
+     * Les quatre champs d'affichage restent derrière le filtre d'audience, comme
+     * le nom et l'avatar : une affiche qu'on n'a pas le droit d'ouvrir ne doit pas
+     * se laisser lire de dos par la bande. C'est la même garde que ci-dessous,
+     * appliquée à ce que le lot vient d'ajouter — et c'est là qu'un élargissement
+     * de DTO fuit, quand la garde n'a été écrite que pour les champs d'hier.
+     */
+    @Test
+    void lesChampsDAffichage_neSortentPasHorsDeLAudience() {
+        Fixture f = endedSlot("aff-affichage-ferme");
+        confirmPresence(f.guestToken, f.scheduleId);
+
+        String tiers = registerAndLogin("aff-affichage-ferme-tiers@pair.app");
+        Instant avant = Instant.now().minus(1, ChronoUnit.MINUTES);
+        publishAffiche(f.guestToken, f.scheduleId, "PREMIERE_CATEGORIE", "SUBSCRIBERS");
+
+        assertThat(updatesSince(tiers, avant))
+            .as("ni le visage, ni ce qu'il aurait annoncé")
+            .extracting(AfficheUpdateDto::userId)
+            .doesNotContain(f.guestId);
     }
 
     /**
@@ -391,6 +560,53 @@ class AfficheIntegrationTest extends AbstractIntegrationTest {
 
         return new Fixture(schedule.getId(), guest.getId(), hostToken, guestToken,
             livedStart, livedEnd);
+    }
+
+    /**
+     * Un second créneau terminé, chez un autre hôte, où le même participant est
+     * inscrit — ce qu'il faut pour qu'une personne ait <b>deux</b> affiches.
+     *
+     * <p>Même activité du référentiel que {@link #endedSlot} : ce test-ci
+     * distingue les deux affiches par leur motif et leur séance, jamais par leur
+     * activité, et fabriquer une activité de plus grossirait le référentiel que
+     * d'autres classes parcourent avec un {@code LIMIT}.
+     */
+    private UUID autreCreneauTermine(String prefix, UUID guestId, Instant debut) {
+        String hostEmail = prefix + "-hote@pair.app";
+        registerAndLogin(hostEmail);
+        User host = userRepository.findByEmail(hostEmail).orElseThrow();
+        User guest = userRepository.findById(guestId).orElseThrow();
+
+        Activity activity = activityRepository.findBySlug("yoga").orElseThrow();
+        UserActivity userActivity = userActivityRepository.save(
+            UserActivity.builder().user(host).activity(activity).visibleOnMap(true).build());
+
+        Program program = programRepository.save(Program.builder()
+            .userActivity(userActivity)
+            .title("Bloc ancien " + prefix)
+            .status(ProgramStatus.ACTIVE)
+            .isPublic(true)
+            .build());
+
+        Schedule schedule = scheduleRepository.save(Schedule.builder()
+            .program(program)
+            .placeName("Mur ancien " + prefix)
+            .placeType(PlaceType.PUBLIC)
+            .city("Lyon")
+            .location(geometryFactory.createPoint(new Coordinate(4.85, 45.77)))
+            .startsAt(debut)
+            .endsAt(debut.plus(1, ChronoUnit.HOURS))
+            .status(SlotStatus.PAST)
+            .isOpenToPartners(true)
+            .build());
+
+        participationRepository.save(SlotParticipation.builder()
+            .schedule(schedule)
+            .user(guest)
+            .status(ParticipationStatus.CONFIRMED)
+            .build());
+
+        return schedule.getId();
     }
 
     private void confirmPresence(String token, UUID scheduleId) {

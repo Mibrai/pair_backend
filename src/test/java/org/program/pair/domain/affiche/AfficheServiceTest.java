@@ -380,25 +380,35 @@ class AfficheServiceTest {
     }
 
     /**
-     * {@code MAX(published_at)} d'une requête native revient en
-     * {@link Timestamp} ou en {@code OffsetDateTime} selon la version : les deux
-     * doivent se lire, sans quoi l'anneau porterait une date fausse — ce qui ne
-     * se voit pas.
+     * Un horodatage de requête native revient en {@link Timestamp} ou en
+     * {@code OffsetDateTime} selon la version : les deux doivent se lire, sans
+     * quoi l'anneau porterait une date fausse — ce qui ne se voit pas.
+     *
+     * <p>Les <b>deux</b> colonnes d'horodatage y passent, et elles ne disent pas
+     * la même chose : la date de publication et le début de la séance. Une
+     * conversion qui n'en couvrirait qu'une ferait dire à la bande qu'une affiche
+     * publiée hier parle d'hier.
      */
     @Test
-    void lHorodatageDUneAgregationNative_seLitDansLesDeuxFormes() {
+    void lesHorodatagesDUneRequeteNative_seLisentDansLesDeuxFormes() {
         UUID lecteur = UUID.randomUUID();
         UUID publieur = UUID.randomUUID();
         Instant quand = Instant.now().minus(2, ChronoUnit.HOURS).truncatedTo(ChronoUnit.MILLIS);
+        Instant seance = Instant.now().minus(40, ChronoUnit.DAYS).truncatedTo(ChronoUnit.MILLIS);
         doReturn(List.of(
-            new Object[]{publieur, Timestamp.from(quand), "Camille", "https://cdn/camille.jpg"},
-            new Object[]{lecteur, quand.atOffset(java.time.ZoneOffset.UTC), "Dominique", null}))
+            new Object[]{publieur, Timestamp.from(quand), "Camille", "https://cdn/camille.jpg",
+                "PREMIERE_FOIS", Timestamp.from(seance), "Escalade", "red-orange"},
+            new Object[]{lecteur, quand.atOffset(java.time.ZoneOffset.UTC), "Dominique", null,
+                "PREMIERE_FOIS", seance.atOffset(java.time.ZoneOffset.UTC), "Escalade", "red-orange"}))
             .when(afficheRepository).findUpdatesSince(any(), any(), anyInt());
 
         List<AfficheUpdateDto> updates = service.updatesSince(lecteur, null);
 
         assertThat(updates).extracting(AfficheUpdateDto::latestPublishedAt)
             .containsExactly(quand, quand);
+        assertThat(updates).extracting(AfficheUpdateDto::slotStartedAt)
+            .as("la séance, et non la publication")
+            .containsExactly(seance, seance);
     }
 
     /**
@@ -414,8 +424,10 @@ class AfficheServiceTest {
         Instant quand = Instant.now().minus(1, ChronoUnit.HOURS).truncatedTo(ChronoUnit.MILLIS);
 
         doReturn(List.of(
-            new Object[]{publieur, Timestamp.from(quand), "Camille", "https://cdn/camille.jpg"},
-            new Object[]{sansPhoto, Timestamp.from(quand), "Dominique", null}))
+            new Object[]{publieur, Timestamp.from(quand), "Camille", "https://cdn/camille.jpg",
+                "PREMIERE_FOIS", Timestamp.from(quand), "Escalade", "red-orange"},
+            new Object[]{sansPhoto, Timestamp.from(quand), "Dominique", null,
+                "PREMIERE_FOIS", Timestamp.from(quand), "Escalade", "red-orange"}))
             .when(afficheRepository).findUpdatesSince(any(), any(), anyInt());
 
         List<AfficheUpdateDto> updates = service.updatesSince(lecteur, null);
@@ -428,6 +440,50 @@ class AfficheServiceTest {
                 // Un avatar absent reste nul : le client a déjà son repli, et en
                 // fabriquer un ici le lui imposerait.
                 org.assertj.core.api.Assertions.tuple(sansPhoto, "Dominique", null));
+    }
+
+    /**
+     * B14 : la bande reçoit de quoi <b>dessiner</b> l'affiche, et plus seulement
+     * de quoi dessiner le visage.
+     *
+     * <p>Sans ces quatre champs, le client sait qui a publié et doit demander
+     * quoi — un {@code GET /users/{id}/affiches} par visage. Le compte est borné
+     * par le nombre de gens qui ont publié, donc ce n'est pas le N+1 que cette
+     * route existe pour éviter ; mais à ~200 ms l'aller-retour, dix visages
+     * valent deux secondes sur le chemin le plus chaud de l'application.
+     *
+     * <p>Les quatre viennent de la <b>même ligne</b> que la date, et c'est ce que
+     * le {@code DISTINCT ON} de la requête garantit : un motif emprunté à une
+     * publication et une date empruntée à une autre décriraient une affiche qui
+     * n'existe pas.
+     */
+    @Test
+    void laBandeRecoitLesChampsDAffichageDeLaDerniereAffiche() {
+        UUID lecteur = UUID.randomUUID();
+        UUID publieur = UUID.randomUUID();
+        Instant publiee = Instant.now().minus(30, ChronoUnit.MINUTES).truncatedTo(ChronoUnit.MILLIS);
+        Instant seance = Instant.now().minus(3, ChronoUnit.DAYS).truncatedTo(ChronoUnit.MILLIS);
+
+        // Le témoin de type est nécessaire : List.of(Object[]) prendrait le
+        // tableau pour la liste elle-même et rendrait huit lignes d'une colonne.
+        doReturn(List.<Object[]>of(new Object[]{
+            publieur, Timestamp.from(publiee), "Camille", "https://cdn/camille.jpg",
+            "PREMIERE_CATEGORIE", Timestamp.from(seance), "Escalade", "red-orange"}))
+            .when(afficheRepository).findUpdatesSince(any(), any(), anyInt());
+
+        assertThat(service.updatesSince(lecteur, null))
+            .singleElement()
+            .satisfies(u -> {
+                assertThat(u.motif()).isEqualTo("PREMIERE_CATEGORIE");
+                assertThat(u.activityName()).isEqualTo("Escalade");
+                assertThat(u.categoryColorRamp()).isEqualTo("red-orange");
+                assertThat(u.slotStartedAt())
+                    .as("la séance dont l'affiche parle")
+                    .isEqualTo(seance);
+                assertThat(u.latestPublishedAt())
+                    .as("et la publication, qui est une autre date")
+                    .isEqualTo(publiee);
+            });
     }
 
     // ————————————————————————— dépublier —————————————————————————

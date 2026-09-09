@@ -36,6 +36,25 @@ import java.util.UUID;
  * l'avatar sont inconditionnellement publics sur toutes les surfaces qui listent
  * des personnes ; il n'y a donc rien à protéger ici que le filtre d'audience ne
  * protège déjà, et ce filtre est dans le {@code WHERE}.
+ *
+ * <p><b>Les quatre champs d'affichage ferment le dernier aller-retour par
+ * personne.</b> Le nom et l'avatar disaient <i>qui</i> a publié ; ils ne disaient
+ * pas <i>quoi</i>, et une bande d'affiches doit dessiner l'affiche elle-même. Le
+ * client payait donc un {@code GET /users/{id}/affiches} par visage — borné par
+ * le nombre de gens qui ont publié, donc jamais le N+1 que cette route existe
+ * pour éviter, mais dix visages valaient tout de même deux secondes sur le
+ * chemin le plus chaud de l'application.
+ *
+ * <p>Ils décrivent la <b>dernière affiche visible</b> de cette personne, celle-là
+ * même que {@code latestPublishedAt} date — un seul objet, et non un champ
+ * emprunté à une affiche et une date empruntée à une autre. C'est ce que le
+ * {@code DISTINCT ON} de la requête garantit, là où l'agrégation qu'il remplace
+ * ne pouvait rendre qu'une date.
+ *
+ * <p><b>Et ils n'exposent rien que la galerie ne rende déjà</b> : ce sont les
+ * quatre champs d'{@code AfficheDto} qu'un tap sur ce visage rendrait à
+ * l'instant d'après, sous exactement le même filtre d'audience. Ce DTO n'ouvre
+ * pas une porte, il évite d'y frapper deux fois.
  */
 public record AfficheUpdateDto(
 
@@ -53,5 +72,26 @@ public record AfficheUpdateDto(
     @Schema(description = "L'avatar de cette personne, ou null quand elle n'en a pas — "
         + "le client a déjà son repli, le même que partout ailleurs.",
         nullable = true)
-    String avatarUrl
+    String avatarUrl,
+
+    @Schema(description = "Le motif de sa dernière affiche visible — la clé transmise à la "
+        + "publication, rendue telle quelle. Même valeur que AfficheDto.motif : le serveur "
+        + "ne l'interprète pas plus ici qu'ailleurs.",
+        example = "PREMIERE_FOIS")
+    String motif,
+
+    @Schema(description = "Le début de la séance dont cette dernière affiche parle. Même "
+        + "valeur que AfficheDto.slotStartedAt — et la séance, jamais la date de "
+        + "publication, qui est latestPublishedAt juste au-dessus.")
+    Instant slotStartedAt,
+
+    @Schema(description = "L'activité de cette dernière affiche. Même valeur que "
+        + "AfficheDto.activityName, lue par la même chaîne.",
+        example = "Escalade")
+    String activityName,
+
+    @Schema(description = "La rampe de couleur de sa catégorie — un nom de rampe, jamais "
+        + "un hexadécimal. Même valeur que AfficheDto.categoryColorRamp.",
+        example = "red-orange")
+    String categoryColorRamp
 ) {}

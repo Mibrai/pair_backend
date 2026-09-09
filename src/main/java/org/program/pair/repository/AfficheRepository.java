@@ -127,8 +127,9 @@ public interface AfficheRepository extends JpaRepository<Affiche, UUID> {
      * finit par diverger.
      *
      * <p>La jointure sur {@code subscriptions} est un {@code LEFT JOIN} et non un
-     * {@code EXISTS} pour ne coûter qu'un parcours d'index ; l'agrégation absorbe
-     * les doublons qu'elle pourrait produire.
+     * {@code EXISTS} pour ne coûter qu'un parcours d'index ; le
+     * {@code DISTINCT ON} absorbe les doublons qu'elle pourrait produire, comme
+     * l'agrégation qu'il remplace le faisait.
      *
      * <p>L'appelant lui-même est exclu : il sait ce qu'il a publié, et un anneau
      * sur son propre avatar n'appelle aucune ouverture.
@@ -140,29 +141,71 @@ public interface AfficheRepository extends JpaRepository<Affiche, UUID> {
      * {@link BlockSql#NOT_BLOCKED_U}, qui désigne {@code u.id}. Les deux colonnes
      * montent dans le {@code SELECT} d'une table de toute façon parcourue.
      *
-     * <p><b>Elles entrent aussi dans le {@code GROUP BY}, et ce n'est pas une
-     * maladresse à corriger.</b> {@code GROUP BY a.user_id} seul ne suffit pas à
-     * Postgres pour laisser sortir {@code u.display_name} : la dépendance
-     * fonctionnelle qu'il reconnaît porte sur {@code u.id}, la clé primaire de la
-     * table jointe, et non sur {@code a.user_id} — même si la jointure rend les
-     * deux égales. Le coût est nul, la clé de regroupement étant déjà
-     * l'identifiant de la personne.
+     * <p><b>{@code DISTINCT ON} et non plus {@code GROUP BY}, parce que la
+     * question a changé.</b> Une agrégation rend une <i>valeur</i> :
+     * {@code MAX(published_at)} suffisait à baguer un avatar, qui ne demande
+     * qu'une date. Une bande d'affiches demande la <b>ligne</b> — le motif,
+     * l'activité, la séance — et il n'existe aucune façon honnête de la tirer
+     * d'un {@code GROUP BY} : ajouter {@code MAX(motif)} rendrait le motif
+     * alphabétiquement dernier, d'une affiche qui n'est pas celle que la date
+     * désigne. Un visage annoncerait alors le motif d'une publication et la date
+     * d'une autre, et rien ne le signalerait.
+     *
+     * <p>{@code DISTINCT ON (a.user_id)} avec un {@code ORDER BY (a.user_id,
+     * a.published_at DESC, a.id DESC)} garde <b>une ligne entière</b> par
+     * personne, la plus récente de celles que ce lecteur a le droit de voir. Le
+     * {@code a.id} n'est pas décoratif : deux affiches publiées dans la même
+     * milliseconde — republier en ouvrant l'audience sur deux séances — laissent
+     * sinon Postgres libre de choisir, et le visage changerait de motif d'un
+     * appel à l'autre sans que rien n'ait été publié.
+     *
+     * <p><b>La sous-requête est nécessaire</b> : {@code DISTINCT ON} impose que
+     * son {@code ORDER BY} commence par ses propres expressions, alors que la
+     * bande veut l'ordre inverse — la personne qui vient de publier en tête. Les
+     * deux tris ne peuvent donc pas tenir dans la même clause, et le
+     * {@code LIMIT} doit s'appliquer <b>après</b> la déduplication, sans quoi il
+     * couperait dans les affiches au lieu de couper dans les personnes.
+     *
+     * <p><b>Toujours une requête, cinq jointures de plus comprises.</b>
+     * {@code schedules → programs → user_activities → activities → categories}
+     * est la chaîne que rend déjà {@code AfficheDto}, écrite ici en SQL parce que
+     * cette lecture-là n'a jamais chargé d'entité. L'index
+     * {@code idx_affiches_user_published (user_id, published_at DESC)} sert
+     * exactement le tri du {@code DISTINCT ON} : aucune migration n'accompagne ce
+     * changement.
      */
     @Query(value = """
-        SELECT a.user_id, MAX(a.published_at) AS latest, u.display_name, u.avatar_url
-        FROM affiches a
-        JOIN users u ON u.id = a.user_id
-        LEFT JOIN subscriptions sub
-               ON sub.subscriber_id = :viewerId
-              AND sub.target_author_id = a.user_id
-        WHERE a.published_at > :since
-          AND a.user_id <> :viewerId
-          AND u.is_active = TRUE
-          AND (a.audience = 'EVERYONE'
-               OR (a.audience = 'SUBSCRIBERS' AND sub.id IS NOT NULL))
+        SELECT d.user_id, d.latest, d.display_name, d.avatar_url,
+               d.motif, d.occurrence_start, d.activity_name, d.color_ramp
+        FROM (
+          SELECT DISTINCT ON (a.user_id)
+                 a.user_id          AS user_id,
+                 a.published_at     AS latest,
+                 u.display_name     AS display_name,
+                 u.avatar_url       AS avatar_url,
+                 a.motif            AS motif,
+                 a.occurrence_start AS occurrence_start,
+                 act.name           AS activity_name,
+                 c.color_ramp       AS color_ramp
+          FROM affiches a
+          JOIN users u ON u.id = a.user_id
+          LEFT JOIN subscriptions sub
+                 ON sub.subscriber_id = :viewerId
+                AND sub.target_author_id = a.user_id
+          LEFT JOIN schedules s        ON s.id = a.schedule_id
+          LEFT JOIN programs p         ON p.id = s.program_id
+          LEFT JOIN user_activities ua ON ua.id = p.user_activity_id
+          LEFT JOIN activities act     ON act.id = ua.activity_id
+          LEFT JOIN categories c       ON c.id = act.category_id
+          WHERE a.published_at > :since
+            AND a.user_id <> :viewerId
+            AND u.is_active = TRUE
+            AND (a.audience = 'EVERYONE'
+                 OR (a.audience = 'SUBSCRIBERS' AND sub.id IS NOT NULL))
         """ + BlockSql.NOT_BLOCKED_U + """
-        GROUP BY a.user_id, u.display_name, u.avatar_url
-        ORDER BY latest DESC
+          ORDER BY a.user_id, a.published_at DESC, a.id DESC
+        ) d
+        ORDER BY d.latest DESC
         LIMIT :limit
         """, nativeQuery = true)
     List<Object[]> findUpdatesSince(
