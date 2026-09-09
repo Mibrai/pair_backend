@@ -39,6 +39,19 @@ class UserServiceTest {
     @Mock
     org.program.pair.domain.subscription.SubscriptionService subscriptionService;
 
+    /**
+     * Même raison que la doublure ci-dessus, et même mode de panne : le profil
+     * privé porte désormais {@code hasPublishedAffiche}, que {@code toPrivateDto}
+     * va chercher ici. Sans elle, {@code @InjectMocks} injecte {@code null} et
+     * toute méthode rendant un profil casse — y compris celles qui ne parlent que
+     * de bio ou de rayon de flou, et qui n'ont rien à voir avec les affiches.
+     *
+     * <p>Le défaut par défaut de Mockito est {@code false}, ce qui est le bon
+     * repli : un compte de test n'a rien publié.
+     */
+    @Mock
+    org.program.pair.repository.AfficheRepository afficheRepository;
+
     @InjectMocks
     UserService userService;
 

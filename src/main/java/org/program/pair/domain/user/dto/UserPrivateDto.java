@@ -63,5 +63,17 @@ public record UserPrivateDto(
         + "Traiter une valeur inconnue comme SENT plutôt qu'échouer : COMPLAINED "
         + "pourra s'ajouter.",
         allowableValues = {"NONE", "PENDING", "SENT", "DELIVERED", "BOUNCED", "FAILED"})
-    String verificationEmailDelivery
+    String verificationEmailDelivery,
+
+    @Schema(description = "Vrai dès que cette personne a publié au moins une affiche, "
+        + "quelle que soit son audience — NOBODY compris. La question est « ai-je déjà "
+        + "fait ce geste ? », et non « quelqu'un peut-il la voir ? » : une affiche "
+        + "publiée pour soi seul est un geste posé, et la pastille d'amorce du fil n'a "
+        + "plus lieu d'être. Porté ici pour la même raison que l'état d'onboarding — le "
+        + "client en a besoin au démarrage, et cette réponse est déjà chargée : lire "
+        + "GET /users/{id}/affiches pour n'en tirer qu'un oui ou non paie une liste "
+        + "entière sur l'écran d'entrée du produit. Ne remplace PAS cette route là où "
+        + "l'affiche mise en avant doit être dessinée : là, la question n'est plus un "
+        + "booléen. Ce drapeau vit sur le DTO privé et sur aucun autre.")
+    boolean hasPublishedAffiche
 ) {}

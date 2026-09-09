@@ -504,6 +504,73 @@ class AfficheIntegrationTest extends AbstractIntegrationTest {
             .doesNotContain(f.guestId);
     }
 
+    /**
+     * B16 : {@code hasPublishedAffiche} sur le profil privé.
+     *
+     * <p>Le fil porte une pastille d'amorce sur son propre visage, qui ne doit
+     * paraître que tant qu'on n'a rien publié. Pour le savoir, le client lisait
+     * {@code GET /users/{id}/affiches} : <b>une liste entière pour répondre par
+     * oui ou non</b>, sur l'écran d'entrée du produit.
+     *
+     * <p>Le décor publie en <b>{@code NOBODY}</b>, et c'est délibéré : c'est le
+     * cas qui distingue les deux questions possibles. « Quelqu'un peut-il la
+     * voir ? » répondrait non ; « ai-je fait ce geste ? » répond oui, et c'est
+     * celle-là qui décide de la pastille. Publier pour soi seul est un geste
+     * posé.
+     */
+    @Test
+    void leDrapeauDuProfilPrive_sAllumeAuPremierGeste_memePublieePourSoiSeul() {
+        Fixture f = endedSlot("aff-drapeau");
+        confirmPresence(f.guestToken, f.scheduleId);
+
+        assertThat(monProfil(f.guestToken))
+            .as("rien de publié : la pastille d'amorce a lieu d'être")
+            .doesNotContain("\"hasPublishedAffiche\":true")
+            .contains("\"hasPublishedAffiche\":false");
+
+        publishAffiche(f.guestToken, f.scheduleId, "PREMIERE_FOIS", "NOBODY");
+
+        assertThat(monProfil(f.guestToken))
+            .as("une affiche muette reste une affiche publiée")
+            .contains("\"hasPublishedAffiche\":true");
+    }
+
+    /**
+     * Le drapeau vit sur le profil <b>privé</b>, et sur aucun autre.
+     *
+     * <p>« Cette personne a publié une affiche » est exactement ce que le filtre
+     * d'audience protège : sur le profil public, ce serait la fuite du fait
+     * qu'une affiche existe, à quelqu'un qui n'a peut-être pas le droit de la
+     * voir. C'est le raisonnement de l'anneau, et il vaut ici sans changement —
+     * d'autant que le drapeau ignore l'audience, donc une affiche réglée sur
+     * {@code NOBODY} l'allume.
+     *
+     * <p>Le test lit le corps JSON brut, comme celui qui tient le nom du lieu
+     * dehors : c'est la seule forme qui prouve qu'un champ <b>n'est pas</b> là, et
+     * la seule qui tienne si quelqu'un l'ajoute par symétrie six mois plus tard.
+     */
+    @Test
+    void leDrapeau_neVoyagePasSurLeProfilPublic() {
+        Fixture f = endedSlot("aff-drapeau-public");
+        confirmPresence(f.guestToken, f.scheduleId);
+        publishAffiche(f.guestToken, f.scheduleId, "PREMIERE_FOIS", "NOBODY");
+
+        String tiers = registerAndLogin("aff-drapeau-public-tiers@pair.app");
+
+        String profilPublic = webTestClient.get()
+            .uri("/api/users/{id}", f.guestId)
+            .headers(h -> h.setBearerAuth(tiers))
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody(String.class)
+            .returnResult()
+            .getResponseBody();
+
+        assertThat(profilPublic)
+            .as("le drapeau dirait qu'une affiche existe là où l'audience dit le contraire")
+            .doesNotContain("hasPublishedAffiche");
+    }
+
     // ————————————————————————— décor —————————————————————————
 
     /**
@@ -607,6 +674,18 @@ class AfficheIntegrationTest extends AbstractIntegrationTest {
             .build());
 
         return schedule.getId();
+    }
+
+    /** Le corps brut de {@code GET /api/users/me} — c'est un champ qu'on y cherche. */
+    private String monProfil(String token) {
+        return webTestClient.get()
+            .uri("/api/users/me")
+            .headers(h -> h.setBearerAuth(token))
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody(String.class)
+            .returnResult()
+            .getResponseBody();
     }
 
     private void confirmPresence(String token, UUID scheduleId) {
