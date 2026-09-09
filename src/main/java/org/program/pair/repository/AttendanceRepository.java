@@ -169,10 +169,22 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
      * suivante contredit.
      *
      * <p><b>Une seule requête, quel que soit le nombre de présences</b> — rien
-     * n'est une entité, cinq colonnes sont projetées et les jointures sont
-     * faites en SQL. Mesuré au harnais de comptage : 1 requête pour 15
-     * présences. C'est ce qui compte, plus que le calcul : la base est à San
-     * Francisco et le service en Europe, soit ~200 ms l'aller-retour.
+     * n'est une entité, huit colonnes sont projetées et les jointures sont
+     * faites en SQL. Mesuré au harnais de comptage : 1 requête pour 40
+     * présences, avant comme après l'ajout des trois colonnes d'arbitrage. C'est
+     * ce qui compte, plus que le calcul : la base est à San Francisco et le
+     * service en Europe, soit ~200 ms l'aller-retour.
+     *
+     * <p><b>Les trois colonnes d'arbitrage ne coûtent pas de jointure</b> : la
+     * catégorie était déjà jointe pour la rampe, et la ville vit sur le créneau,
+     * qui est la première jointure de la chaîne. Seul {@code ua.user} est neuf —
+     * une jointure de plus dans la <i>même</i> requête, jamais un aller-retour de
+     * plus. Elle est jointe explicitement plutôt que lue par le chemin
+     * {@code ua.user.id} : ce chemin-là se résout aujourd'hui sur la clé
+     * étrangère sans jointure, mais c'est une optimisation d'Hibernate, pas une
+     * garantie du langage, et le jour où elle cesse de s'appliquer elle produit
+     * une jointure <b>interne</b> — exactement ce que le paragraphe suivant
+     * interdit.
      *
      * <p><b>Des {@code LEFT JOIN} explicites, et non la navigation de chemin</b>
      * qu'emploie {@link #countByActivityForUser} juste au-dessus. Écrire
@@ -187,13 +199,15 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
      */
     @Query("""
         SELECT new org.program.pair.domain.attendance.dto.ConfirmedAttendanceDto(
-            s.id, a.attendedAt, act.id, act.name, c.colorRamp)
+            s.id, a.attendedAt, act.id, act.name, c.colorRamp,
+            c.name, s.city, hu.id)
         FROM Attendance a
           LEFT JOIN a.schedule s
           LEFT JOIN s.program p
           LEFT JOIN p.userActivity ua
           LEFT JOIN ua.activity act
           LEFT JOIN act.category c
+          LEFT JOIN ua.user hu
         WHERE a.user.id = :userId
           AND a.wasPresent = true
         ORDER BY a.attendedAt DESC
