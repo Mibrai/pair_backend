@@ -128,7 +128,8 @@ class AttendanceServiceTest {
         UUID userId = UUID.randomUUID();
         ConfirmedAttendanceDto entree = new ConfirmedAttendanceDto(
             UUID.randomUUID(), Instant.now().minus(3, ChronoUnit.DAYS),
-            UUID.randomUUID(), "Escalade", "green-teal");
+            UUID.randomUUID(), "Escalade", "green-teal",
+            "Sports de montagne", "Grenoble", UUID.randomUUID());
         doReturn(List.of(entree)).when(attendanceRepository).findConfirmedForUser(userId);
 
         assertThat(attendanceService.getMine(userId)).containsExactly(entree);

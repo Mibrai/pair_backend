@@ -36,10 +36,34 @@ import java.util.UUID;
  * aucune présence, et une confirmation tardive fait apparaître son entrée
  * <b>à l'instant où la personne confirme</b> — le seul instant où elle y pense.
  *
- * <p><b>Ce que ce DTO ne porte pas</b> : ni le titre du programme, ni le lieu,
- * ni la moindre trace des autres participants. Il sert à décider quel motif une
- * séance déclenche, pas à l'afficher ; ce qui n'existe pas au contrat ne peut
- * pas être montré par erreur demain.
+ * <p><b>Ce que ce DTO ne porte pas</b> : ni le titre du programme, ni le nom du
+ * lieu, ni la moindre trace des autres participants. Il sert à décider quel
+ * motif une séance déclenche, pas à l'afficher ; ce qui n'existe pas au contrat
+ * ne peut pas être montré par erreur demain.
+ *
+ * <p><b>Pourquoi la catégorie, la ville et l'hôte y sont entrés</b>, alors que
+ * la phrase ci-dessus les aurait refusés hier. Cette liste n'est lue que par la
+ * personne qu'elle décrit — c'est sa propre histoire, et elle ne sort jamais
+ * vers un tiers. La question n'est donc pas « qu'a-t-on le droit de montrer »
+ * mais « avec quoi peut-on <i>trancher</i> », et un module qui juge une
+ * transition n'a que deux issues : disposer de la valeur qui l'arbitre, ou
+ * affirmer sans savoir. Le client a mesuré la seconde sur son compte de test —
+ * trois affiches annonçaient une première catégorie qui n'en était pas une,
+ * parce que la catégorie manquait ici.
+ *
+ * <p>Les trois champs sont donc des <b>clés de comparaison</b>, pas de
+ * l'affichage : on compare une catégorie à celles des séances antérieures, une
+ * ville aux villes déjà vues, un hôte aux hôtes déjà rencontrés. C'est aussi
+ * pourquoi l'hôte est un <b>identifiant nu</b> — ni nom, ni avatar, ni bloc de
+ * profil : comparer deux identifiants ne demande rien de plus, et tout ce qu'on
+ * ajouterait au-delà serait une information sur un tiers livrée sans qu'aucun
+ * écran l'ait demandée.
+ *
+ * <p><b>Ce qui n'y est toujours pas, et a été demandé puis retiré</b> :
+ * {@code placeName}. Le seul motif dont le lieu précis est le sujet est sorti de
+ * la sélection du client, et la garde de publication le refuse de toute façon.
+ * Un champ servi « au cas où » est un champ qu'on lit un jour sans savoir
+ * pourquoi.
  */
 @Schema(description = "Une séance passée dont la présence a été confirmée.")
 public record ConfirmedAttendanceDto(
@@ -63,5 +87,28 @@ public record ConfirmedAttendanceDto(
     @Schema(description = "Nom de rampe de la catégorie, jamais un hexadécimal — la même "
         + "valeur que SlotRecapDto.categoryColorRamp, résolue par le client dans sa palette.",
         example = "green-teal")
-    String categoryColorRamp
+    String categoryColorRamp,
+
+    @Schema(description = "Le NOM de la catégorie de l'activité — la même valeur que "
+        + "SlotRecapDto.categoryName, lue par la même chaîne. Il ne se déduit pas de "
+        + "categoryColorRamp et ne s'y remplace pas : deux catégories distinctes peuvent "
+        + "partager une rampe, et une rampe n'est pas un mot qu'on puisse dire. C'est ce "
+        + "champ, et lui seul, qui permet de décider qu'une séance est la première d'une "
+        + "catégorie plutôt que de l'affirmer.",
+        example = "Sports de montagne")
+    String categoryName,
+
+    @Schema(description = "Ville du créneau, jamais l'adresse exacte ni le nom du lieu — "
+        + "la même valeur que SlotRecapDto.cityLabel. Nulle quand la ville n'est pas "
+        + "renseignée : elle n'est jamais devinée à partir des coordonnées, et une ville "
+        + "devinée ici ferait naître une première fois qui n'a pas eu lieu.",
+        nullable = true, example = "Grenoble")
+    String cityLabel,
+
+    @Schema(description = "L'hôte de la séance : l'auteur du programme dont relève le "
+        + "créneau. Un identifiant nu, à comparer et jamais à afficher — ni nom ni avatar "
+        + "ne l'accompagnent, parce que reconnaître un hôte déjà rencontré ne demande rien "
+        + "de plus. Peut désigner l'appelant lui-même : on est l'hôte des séances qu'on "
+        + "organise, et on y est présent comme les autres.")
+    UUID hostId
 ) {}
