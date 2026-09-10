@@ -30,6 +30,33 @@ public enum ErrorCode {
     BUSINESS_RULE_VIOLATION,
     INVALID_CREDENTIALS,
     INVALID_TOKEN,
+    /**
+     * Aucune authentification exploitable sur une route qui en demande une :
+     * jeton absent, illisible, mal signé, ou d'un genre qui n'ouvre pas ici.
+     *
+     * <p><b>Publié depuis toujours, entré dans cette énumération le 10/09
+     * seulement.</b> Il était écrit à la main, en toutes lettres, dans le point
+     * d'entrée d'authentification de {@code SecurityConfig} — donc hors de la
+     * liste qui se dit « l'énumération stable des codes exposés », et hors de
+     * portée d'un {@code @link}. Le faire entrer ici ne change pas un octet de ce
+     * qui part sur le réseau : c'est le même mot, désormais nommé une seule fois.
+     */
+    UNAUTHORIZED,
+    /**
+     * Le jeton d'accès présenté était des nôtres, son quart d'heure est passé.
+     *
+     * <p>Séparé d'{@link #UNAUTHORIZED} le 10/09, à la demande du chantier
+     * mobile. Les deux se confondaient, et c'est la seule distinction qui change
+     * ce qu'un client doit faire : celui-ci appelle un rafraîchissement
+     * silencieux — la session est intacte, seul le jeton court a fait son temps —
+     * là où {@code UNAUTHORIZED} désigne un jeton absent ou illisible, que rien
+     * ne répare. Ne pouvant trancher, le client rafraîchissait à chaque 401, y
+     * compris sur ceux où c'était un appel dépensé pour rien.
+     *
+     * <p>Ajout purement additif : {@code UNAUTHORIZED} garde son nom et couvre
+     * exactement ce qu'il couvrait, moins ce cas-ci.
+     */
+    TOKEN_EXPIRED,
     EMAIL_EXISTS,
     RATE_LIMITED,
     INVALID_PARAMETER,

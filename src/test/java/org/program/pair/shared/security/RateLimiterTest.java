@@ -1,5 +1,6 @@
 package org.program.pair.shared.security;
 
+import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.junit.jupiter.api.Test;
 import org.program.pair.shared.exception.TooManyRequestsException;
 
@@ -11,6 +12,7 @@ import java.time.ZoneOffset;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 /**
  * Le limiteur de connexion, tel que le relevé du chantier mobile du 01/09 l'a
@@ -22,6 +24,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * dernier est celui qui compte le plus hors campagne de test : un utilisateur
  * légitime qui se trompe de mot de passe, réessaie, et se voit refuser plus
  * longtemps à chaque essai n'a aucun moyen de comprendre ce qui lui arrive.
+ *
+ * <p><b>Depuis le 10/09, le refus dit aussi quand revenir</b>, et cela se prouve
+ * avec la même horloge réglable : un délai est un instant franchi, pas un
+ * booléen. Les tests qui suivent vérifient qu'il vaut la fenêtre de la route,
+ * qu'il décroît à mesure qu'elle glisse, qu'il ne descend jamais à zéro — un
+ * {@code Retry-After: 0} invite à réessayer sur-le-champ —, et qu'il est celui
+ * de la clé qui a réellement refusé, ce qui n'a d'intérêt que là où les deux
+ * budgets se sont remplis à des moments différents.
  */
 class RateLimiterTest {
 
@@ -270,5 +280,211 @@ class RateLimiterTest {
         assertThatCode(() -> limiteur.checkLogin(IP, "moi@example.org"))
             .doesNotThrowAnyException();
         assertThat(limiteur.taillePourTests()).isZero();
+    }
+
+    // ------------------------------------------------- le délai avant nouvel essai
+
+    /** Le refus attendu, pour pouvoir interroger le délai qu'il porte. */
+    private static TooManyRequestsException refusDe(ThrowingCallable appel) {
+        Throwable leve = catchThrowable(appel);
+        assertThat(leve).isInstanceOf(TooManyRequestsException.class);
+        return (TooManyRequestsException) leve;
+    }
+
+    @Test
+    void leDelai_vautLaFenetreDeLaRoute_quandLeBudgetVientDEtreEpuise() {
+        // Dix échecs à la même seconde : la porte rouvre quand le premier sort de
+        // la fenêtre, donc un quart d'heure plus tard, jour pour jour.
+        HorlogeReglable horloge = new HorlogeReglable();
+        RateLimiter limiteur = new RateLimiter(horloge);
+
+        for (int i = 0; i < 10; i++) {
+            limiteur.recordLoginFailure(IP, "moi@example.org");
+        }
+
+        TooManyRequestsException refus = refusDe(() -> limiteur.checkLogin(IP, "moi@example.org"));
+        assertThat(refus.getRetryAfterSecondes()).isEqualTo(Duration.ofMinutes(15).toSeconds());
+    }
+
+    @Test
+    void leDelai_decroitAMesureQueLaFenetreGlisse() {
+        // C'est tout l'objet de l'en-tête : le message « dans quelques minutes »
+        // dit la même chose à la première minute et à la quatorzième.
+        HorlogeReglable horloge = new HorlogeReglable();
+        RateLimiter limiteur = new RateLimiter(horloge);
+
+        for (int i = 0; i < 10; i++) {
+            limiteur.recordLoginFailure(IP, "moi@example.org");
+        }
+
+        long precedent = Long.MAX_VALUE;
+        for (int minute = 0; minute < 15; minute++) {
+            TooManyRequestsException refus =
+                refusDe(() -> limiteur.checkLogin(IP, "moi@example.org"));
+            long delai = refus.getRetryAfterSecondes();
+
+            assertThat(delai).isLessThan(precedent);
+            assertThat(delai).isPositive();
+            assertThat(delai).isLessThanOrEqualTo(Duration.ofMinutes(15).toSeconds());
+            // Attendre ce que l'en-tête annonce suffit, et exactement : ce qui
+            // reste est la fenêtre moins le temps déjà passé devant la porte.
+            assertThat(delai).isEqualTo(Duration.ofMinutes(15L - minute).toSeconds());
+
+            precedent = delai;
+            horloge.avancer(Duration.ofMinutes(1));
+        }
+
+        // La quinzième minute atteinte, le premier échec est sorti de la fenêtre :
+        // le dernier délai annoncé — soixante secondes — était donc exact.
+        assertThatCode(() -> limiteur.checkLogin(IP, "moi@example.org"))
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    void leDelai_neTombeJamaisAZeroAuDernierInstantDeLaFenetre() {
+        // À un souffle de la réouverture, le temps restant ne fait plus une
+        // seconde entière. Zéro est le seul chiffre que l'en-tête ne doit jamais
+        // porter — « Retry-After: 0 » invite à réessayer sur-le-champ, soit le
+        // contraire de ce qu'on veut dire —, donc on arrondit vers le haut.
+        HorlogeReglable horloge = new HorlogeReglable();
+        RateLimiter limiteur = new RateLimiter(horloge);
+
+        for (int i = 0; i < 10; i++) {
+            limiteur.recordLoginFailure(IP, "moi@example.org");
+        }
+        horloge.avancer(Duration.ofMinutes(15).minusMillis(1));
+
+        TooManyRequestsException refus = refusDe(() -> limiteur.checkLogin(IP, "moi@example.org"));
+        assertThat(refus.getDelaiAvantNouvelEssai()).isEqualTo(Duration.ofMillis(1));
+        assertThat(refus.getRetryAfterSecondes()).isEqualTo(1);
+    }
+
+    @Test
+    void attendreExactementLeDelaiAnnonce_suffit() {
+        // La seule propriété qui compte vraiment pour le client : ce qu'on lui dit
+        // d'attendre est ce qu'il faut attendre. Un chiffre trop court le ferait
+        // refuser une fois de plus — le défaut que cet en-tête existe pour
+        // supprimer, pas pour déplacer d'un quart d'heure à une seconde.
+        HorlogeReglable horloge = new HorlogeReglable();
+        RateLimiter limiteur = new RateLimiter(horloge);
+
+        for (int i = 0; i < 3; i++) {
+            limiteur.checkResendVerification(IP, "cible@example.org");
+            horloge.avancer(Duration.ofSeconds(90));
+        }
+
+        TooManyRequestsException refus =
+            refusDe(() -> limiteur.checkResendVerification(IP, "cible@example.org"));
+        horloge.avancer(Duration.ofSeconds(refus.getRetryAfterSecondes()));
+
+        assertThatCode(() -> limiteur.checkResendVerification(IP, "cible@example.org"))
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    void leDelai_sArrondieALaSecondeSuperieure() {
+        // Tronquer rendrait un instant où la porte est encore fermée, donc un
+        // refus de plus — précisément ce que cet en-tête existe pour éviter.
+        HorlogeReglable horloge = new HorlogeReglable();
+        RateLimiter limiteur = new RateLimiter(horloge);
+
+        for (int i = 0; i < 10; i++) {
+            limiteur.recordLoginFailure(IP, "moi@example.org");
+        }
+        horloge.avancer(Duration.ofMillis(500));
+
+        TooManyRequestsException refus = refusDe(() -> limiteur.checkLogin(IP, "moi@example.org"));
+        assertThat(refus.getDelaiAvantNouvelEssai())
+            .isEqualTo(Duration.ofMinutes(15).minusMillis(500));
+        assertThat(refus.getRetryAfterSecondes()).isEqualTo(Duration.ofMinutes(15).toSeconds());
+    }
+
+    @Test
+    void leDelai_vautUneHeureSurLesRoutesDEmail() {
+        // La fenêtre de l'inscription et des envois d'e-mail dure une heure : le
+        // message parlait bien d'une heure, mais sans dire à partir de quand.
+        HorlogeReglable horloge = new HorlogeReglable();
+        RateLimiter limiteur = new RateLimiter(horloge);
+
+        for (int i = 0; i < 3; i++) {
+            limiteur.checkPasswordReset(IP, "cible@example.org");
+        }
+        horloge.avancer(Duration.ofMinutes(20));
+
+        TooManyRequestsException refus =
+            refusDe(() -> limiteur.checkPasswordReset(IP, "cible@example.org"));
+        assertThat(refus.getRetryAfterSecondes()).isEqualTo(Duration.ofMinutes(40).toSeconds());
+    }
+
+    @Test
+    void leDelai_estCeluiDuCompte_quandCEstLeCompteQuiRefuse() {
+        // Les deux budgets ne se remplissent pas au même moment : vingt envois
+        // depuis un routeur peuvent dater d'une heure moins le quart, et les trois
+        // d'une adresse e-mail d'il y a une minute. Annoncer le mauvais des deux,
+        // c'est renvoyer le client trop tôt ou beaucoup trop tard.
+        HorlogeReglable horloge = new HorlogeReglable();
+        RateLimiter limiteur = new RateLimiter(horloge);
+
+        // La connexion sature d'abord, avec vingt adresses distinctes.
+        for (int i = 0; i < 20; i++) {
+            limiteur.checkResendVerification(IP, "passant" + i + "@example.org");
+        }
+
+        // Trois quarts d'heure plus tard, une adresse précise sature à son tour,
+        // depuis d'autres connexions pour ne pas toucher au budget de celle-ci.
+        horloge.avancer(Duration.ofMinutes(45));
+        for (int i = 0; i < 3; i++) {
+            limiteur.checkResendVerification("198.51.100." + i, "cible@example.org");
+        }
+
+        TooManyRequestsException refus =
+            refusDe(() -> limiteur.checkResendVerification(IP, "cible@example.org"));
+
+        // Le compte est vérifié le premier, et c'est lui qui bloque : une heure
+        // pleine à partir de ses trois envois — et non le quart d'heure qui reste
+        // à la connexion.
+        assertThat(refus.getRetryAfterSecondes()).isEqualTo(Duration.ofHours(1).toSeconds());
+        assertThat(refus.getRetryAfterSecondes())
+            .isNotEqualTo(Duration.ofMinutes(15).toSeconds());
+    }
+
+    @Test
+    void leDelai_estCeluiDeLAdresse_quandCEstLAdresseQuiRefuse() {
+        // Le cas symétrique : un balayage a saturé la connexion, le compte visé
+        // n'a rien à son compteur, et le délai doit suivre la fenêtre de la
+        // connexion — déjà entamée de cinq minutes.
+        HorlogeReglable horloge = new HorlogeReglable();
+        RateLimiter limiteur = new RateLimiter(horloge);
+
+        for (int i = 0; i < 50; i++) {
+            limiteur.recordLoginFailure(IP, "cible" + i + "@example.org");
+        }
+        horloge.avancer(Duration.ofMinutes(5));
+
+        TooManyRequestsException refus =
+            refusDe(() -> limiteur.checkLogin(IP, "innocent@example.org"));
+        assertThat(refus).hasMessageContaining("connexion");
+        assertThat(refus.getRetryAfterSecondes()).isEqualTo(Duration.ofMinutes(10).toSeconds());
+    }
+
+    @Test
+    void interrogerLaPorte_neRallongePasLeDelaiAnnonce() {
+        // Le pendant, côté en-tête, de « un refus ne consomme rien » : un client
+        // qui revient trop tôt, ou qui réessaie dix fois, doit s'entendre annoncer
+        // le même instant de réouverture. Sans cela l'en-tête serait un piège.
+        HorlogeReglable horloge = new HorlogeReglable();
+        RateLimiter limiteur = new RateLimiter(horloge);
+
+        for (int i = 0; i < 5; i++) {
+            limiteur.checkRegister(IP, "moi@example.org");
+        }
+
+        long premier = refusDe(() -> limiteur.checkRegister(IP, "moi@example.org"))
+            .getRetryAfterSecondes();
+        for (int i = 0; i < 10; i++) {
+            assertThat(refusDe(() -> limiteur.checkRegister(IP, "moi@example.org"))
+                .getRetryAfterSecondes()).isEqualTo(premier);
+        }
+        assertThat(premier).isEqualTo(Duration.ofHours(1).toSeconds());
     }
 }

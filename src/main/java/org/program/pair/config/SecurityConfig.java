@@ -1,7 +1,10 @@
 package org.program.pair.config;
 
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.security.JwtAuthFilter;
+import org.program.pair.shared.security.MotifRefusJwt;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -23,10 +26,12 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 
+@Slf4j
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
@@ -139,19 +144,59 @@ public class SecurityConfig {
     }
 
     /**
-     * Ensures unauthenticated/invalid-token requests get 401, not Spring
-     * Security's default 403 (which is indistinguishable from a real
-     * permission denial and misleads clients into thinking a route is
-     * blocked rather than that the token is missing/expired).
+     * Le 401 des routes protégées — et, depuis le 10/09, ce qu'il dit de plus.
+     *
+     * <p>Il existe pour que Spring Security ne rende pas son 403 par défaut, qui
+     * ne se distingue pas d'un vrai refus de droit et fait croire qu'une route
+     * est fermée alors que c'est le jeton qui manque ou qui a expiré.
+     *
+     * <p><b>Il rendait {@code UNAUTHORIZED} pour trois situations différentes.</b>
+     * Jeton absent, jeton illisible, jeton simplement périmé : le même corps, le
+     * même code. Or une seule des trois appelle un rafraîchissement silencieux,
+     * et le client — ne pouvant pas trancher — rafraîchissait sur toutes,
+     * dépensant un appel d'authentification là où il n'y avait rien à réparer,
+     * puis affichant un message parlant de session pour ce qui n'en était pas
+     * une. C'est la demande 5 du chantier mobile du 10/09.
+     *
+     * <p>Le point d'entrée est appelé <i>après</i> {@link JwtAuthFilter} et ne
+     * reçoit qu'une requête sans authentification : il ne peut pas rejuger le
+     * jeton, le filtre l'a déjà fait. Celui-ci lui laisse donc son motif sur la
+     * requête ({@link MotifRefusJwt}), et il n'y a plus ici qu'une traduction en
+     * code stable — un seul endroit continue d'écrire le corps d'erreur.
+     *
+     * <p>Seul {@code TOKEN_EXPIRED} est nouveau. {@code UNAUTHORIZED} garde son
+     * nom, son message et tout ce qu'il couvrait, moins ce cas-là : un client qui
+     * ne connaît pas le nouveau code se comporte exactement comme avant.
      */
     @Bean
     public AuthenticationEntryPoint authenticationEntryPoint() {
         return (request, response, authException) -> {
+            Object motif = request.getAttribute(MotifRefusJwt.ATTRIBUT);
+            boolean expire = motif == MotifRefusJwt.EXPIRE;
+
+            if (motif == MotifRefusJwt.JETON_DE_RAFRAICHISSEMENT) {
+                // Un client qui envoie son jeton de rafraîchissement en Bearer.
+                // Cela fonctionnait jusqu'au 10/09 et ne fonctionne plus : la
+                // trace est ici parce que rien d'autre ne la porterait, et que
+                // c'est un défaut d'appelant, pas un incident de session.
+                log.warn("Jeton de rafraîchissement présenté en Bearer sur {} {}",
+                    request.getMethod(), request.getRequestURI());
+            }
+
             response.setStatus(HttpStatus.UNAUTHORIZED.value());
             response.setContentType(MediaType.APPLICATION_JSON_VALUE);
+            // Sans quoi le writer sort en ISO-8859-1, la valeur par défaut de la
+            // spécification servlet : « expiré » et « accès » arriveraient
+            // abîmés, et le client lit ce message tel quel.
+            response.setCharacterEncoding(StandardCharsets.UTF_8.name());
             response.getWriter().write("""
-                {"code":"UNAUTHORIZED","message":"Authentification requise ou token invalide.","timestamp":"%s"}"""
-                .formatted(Instant.now()));
+                {"code":"%s","message":"%s","timestamp":"%s"}"""
+                .formatted(
+                    expire ? ErrorCode.TOKEN_EXPIRED.name() : ErrorCode.UNAUTHORIZED.name(),
+                    expire
+                        ? "Le jeton d'accès a expiré."
+                        : "Authentification requise ou token invalide.",
+                    Instant.now()));
         };
     }
 
