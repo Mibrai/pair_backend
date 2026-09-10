@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.program.pair.shared.dto.ErrorResponse;
 import org.program.pair.shared.dto.ScheduleConflictResponse;
 import org.program.pair.shared.i18n.Messages;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -115,11 +116,25 @@ public class GlobalExceptionHandler {
      * de vérification, au même moment du parcours : quelqu'un qui découvre
      * l'application, et à qui on refuse son premier geste dans une langue qu'il
      * ne lit pas.
+     *
+     * <p><b>Sert un {@code Retry-After} depuis le 10/09</b>, et c'est pourquoi
+     * cette méthode rend une {@code ResponseEntity} là où ses voisines se
+     * contentent d'un {@code @ResponseStatus} : le corps ne suffisait pas à dire
+     * quand revenir. Nos fenêtres sont longues et glissantes — un quart d'heure
+     * sur la connexion, une heure sur l'inscription et les envois d'e-mail —,
+     * donc l'instant de réouverture ne se déduit pas de l'heure du refus, et le
+     * message qui disait « dans quelques minutes » envoyait le client se faire
+     * refuser à nouveau. Le chiffre vient du limiteur, qui seul tient les
+     * horodatages de la fenêtre ; il n'est pas une constante.
+     *
+     * <p>Le corps, lui, ne bouge pas d'une virgule : même {@code errorFor}, donc
+     * même code {@code RATE_LIMITED} et même passage par la traduction.
      */
     @ExceptionHandler(TooManyRequestsException.class)
-    @ResponseStatus(HttpStatus.TOO_MANY_REQUESTS)
-    public ErrorResponse handleRateLimit(TooManyRequestsException ex) {
-        return errorFor(ex, ErrorCode.RATE_LIMITED);
+    public ResponseEntity<ErrorResponse> handleRateLimit(TooManyRequestsException ex) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+            .header(HttpHeaders.RETRY_AFTER, Long.toString(ex.getRetryAfterSecondes()))
+            .body(errorFor(ex, ErrorCode.RATE_LIMITED));
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)

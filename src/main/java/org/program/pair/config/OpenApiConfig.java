@@ -49,11 +49,75 @@ public class OpenApiConfig {
                     1. Créer un compte: `POST /api/auth/register`
                     2. Se connecter: `POST /api/auth/login`
                     3. Utiliser le token: `Authorization: Bearer <accessToken>`
+                    4. Le renouveler: `POST /api/auth/refresh`, avec le `refreshToken`
+
+                    ### Durée des sessions
+                    `AuthResponse` porte `expiresIn` et `refreshExpiresIn`, en **secondes
+                    relatives** — jamais des dates absolues. L'horloge d'un téléphone peut être
+                    fausse de plusieurs heures, et un client qui comparerait une échéance
+                    absolue à l'heure de son appareil fermerait des sessions valides. Ces deux
+                    champs sont la seule source à laquelle se fier : les durées ont changé par
+                    le passé sans que rien ne le dise.
+
+                    **La rotation est glissante.** Le `refreshToken` rendu par
+                    `POST /api/auth/refresh` vaut `refreshExpiresIn` **à compter de son
+                    émission** ; il n'hérite pas de l'échéance de son prédécesseur. Une session
+                    rafraîchie au moins une fois par fenêtre ne se termine donc jamais, et aucun
+                    plafond d'ancienneté ne vient la fermer par-dessus.
+
+                    Les deux jetons ne sont pas interchangeables : un `refreshToken` présenté en
+                    `Authorization: Bearer` est refusé, et un `accessToken` présenté à
+                    `/api/auth/refresh` l'est aussi.
+
+                    ### Ce qui ferme une session, et ce qui ne la ferme pas
+                    Seule une réponse **authentifiée** de refus la ferme : `401` ou `403` sur
+                    `/api/auth/refresh`. Une absence de réponse, un `429`, un `5xx` ou un corps
+                    illisible ne disent rien de la validité du jeton — les traiter comme un refus
+                    détruit une session de trente jours sur un aller-retour raté, au réveil d'un
+                    téléphone dont la radio n'a pas encore réassocié le réseau.
+
+                    Sur les routes protégées, le corps du `401` porte un `code` stable qui dit
+                    quoi faire : `TOKEN_EXPIRED` appelle un rafraîchissement silencieux,
+                    `UNAUTHORIZED` signale un jeton absent ou illisible. Un refus de **droit**
+                    n'est pas un `401` mais un `403` : il ne vaut jamais un rafraîchissement.
 
                     ## Rate Limiting
-                    - Recherche: 20 req/min
-                    - Upload: 10 req/min
-                    - Auth: 5-10 req/min
+                    Ces trois lignes annonçaient « Recherche 20/min, Upload 10/min,
+                    Auth 5-10/min » jusqu'au 10/09. Aucune des trois ne décrivait le code :
+                    la recherche et l'upload ne sont pas plafonnés du tout, et le chiffre
+                    « auth » ne correspondait à rien. Signalé par le chantier mobile, qui en
+                    avait déduit — raisonnablement, c'est ce qu'un contrat est censé être —
+                    que `POST /api/auth/refresh` pouvait rendre un 429 et couper les sessions.
+
+                    **Quatre routes sont plafonnées, et elles seules :** `POST /api/auth/login`,
+                    `/api/auth/register`, `/api/auth/resend-verification` et
+                    `/api/auth/forgot-password` — ainsi que le changement d'adresse, qui
+                    déclenche le même envoi d'e-mail. **`/api/auth/refresh` n'est pas limité :**
+                    qui l'appelle présente déjà un secret valide, et l'y soumettre casserait la
+                    seule mécanique qui maintient les gens connectés.
+
+                    Chaque route porte **deux** budgets sur une fenêtre glissante : un budget
+                    serré sur la cible — le compte visé, ou l'adresse destinataire de l'e-mail —
+                    et un budget large sur l'adresse IP. Une adresse IP ne désigne pas une
+                    personne : derrière un NAT ou un partage de connexion elle en désigne des
+                    dizaines, et la borner seule ferait qu'un compte en bloque un autre.
+
+                    | Route | Par compte / adresse visée | Par IP | Fenêtre |
+                    |---|---|---|---|
+                    | `/auth/login` | 10 **échecs** | 50 **échecs** | 15 min |
+                    | `/auth/register` | 5 | 30 | 1 h |
+                    | `/auth/resend-verification` | 3 | 20 | 1 h |
+                    | `/auth/forgot-password` | 3 | 20 | 1 h |
+
+                    Sur la connexion, **seuls les échecs comptent**, et une connexion réussie
+                    remet le compteur du compte à zéro : se connecter cent fois avec le bon mot
+                    de passe ne consomme rien. Un refus ne consomme rien non plus — réessayer
+                    pour voir si l'attente a suffi ne rallonge pas l'attente.
+
+                    Tout `429` porte un en-tête `Retry-After`, en secondes, qui dit quand la
+                    fenêtre rouvre réellement. Fiez-vous à lui plutôt qu'au message : les
+                    fenêtres vont jusqu'à une heure, et « réessayez dans quelques minutes » ne
+                    suffit pas à savoir quand.
 
                     ## Support
                     - Documentation: https://github.com/pair/docs

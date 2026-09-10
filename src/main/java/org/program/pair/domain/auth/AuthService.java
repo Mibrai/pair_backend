@@ -76,13 +76,51 @@ public class AuthService {
         return buildAuthResponse(user);
     }
 
+    /**
+     * Réémet une session entière contre un jeton de rafraîchissement.
+     *
+     * <p><b>La réémission est glissante, et c'est délibéré.</b> Le nouveau jeton
+     * de rafraîchissement vaut trente jours à compter de <i>son</i> émission, et
+     * non de celle de son prédécesseur : {@code generateRefreshToken} part de
+     * {@code System.currentTimeMillis()} et ne lit aucune échéance antérieure —
+     * il ne le pourrait pas, rien n'est persisté pour ces jetons. Une session
+     * utilisée au moins une fois par mois ne finit donc jamais, ce que le client
+     * nous demandait de confirmer.
+     *
+     * <p><b>Trois refus, et pourquoi ils rendent tous le même.</b>
+     * <ul>
+     *   <li>Le jeton ne se valide pas (signature, échéance) : c'était déjà le
+     *       cas.</li>
+     *   <li>Le jeton se valide mais n'est <b>pas</b> un jeton de
+     *       rafraîchissement. Un jeton d'accès était accepté ici et rendait une
+     *       session complète : le claim {@code type} n'était lu nulle part. Le
+     *       filtre ferme la même faille dans l'autre sens.</li>
+     *   <li>Le compte n'ouvre plus — désactivé, ou disparu. {@code login} filtre
+     *       depuis toujours sur {@code isActive} ; cette route chargeait par
+     *       identifiant et émettait sans rien vérifier, si bien qu'un compte
+     *       désactivé renouvelait sa session indéfiniment. Il n'y perdait que la
+     *       possibilité de se reconnecter, ce qu'il n'avait aucune raison de
+     *       faire.</li>
+     * </ul>
+     *
+     * <p>Un compte introuvable rendait auparavant un 404. C'est le seul
+     * changement de code de statut de ce lot, et il est volontaire : le client
+     * ne ferme une session que sur 401 ou 403, et un compte effacé — la
+     * suppression RGPD en efface réellement la ligne — laissait donc l'app
+     * réessayer sans fin avec un jeton que rien ne ranimera. « Cette session est
+     * finie » est exactement ce qu'il faut lui dire, et {@code INVALID_TOKEN}
+     * est ce qu'elle sait déjà lire ici. Les trois refus se confondent aussi
+     * pour ne rien apprendre à qui présenterait un jeton qui n'est pas le sien.
+     */
     public AuthResponse refreshToken(String refreshToken) {
-        if (!tokenProvider.validateToken(refreshToken)) {
+        if (!tokenProvider.validateToken(refreshToken)
+            || !tokenProvider.estJetonDeRafraichissement(refreshToken)) {
             throw new InvalidTokenException("Refresh token invalide ou expiré.");
         }
         UUID userId = tokenProvider.extractUserId(refreshToken);
         User user = userRepository.findById(userId)
-            .orElseThrow(() -> new UserNotFoundException("Utilisateur introuvable."));
+            .filter(u -> Boolean.TRUE.equals(u.getIsActive()))
+            .orElseThrow(() -> new InvalidTokenException("Refresh token invalide ou expiré."));
         return buildAuthResponse(user);
     }
 
@@ -145,13 +183,27 @@ public class AuthService {
         // Currently a no-op, but provides an endpoint for future enhancements
     }
 
+    /**
+     * Le seul endroit qui fabrique une session, et donc le seul à renseigner les
+     * durées : {@code /auth/login}, {@code /auth/register} et
+     * {@code /auth/refresh} passent tous les trois par ici, ce qui est ce que le
+     * client demandait — une réponse de rafraîchissement qui ne porterait pas
+     * les durées obligerait à les mémoriser depuis la connexion.
+     *
+     * <p>Les valeurs sont lues sur {@link JwtTokenProvider}, qui les tient de la
+     * configuration. Les recopier ici aurait posé un second endroit à corriger
+     * le jour d'un changement — c'est-à-dire exactement le défaut que ce champ
+     * vient réparer chez le client.
+     */
     private AuthResponse buildAuthResponse(User user) {
         return new AuthResponse(
             tokenProvider.generateAccessToken(user.getId(), user.getEmail()),
             tokenProvider.generateRefreshToken(user.getId()),
             user.getId(),
             user.getDisplayName(),
-            user.getVerificationStatus().name()
+            user.getVerificationStatus().name(),
+            tokenProvider.accessTokenExpirySeconds(),
+            tokenProvider.refreshTokenExpirySeconds()
         );
     }
 }

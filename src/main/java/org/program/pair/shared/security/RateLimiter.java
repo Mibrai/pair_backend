@@ -48,6 +48,17 @@ import java.util.concurrent.ConcurrentHashMap;
  * pour mot pour l'inscription et pour les envois d'e-mail. Il y valait même
  * davantage : un refus de connexion se réessaie, un refus d'inscription tombe au
  * tout premier geste de quelqu'un qui découvre l'application.
+ *
+ * <p><b>Un refus dit quand revenir</b> depuis le 10/09. Il ne portait qu'un
+ * message — « dans quelques minutes », « dans une heure » — et c'est le seul
+ * endroit du code où l'instant de réouverture soit connaissable : il vaut la
+ * sortie de fenêtre de la <b>plus ancienne tentative retenue</b> de la clé qui a
+ * refusé, et rien d'autre. Une fenêtre glissante n'a pas de fin commune qu'on
+ * pourrait annoncer par une constante ; deux appelants refusés à la même seconde
+ * n'attendent pas la même chose. {@link TooManyRequestsException} porte donc ce
+ * délai jusqu'à l'en-tête {@code Retry-After} — demande 4 du chantier mobile du
+ * 10/09, qui décrivait exactement ce que coûte de le faire deviner : réessayer
+ * quand le message le suggère, et se faire refuser autant de fois.
  */
 @Component
 public class RateLimiter {
@@ -127,14 +138,17 @@ public class RateLimiter {
      *              par adresse s'applique alors seule.
      */
     public void checkLogin(String ip, String email) {
-        if (email != null && !email.isBlank()
-                && depasse(cleCompte(email), ECHECS_PAR_COMPTE, FENETRE_LOGIN)) {
-            throw new TooManyRequestsException(
-                "Trop de tentatives sur ce compte. Réessayez dans quelques minutes.");
+        if (email != null && !email.isBlank()) {
+            Duration delai = delaiSiAuPlafond(cleCompte(email), ECHECS_PAR_COMPTE, FENETRE_LOGIN);
+            if (delai != null) {
+                throw new TooManyRequestsException(
+                    "Trop de tentatives sur ce compte. Réessayez dans quelques minutes.", delai);
+            }
         }
-        if (depasse(cleAdresse(ip), ECHECS_PAR_ADRESSE, FENETRE_LOGIN)) {
+        Duration delai = delaiSiAuPlafond(cleAdresse(ip), ECHECS_PAR_ADRESSE, FENETRE_LOGIN);
+        if (delai != null) {
             throw new TooManyRequestsException(
-                "Trop de tentatives depuis cette connexion. Réessayez dans quelques minutes.");
+                "Trop de tentatives depuis cette connexion. Réessayez dans quelques minutes.", delai);
         }
     }
 
@@ -233,6 +247,12 @@ public class RateLimiter {
      * <p>L'adresse peut être absente : la borne par connexion s'applique alors
      * seule, ce qui reste le comportement d'avant pour un appelant qui n'en
      * fournit pas.
+     *
+     * <p><b>Le délai annoncé est celui de la clé qui a refusé</b>, pas le plus
+     * grand ni le plus petit des deux. Les deux budgets se remplissent à des
+     * moments différents — trente inscriptions depuis un routeur ne datent pas de
+     * la même minute que les cinq d'une adresse e-mail — et seule la clé qui
+     * bloque décide de l'instant où elle cesse de bloquer.
      */
     private void consommerCouple(String prefixe, String ip, String email,
                                  int budgetIp, int budgetCompte,
@@ -243,11 +263,15 @@ public class RateLimiter {
             ? prefixe + ":compte:" + email.strip().toLowerCase()
             : null;
 
-        if (parCompte && depasse(cleCompte, budgetCompte, fenetre)) {
-            throw new TooManyRequestsException(message);
+        if (parCompte) {
+            Duration delai = delaiSiAuPlafond(cleCompte, budgetCompte, fenetre);
+            if (delai != null) {
+                throw new TooManyRequestsException(message, delai);
+            }
         }
-        if (depasse(cleIp, budgetIp, fenetre)) {
-            throw new TooManyRequestsException(message);
+        Duration delaiIp = delaiSiAuPlafond(cleIp, budgetIp, fenetre);
+        if (delaiIp != null) {
+            throw new TooManyRequestsException(message, delaiIp);
         }
 
         if (parCompte) {
@@ -256,10 +280,28 @@ public class RateLimiter {
         inscrire(cleIp, fenetre);
     }
 
-    private boolean depasse(String cle, int budget, Duration fenetre) {
+    /**
+     * Le temps restant avant que cette clé retrouve du budget, ou {@code null} si
+     * elle n'est pas au plafond.
+     *
+     * <p>Remplace le {@code depasse} booléen du 1er septembre : la réponse était
+     * déjà calculée ici, puisqu'il faut élaguer pour comparer, et l'appelant n'en
+     * gardait que le oui/non. Le délai juste est la sortie de fenêtre de la
+     * <b>plus ancienne tentative retenue</b> : c'est elle qui, en partant, rend
+     * la place qui manque, et une seule suffit puisque le refus se déclenche à
+     * l'égalité avec le budget.
+     *
+     * <p><b>Toujours pas de consommation.</b> Rien n'est inscrit ici, et
+     * l'élagage ne retire que ce qui est déjà hors fenêtre : demander « est-ce
+     * encore fermé ? », même cent fois, ne rapproche personne du refus suivant ni
+     * n'allonge le délai rendu. C'est la propriété que la tête de classe promet,
+     * et elle est ce qui rend l'en-tête {@code Retry-After} honnête — un client
+     * qui interroge avant l'heure ne se punit pas.
+     */
+    private Duration delaiSiAuPlafond(String cle, int budget, Duration fenetre) {
         Deque<Instant> tentatives = compteurs.get(cle);
         if (tentatives == null) {
-            return false;
+            return null;
         }
         synchronized (tentatives) {
             elaguer(tentatives, fenetre);
@@ -267,9 +309,18 @@ public class RateLimiter {
             // grossirait d'une entrée par adresse vue, définitivement.
             if (tentatives.isEmpty()) {
                 compteurs.remove(cle, tentatives);
-                return false;
+                return null;
             }
-            return tentatives.size() >= budget;
+            if (tentatives.size() < budget) {
+                return null;
+            }
+            // Le bord de fenêtre étant sortant (voir elaguer), attendre exactement
+            // cette durée suffit : à cet instant-là, la plus ancienne tentative
+            // est oubliée et la place est rendue. Le reste — l'arrondi à la
+            // seconde et le plancher qui interdit un zéro — appartient à
+            // TooManyRequestsException, parce que c'est là que se décide ce qui
+            // s'écrit dans l'en-tête.
+            return Duration.between(horloge.instant(), tentatives.peekFirst().plus(fenetre));
         }
     }
 
@@ -281,9 +332,22 @@ public class RateLimiter {
         }
     }
 
+    /**
+     * Oublie les tentatives sorties de la fenêtre.
+     *
+     * <p><b>Le bord est sortant depuis le 10/09</b> : une tentative vieille
+     * d'exactement une fenêtre n'y est plus. Elle y restait — la comparaison était
+     * un {@code isBefore} strict —, et l'écart d'un instant n'a jamais eu d'effet
+     * visible tant que le refus ne disait rien. Il en a un depuis que nous
+     * annonçons un {@code Retry-After} : le délai calculé ici est celui qu'un
+     * client va attendre au chronomètre, et avec l'ancien bord, attendre
+     * exactement ce qu'on lui annonce le faisait refuser une fois de plus — le
+     * défaut même que cet en-tête existe pour supprimer, déplacé d'un quart
+     * d'heure à une seconde. Le budget ne s'en trouve élargi que d'un instant.
+     */
     private void elaguer(Deque<Instant> tentatives, Duration fenetre) {
         Instant limite = horloge.instant().minus(fenetre);
-        while (!tentatives.isEmpty() && tentatives.peekFirst().isBefore(limite)) {
+        while (!tentatives.isEmpty() && !tentatives.peekFirst().isAfter(limite)) {
             tentatives.removeFirst();
         }
     }
