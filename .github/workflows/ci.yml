@@ -39,7 +39,7 @@ jobs:
       # sur un JDK 21 fonctionne, et l'élévation du pom à 21 avec la règle
       # `requireJavaVersion` est l'étape 1 de la fiche, laissée en attente d'un
       # JDK 21 sur la machine du propriétaire.
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
