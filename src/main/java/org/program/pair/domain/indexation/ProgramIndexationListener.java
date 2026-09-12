@@ -29,7 +29,9 @@ public class ProgramIndexationListener {
     public void afterCreate(Program program) {
         log.debug("Program created: {}, triggering indexation", program.getId());
         if (indexationService != null) {
-            indexationService.updateProgramSearchVector(program.getId());
+            java.util.UUID id = program.getId();
+            IndexationService service = indexationService;
+            ApresCommit.executer(() -> service.updateProgramSearchVector(id));
         }
     }
 
@@ -37,7 +39,9 @@ public class ProgramIndexationListener {
     public void afterUpdate(Program program) {
         log.debug("Program updated: {}, triggering indexation", program.getId());
         if (indexationService != null) {
-            indexationService.updateProgramSearchVector(program.getId());
+            java.util.UUID id = program.getId();
+            IndexationService service = indexationService;
+            ApresCommit.executer(() -> service.updateProgramSearchVector(id));
         }
     }
 

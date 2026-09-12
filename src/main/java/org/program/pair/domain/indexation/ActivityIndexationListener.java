@@ -27,7 +27,9 @@ public class ActivityIndexationListener {
     public void afterCreate(Activity activity) {
         log.debug("Activity created: {}, triggering indexation", activity.getId());
         if (indexationService != null) {
-            indexationService.updateActivitySearchVector(activity.getId());
+            java.util.UUID id = activity.getId();
+            IndexationService service = indexationService;
+            ApresCommit.executer(() -> service.updateActivitySearchVector(id));
         }
     }
 
@@ -35,7 +37,9 @@ public class ActivityIndexationListener {
     public void afterUpdate(Activity activity) {
         log.debug("Activity updated: {}, triggering indexation", activity.getId());
         if (indexationService != null) {
-            indexationService.updateActivitySearchVector(activity.getId());
+            java.util.UUID id = activity.getId();
+            IndexationService service = indexationService;
+            ApresCommit.executer(() -> service.updateActivitySearchVector(id));
         }
     }
 }
