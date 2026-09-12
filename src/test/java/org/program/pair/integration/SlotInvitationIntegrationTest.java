@@ -51,6 +51,67 @@ class SlotInvitationIntegrationTest extends AbstractIntegrationTest {
         assertThat(second.code()).isNotEqualTo(first.code());
     }
 
+    // ── LE LIEN D'INVITATION RENDAIT 401 ─────────────────────────────────────
+    //
+    // `/i/{code}` était composé par ce service depuis l'origine, et **aucun
+    // contrôleur ne le servait**. La requête tombait sur
+    // `anyRequest().authenticated()` : le destinataire — qui par définition n'a
+    // pas de compte, c'est tout l'objet d'une invitation — recevait
+    // `{"code":"UNAUTHORIZED","message":"Authentification requise ou token
+    // invalide."}`. Signalé par le chantier mobile le 12/09/2026, rejoué en HTTP
+    // sur la production le même jour.
+    //
+    // Les trois tests ci-dessous tiennent les trois faces du défaut : la page
+    // s'ouvre sans session, le jeton public existe même si personne n'a appuyé
+    // sur « Partager », et un code inconnu rend 404 — jamais 401, qui laissait
+    // croire à un problème de compte là où il n'y avait rien à voir.
+
+    @Test
+    void leLienDInvitation_doitSOuvrirSansCompte() {
+        String host = registerAndLogin();
+        InvitationLinkDto link = invite(host, publishSlot(host));
+
+        byte[] page = webTestClient.get().uri("/i/{code}", link.code())
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody().returnResult().getResponseBodyContent();
+
+        String html = new String(page);
+        // C'est la page du créneau : une invitation n'a rien à montrer de plus,
+        // et une seconde page publique aurait doublé un contrat pour rien.
+        assertThat(html).contains("Parc de l&#39;Orangerie");
+        assertThat(html).contains("og:title");
+        // Et surtout : plus la moindre trace du refus d'authentification.
+        assertThat(html).doesNotContain("UNAUTHORIZED");
+    }
+
+    @Test
+    void inviter_doitCreerLAdressePublique_memeSansAvoirPartage() {
+        // Personne n'a appuyé sur « Partager » : avant le 12/09, le créneau
+        // n'avait donc aucun jeton public, et le lien d'invitation ne pouvait
+        // mener nulle part. Inviter **est** un partage.
+        String host = registerAndLogin();
+        UUID slotId = publishSlot(host);
+        assertThat(tokenInDb(slotId)).isNull();
+
+        InvitationLinkDto link = invite(host, slotId);
+
+        assertThat(link.slotToken()).hasSize(22);
+        assertThat(tokenInDb(slotId)).isEqualTo(link.slotToken());
+        // Le jeton est dit dans la réponse : l'application peut composer
+        // `…/s/{jeton}?i={code}` sans second appel ni devinette.
+        webTestClient.get().uri("/s/{t}", link.slotToken())
+            .exchange().expectStatus().isOk();
+    }
+
+    @Test
+    void unCodeInconnu_doitRendre404_etNonUnRefusDAuthentification() {
+        // 404 et pas 403 : distinguer confirmerait, à qui essaie des codes,
+        // qu'une invitation a existé.
+        webTestClient.get().uri("/i/{code}", "codeQuiNExistePas12")
+            .exchange().expectStatus().isNotFound();
+    }
+
     @Test
     void unTiers_neDoitPasPouvoirInviter() {
         String host = registerAndLogin();
@@ -198,6 +259,11 @@ class SlotInvitationIntegrationTest extends AbstractIntegrationTest {
             .headers(h -> h.setBearerAuth(token))
             .exchange().expectStatus().isOk()
             .expectBody(Map.class).returnResult().getResponseBody().get("id")));
+    }
+
+    private String tokenInDb(UUID slotId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT public_share_token FROM schedules WHERE id = ?", String.class, slotId);
     }
 
     private UUID publishSlot(String token) {

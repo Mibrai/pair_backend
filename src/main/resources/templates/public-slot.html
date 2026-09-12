@@ -27,115 +27,97 @@
     <meta name="twitter:title"      th:content="${slot.programTitle}">
     <meta name="twitter:description" th:content="${ogDescription}">
     <meta name="twitter:image"      th:content="${ogImage}">
+    <!-- La couleur de la barre du navigateur, sur Android et dans les
+         navigateurs intégrés : le violet de marque plutôt que le gris du
+         système. C'est le premier pixel que voit celui qui ouvre le lien. -->
+    <meta name="theme-color" content="#6C63FF">
 
     <!-- Le canonique désigne l'adresse courte, celle qu'on partage réellement :
          la même page est joignable par /public/slots/{token}/page, et deux URL
          pour un même contenu divisent les signaux d'un moteur de recherche. -->
     <link rel="canonical" th:href="${ogUrl}">
 
+    <th:block th:replace="~{fragments/marque :: styles}"></th:block>
     <style>
-        :root { color-scheme: light dark; }
-        body {
-            margin: 0; padding: 2rem 1.25rem;
-            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-            line-height: 1.55; color: #16191c; background: #f5f6f7;
+        /* La note de bienvenue de l'organisateur : ses mots, mis en évidence
+           sans être mis en scène. */
+        .bienvenue {
+            margin: 1.2rem 0 0;
+            padding-left: .9rem;
+            border-left: 3px solid var(--violet-light);
+            color: var(--text-2);
+            font-style: italic;
         }
-        .card {
-            max-width: 32rem; margin: 0 auto; background: #fff;
-            border-radius: 12px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.09);
-        }
-        .cover { display: block; width: 100%; height: auto; }
-        .body { padding: 1.75rem; }
-        .eyebrow {
-            font-size: .75rem; text-transform: uppercase; letter-spacing: .07em;
-            color: #6b757d; margin: 0 0 .4rem;
-        }
-        h1 { font-size: 1.3rem; margin: 0 0 1rem; font-weight: 600; }
-        dl { margin: 0 0 1.5rem; display: grid; grid-template-columns: auto 1fr; gap: .55rem 1.25rem; }
-        dt { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: #6b757d; }
-        dd { margin: 0; font-weight: 500; }
-        .welcome { margin: 0 0 1.5rem; color: #3d474e; font-style: italic; }
-        .cta {
-            display: block; text-align: center; text-decoration: none;
-            background: #14607f; color: #fff; font-weight: 600;
-            padding: .85rem 1rem; border-radius: 8px;
-        }
-        .cta:focus-visible { outline: 3px solid #14607f; outline-offset: 3px; }
-        .hint {
-            margin: .75rem 0 0; text-align: center;
-            font-size: .8rem; color: #6b757d;
-        }
-        .links {
-            margin: 1.25rem 0 0; text-align: center;
-            font-size: .85rem; color: #6b757d;
-        }
-        .links a { color: #14607f; }
-        @media (prefers-color-scheme: dark) {
-            body { background: #101315; color: #e6e9ea; }
-            .card { background: #181c1f; box-shadow: none; }
-            .eyebrow, dt, .hint, .links { color: #8d979e; }
-            .links a { color: #6eb4d2; }
-            .welcome { color: #b3bdc3; }
-            .cta { background: #6eb4d2; color: #0e1113; }
+        .indice {
+            margin: .7rem 0 0;
+            text-align: center;
+            font-size: .8rem;
+            color: var(--text-3);
         }
     </style>
 </head>
 <body>
-<div class="card">
-    <img class="cover" th:src="${ogImage}" alt="">
-    <div class="body">
-        <p class="eyebrow">
-            <span th:text="${slot.activityName}">Yoga</span><span
-                th:if="${slot.categoryName}" th:text="' · ' + ${slot.categoryName}"></span>
-        </p>
-        <h1 th:text="${slot.programTitle}">Yoga du samedi</h1>
+<div class="page">
+    <header th:replace="~{fragments/marque :: entete}"></header>
 
-        <dl>
-            <dt th:text="${t.when}">Quand</dt>
-            <dd><span th:text="${day}">samedi 14 juin</span>,
-                de <span th:text="${startTime}">9h00</span>
-                à <span th:text="${endTime}">10h00</span></dd>
+    <main class="carte">
+        <img class="couverture" th:src="${ogImage}" alt="">
+        <div class="carte-corps">
+            <p class="surtitre">
+                <span th:text="${slot.activityName}">Yoga</span><span
+                    th:if="${slot.categoryName}" th:text="' · ' + ${slot.categoryName}"></span>
+            </p>
+            <h1 th:text="${slot.programTitle}">Yoga du samedi</h1>
 
-            <dt th:text="${t.where}">Où</dt>
-            <dd><span th:text="${slot.placeName}">Studio Lumière</span><span
-                    th:if="${slot.city}" th:text="', ' + ${slot.city}"></span>
-                <!-- L'adresse n'apparaît que si elle est déjà diffusable : pour
-                     un lieu privé non partagé, broadcastableAddress rend null. -->
-                <span th:if="${slot.displayAddress}" th:text="' — ' + ${slot.displayAddress}"></span></dd>
+            <dl class="faits">
+                <dt th:text="${t.when}">Quand</dt>
+                <dd><span th:text="${day}">samedi 14 juin</span>,
+                    de <span th:text="${startTime}">9h00</span>
+                    à <span th:text="${endTime}">10h00</span></dd>
 
-            <dt th:text="${t.who}">Participants</dt>
-            <dd><span th:text="${t.joined}">3 inscrits</span><span
-                    th:if="${slot.maxParticipants}" th:text="' / ' + ${slot.maxParticipants}"></span>
-                <span th:if="${t.host}" th:text="' — ' + ${t.host}"></span><span
-                    th:if="${slot.organizerVerified}" title="Compte vérifié"> ✓</span></dd>
-        </dl>
+                <dt th:text="${t.where}">Où</dt>
+                <dd><span th:text="${slot.placeName}">Studio Lumière</span><span
+                        th:if="${slot.city}" th:text="', ' + ${slot.city}"></span>
+                    <!-- L'adresse n'apparaît que si elle est déjà diffusable : pour
+                         un lieu privé non partagé, broadcastableAddress rend null. -->
+                    <span th:if="${slot.displayAddress}" th:text="' — ' + ${slot.displayAddress}"></span></dd>
 
-        <p class="welcome" th:if="${slot.welcomeNote}" th:text="${slot.welcomeNote}"></p>
+                <dt th:text="${t.who}">Participants</dt>
+                <dd><span th:text="${t.joined}">3 inscrits</span><span
+                        th:if="${slot.maxParticipants}" th:text="' / ' + ${slot.maxParticipants}"></span>
+                    <span th:if="${t.host}" th:text="' — ' + ${t.host}"></span><span
+                        th:if="${slot.organizerVerified}" title="Compte vérifié"> ✓</span></dd>
+            </dl>
 
-        <!-- Un seul bouton, aucun formulaire : la page a une seule chose à
-             obtenir, et tout ce qui la partage la dilue.
+            <p class="bienvenue" th:if="${slot.welcomeNote}" th:text="${slot.welcomeNote}"></p>
 
-             Il vise le schéma propre à l'application et non l'adresse de cette
-             page : celle-ci ne menait nulle part, l'application n'étant pas
-             ouverte par un lien vers le domaine où le navigateur se trouve déjà.
+            <div style="margin-top:1.5rem">
+                <!-- Un seul bouton, aucun formulaire : la page a une seule chose à
+                     obtenir, et tout ce qui la partage la dilue.
 
-             La ligne en dessous existe parce que ce schéma échoue en silence
-             quand l'application n'est pas installée — le navigateur ne fait
-             simplement rien, et sans un mot la page passerait pour cassée. Elle
-             sera remplacée par un lien de téléchargement dès que l'application
-             sera publiée quelque part ; elle ne peut pas l'être avant. -->
-        <a class="cta" th:href="${appLink}" th:text="${t.cta}">Ouvrir dans meetDo</a>
-        <p class="hint" th:text="${t.hint}"></p>
+                     Il vise le schéma propre à l'application et non l'adresse de cette
+                     page : celle-ci ne menait nulle part, l'application n'étant pas
+                     ouverte par un lien vers le domaine où le navigateur se trouve déjà.
 
-        <!-- Deux liens discrets, et pas un bouton de plus : un créneau rejoint
-             puis oublié est une rencontre qui n'a pas lieu, et l'agenda est le
-             seul ajout de cette page qui agisse sur la présence réelle. -->
-        <p class="links">
-            <a th:href="${calendarUrl}" th:text="${t.calendar}">Ajouter à mon agenda</a>
-            <span aria-hidden="true"> · </span>
-            <a href="https://meetdo.fun" th:text="${t.about}">Qu'est-ce que meetDo ?</a>
-        </p>
-    </div>
+                     La ligne en dessous existe parce que ce schéma échoue en silence
+                     quand l'application n'est pas installée — le navigateur ne fait
+                     simplement rien, et sans un mot la page passerait pour cassée. -->
+                <a class="cta" th:href="${appLink}" th:text="${t.cta}">Ouvrir dans meetDo</a>
+                <p class="indice" th:text="${t.hint}"></p>
+            </div>
+
+            <!-- Deux liens discrets, et pas un bouton de plus : un créneau rejoint
+                 puis oublié est une rencontre qui n'a pas lieu, et l'agenda est le
+                 seul ajout de cette page qui agisse sur la présence réelle. -->
+            <p class="liens">
+                <a th:href="${calendarUrl}" th:text="${t.calendar}">Ajouter à mon agenda</a>
+                <span aria-hidden="true"> · </span>
+                <a href="https://meetdo.fun" th:text="${t.about}">Qu'est-ce que meetDo ?</a>
+            </p>
+        </div>
+    </main>
+
+    <footer th:replace="~{fragments/marque :: pied}"></footer>
 </div>
 </body>
 </html>

@@ -1,6 +1,7 @@
 package org.program.pair.shared.email;
 
 import lombok.extern.slf4j.Slf4j;
+import org.program.pair.domain.email.GabaritEmail;
 import org.program.pair.domain.email.ResendEmailService;
 import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.outbox.OutboxService;
@@ -43,13 +44,26 @@ public class EmailService {
     private final OutboxService outbox;
     private final Messages messages;
 
+    /**
+     * L'enveloppe de marque.
+     *
+     * <p>Injectée ici alors que {@link ResendEmailService} l'applique déjà à
+     * tout ce qui sort : c'est l'<b>accent</b> qu'on vient chercher. Le filet de
+     * la porte de sortie habille en violet, ce qui convient à un courrier de
+     * compte ; une annulation de séance et une demande de contact de confiance
+     * ne se lisent pas dans la même couleur, et ce sont eux qui le savent.
+     */
+    private final GabaritEmail gabarit;
+
     public EmailService(ResendEmailService resendEmailService,
                         org.program.pair.repository.UserRepository userRepository,
                         OutboxService outbox,
-                        Messages messages) {
+                        Messages messages,
+                        GabaritEmail gabarit) {
         this.resendEmailService = resendEmailService;
         this.outbox = outbox;
         this.messages = messages;
+        this.gabarit = gabarit;
         this.recipientEmail = userId -> userRepository.findById(userId)
             .map(User::getEmail)
             .orElse(null);
@@ -112,21 +126,13 @@ public class EmailService {
     }
 
     private String corpsChangement(String verifyUrl, String nouvelleAdresse) {
-        return """
-            <div style="font-family:system-ui,sans-serif;line-height:1.5;">
-              <h2 style="font-size:1.15rem;">%s</h2>
-              <p>%s</p>
-              <a href="%s" style="background:#4F46E5;color:white;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;font-weight:600;">
-                %s
-              </a>
-              <p style="color:#6b757d;font-size:14px;margin-top:20px;">%s</p>
-            </div>
-            """.formatted(
-                escape(messages.get("email.change.title")),
-                escape(messages.get("email.change.intro", nouvelleAdresse)),
-                verifyUrl,
-                escape(messages.get("email.change.button")),
-                escape(messages.get("email.change.expiry")));
+        // Fragment nu : c'est ResendEmailService qui pose l'enveloppe de marque
+        // au moment de l'envoi, en violet — l'accent des courriers de compte.
+        // Voir GabaritEmail.
+        return GabaritEmail.titre(escape(messages.get("email.change.title")))
+            + "<p>" + escape(messages.get("email.change.intro", nouvelleAdresse)) + "</p>"
+            + GabaritEmail.bouton(verifyUrl, escape(messages.get("email.change.button")))
+            + GabaritEmail.note(escape(messages.get("email.change.expiry")));
     }
 
     /**
@@ -139,21 +145,10 @@ public class EmailService {
      * qu'on l'avait reçu. La machinerie existait et servait partout ailleurs.
      */
     private String corpsVerification(String verifyUrl) {
-        return """
-            <div style="font-family:system-ui,sans-serif;line-height:1.5;">
-              <h2 style="font-size:1.15rem;">%s</h2>
-              <p>%s</p>
-              <a href="%s" style="background:#4F46E5;color:white;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;font-weight:600;">
-                %s
-              </a>
-              <p style="color:#6b757d;font-size:14px;margin-top:20px;">%s</p>
-            </div>
-            """.formatted(
-                escape(messages.get("email.verification.title")),
-                escape(messages.get("email.verification.intro")),
-                verifyUrl,
-                escape(messages.get("email.verification.button")),
-                escape(messages.get("email.verification.expiry")));
+        return GabaritEmail.titre(escape(messages.get("email.verification.title")))
+            + "<p>" + escape(messages.get("email.verification.intro")) + "</p>"
+            + GabaritEmail.bouton(verifyUrl, escape(messages.get("email.verification.button")))
+            + GabaritEmail.note(escape(messages.get("email.verification.expiry")));
     }
 
     /**
@@ -185,16 +180,17 @@ public class EmailService {
         // ticket du 25 août, qui ne portait que sur la vérification d'adresse —
         // signalé plutôt que corrigé à moitié.
         String resetUrl = baseUrl + "/reset-password?token=" + token;
-        String html = """
-            <h2>Réinitialisation de votre mot de passe</h2>
-            <p>Cliquez sur le lien suivant pour définir un nouveau mot de passe :</p>
-            <a href="%s" style="background:#4F46E5;color:white;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">
-              Réinitialiser mon mot de passe
-            </a>
-            <p>Ce lien expire dans 30 minutes. Si vous n'avez pas fait cette demande, ignorez cet email.</p>
-            """.formatted(resetUrl);
+        String html = GabaritEmail.titre("Réinitialisation de votre mot de passe")
+            + "<p>Cliquez sur le bouton ci-dessous pour définir un nouveau mot de passe.</p>"
+            + GabaritEmail.bouton(resetUrl, "Réinitialiser mon mot de passe")
+            + GabaritEmail.note("Ce lien expire dans 30 minutes. Si vous n'avez pas fait "
+                + "cette demande, ignorez ce message : votre mot de passe reste inchangé.");
 
-        boolean sent = resendEmailService.sendHtmlEmail(email, "Réinitialisation de mot de passe Pair", html);
+        // L'objet disait « Pair » — le nom du paquet, jamais celui du produit.
+        // Un courrier de réinitialisation dont l'objet nomme une marque
+        // inconnue est un courrier qu'on signale comme indésirable.
+        boolean sent = resendEmailService.sendHtmlEmail(email,
+            "Réinitialisation de votre mot de passe — meetDo", html);
         if (!sent) {
             log.error("Failed to send password reset email to {}", email);
         }
@@ -244,8 +240,11 @@ public class EmailService {
             return;
         }
 
+        // Enveloppe posée ici, en corail : une annulation n'est pas un courrier
+        // de compte. Le filet de la porte de sortie la laissera passer telle
+        // quelle — envelopper est idempotent.
         boolean sent = resendEmailService.sendEmail(email, subjectFor(type, subject), text,
-            htmlFor(type, subject, text));
+            gabarit.envelopper(htmlFor(type, subject, text), GabaritEmail.Accent.CORAL));
         if (!sent) {
             // Un e-mail perdu ne doit pas emporter l'annulation elle-même : le
             // push et la notification in-app sont déjà partis.
@@ -287,12 +286,8 @@ public class EmailService {
      * assemblé par concaténation, ce qui n'échappe rien tout seul.
      */
     private String htmlFor(NotificationType type, String programTitle, String text) {
-        return """
-            <div style="font-family:system-ui,sans-serif;line-height:1.5;">
-              <h2 style="font-size:1.1rem;">%s</h2>
-              <p style="white-space:pre-line;">%s</p>
-            </div>
-            """.formatted(escape(subjectFor(type, programTitle)), escape(text));
+        return GabaritEmail.titre(escape(subjectFor(type, programTitle)))
+            + "<p style=\"white-space:pre-line;\">" + escape(text) + "</p>";
     }
 
     /**
@@ -317,21 +312,20 @@ public class EmailService {
             log.info("[DEV] Guardian consent link for {} (parrain: {}): {}", email, qui, pageUrl);
             return;
         }
-        String html = """
-            <h2>%s vous a désigné comme contact de confiance</h2>
-            <p>Sur meetDo, %s peut « armer une veille » avant une sortie : si cette
-               personne ne confirme pas son retour à temps, vous seriez prévenu — et
-               vous seul, après plusieurs rappels qui lui sont d'abord adressés.</p>
-            <p>Votre accord est demandé avant quoi que ce soit. Ouvrez la page
-               ci-dessous pour <strong>accepter</strong> ou <strong>refuser</strong> :</p>
-            <a href="%s" style="background:#4F46E5;color:white;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">
-              Voir la demande
-            </a>
-            <p style="color:#6b757d;font-size:14px;margin-top:20px;">
-              Un seul message vous sera envoyé, sans réponse de votre part. Si vous
-              refusez, votre numéro ne pourra plus être désigné par personne sur meetDo.
-            </p>
-            """.formatted(qui, qui, pageUrl);
+        // Menthe, comme la page qu'il ouvre et comme « Prévenir un proche » dans
+        // l'application : la couleur des gestes de sécurité, d'un bout à l'autre.
+        String html = gabarit.envelopper(
+            GabaritEmail.titre(qui + " vous a désigné comme contact de confiance")
+                + "<p>Sur meetDo, " + qui + " peut « armer une veille » avant une sortie :"
+                + " si cette personne ne confirme pas son retour à temps, vous seriez"
+                + " prévenu — et vous seul, après plusieurs rappels qui lui sont d'abord"
+                + " adressés.</p>"
+                + "<p>Votre accord est demandé avant quoi que ce soit.</p>"
+                + GabaritEmail.bouton(pageUrl, "Voir la demande", GabaritEmail.Accent.MINT)
+                + GabaritEmail.note("Un seul message vous sera envoyé, sans réponse de votre"
+                    + " part. Si vous refusez, votre numéro ne pourra plus être désigné par"
+                    + " personne sur meetDo."),
+            GabaritEmail.Accent.MINT);
 
         boolean sent = resendEmailService.sendHtmlEmail(email,
             qui + " vous a désigné comme contact de confiance — meetDo", html);

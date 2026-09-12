@@ -2,8 +2,10 @@ package org.program.pair.domain.publicslot;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.program.pair.domain.invitation.SlotInvitation;
 import org.program.pair.domain.media.StorageService;
 import org.program.pair.domain.program.Schedule;
+import org.program.pair.repository.SlotInvitationRepository;
 import org.program.pair.shared.exception.ResourceNotFoundException;
 import org.program.pair.shared.i18n.Messages;
 import org.springframework.beans.factory.annotation.Value;
@@ -56,6 +58,7 @@ public class PublicSlotController {
     private final PublicSlotService publicSlotService;
     private final StorageService storageService;
     private final Messages messages;
+    private final SlotInvitationRepository invitationRepository;
 
     @Value("${pair.public.base-url:https://lien.meetdo.fun}")
     private String publicBaseUrl;
@@ -90,6 +93,50 @@ public class PublicSlotController {
         // L'adresse réellement partagée, et la seule qui compte une ouverture :
         // le JSON sert des clients programmatiques, et /public/slots/{token}/page
         // n'est jamais collée nulle part.
+        publicSlotService.countView(token, userAgent);
+        return page(token, model);
+    }
+
+    /**
+     * L'adresse d'une invitation nominative — la même page, par une autre porte.
+     *
+     * <p><b>Elle rendait 401, et c'est le défaut que cette méthode répare.</b>
+     * {@code POST /api/slots/{id}/invite} compose depuis toujours
+     * {@code {PUBLIC_BASE_URL}/i/{code}} (voir {@code SlotInvitationService}),
+     * mais aucun contrôleur ne servait {@code /i/**} et aucune règle de sécurité
+     * ne l'ouvrait : la requête tombait sur {@code anyRequest().authenticated()}
+     * et le destinataire — qui par définition n'a pas de compte meetDo —
+     * recevait le corps d'erreur brut du point d'entrée d'authentification,
+     * {@code {"code":"UNAUTHORIZED","message":"Authentification requise ou token
+     * invalide."}}. Signalé par le chantier mobile le 12/09/2026 et rejoué en
+     * HTTP sur la production le même jour.
+     *
+     * <p><b>Pourquoi la page du créneau, et non une page d'invitation.</b> Une
+     * invitation n'a rien à montrer qu'un créneau ne montre déjà : elle est le
+     * même lien, avec un code de parrainage en prime — c'est la décision prise à
+     * l'écriture de {@code kInviteCodeParam} côté client, et une seconde page
+     * publique n'aurait fait que doubler un contrat pour un gain nul.
+     *
+     * <p><b>Rendue, pas redirigée</b>, pour la même raison que {@code /s/} :
+     * les robots d'aperçu suivent inégalement les redirections, et une
+     * invitation se colle dans une messagerie — l'aperçu est la moitié de ce
+     * qu'elle vaut.
+     *
+     * <p>Le créneau supprimé, le partage éteint par l'hôte et le code inconnu
+     * rendent tous le même 404 : distinguer confirmerait, à qui essaie des
+     * codes, qu'une invitation a existé.
+     */
+    @GetMapping("/i/{code}")
+    public String invitation(@PathVariable String code, Model model,
+                             @RequestHeader(value = "User-Agent", required = false) String userAgent) {
+        String token = invitationRepository.findByInviteCode(code)
+            .map(SlotInvitation::getSchedule)
+            .map(Schedule::getPublicShareToken)
+            .filter(t -> t != null && !t.isBlank())
+            .orElseThrow(() -> new ResourceNotFoundException("Invitation introuvable."));
+
+        // L'ouverture se compte comme celle de /s/ : c'est la même page, et une
+        // invitation ouverte est très exactement ce qu'on cherche à mesurer.
         publicSlotService.countView(token, userAgent);
         return page(token, model);
     }

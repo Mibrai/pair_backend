@@ -7,6 +7,7 @@ import org.program.pair.domain.guardian.Guardian;
 import org.program.pair.domain.incident.Incident;
 import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.notification.NotificationType;
+import org.program.pair.domain.email.GabaritEmail;
 import org.program.pair.domain.outbox.OutboxMessage;
 import org.program.pair.domain.outbox.OutboxService;
 import org.program.pair.domain.program.Schedule;
@@ -53,6 +54,17 @@ public class WatchEscalationService {
     private final UserRepository userRepository;
     private final ScheduleRepository scheduleRepository;
     private final OutboxService outbox;
+
+    /**
+     * L'enveloppe de marque, posée ici plutôt qu'à la porte de sortie.
+     *
+     * <p>{@code ResendEmailService} habille par défaut en violet tout ce qui
+     * part nu. Ce module est le seul dont l'accent porte une information : une
+     * alerte se lit en corail, une levée et un retour en menthe. Envelopper ici
+     * choisit la couleur ; le filet, en aval, laissera passer intact ce qui est
+     * déjà habillé.
+     */
+    private final GabaritEmail gabarit;
     private final OutboxMessageRepository outboxRepository;
     private final NotificationService notificationService;
     private final org.program.pair.repository.IncidentRepository incidentRepository;
@@ -301,7 +313,7 @@ public class WatchEscalationService {
                 case SMS -> outbox.enqueueSms(alerte.getRecipient(), AlertMessages.leveeSms(ctx),
                     OutboxService.PRIORITE_ALERTE, watch.getId());
                 case EMAIL -> outbox.enqueueEmail(alerte.getRecipient(),
-                    "Fausse alerte — tout va bien", AlertMessages.leveeEmailHtml(ctx),
+                    "Fausse alerte — tout va bien", gabarit.envelopper(AlertMessages.leveeEmailHtml(ctx), GabaritEmail.Accent.MINT),
                     OutboxService.PRIORITE_ALERTE, watch.getId());
             }
         }
@@ -338,7 +350,7 @@ public class WatchEscalationService {
                     OutboxService.PRIORITE_ALERTE, watch.getId());
                 case EMAIL -> outbox.enqueueEmail(alerte.getRecipient(),
                     AlertMessages.renoncementObjet(ctx),
-                    AlertMessages.renoncementEmailHtml(ctx),
+                    gabarit.envelopper(AlertMessages.renoncementEmailHtml(ctx), GabaritEmail.Accent.MINT),
                     OutboxService.PRIORITE_ALERTE, watch.getId());
             }
         }
@@ -398,7 +410,7 @@ public class WatchEscalationService {
                     .map(User::getEmail).filter(e -> e != null && !e.isBlank()).orElse(null);
                 if (email != null) {
                     outbox.enqueueEmail(email, "Tout va bien",
-                        AlertMessages.retourAnnonceEmailHtml(ctx),
+                        gabarit.envelopper(AlertMessages.retourAnnonceEmailHtml(ctx), GabaritEmail.Accent.MINT),
                         OutboxService.PRIORITE_EMAIL, null);
                     envoye = true;
                 }
@@ -410,7 +422,7 @@ public class WatchEscalationService {
                 }
                 if (notBlank(guardian.getEmail())) {
                     outbox.enqueueEmail(guardian.getEmail(), "Tout va bien",
-                        AlertMessages.retourAnnonceEmailHtml(ctx),
+                        gabarit.envelopper(AlertMessages.retourAnnonceEmailHtml(ctx), GabaritEmail.Accent.MINT),
                         OutboxService.PRIORITE_EMAIL, null);
                     envoye = true;
                 }
@@ -446,7 +458,8 @@ public class WatchEscalationService {
                 .filter(e -> e != null && !e.isBlank())
                 .map(email -> {
                     outbox.enqueueEmail(email, "Alerte retour — meetDo",
-                        AlertMessages.alerteRetourEmailHtml(ctx, ctx.lienStatut()),
+                        gabarit.envelopper(AlertMessages.alerteRetourEmailHtml(ctx, ctx.lienStatut()),
+                            GabaritEmail.Accent.CORAL),
                         OutboxService.PRIORITE_EMAIL, watchId);
                     return true;
                 }).orElse(false);
@@ -465,7 +478,8 @@ public class WatchEscalationService {
         boolean parCourrier = notBlank(guardian.getEmail());
         if (parCourrier) {
             outbox.enqueueEmail(guardian.getEmail(), "Alerte retour — meetDo",
-                AlertMessages.alerteRetourEmailHtml(ctx, desabonnement),
+                gabarit.envelopper(AlertMessages.alerteRetourEmailHtml(ctx, desabonnement),
+                    GabaritEmail.Accent.CORAL),
                 OutboxService.PRIORITE_EMAIL, watchId);
         }
         inscrireAuJournal(watchId, "ALERTE_RETOUR", role, guardianId, canaux(parSms, parCourrier));

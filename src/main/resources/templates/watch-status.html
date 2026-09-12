@@ -9,89 +9,105 @@
          téléphone, là où un sondage JS afficherait une page vide. -->
     <meta http-equiv="refresh" content="60">
     <title>Point de sécurité — meetDo</title>
+    <th:block th:replace="~{fragments/marque :: styles}"></th:block>
     <style>
-        :root { color-scheme: light dark; }
-        body {
-            margin: 0; padding: 2rem 1.25rem;
-            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-            line-height: 1.55; color: #16191c; background: #f5f6f7;
+        /* Le statut est la seule chose que le destinataire cherche : il se lit
+           avant tout le reste, à la longueur de bras, sur un écran verrouillé
+           qu'on vient de déverrouiller en pleine nuit. */
+        .statut {
+            margin: 0 0 .2rem;
+            font-size: 1.45rem;
+            font-weight: 800;
+            letter-spacing: -.015em;
+            line-height: 1.25;
         }
-        .card {
-            max-width: 32rem; margin: 0 auto; background: #fff;
-            border-radius: 10px; padding: 1.75rem; box-shadow: 0 1px 3px rgba(0,0,0,.09);
-        }
-        .status {
-            font-size: 1.35rem; font-weight: 700; margin: 0 0 .25rem;
-        }
-        .status.alerte { color: #b3261e; }
-        .status.rentree { color: #1f8a4c; }
-        .maj { font-size: .8rem; color: #6b757d; margin: 0 0 1.25rem; }
-        dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: .55rem 1.25rem; }
-        dt { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: #6b757d; }
-        dd { margin: 0; font-weight: 500; }
-        .actions { display: flex; gap: .75rem; margin-top: 1.5rem; flex-wrap: wrap; }
-        button {
-            flex: 1 1 auto; min-width: 9rem; padding: .75rem 1rem; border-radius: 8px;
-            border: 1px solid #c9d1d6; background: #fff; font-size: .95rem; font-weight: 600;
-            cursor: pointer; color: #16191c;
-        }
-        .note { margin-top: 1.5rem; font-size: .82rem; color: #6b757d; }
+        .statut.alerte { color: var(--coral-dark); }
+        .statut.rentree { color: var(--mint-dark); }
         @media (prefers-color-scheme: dark) {
-            body { background: #101315; color: #e6e9ea; }
-            .card { background: #181c1f; box-shadow: none; }
-            dt, .maj, .note { color: #8d979e; }
-            button { background: #21262a; color: #e6e9ea; border-color: #3a4147; }
-            .status.rentree { color: #5ac57f; }
-            .status.alerte { color: #f2b8b5; }
+            .statut.alerte { color: #FF8F8F; }
+            .statut.rentree { color: #43E3BC; }
         }
+        .maj { margin: 0 0 1.3rem; font-size: .78rem; color: var(--text-3); }
+        .accuses { display: flex; gap: .6rem; margin-top: 1.5rem; flex-wrap: wrap; }
+        .accuses form { flex: 1 1 10rem; margin: 0; }
+        /* Les deux libellés n'ont pas la même longueur — « Je l'ai eue au
+           téléphone » passe à deux lignes bien avant « J'ai vu ». Sans cette
+           ligne, le bouton court reste plus bas que son voisin et la rangée
+           paraît cassée. */
+        .accuses .cta { height: 100%; }
     </style>
 </head>
 <body>
-<div class="card">
-    <p class="status"
-       th:classappend="${statutCode == 'ALERTE_ENVOYEE'} ? 'alerte' : (${statutCode == 'RENTREE'} ? 'rentree' : '')"
-       th:text="${statut}">Sur place</p>
-    <p class="maj">Actualisé il y a <span th:text="${majMinutes}">3</span> min</p>
+<div class="page">
+    <header th:replace="~{fragments/marque :: entete}"></header>
 
-    <dl>
-        <dt>Personne</dt>
-        <dd th:text="${prenom} ?: 'Non renseigné'">Camille</dd>
+    <main class="carte">
+        <!-- Le ruban porte l'état, avant même que le mot ne soit lu : corail
+             quand l'alerte est partie, menthe quand la personne est rentrée,
+             violet neutre le reste du temps. -->
+        <div class="ruban"
+             th:classappend="${statutCode == 'ALERTE_ENVOYEE'} ? 'ruban-coral' : (${statutCode == 'RENTREE'} ? 'ruban-mint' : 'ruban-sky')"></div>
+        <div class="carte-corps">
+            <p class="surtitre">Point de sécurité</p>
+            <p class="statut"
+               th:classappend="${statutCode == 'ALERTE_ENVOYEE'} ? 'alerte' : (${statutCode == 'RENTREE'} ? 'rentree' : '')"
+               th:text="${statut}">Sur place</p>
+            <p class="maj">Actualisé il y a <span th:text="${majMinutes}">3</span> min</p>
 
-        <dt th:if="${activite}">Activité</dt>
-        <dd th:if="${activite}" th:text="${activite}">Yoga</dd>
+            <dl class="faits">
+                <dt>Personne</dt>
+                <dd th:text="${prenom} ?: 'Non renseigné'">Camille</dd>
 
-        <dt>Lieu</dt>
-        <dd><span th:text="${lieu} ?: 'Non renseigné'">Studio Lumière</span><span
-                th:if="${ville}" th:text="' — ' + ${ville}"></span></dd>
+                <dt th:if="${activite}">Activité</dt>
+                <dd th:if="${activite}" th:text="${activite}">Yoga</dd>
 
-        <dt th:if="${debut}">Séance</dt>
-        <dd th:if="${debut}">de <span th:text="${debut}">9h00</span>
-            <span th:if="${fin}">à <span th:text="${fin}">10h00</span></span></dd>
+                <dt>Lieu</dt>
+                <dd><span th:text="${lieu} ?: 'Non renseigné'">Studio Lumière</span><span
+                        th:if="${ville}" th:text="' — ' + ${ville}"></span></dd>
 
-        <dt th:if="${echeance}">Retour attendu</dt>
-        <dd th:if="${echeance}" th:text="'avant ' + ${echeance}">avant 12h00</dd>
-    </dl>
+                <dt th:if="${debut}">Séance</dt>
+                <dd th:if="${debut}">de <span th:text="${debut}">9h00</span>
+                    <span th:if="${fin}">à <span th:text="${fin}">10h00</span></span></dd>
 
-    <!-- Deux boutons d'accusé, aucune clôture. Cachés une fois la veille terminée. -->
-    <div class="actions" th:unless="${terminal}">
-        <form method="post" th:action="@{/public/watch/{t}/seen(t=${token})}">
-            <button type="submit">J'ai vu</button>
-        </form>
-        <form method="post" th:action="@{/public/watch/{t}/called(t=${token})}">
-            <button type="submit">Je l'ai eue au téléphone</button>
-        </form>
-    </div>
+                <dt th:if="${echeance}">Retour attendu</dt>
+                <dd th:if="${echeance}" th:text="'avant ' + ${echeance}">avant 12h00</dd>
+            </dl>
 
-    <p class="note" th:if="${statutCode == 'ALERTE_ENVOYEE'}">
-        meetDo ne sait pas si cette personne va bien — seulement qu'elle n'a pas
-        confirmé son retour. En cas de danger immédiat, appelez le 112.
-    </p>
-    <p class="note" th:if="${terminal}">
-        Cette personne est bien rentrée. Il n'y a rien à faire.
-    </p>
-    <p class="note">
-        L'adresse exacte et les coordonnées ne sont volontairement pas affichées.
-    </p>
+            <!--/* Deux boutons d'accusé, aucune clôture. Cachés une fois la
+                   veille terminée. La règle §2.2 ne se négocie pas : cette page
+                   est ouverte à quiconque tient le lien, et un bouton qui
+                   éteindrait la veille l'éteindrait pour n'importe qui — le
+                   premier destinataire d'une capture d'écran transférée, et le
+                   proche qui compte dessus ne le saurait jamais.
+
+                   Commentaire de parseur, retiré du rendu par Thymeleaf : un
+                   commentaire HTML ordinaire part chez le lecteur, et
+                   PublicWatchStatusIntegrationTest interdit — à raison — le
+                   verbe interdit dans cette page, fût-ce en commentaire. */-->
+            <div class="accuses" th:unless="${terminal}">
+                <form method="post" th:action="@{/public/watch/{t}/seen(t=${token})}">
+                    <button type="submit" class="cta cta-secondaire">J'ai vu</button>
+                </form>
+                <form method="post" th:action="@{/public/watch/{t}/called(t=${token})}">
+                    <button type="submit" class="cta cta-secondaire">Je l'ai eue au téléphone</button>
+                </form>
+            </div>
+
+            <div class="encart encart-coral" th:if="${statutCode == 'ALERTE_ENVOYEE'}">
+                <p>meetDo ne sait pas si cette personne va bien — seulement qu'elle n'a pas
+                   confirmé son retour. En cas de danger immédiat, appelez le 112.</p>
+            </div>
+            <div class="encart encart-mint" th:if="${terminal}">
+                <p>Cette personne est bien rentrée. Il n'y a rien à faire.</p>
+            </div>
+
+            <p class="note">
+                L'adresse exacte et les coordonnées ne sont volontairement pas affichées.
+            </p>
+        </div>
+    </main>
+
+    <footer th:replace="~{fragments/marque :: pied}"></footer>
 </div>
 </body>
 </html>

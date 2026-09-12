@@ -91,6 +91,13 @@ public class SecurityConfig {
                 // courte qu'on partage réellement.
                 .requestMatchers(HttpMethod.GET, "/public/slots/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/s/**").permitAll()
+                // Lien d'invitation nominative. Il était composé par
+                // SlotInvitationService depuis l'origine et n'a jamais figuré
+                // ici : le destinataire — qui n'a pas de compte, c'est tout
+                // l'objet d'une invitation — recevait « UNAUTHORIZED :
+                // Authentification requise ou token invalide » au lieu du
+                // créneau. Signalé le 12/09/2026 par le chantier mobile.
+                .requestMatchers(HttpMethod.GET, "/i/**").permitAll()
                 // Page publique de programme : mêmes adresses, même contrat.
                 // Un programme partagé arrivait sinon en « meetdo://programs/42 »,
                 // qu'aucune messagerie ne rend cliquable.
@@ -104,6 +111,12 @@ public class SecurityConfig {
                 // condition : Apple et Google les lisent sans identité, et une
                 // redirection suffirait à faire échouer la validation.
                 .requestMatchers(HttpMethod.GET, "/.well-known/**").permitAll()
+                // Les fichiers de marque. Ouverts parce que leur premier lecteur
+                // est un client de messagerie qui charge l'image d'un e-mail :
+                // il n'a pas de session, et une image refusée laisse une case
+                // vide en haut de tous nos courriers. Le dossier ne contient que
+                // le symbole meetDo.
+                .requestMatchers(HttpMethod.GET, "/brand/**").permitAll()
                 // Flux de consentement d'un contact d'urgence. Le GET rend la page
                 // à deux boutons ; le POST applique la décision. Les deux sont
                 // publics — le contact n'a pas de compte — et le POST l'est
@@ -133,9 +146,9 @@ public class SecurityConfig {
                 // programme était absente, alors qu'elle aurait rendu 401 même en
                 // existant.
                 .requestMatchers(HttpMethod.HEAD,
-                    "/", "/public/safety/**", "/public/slots/**", "/s/**",
+                    "/", "/public/safety/**", "/public/slots/**", "/s/**", "/i/**",
                     "/public/programs/**", "/p/**", "/v/**", "/.well-known/**",
-                    "/public/guardian-consent/**", "/public/watch/**").permitAll()
+                    "/public/guardian-consent/**", "/public/watch/**", "/brand/**").permitAll()
                 // Tout le reste : authentifié
                 .anyRequest().authenticated()
             )

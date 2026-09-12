@@ -9,52 +9,61 @@
          de créneau, dont l'aperçu est toute la raison d'être. -->
     <meta name="robots" content="noindex, nofollow">
     <title>Point de sécurité — meetDo</title>
-    <style>
-        :root { color-scheme: light dark; }
-        body {
-            margin: 0; padding: 2rem 1.25rem;
-            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-            line-height: 1.55; color: #16191c; background: #f5f6f7;
-        }
-        .card {
-            max-width: 32rem; margin: 0 auto; background: #fff;
-            border-radius: 10px; padding: 1.75rem; box-shadow: 0 1px 3px rgba(0,0,0,.09);
-        }
-        h1 { font-size: 1.15rem; margin: 0 0 1.25rem; font-weight: 600; }
-        dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: .6rem 1.25rem; }
-        dt { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: #6b757d; }
-        dd { margin: 0; font-weight: 500; }
-        .note { margin-top: 1.5rem; font-size: .85rem; color: #6b757d; }
-        @media (prefers-color-scheme: dark) {
-            body { background: #101315; color: #e6e9ea; }
-            .card { background: #181c1f; box-shadow: none; }
-            dt, .note { color: #8d979e; }
-        }
-    </style>
+    <th:block th:replace="~{fragments/marque :: styles}"></th:block>
 </head>
+<!--
+  Habillée aux couleurs Aurora le 12/09/2026. Elle était grise, sans logo, sans
+  nom : le destinataire — un proche, sans compte, qui reçoit « voici où je
+  vais » — ouvrait une page qui pouvait être de n'importe qui. Sur ce lien-là
+  plus que sur aucun autre, reconnaître la marque **est** le premier signal de
+  confiance ; une page anonyme se referme, et le geste de sécurité tombe à
+  plat.
+
+  Le ruban est menthe, et non violet : le vert d'Aurora est la couleur des
+  gestes de sécurité dans toute l'application (« Prévenir un proche »,
+  « Envoyer où et quand »). La page continue la conversation commencée dans
+  l'app.
+-->
 <body>
-<div class="card">
-    <h1>Une personne vous a partagé son rendez-vous</h1>
-    <dl>
-        <dt>Activité</dt>
-        <dd th:text="${activityName}">Yoga</dd>
+<div class="page">
+    <header th:replace="~{fragments/marque :: entete}"></header>
 
-        <dt>Quand</dt>
-        <dd><span th:text="${day}">samedi 14 juin</span>,
-            de <span th:text="${startTime}">9h00</span>
-            à <span th:text="${endTime}">10h00</span></dd>
+    <main class="carte">
+        <div class="ruban ruban-mint"></div>
+        <div class="carte-corps">
+            <p class="surtitre">Point de sécurité</p>
+            <h1>Une personne vous a partagé son rendez-vous</h1>
 
-        <dt>Lieu</dt>
-        <dd><span th:text="${placeName}">Studio Lumière</span><span
-                th:if="${city}" th:text="' — ' + ${city}"></span></dd>
+            <dl class="faits">
+                <dt>Activité</dt>
+                <dd th:text="${activityName}">Yoga</dd>
 
-        <dt>Organise</dt>
-        <dd th:text="${organizerGivenName} ?: 'Non renseigné'">Camille</dd>
-    </dl>
-    <p class="note">
-        Ce lien expire six heures après la fin prévue. L'adresse exacte et les
-        coordonnées des participants ne sont volontairement pas affichées.
-    </p>
+                <dt>Quand</dt>
+                <dd><span th:text="${day}">samedi 14 juin</span>,
+                    de <span th:text="${startTime}">9h00</span>
+                    à <span th:text="${endTime}">10h00</span></dd>
+
+                <dt>Lieu</dt>
+                <dd><span th:text="${placeName}">Studio Lumière</span><span
+                        th:if="${city}" th:text="' — ' + ${city}"></span></dd>
+
+                <dt>Organise</dt>
+                <dd th:text="${organizerGivenName} ?: 'Non renseigné'">Camille</dd>
+            </dl>
+
+            <!-- Ce que la page **ne** montre pas est aussi important que ce
+                 qu'elle montre, et se dit ici plutôt que dans une note en gris
+                 clair : c'est la promesse du produit, pas une mention légale. -->
+            <div class="encart encart-mint">
+                <p>L'adresse exacte et les coordonnées des participants ne sont
+                   volontairement pas affichées.</p>
+            </div>
+
+            <p class="note">Ce lien expire six heures après la fin prévue.</p>
+        </div>
+    </main>
+
+    <footer th:replace="~{fragments/marque :: pied}"></footer>
 </div>
 </body>
 </html>
