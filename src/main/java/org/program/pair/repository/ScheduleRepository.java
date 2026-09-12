@@ -231,8 +231,22 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
      * Une fois passée, cette unique occurrence est avancée à sa prochaine
      * occurrence réelle par {@code RecurringSlotRolloverJob}, qui lit désormais
      * la RRULE au lieu d'ajouter sept jours en aveugle.
+     *
+     * <p><b>Un créneau annulé n'en est jamais.</b> Le filtre ne portait que sur
+     * la règle et la date : une série annulée — par {@code POST /slots/{id}/cancel}
+     * comme par {@code DELETE} sur un créneau qui avait des inscrits — était
+     * ramassée ici, avancée à la semaine suivante et rendue {@code OPEN}, avec
+     * ses participations restées confirmées et le rappel J-2h qui repartait vers
+     * des gens dont la séance avait été annulée. {@code CANCELLED} est terminal :
+     * aucun job ne fait plus avancer la ligne ni ne change son statut.
+     *
+     * <p>{@code PAST} n'est pas concerné et ne doit pas l'être : une série close
+     * par son {@code UNTIL} reste éligible au balayage, c'est
+     * {@link org.program.pair.domain.program.RecurrenceExpander#nextOccurrence}
+     * qui décide alors de la laisser en l'état.
      */
-    @Query("SELECT s FROM Schedule s WHERE s.recurrenceRule IS NOT NULL AND s.startsAt < :now")
+    @Query("SELECT s FROM Schedule s WHERE s.recurrenceRule IS NOT NULL AND s.startsAt < :now "
+        + "AND s.status <> 'CANCELLED'")
     List<Schedule> findRecurringStartedBefore(@Param("now") Instant now);
 
     /**
