@@ -1,5 +1,17 @@
 # Guide de démarrage rapide - Système de Seeds
 
+> **Le mot de passe des comptes de démonstration n'est plus publié** (fiche
+> d'audit P-BS-02). Il était écrit en clair dans ce document, dans un dépôt
+> public, alors que les mêmes comptes — vérifiés, et au même mot de passe —
+> avaient été créés en production. Il est désormais **défini par
+> `PAIR_SEED_DEMO_PASSWORD`** (propriété `pair.seed.demo-password`) :
+> `application-dev.properties` pose une valeur pour le développement local,
+> staging reçoit la variable d'environnement, et aucun profil de production ne
+> peut plus allumer le seed de démonstration — `SeedRunner` refuse le démarrage
+> sous `prod` comme sous `railway`. Sans la propriété, le seeder refuse de créer
+> les comptes plutôt que de se rabattre sur un défaut : un défaut inscrit dans
+> le dépôt serait à nouveau un mot de passe publié.
+
 ## 🚀 Démarrage immédiat
 
 ### En développement (avec données demo)
@@ -75,7 +87,7 @@ curl -X POST http://localhost:8090/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "demo1@pair.app",
-    "password": "Demo1234!"
+    "password": "<défini par PAIR_SEED_DEMO_PASSWORD>"
   }'
 ```
 
@@ -149,7 +161,8 @@ curl -X POST http://localhost:8090/api/admin/seed/demo/reset
 | demo19@pair.app | Anaïs Moreau | Œnologie |
 | demo20@pair.app | Benjamin Girard | Écriture |
 
-**Mot de passe pour tous** : `Demo1234!`
+**Mot de passe pour tous** : défini par `PAIR_SEED_DEMO_PASSWORD`
+(propriété `pair.seed.demo-password`) — voir la note en tête de ce document.
 
 ## 🔧 Configuration avancée
 

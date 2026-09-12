@@ -498,7 +498,9 @@ public class DemoDataSeeder implements CommandLineRunner {
         for (DemoProfile profile : profiles) {
             User user = new User();
             user.setEmail(profile.email());
-            user.setPasswordHash(passwordEncoder.encode("Demo1234!"));
+            // Jamais un littéral ici : @Value("${pair.seed.demo-password:}"),
+            // défini par PAIR_SEED_DEMO_PASSWORD (fiche d'audit P-BS-02).
+            user.setPasswordHash(passwordEncoder.encode(demoPassword));
             user.setDisplayName(profile.displayName());
             user.setBio(profile.bio());
             user.setVerificationStatus(VerificationStatus.EMAIL_VERIFIED);

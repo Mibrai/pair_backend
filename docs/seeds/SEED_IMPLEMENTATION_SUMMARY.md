@@ -117,7 +117,8 @@ if (isProductionProfile() && demoDataEnabled) {
 
 **Données générées** :
 - Users avec `VerificationStatus.EMAIL_VERIFIED`
-- Mot de passe : "Demo1234!" (hashé)
+- Mot de passe : défini par `PAIR_SEED_DEMO_PASSWORD` / `pair.seed.demo-password`,
+  jamais écrit dans le dépôt (hashé ; fiche d'audit P-BS-02)
 - UserActivity avec descriptions personnalisées
 - Programs avec status ACTIVE et public
 - Schedules avec lieux et récurrences
