@@ -105,6 +105,23 @@ public class OutboxMessage {
     @Column(name = "next_attempt_at")
     private Instant nextAttemptAt;
 
+    /**
+     * Jusqu'à quand le balayage qui a réclamé ce message a la main dessus.
+     *
+     * <p>Posée par la réclamation ({@code OutboxClaimer}) en même temps que
+     * l'état {@link OutboxStatus#SENDING}, effacée par la confirmation. Sa raison
+     * d'être est le conteneur tué en plein envoi : sans échéance, sa ligne
+     * resterait {@code SENDING} pour toujours et le message ne partirait jamais.
+     * Passé ce délai, un autre balayage reprend le message — au prix d'un envoi
+     * en double si le premier avait en fait abouti, ce qui est le sens de
+     * « au moins une fois ».
+     *
+     * <p>Elle n'est <b>jamais</b> écrite par le code de cette classe : c'est la
+     * réclamation, en SQL, qui la pose, et elle seule.
+     */
+    @Column(name = "locked_until")
+    private Instant lockedUntil;
+
     @Column(name = "sent_at")
     private Instant sentAt;
 
@@ -191,16 +208,25 @@ public class OutboxMessage {
     public Instant getSentAt() { return sentAt; }
     public Instant getLastAttemptAt() { return lastAttemptAt; }
     public Instant getNextAttemptAt() { return nextAttemptAt; }
+    public Instant getLockedUntil() { return lockedUntil; }
+    public Instant getCreatedAt() { return createdAt; }
 
+    /**
+     * Le fournisseur a pris le message.
+     *
+     * <p><b>L'essai n'est pas compté ici</b> : il l'a été à la réclamation, par
+     * l'{@code UPDATE} qui a posé {@link OutboxStatus#SENDING}. Le compter une
+     * seconde fois ferait de chaque envoi réussi deux essais.
+     */
     public void markSent(String providerMessageId, Instant when) {
         this.status = OutboxStatus.SENT;
         this.providerMessageId = providerMessageId;
         this.sentAt = when;
         this.lastAttemptAt = when;
-        this.attempts++;
         // Un message parti après deux refus n'a plus de prochain essai à attendre :
         // la date laissée par ces refus n'a plus de sens, on l'efface.
         this.nextAttemptAt = null;
+        this.lockedUntil = null;
     }
 
     /**
@@ -220,17 +246,42 @@ public class OutboxMessage {
      * déjà passée, pour qu'une remise à {@code PENDING} à la main reparte
      * immédiatement.
      *
+     * <p><b>L'essai n'est plus compté ici</b> (lot 1) : il l'est à la
+     * réclamation, par l'{@code UPDATE} qui pose {@link OutboxStatus#SENDING}.
+     * C'est ce qui fait qu'un balayage tué entre la réclamation et la
+     * confirmation consomme quand même un essai — sans quoi un message qui fait
+     * tomber le conteneur serait repris sans fin. Cette méthode ne fait donc que
+     * <i>lire</i> le compte déjà posé pour décider s'il reste un essai.
+     *
+     * <p>Elle ramène aussi l'état à {@code PENDING} et efface le verrou : c'est
+     * la fin de la main que le balayage avait prise sur ce message.
+     *
      * @param when        l'instant de l'essai
      * @param maxAttempts le nombre d'essais au-delà duquel on renonce
      */
     public void markAttemptFailed(Instant when, int maxAttempts) {
-        this.attempts++;
         this.lastAttemptAt = when;
+        this.lockedUntil = null;
         if (this.attempts >= maxAttempts) {
             this.status = OutboxStatus.FAILED;
             return;
         }
+        this.status = OutboxStatus.PENDING;
         this.nextAttemptAt = when.plus(delaiAvantProchainEssai(this.attempts));
+    }
+
+    /**
+     * Renonce à ce message sans attendre l'épuisement de ses essais.
+     *
+     * <p>Réservé au cas où le message n'a plus d'objet : une alerte disant qu'un
+     * proche n'est pas rentré n'a pas le même horizon d'utilité qu'un lien de
+     * vérification d'adresse. Voir {@code OutboxConfirmer} pour l'échéance qui
+     * s'en sert, et pourquoi elle est désactivée par défaut.
+     */
+    public void markExpired(Instant when) {
+        this.status = OutboxStatus.FAILED;
+        this.lastAttemptAt = when;
+        this.lockedUntil = null;
     }
 
     /**

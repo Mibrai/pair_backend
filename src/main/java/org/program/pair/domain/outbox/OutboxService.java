@@ -8,7 +8,6 @@ import org.program.pair.domain.user.User;
 import org.program.pair.domain.user.VerificationEmailDelivery;
 import org.program.pair.repository.OutboxMessageRepository;
 import org.program.pair.repository.UserRepository;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,6 +23,16 @@ import java.util.UUID;
  * que la décision. L'envoi ({@link #dispatchPending}) est un autre temps, porté par
  * un balayage : il sort les messages en attente, les remet au bon canal, et
  * enregistre ce qui s'est passé.
+ *
+ * <p><b>L'envoi tient en trois temps, et aucun ne recouvre l'autre.</b>
+ * {@link OutboxClaimer} réclame un lot sous verrou et valide ; le fournisseur est
+ * appelé <b>hors transaction</b>, donc sans tenir de connexion ;
+ * {@link OutboxConfirmer} écrit l'issue de chaque message dans une transaction à
+ * lui. Cette séparation est l'objet du lot 1 de P-BA-03 : elle ferme d'un coup
+ * les trois défauts que l'audit relevait — le lot entier dans une transaction
+ * (une exception annulait les envois déjà acceptés), l'absence de verrou (deux
+ * instances remettaient le même message deux fois) et la connexion tenue pendant
+ * un appel HTTP.
  */
 @Service
 @RequiredArgsConstructor
@@ -59,6 +68,12 @@ public class OutboxService {
     private final OutboxMessageRepository repository;
     private final SmsService smsService;
     private final ResendEmailService emailService;
+
+    /** Le lot, réclamé sous verrou. Bean distinct : il faut passer par le proxy. */
+    private final OutboxClaimer claimer;
+
+    /** L'issue d'un envoi, écrite message par message. Bean distinct, même raison. */
+    private final OutboxConfirmer confirmer;
 
     /**
      * Pour reporter sur le compte ce qu'un e-mail de vérification devient.
@@ -118,36 +133,64 @@ public class OutboxService {
      * <p><b>Un envoi refusé n'est pas réessayé tout de suite.</b>
      * {@link OutboxMessage#markAttemptFailed} pose une date de prochain essai
      * dont le délai double (30 s, 1 min, 2, 4, ... plafonné à 30 min), et la
-     * lecture ci-dessous n'en reprend que les messages échus. Au bout de
+     * réclamation ne reprend que les messages échus. Au bout de
      * {@link #MAX_ESSAIS} essais — un peu plus de deux heures de panne — le
      * message passe en échec : un échec est fait pour être vu, pas retenté sans
      * fin.
      *
-     * <p><b>Ce que cette méthode ne fait pas encore.</b> Sa javadoc a longtemps
-     * promis « chaque message dans sa propre transaction » ; c'était faux. Tout
-     * le lot tient dans <i>une seule</i> transaction — celle de cette méthode —
-     * et les appels au fournisseur s'y font, connexion tenue. Donc aujourd'hui :
-     * une exception qui s'échapperait d'ici annulerait les écritures de tout le
-     * lot, y compris celles des messages déjà remis (les {@code markSent} ne
-     * seraient pas écrits alors que le fournisseur, lui, a bien accepté). Aucune
-     * lecture n'est faite sous {@code FOR UPDATE SKIP LOCKED} : deux instances
-     * qui balaient en même temps peuvent remettre le même message deux fois.
-     * Ces deux défauts sont traités au lot 1 de P-BA-03 (réclamation sous
-     * verrou, envoi hors transaction, confirmation message par message) ; ce
-     * lot-ci ne traite que le délai entre essais.
+     * <p><b>Cette méthode n'a pas de transaction, et c'est le point.</b> Elle en
+     * ouvre deux courtes par message — la réclamation, puis la confirmation — et
+     * n'en tient aucune pendant l'appel au fournisseur. Un appel HTTP de trois
+     * secondes ne retire donc plus une connexion du pool pendant trois secondes,
+     * et une panne fournisseur qui fait traîner cinquante appels n'immobilise
+     * plus rien. La contrepartie est qu'<b>une exception ne défait plus rien</b> :
+     * ce qui est écrit est validé, message par message. C'est ce qu'on veut — un
+     * message que le fournisseur a accepté ne doit pas repartir parce qu'un autre
+     * a échoué.
+     *
+     * <p><b>Ce que la séquence garantit, et ce qu'elle ne garantit pas.</b>
+     * L'essai est compté à la réclamation, avant le moindre appel réseau : un
+     * balayage tué en plein envoi consomme un essai, et le message repart après
+     * expiration de son verrou. C'est une remise <b>« au moins une fois »</b> —
+     * si le fournisseur a accepté mais que la confirmation n'a pas pu être
+     * écrite, le message sera remis une seconde fois. Le fermer demanderait une
+     * clé d'idempotence côté fournisseur (étape 7 de P-BA-03, non livrée : la
+     * documentation de Resend la décrit, celle du fournisseur SMS non).
+     *
+     * <p><b>La lecture se fait par projection</b> ({@link MessageAEnvoyer}) et
+     * non par entité : hors transaction, une entité serait détachée, et toute
+     * association paresseuse qu'on lui ajouterait lèverait dans ce balayage —
+     * {@code open-in-view} ne couvre que les requêtes web.
      *
      * @return le nombre de messages effectivement remis à un fournisseur
      */
-    @Transactional
     public int dispatchPending() {
-        Instant now = Instant.now();
-        List<OutboxMessage> lot = repository.findAEnvoyer(
-            OutboxStatus.PENDING, now, PageRequest.of(0, LOT));
+        List<UUID> reclames = claimer.reclamer(LOT, Instant.now());
 
         int envoyes = 0;
-        for (OutboxMessage message : lot) {
-            if (envoyer(message, now)) {
-                envoyes++;
+        for (UUID id : reclames) {
+            try {
+                // Relu sous SENDING : si un autre balayage a pris le relais après
+                // expiration du verrou et a déjà conclu, il n'y a plus rien à
+                // envoyer et la projection est vide.
+                MessageAEnvoyer message = repository.findAEnvoyer(id, OutboxStatus.SENDING)
+                    .orElse(null);
+                if (message == null) {
+                    log.debug("Outbox : message {} n'est plus à envoyer, réclamation abandonnée", id);
+                    continue;
+                }
+
+                OutboxConfirmer.Resultat resultat = appelerLeFournisseur(message);
+                confirmer.confirmer(id, resultat, Instant.now());
+                if (resultat.accepte()) {
+                    envoyes++;
+                }
+            } catch (RuntimeException e) {
+                // Un message qui lève n'emporte plus que le sien : les autres du
+                // lot ont déjà été confirmés, et celui-ci repartira à l'expiration
+                // de son verrou. Ni destinataire ni corps dans le journal.
+                log.error("Outbox : message {} — envoi ou confirmation en échec : {}",
+                    id, e.getMessage());
             }
         }
         return envoyes;
@@ -216,87 +259,42 @@ public class OutboxService {
     }
 
     /**
-     * L'issue de la remise au fournisseur, portée sur le compte.
+     * Remet le message à son canal, et rend ce que le fournisseur a répondu.
      *
-     * <p>{@code SENT} dès que Resend accepte, {@code FAILED} quand les essais
-     * sont épuisés — ou qu'il a refusé tout de suite, ce que produirait un compte
-     * d'envoi resté en mode d'essai. Tant que des essais restent, l'état ne bouge
-     * pas : {@code PENDING} est exact, et afficher un échec réparable serait
-     * inviter à corriger une adresse qui n'a rien.
+     * <p><b>Aucune écriture ici, et aucune transaction.</b> C'est le seul endroit
+     * du balayage où l'on parle au réseau, et rien d'autre ne doit s'y passer :
+     * l'{@link OutboxConfirmer} écrira l'issue ensuite, dans sa propre
+     * transaction. Une exception du fournisseur est rattrapée et devient un
+     * refus — donc un nouvel essai plus tard, jamais un message perdu.
+     *
+     * <p>Le journal ne porte ni destinataire ni corps : un message d'outbox
+     * transporte un nom, un lieu, une heure, et le numéro ou l'adresse d'un
+     * proche, alors que la trace vit plus longtemps que la ligne, que la purge
+     * efface à sept jours.
      */
-    private void reporterLEnvoiSurLeCompte(OutboxMessage message) {
-        if (message.getPurpose() != OutboxPurpose.EMAIL_VERIFICATION
-                || message.getUserId() == null) {
-            return;
-        }
-        userRepository.findById(message.getUserId()).ifPresent(user -> {
-            if (message.getStatus() == OutboxStatus.SENT) {
-                user.setVerificationEmailMessageId(message.getProviderMessageId());
-                user.setVerificationEmailDelivery(VerificationEmailDelivery.SENT);
-                userRepository.save(user);
-            } else if (message.getStatus() == OutboxStatus.FAILED) {
-                user.setVerificationEmailDelivery(VerificationEmailDelivery.FAILED);
-                userRepository.save(user);
-            }
-        });
-    }
-
-    private boolean envoyer(OutboxMessage message, Instant now) {
+    private OutboxConfirmer.Resultat appelerLeFournisseur(MessageAEnvoyer message) {
         try {
-            return switch (message.getChannel()) {
+            return switch (message.channel()) {
                 case SMS -> {
-                    SmsService.SmsSendResult r = smsService.send(message.getRecipient(), message.getBody());
-                    if (r.accepted()) {
-                        message.markSent(r.providerMessageId(), now);
-                        yield true;
-                    }
-                    echecDEssai(message, now);
-                    yield false;
+                    SmsService.SmsSendResult r = smsService.send(message.recipient(), message.body());
+                    yield r.accepted()
+                        ? OutboxConfirmer.Resultat.accepte(r.providerMessageId())
+                        : OutboxConfirmer.Resultat.refuse(r.error());
                 }
                 case EMAIL -> {
                     // On garde l'identifiant Resend : c'est lui que l'accusé de
                     // remise (webhook) rappellera pour dire « arrivé » ou « rebondi ».
                     String id = emailService.sendHtmlEmailReturningId(
-                        message.getRecipient(), message.getSubject(), message.getBody());
-                    if (id != null) {
-                        message.markSent(id, now);
-                        reporterLEnvoiSurLeCompte(message);
-                        yield true;
-                    }
-                    echecDEssai(message, now);
-                    reporterLEnvoiSurLeCompte(message);
-                    yield false;
+                        message.recipient(), message.subject(), message.body());
+                    yield id != null
+                        ? OutboxConfirmer.Resultat.accepte(id)
+                        : OutboxConfirmer.Resultat.refuse("Resend n'a pas accepté le message");
                 }
             };
         } catch (RuntimeException e) {
             log.error("Envoi outbox {} en échec ({}): {}",
-                message.getId(), message.getChannel(), e.getMessage());
-            echecDEssai(message, now);
-            reporterLEnvoiSurLeCompte(message);
-            return false;
-        }
-    }
-
-    /**
-     * Compte un essai manqué, et journalise l'abandon s'il était le dernier.
-     *
-     * <p><b>Le journal ne porte ni destinataire ni corps.</b> Un message
-     * d'outbox transporte un nom, un lieu, une heure, et le numéro ou l'adresse
-     * d'un proche ; le journal, lui, est conservé plus longtemps que le message
-     * — la purge efface la ligne à sept jours, pas la trace. On y met de quoi
-     * retrouver la ligne tant qu'elle existe (l'identifiant), de quoi juger de
-     * la gravité (le canal, le nombre d'essais) et de quoi rattacher l'abandon à
-     * ce qui l'a produit (la veille). Rien d'autre.
-     *
-     * <p>L'abandon est un {@code error} et non un {@code warn} : c'est une
-     * alerte qui ne partira pas, et personne n'en sera averti autrement tant que
-     * la métrique {@code outbox.failed} du lot 1 n'existe pas.
-     */
-    private void echecDEssai(OutboxMessage message, Instant now) {
-        message.markAttemptFailed(now, MAX_ESSAIS);
-        if (message.getStatus() == OutboxStatus.FAILED) {
-            log.error("Outbox : message {} abandonné après {} essais ({}, veille {})",
-                message.getId(), message.getAttempts(), message.getChannel(), message.getWatchId());
+                message.id(), message.channel(), e.getMessage());
+            return OutboxConfirmer.Resultat.refuse(e.getMessage());
         }
     }
 }
