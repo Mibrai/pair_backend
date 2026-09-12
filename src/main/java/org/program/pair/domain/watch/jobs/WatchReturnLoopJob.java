@@ -2,17 +2,24 @@ package org.program.pair.domain.watch.jobs;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.program.pair.domain.program.Schedule;
+import org.program.pair.domain.program.SlotStatus;
 import org.program.pair.domain.watch.Watch;
 import org.program.pair.domain.watch.WatchEscalationService;
+import org.program.pair.domain.watch.WatchSlotLifecycle;
 import org.program.pair.domain.watch.WatchState;
+import org.program.pair.repository.ScheduleRepository;
 import org.program.pair.repository.WatchRepository;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * La boucle retour, tenue par le serveur — pas par l'application.
@@ -40,9 +47,26 @@ import java.util.List;
  * n'a lieu qu'<b>après</b> les trois rappels, jamais à leur place : c'est la
  * garantie qu'on ne saute pas les occasions de lever l'alerte soi-même.
  *
- * <p>Chaque envoi est idempotent par construction — {@code remindersSent}, l'état,
- * et l'événement {@code BACKUP_ALERTED} gardent le compte — de sorte que deux
- * passages rapprochés, ou deux instances, ne dédoublent pas les messages.
+ * <p><b>Une transaction par veille, et le passage ne s'annule plus en bloc.</b>
+ * {@code tick()} ne porte plus {@code @Transactional}. Il lisait auparavant les
+ * entités dans sa propre transaction et rattrapait chaque {@code RuntimeException}
+ * dans la boucle — ce qui ne servait à rien : {@code WatchEscalationService} est
+ * {@code @Transactional} sur la classe, et une exception qui traverse son proxy,
+ * ou celui d'un dépôt Spring Data, marque la transaction englobante
+ * <i>rollback-only</i>. Le commit levait alors une
+ * {@code UnexpectedRollbackException} et tout le passage était perdu :
+ * {@code remindersSent}, états {@code ESCALATED}, événements, <b>et les lignes
+ * d'outbox des autres veilles</b> — les messages aux proches de veilles saines
+ * n'étaient jamais déposés. Désormais chaque veille est rechargée et avancée dans
+ * sa propre transaction, et le {@code try/catch} entoure celle-ci.
+ *
+ * <p><b>L'idempotence tient par passage validé</b> — {@code remindersSent},
+ * l'état et l'événement {@code BACKUP_ALERTED} gardent le compte, et un passage
+ * annulé ne laisse aucune notification derrière lui (voir
+ * {@code WatchNotificationListener}, qui n'émet qu'après le commit). Elle ne tient
+ * <b>pas</b> entre deux instances : rien ne verrouille les lignes lues ici, et
+ * deux instances balayant en même temps dédoubleraient rappels et demandes. Voir
+ * P-BA-04 pour le verrou qui manque.
  */
 @Component
 @RequiredArgsConstructor
@@ -52,36 +76,56 @@ public class WatchReturnLoopJob {
     /** Profondeur du balayage : au-delà, une veille dépassée est traitée ou abandonnée. */
     private static final Duration FENETRE = Duration.ofHours(6);
 
+    /** Les états que cette boucle avance. Relus par veille : l'état a pu changer entre-temps. */
+    private static final Set<WatchState> ETATS =
+        EnumSet.of(WatchState.ON_SITE, WatchState.REMINDING, WatchState.ESCALATED);
+
     private static final long RAPPEL_1_MIN = 15;
     private static final long RAPPEL_2_MIN = 30;
     private static final long RAPPEL_3_MIN = 45;
     private static final long ESCALADE_MIN = 60;
 
     private final WatchRepository watchRepository;
+    private final ScheduleRepository scheduleRepository;
     private final WatchEscalationService escalation;
+    private final WatchSlotLifecycle slotLifecycle;
+
+    /**
+     * {@code REQUIRED} et non {@code REQUIRES_NEW} : il n'y a plus de transaction
+     * englobante à suspendre, et en tenir une par veille immobiliserait deux
+     * connexions du pool au lieu d'une.
+     */
+    private final TransactionTemplate tx;
 
     @Scheduled(fixedDelay = 60_000, initialDelay = 30_000)
-    @Transactional
     public void tick() {
         Instant now = Instant.now();
-        List<Watch> aExaminer = watchRepository.findByStateInAndDeadlineAtBetween(
-            List.of(WatchState.ON_SITE, WatchState.REMINDING, WatchState.ESCALATED),
-            now.minus(FENETRE), now);
 
-        int agi = 0;
-        for (Watch watch : aExaminer) {
+        // Les identifiants seulement. La requête s'exécute dans la transaction
+        // courte et en lecture seule que Spring Data ouvre pour elle, puis rend sa
+        // connexion : rien ne reste ouvert pendant le passage. Une entité lue ici
+        // serait détachée au moment de la modifier, d'où le rechargement plus bas.
+        List<UUID> ids = watchRepository.findIdsByStateInAndDeadlineAtBetween(
+            ETATS, now.minus(FENETRE), now);
+
+        int agis = 0;
+        for (UUID id : ids) {
             try {
-                if (avancer(watch, now)) {
-                    agi++;
+                Boolean agi = tx.execute(s -> watchRepository.findById(id)
+                    .filter(w -> ETATS.contains(w.getState()))   // relu : l'état a pu changer
+                    .map(w -> avancer(w, now))
+                    .orElse(false));
+                if (Boolean.TRUE.equals(agi)) {
+                    agis++;
                 }
             } catch (RuntimeException e) {
-                // Un envoi qui échoue sur une veille ne doit pas priver les autres
-                // de leur tour. Le prochain passage reprendra celle-ci.
-                log.error("Boucle retour : échec sur la veille {}", watch.getId(), e);
+                // Une veille qui lève n'emporte plus que la sienne. Le prochain
+                // passage la reprendra ; les autres ont déjà commité.
+                log.error("Boucle retour : échec sur la veille {}", id, e);
             }
         }
-        if (agi > 0) {
-            log.info("Boucle retour : {} veille(s) avancée(s) sur {} examinée(s)", agi, aExaminer.size());
+        if (agis > 0) {
+            log.info("Boucle retour : {} veille(s) avancée(s) sur {} examinée(s)", agis, ids.size());
         }
     }
 
@@ -89,6 +133,23 @@ public class WatchReturnLoopJob {
         long ecoule = Duration.between(watch.getDeadlineAt(), now).toMinutes();
 
         if (watch.getState() == WatchState.ON_SITE || watch.getState() == WatchState.REMINDING) {
+            // Filet pour une annulation arrivée entre deux passages : le statut du
+            // créneau est relu ici, jamais supposé. Sans lui, une séance annulée à
+            // T+10 laissait partir les trois rappels puis l'alerte au proche — la
+            // clôture de l'annulation n'a lieu que si quelqu'un annule, et elle ne
+            // rattrape pas ce qui était déjà en vol.
+            //
+            // Placé dans cette branche et non en tête : une veille ESCALATED ne se
+            // referme pas sur une annulation (l'alerte est sortie, elle se lève par
+            // la personne), et c'est justement le seul autre état que ce balayage
+            // voit.
+            Schedule annule = creneauAnnuleDe(watch);
+            if (annule != null) {
+                log.info("Boucle retour : créneau {} annulé, la veille {} se referme sans rappel",
+                    annule.getId(), watch.getId());
+                return slotLifecycle.closeForCancelledSlot(annule, now) > 0;
+            }
+
             int rappelsDus = ecoule >= RAPPEL_3_MIN ? 3
                 : ecoule >= RAPPEL_2_MIN ? 2
                 : ecoule >= RAPPEL_1_MIN ? 1 : 0;
@@ -132,5 +193,16 @@ public class WatchReturnLoopJob {
             return escalation.ensureAlerted(watch, ecoule);
         }
         return false;
+    }
+
+    /**
+     * Le créneau de cette veille s'il est annulé, {@code null} sinon. Relu en base,
+     * dans la transaction de la veille, jamais supposé. Un créneau introuvable n'est
+     * pas « annulé » : on ne referme pas une veille sur une lecture qui a échoué.
+     */
+    private Schedule creneauAnnuleDe(Watch watch) {
+        return scheduleRepository.findById(watch.getScheduleId())
+            .filter(slot -> slot.getStatus() == SlotStatus.CANCELLED)
+            .orElse(null);
     }
 }

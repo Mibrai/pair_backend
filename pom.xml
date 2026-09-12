@@ -286,6 +286,19 @@
             <artifactId>spring-security-test</artifactId>
             <scope>test</scope>
         </dependency>
+        <!--
+          Awaitility : déclarée explicitement bien que spring-boot-starter-test l'apporte
+          déjà en transitive. Les tests des boucles de veille (P-BA-01) l'utilisent pour
+          prouver qu'une notification n'arrive PAS, ce qu'une boucle d'attente maison ne
+          sait pas dire proprement. Une dépendance dont on écrit le nom dans un test se
+          déclare : sinon une mise à jour du starter la retire sans un mot.
+          Version gérée par la BOM de spring-boot-starter-parent.
+        -->
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <scope>test</scope>
+        </dependency>
 
         <!-- Testcontainers (version gérée par la BOM de spring-boot-starter-parent) -->
         <dependency>
@@ -360,7 +373,24 @@
                          même endroit. Quatre contextes suffisent — le but du
                          conteneur singleton est justement qu'ils soient presque tous
                          identiques donc réutilisés. -->
-                    <argLine>-Xmx3g -Dspring.test.context.cache.maxSize=3</argLine>
+                    <!-- 12/09 : porté de 3 à 4, et le tas de 3 à 4 Go. Le commentaire
+                         ci-dessus disait déjà « quatre contextes suffisent » quand la
+                         valeur en disait trois ; c'est la valeur qui avait tort.
+                         Ce que coûtait l'écart : la suite a gagné une quatrième
+                         configuration de contexte distincte (WatchLoopPartialFailure-
+                         IntegrationTest et son @MockitoSpyBean, seul moyen de faire
+                         échouer une veille — la voie « par les données » a été
+                         cherchée puis démontrée fermée, voir sa javadoc). À maxSize=3,
+                         cette quatrième évince les trois autres, qui sont aussitôt
+                         reconstruites : 37 min au lieu de 9, et — signature trompeuse —
+                         quatorze « Timeout on blocking read for 30 s » dans
+                         PublicProgramPageIntegrationTest, classe sans aucun rapport,
+                         qui passe 16/16 en 48 s jouée seule. Ce n'étaient pas des
+                         requêtes lentes mais le ramasse-miettes, la machine paginant.
+                         Ne pas redescendre à 3 sans retirer d'abord une configuration
+                         de contexte : plusieurs classes portent déjà un @MockitoBean
+                         NotificationService et forment leur propre configuration. -->
+                    <argLine>-Xmx4g -Dspring.test.context.cache.maxSize=4</argLine>
                     <!-- Charge un vrai modèle ONNX (~120 Mo, téléchargement réseau) :
                          exclu par défaut, exécuter avec -DexcludedGroups= . -->
                     <excludedGroups>${excludedGroups}</excludedGroups>

@@ -148,4 +148,40 @@ public interface WatchRepository extends JpaRepository<Watch, UUID> {
      */
     List<Watch> findByStateInAndOutboundBaseAtBetween(
         Collection<WatchState> states, java.time.Instant depuis, java.time.Instant jusqua);
+
+    /**
+     * Les <b>identifiants</b> que la boucle retour doit examiner — et rien d'autre.
+     *
+     * <p><b>Pourquoi une projection plutôt que les entités.</b> Les deux boucles ne
+     * portent plus une transaction unique : chaque veille est avancée dans la
+     * sienne, pour qu'une qui lève n'emporte pas le tour des autres (voir
+     * {@code WatchReturnLoopJob}). Une entité lue avant cette découpe serait
+     * détachée au moment où l'on voudrait la modifier ; l'identifiant, lui, traverse
+     * sans rien tenir. La liste est lue dans la transaction courte que Spring Data
+     * ouvre pour cette requête, puis la connexion est rendue — aucune transaction
+     * englobante ne reste ouverte pendant tout le passage.
+     *
+     * <p>Mêmes bornes que {@link #findByStateInAndDeadlineAtBetween} : {@code BETWEEN}
+     * est inclusif des deux côtés, ici comme dans la requête dérivée.
+     */
+    @Query("""
+        SELECT w.id FROM Watch w
+        WHERE w.state IN :states
+          AND w.deadlineAt BETWEEN :depuis AND :jusqua
+        """)
+    List<UUID> findIdsByStateInAndDeadlineAtBetween(
+        @Param("states") Collection<WatchState> states,
+        @Param("depuis") Instant depuis,
+        @Param("jusqua") Instant jusqua);
+
+    /** Le jumeau de la boucle aller : les identifiants seulement, même raison. */
+    @Query("""
+        SELECT w.id FROM Watch w
+        WHERE w.state IN :states
+          AND w.outboundBaseAt BETWEEN :depuis AND :jusqua
+        """)
+    List<UUID> findIdsByStateInAndOutboundBaseAtBetween(
+        @Param("states") Collection<WatchState> states,
+        @Param("depuis") Instant depuis,
+        @Param("jusqua") Instant jusqua);
 }

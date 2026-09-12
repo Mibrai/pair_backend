@@ -2,17 +2,24 @@ package org.program.pair.domain.watch.jobs;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.program.pair.domain.program.Schedule;
+import org.program.pair.domain.program.SlotStatus;
 import org.program.pair.domain.watch.Watch;
 import org.program.pair.domain.watch.WatchEscalationService;
+import org.program.pair.domain.watch.WatchSlotLifecycle;
 import org.program.pair.domain.watch.WatchState;
+import org.program.pair.repository.ScheduleRepository;
 import org.program.pair.repository.WatchRepository;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Set;
+import java.util.UUID;
 
 /**
  * La boucle aller : « tu y es ? », puis « perdu en chemin » si personne ne répond.
@@ -39,6 +46,15 @@ import java.util.List;
  * <p>« Je suis en chemin » repousse la base de quinze minutes, ce qui rachète
  * autant de temps avant la demande suivante. Une arrivée validée sort la veille de
  * cette boucle (elle passe {@code ON_SITE}) ; un abandon la referme.
+ *
+ * <p><b>Une transaction par veille</b>, exactement comme la boucle retour et pour
+ * la même raison : {@code tick()} portait {@code @Transactional} et avalait les
+ * exceptions de sa boucle, ce qui ne servait à rien — le proxy
+ * {@code @Transactional} de {@code WatchEscalationService} avait déjà marqué la
+ * transaction <i>rollback-only</i>, et le commit emportait tout le passage en
+ * {@code UnexpectedRollbackException} alors que les pushs étaient parties. Voir
+ * {@link WatchReturnLoopJob} pour le détail, et P-BA-04 pour le verrou qui manque
+ * entre deux instances.
  */
 @Component
 @RequiredArgsConstructor
@@ -50,12 +66,20 @@ public class WatchOutboundJob {
     private static final long DEMANDE_2_MIN = 30;
     private static final long DEMANDE_3_MIN = 45;
 
+    /** Les états que cette boucle avance. Relus par veille : l'état a pu changer entre-temps. */
+    private static final Set<WatchState> ETATS =
+        EnumSet.of(WatchState.ARMED, WatchState.EN_ROUTE);
+
     private final WatchRepository watchRepository;
+    private final ScheduleRepository scheduleRepository;
     private final WatchEscalationService escalation;
+    private final WatchSlotLifecycle slotLifecycle;
     private final org.program.pair.domain.watch.WatchService watchService;
 
+    /** Voir {@link WatchReturnLoopJob} : {@code REQUIRED} suffit, une connexion par veille. */
+    private final TransactionTemplate tx;
+
     @Scheduled(fixedDelay = 60_000, initialDelay = 45_000)
-    @Transactional
     public void tick() {
         Instant now = Instant.now();
 
@@ -64,31 +88,60 @@ public class WatchOutboundJob {
         // veilles dont outbound_base_at est déjà passé, et quelqu'un qui arrive
         // en avance déclare son arrivée avant que sa veille n'y entre — sa
         // validation ne serait alors jamais tombée.
-        int valides = watchService.confirmerLesArriveesEchues();
-        if (valides > 0) {
-            log.info("Boucle aller : {} arrivée(s) validée(s) par le délai", valides);
+        //
+        // Elle garde sa propre transaction (méthode d'un service @Transactional) et
+        // reste avant la boucle, dans son propre try/catch : un échec de la bascule
+        // ne doit pas empêcher les demandes d'arrivée de partir, ni l'inverse.
+        try {
+            int valides = watchService.confirmerLesArriveesEchues();
+            if (valides > 0) {
+                log.info("Boucle aller : {} arrivée(s) validée(s) par le délai", valides);
+            }
+        } catch (RuntimeException e) {
+            log.error("Boucle aller : échec de la bascule automatique des arrivées", e);
         }
 
-        List<Watch> aExaminer = watchRepository.findByStateInAndOutboundBaseAtBetween(
-            List.of(WatchState.ARMED, WatchState.EN_ROUTE),
-            now.minus(FENETRE), now);
+        List<UUID> ids = watchRepository.findIdsByStateInAndOutboundBaseAtBetween(
+            ETATS, now.minus(FENETRE), now);
 
-        int agi = 0;
-        for (Watch watch : aExaminer) {
+        int agis = 0;
+        for (UUID id : ids) {
             try {
-                if (watch.getOutboundBaseAt() != null && avancer(watch, now)) {
-                    agi++;
+                Boolean agi = tx.execute(s -> watchRepository.findById(id)
+                    .filter(w -> ETATS.contains(w.getState()))   // relu : l'état a pu changer
+                    .filter(w -> w.getOutboundBaseAt() != null)
+                    .map(w -> avancer(w, now))
+                    .orElse(false));
+                if (Boolean.TRUE.equals(agi)) {
+                    agis++;
                 }
             } catch (RuntimeException e) {
-                log.error("Boucle aller : échec sur la veille {}", watch.getId(), e);
+                log.error("Boucle aller : échec sur la veille {}", id, e);
             }
         }
-        if (agi > 0) {
-            log.info("Boucle aller : {} veille(s) avancée(s) sur {} examinée(s)", agi, aExaminer.size());
+        if (agis > 0) {
+            log.info("Boucle aller : {} veille(s) avancée(s) sur {} examinée(s)", agis, ids.size());
         }
     }
 
     private boolean avancer(Watch watch, Instant now) {
+        // Filet pour une annulation arrivée entre deux passages, avant tout le
+        // reste : sur une séance annulée il n'y a plus d'arrivée à demander, et
+        // surtout plus de « perdu en chemin » à prononcer à T+45 — ce verdict
+        // journalise un incident au nom de quelqu'un qui n'avait plus nulle part
+        // où aller. Le geste est celui de l'annulation : CLOSED + ABANDONED, rien
+        // d'envoyé, et l'événement reste comme preuve.
+        //
+        // Avant le garde de l'arrivée déclarée, et non après : une veille dont
+        // l'arrivée est déclarée sort de cette boucle sans rien faire, et resterait
+        // donc ouverte pour toujours sur un créneau annulé.
+        Schedule annule = creneauAnnuleDe(watch);
+        if (annule != null) {
+            log.info("Boucle aller : créneau {} annulé, la veille {} se referme sans demande",
+                annule.getId(), watch.getId());
+            return slotLifecycle.closeForCancelledSlot(annule, now) > 0;
+        }
+
         // Une arrivée déclarée sort de cette boucle, et c'est structurel plutôt
         // qu'un garde-fou. Sans cela, deux choses arrivaient : les demandes
         // « tu y es ? » continuaient de partir à quelqu'un qui venait de dire
@@ -123,5 +176,16 @@ public class WatchOutboundJob {
             return true;
         }
         return false;
+    }
+
+    /**
+     * Le créneau de cette veille s'il est annulé, {@code null} sinon. Même lecture
+     * que dans la boucle retour : relue en base, jamais supposée, et un créneau
+     * introuvable n'est pas « annulé ».
+     */
+    private Schedule creneauAnnuleDe(Watch watch) {
+        return scheduleRepository.findById(watch.getScheduleId())
+            .filter(slot -> slot.getStatus() == SlotStatus.CANCELLED)
+            .orElse(null);
     }
 }
