@@ -59,16 +59,68 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/auth/reset-password").permitAll()
                 // WebSocket
                 .requestMatchers("/ws/**").permitAll()
-                // Swagger / OpenAPI
+                // Swagger / OpenAPI — public PAR CHOIX, et non par omission
+                // (fiche d'audit P-BS-16).
+                //
+                // /v3/api-docs est le contrat que l'équipe mobile relève : son
+                // outil tool/audit_api_vs_spec.py compare la spécification
+                // servie par la production à ce que le client appelle, et c'est
+                // ce qui lui permet de « vérifier plutôt qu'affirmer » comme le
+                // demande son CLAUDE.md. Le fermer rendrait cette vérification
+                // impossible depuis l'extérieur, donc facultative, donc oubliée.
+                //
+                // Ce qu'on accepte en le laissant ouvert : la liste des routes
+                // et la forme des corps est publique. Elle ne contient aucun
+                // secret — ni clé, ni jeton, ni donnée d'utilisateur — et une
+                // route ne devient pas sûre parce que son nom est caché. Toutes
+                // les protections sont ailleurs : ici même, pour l'accès, et
+                // dans les contrôleurs pour les droits.
                 .requestMatchers("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**").permitAll()
                 // Actuator
                 .requestMatchers("/actuator/health").permitAll()
+                // Sondes de disponibilité et de vivacité
+                // (management.endpoint.health.probes.enabled=true). Elles ne
+                // rendent que « status », comme /actuator/health : show-details
+                // vaut never depuis P-BS-16, pour les groupes comme pour la
+                // santé globale. Ouvertes parce qu'un contrôle de santé de
+                // plateforme n'a pas de session — c'est le healthcheckPath de
+                // railway.json.
+                .requestMatchers("/actuator/health/liveness", "/actuator/health/readiness").permitAll()
                 // /actuator/info : la version, l'heure de construction et le commit
                 // déployé. Ouvert parce qu'il sert précisément quand plus rien
                 // d'autre ne répond comme attendu — savoir quel code tourne ne doit
                 // pas dépendre d'une session. Il ne rend que ce que build-info.properties
                 // contient : rien de la configuration, rien de l'environnement.
                 .requestMatchers("/actuator/info").permitAll()
+                // Tout le reste d'actuator : refusé à TOUT LE MONDE, connecté
+                // ou pas (fiche d'audit P-BS-16).
+                //
+                // C'est un deuxième verrou, et il est là pour survivre à
+                // l'erreur qui a créé le défaut. /actuator/metrics était lisible
+                // par n'importe quel compte — y compris un compte créé à
+                // l'instant — non pas parce que quelqu'un l'avait ouvert ici,
+                // mais parce que « metrics » figurait dans
+                // management.endpoints.web.exposure.include et que rien, dans
+                // cette liste-ci, ne le nommait : il retombait sur
+                // anyRequest().authenticated(), et « authentifié » n'est pas
+                // « autorisé ». La liste d'exposition a été corrigée ; ce
+                // denyAll fait qu'une exposition rajoutée demain par
+                // commodité — prometheus, env, heapdump, loggers — reste fermée
+                // sans que personne n'ait à y repenser.
+                //
+                // denyAll et non authenticated : il n'existe aucun rôle
+                // applicatif à qui ces points appartiennent. La collecte des
+                // métriques passe par le port de gestion privé du profil
+                // railway (P-BA-21, D9 option B), qui n'est pas servi par cette
+                // chaîne de filtres — un port de gestion séparé a son propre
+                // contexte, et c'est le réseau privé Railway qui le protège.
+                // Un /actuator/prometheus demandé sur le port public tombe donc
+                // ici, et doit y tomber.
+                //
+                // Placé APRÈS les trois permitAll ci-dessus : les règles se
+                // lisent dans l'ordre, et les inverser fermerait la santé et
+                // le relevé du commit déployé.
+                .requestMatchers("/actuator/**").denyAll()
                 // Public endpoints for categories and activities (read-only)
                 .requestMatchers(HttpMethod.GET, "/api/categories").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/activities").permitAll()
