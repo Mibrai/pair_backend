@@ -254,24 +254,41 @@ public class ActivityService {
         );
     }
 
-    public ActivityDto updateActivityIcon(UUID activityId, String icon) {
+    /**
+     * Le résultat d'un changement d'icône : l'activité après coup, et
+     * <b>l'icône d'avant</b>.
+     *
+     * <p>L'icône d'avant est rendue parce que l'appelant en a besoin pour
+     * décider du sort de l'ancien fichier. {@code activities} est un référentiel
+     * <b>partagé</b> — aucune colonne d'auteur (V3) — donc le remplacement reste
+     * permis à tout compte, mais l'ancien fichier ne peut être effacé que si son
+     * déposant est bien celui qui remplace (fiche P-BS-01, étape 9). Sans cette
+     * valeur, le contrôleur devrait relire l'activité <i>après</i> l'écriture,
+     * quand l'ancienne valeur a déjà disparu.
+     *
+     * <p>La valeur peut aussi être une simple ligature Material
+     * ({@code « sports_soccer »}) : ce n'est alors pas un chemin de fichier, et
+     * {@code MediaFileService} le reconnaît à l'absence du préfixe d'URL.
+     */
+    public record IconChange(String previousIcon, ActivityDto activity) {}
+
+    public IconChange updateActivityIcon(UUID activityId, String icon) {
         Activity activity = activityRepository.findById(activityId)
             .orElseThrow(() -> new ResourceNotFoundException("Activité introuvable."));
+        String previousIcon = activity.getIcon();
         activity.setIcon(icon);
-        return toActivityDto(activityRepository.save(activity));
+        return new IconChange(previousIcon, toActivityDto(activityRepository.save(activity)));
     }
 
     private static final String DEFAULT_ACTIVITY_ICON = "sports";
 
-    public record IconRemovalResult(String previousIcon, ActivityDto activity) {}
-
-    public IconRemovalResult removeActivityIcon(UUID activityId) {
+    public IconChange removeActivityIcon(UUID activityId) {
         Activity activity = activityRepository.findById(activityId)
             .orElseThrow(() -> new ResourceNotFoundException("Activité introuvable."));
         String previousIcon = activity.getIcon();
         activity.setIcon(DEFAULT_ACTIVITY_ICON);
         ActivityDto dto = toActivityDto(activityRepository.save(activity));
-        return new IconRemovalResult(previousIcon, dto);
+        return new IconChange(previousIcon, dto);
     }
 
     private ActivityDto toActivityDto(Activity activity) {

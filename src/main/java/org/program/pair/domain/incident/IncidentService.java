@@ -3,6 +3,8 @@ package org.program.pair.domain.incident;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.incident.dto.CreateIncidentRequest;
 import org.program.pair.domain.incident.dto.IncidentDto;
+import org.program.pair.domain.media.MediaFileService;
+import org.program.pair.domain.media.MediaPurpose;
 import org.program.pair.domain.report.ReportEntityType;
 import org.program.pair.domain.report.ReportReason;
 import org.program.pair.domain.report.ReportService;
@@ -34,6 +36,7 @@ public class IncidentService {
 
     private final IncidentRepository incidentRepository;
     private final ReportService reportService;
+    private final MediaFileService mediaFileService;
 
     public IncidentDto create(UUID userId, CreateIncidentRequest req) {
         // Une cible PERSON bascule dans la modération : on crée d'abord le
@@ -56,10 +59,29 @@ public class IncidentService {
                 .build());
         }
 
+        // La pièce jointe doit désigner un fichier que l'appelant a lui-même
+        // déposé chez nous. Deux dégâts se ferment ici d'un coup :
+        //
+        //  - une URL EXTERNE (« https://evil.tld/... ») était acceptée telle
+        //    quelle et rangée en base ; l'application la chargeait ensuite avec
+        //    son client Dio authentifié, donc avec l'en-tête Authorization, et
+        //    le jeton partait chez un hôte étranger dès le premier affichage.
+        //    C'est le volet serveur de P-MS-01 ;
+        //  - un CHEMIN LOCAL D'UN AUTRE COMPTE était accepté aussi : il
+        //    suffisait de recopier le chemin lu dans une réponse d'API pour
+        //    joindre la photo de quelqu'un d'autre à son propre signalement.
+        //
+        // Le rattachement fixe en outre l'usage à INCIDENT_ATTACHMENT, ce qui
+        // est ce qui permet à la lecture du fichier d'être réservée à son
+        // déposant (P-BS-11) : avant, une pièce jointe était rangée dans
+        // `program_image/` et rigoureusement indiscernable d'une couverture.
+        String attachmentUrl = mediaFileService.attacher(
+            req.attachmentUrl(), userId, MediaPurpose.INCIDENT_ATTACHMENT);
+
         Incident incident = incidentRepository.save(Incident.reported(
             userId, req.target(), req.scheduleId(),
             req.note() == null ? null : req.note().strip(),
-            req.attachmentUrl()));
+            attachmentUrl));
 
         return IncidentDto.from(incident);
     }

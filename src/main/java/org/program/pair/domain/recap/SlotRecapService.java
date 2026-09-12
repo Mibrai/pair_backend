@@ -5,6 +5,8 @@ import org.program.pair.domain.activity.Activity;
 import org.program.pair.domain.activity.Category;
 import org.program.pair.domain.activity.UserActivity;
 import org.program.pair.domain.attendance.Attendance;
+import org.program.pair.domain.media.MediaFileService;
+import org.program.pair.domain.media.MediaPurpose;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotAudience;
@@ -97,6 +99,15 @@ public class SlotRecapService {
     private final HtmlSanitizer sanitizer;
 
     /**
+     * Ce qui empêche une URL étrangère d'entrer sur une carte-souvenir.
+     *
+     * <p>Voir {@link #setMemoryPhoto} : la photo n'est pas téléversée ici, elle
+     * est <i>rattachée</i>, et le rattachement vérifie que le fichier a bien été
+     * déposé chez nous par l'appelant.
+     */
+    private final MediaFileService mediaFileService;
+
+    /**
      * Par où sort {@link SlotRecapOpenedEvent}, et rien d'autre.
      *
      * <p>La carte-souvenir annonce ce qu'elle sait — une carte s'est ouverte —
@@ -175,6 +186,17 @@ public class SlotRecapService {
      * <p>Ce n'est <b>pas</b> un chemin d'upload : le fichier est passé par
      * {@code POST /api/media/upload/image}, le seul qui existe. Doubler ce
      * chemin nous ramènerait les incidents média d'août.
+     *
+     * <p><b>Mais « déjà stocké » doit être vérifié, et ne l'était pas.</b>
+     * L'URL arrivait ici comme une chaîne libre, {@code strip()} puis rangée.
+     * Une adresse externe — {@code https://evil.tld/api/media/files/x.jpg} —
+     * était donc acceptée, et finissait sur une carte-souvenir potentiellement
+     * publique ; l'application charge ces images avec son client Dio
+     * authentifié, si bien que le jeton de la personne partait vers l'hôte
+     * choisi par qui avait posté l'URL. C'est le volet serveur de P-MS-01.
+     * {@code attacher} exige désormais le préfixe du service de fichiers, une
+     * ligne de propriété existante, et un déposant qui soit l'appelant —
+     * sinon 400 {@code MEDIA_URL_INVALID}.
      */
     public SlotRecapDto setMemoryPhoto(UUID userId, UUID scheduleId, String photoUrl, boolean isPublic) {
         Schedule slot = loadSlot(scheduleId);
@@ -187,7 +209,10 @@ public class SlotRecapService {
             .orElseThrow(() -> new ForbiddenException(
                 ErrorCode.RECAP_NOT_ATTENDEE, "Vous n'avez pas confirmé votre présence à ce créneau."));
 
-        attendance.setMemoryPhotoUrl(photoUrl == null || photoUrl.isBlank() ? null : photoUrl.strip());
+        // Une URL nulle ou vide retire le souvenir — attacher rend alors null
+        // sans rien exiger, ce qui préserve ce geste.
+        attendance.setMemoryPhotoUrl(
+            mediaFileService.attacher(photoUrl, userId, MediaPurpose.RECAP_PHOTO));
         // Une photo retirée ne peut pas rester publique.
         attendance.setMemoryIsPublic(attendance.getMemoryPhotoUrl() != null && isPublic);
         attendanceRepository.save(attendance);

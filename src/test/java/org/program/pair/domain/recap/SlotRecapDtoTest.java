@@ -8,6 +8,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
 import org.program.pair.domain.attendance.Attendance;
+import org.program.pair.domain.media.MediaFileService;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotAudience;
 import org.program.pair.domain.recap.dto.NextSlotDto;
@@ -52,6 +53,10 @@ class SlotRecapDtoTest extends RecapTestFixtures {
     @Mock UserRepository userRepository;
     @Mock UserService userService;
     @Mock SlotAudience slotAudience;
+    // Le service rattache la photo de souvenir au lieu de la ranger telle quelle
+    // (P-BS-01/P-MS-01) ; aucun test de cette classe ne passe par setMemoryPhoto,
+    // le mock n'a donc rien à répondre.
+    @Mock MediaFileService mediaFileService;
 
     SlotRecapService service;
 
@@ -59,7 +64,7 @@ class SlotRecapDtoTest extends RecapTestFixtures {
     void setUp() {
         service = new SlotRecapService(recapRepository, vibeVoteRepository, consentRepository,
             attendanceRepository, scheduleRepository, userRepository, userService, slotAudience,
-            new HtmlSanitizer(), event -> { });
+            new HtmlSanitizer(), mediaFileService, event -> { });
 
         when(userService.getPublicProfile(any(), any())).thenAnswer(i -> publicProfile(i.getArgument(0)));
         when(vibeVoteRepository.countByVibeForRecaps(any())).thenReturn(List.of());
