@@ -23,8 +23,6 @@ import org.program.pair.repository.ScheduleRepository;
 import org.program.pair.repository.UserActivityRepository;
 import org.program.pair.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.CommandLineRunner;
-import org.springframework.core.annotation.Order;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 
@@ -36,11 +34,27 @@ import java.time.temporal.TemporalAdjusters;
 import java.util.List;
 import java.util.Random;
 
+/**
+ * <b>Ce seeder n'est plus un {@link org.springframework.boot.CommandLineRunner}</b>, et
+ * c'est le cœur du correctif de la fiche P-BS-02.
+ *
+ * <p>Il l'était, avec {@code @Order(2)} : Spring appelait donc {@code run()} à
+ * <b>chaque</b> démarrage, sans passer par {@link SeedRunner}. Le drapeau
+ * {@code pair.seed.demo-data.enabled} et le garde-fou de profil de {@code SeedRunner}
+ * ne gouvernaient rien — ils étaient décoratifs. C'est ainsi que vingt comptes de
+ * démonstration au mot de passe publié ont été créés en production, alors que
+ * {@code application.properties} porte {@code demo-data.enabled=false} pour tous les
+ * profils : le seul frein était le {@code existsByEmail("demo1@pair.app")} d'en-tête
+ * de {@code run()}, qui cessait d'agir dès qu'on supprimait les comptes.
+ *
+ * <p>Désormais {@code SeedRunner} est le seul appelant, et lui seul décide — d'après le
+ * drapeau, puis d'après le profil. Conséquence voulue : sous un profil de production, ce
+ * corps n'est jamais atteint, donc {@code pair.seed.demo-password} n'y est jamais exigée.
+ */
 @Component
-@Order(2)
 @RequiredArgsConstructor
 @Slf4j
-public class DemoDataSeeder implements CommandLineRunner {
+public class DemoDataSeeder {
 
     private final UserRepository userRepository;
     private final UserActivityRepository userActivityRepository;
@@ -49,6 +63,31 @@ public class DemoDataSeeder implements CommandLineRunner {
     private final ActivityRepository activityRepository;
     private final PasswordEncoder passwordEncoder;
     private final LocalEmbeddingService embeddingService;
+
+    /**
+     * Le mot de passe commun des comptes de démonstration.
+     *
+     * <p><b>Pourquoi il n'est plus écrit ici.</b> Il l'était — {@code encode("…")}
+     * en dur — et il figurait aussi en clair dans trois documents du dépôt, qui
+     * est public. Vingt comptes vérifiés, au mot de passe connu de tous, avaient
+     * été créés en production : quiconque lisait {@code docs/seeds/} pouvait s'y
+     * connecter. Le sortir du code ne suffirait pas si un défaut le remplaçait
+     * dans {@code application.properties} : ce serait le même mot de passe
+     * publié, sous un autre nom de fichier.
+     *
+     * <p><b>Pourquoi un défaut vide malgré tout, et non un placeholder
+     * obligatoire.</b> Ce composant est un {@code @Component} : Spring
+     * l'instancie à chaque démarrage, y compris là où le seed est éteint —
+     * production comprise. Un {@code @Value} sur {@code pair.seed.demo-password} sans
+     * défaut ferait donc échouer le démarrage de la production pour une
+     * propriété dont elle n'a que faire. La valeur est exigée au moment de
+     * s'en servir, dans {@link #run(String...)}, et nulle part ailleurs :
+     * {@code application-dev.properties} la pose, staging la reçoit par la
+     * variable d'environnement {@code PAIR_SEED_DEMO_PASSWORD}, et
+     * {@code application.properties} ne la déclare pas.
+     */
+    @Value("${pair.seed.demo-password:}")
+    private String demoPassword;
 
     @Value("${seed.center-lat:48.8566}")
     private double centerLat;
@@ -61,11 +100,22 @@ public class DemoDataSeeder implements CommandLineRunner {
 
     private static final Random RANDOM = new Random(42); // Seed fixe pour reproductibilité
 
-    @Override
     public void run(String... args) {
         if (userRepository.existsByEmail("demo1@pair.app")) {
             log.info("Demo users already exist, skipping demo data seeding");
             return;
+        }
+
+        // Exigé ici, et pas par un placeholder de @Value : voir demoPassword.
+        // Le refus vaut mieux qu'un repli — un mot de passe de secours inscrit
+        // quelque part serait un mot de passe publié, ce que cette fiche ferme.
+        if (demoPassword == null || demoPassword.isBlank()) {
+            throw new IllegalStateException(
+                "pair.seed.demo-password est absente : les comptes de démonstration ne "
+                + "seront pas créés sans mot de passe fourni par la configuration. "
+                + "Posez PAIR_SEED_DEMO_PASSWORD, ou pair.seed.demo-password dans le "
+                + "profil concerné. Cette valeur n'a volontairement aucun défaut : un "
+                + "défaut dans le dépôt serait un mot de passe publié (fiche P-BS-02).");
         }
 
         log.info("Starting demo data seeding...");
@@ -85,7 +135,7 @@ public class DemoDataSeeder implements CommandLineRunner {
 
                 User user = User.builder()
                     .email(profile.email())
-                    .passwordHash(passwordEncoder.encode("Demo1234!"))
+                    .passwordHash(passwordEncoder.encode(demoPassword))
                     .displayName(profile.displayName())
                     .bio(profile.bio())
                     .location(userLocation)

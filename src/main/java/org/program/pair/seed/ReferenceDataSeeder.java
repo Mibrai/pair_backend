@@ -13,8 +13,6 @@ import org.program.pair.domain.trust.BadgeConditionType;
 import org.program.pair.repository.ActivityRepository;
 import org.program.pair.repository.BadgeRepository;
 import org.program.pair.repository.CategoryRepository;
-import org.springframework.boot.CommandLineRunner;
-import org.springframework.core.annotation.Order;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Component;
 
@@ -23,11 +21,21 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * <b>Ce seeder n'est plus un {@link org.springframework.boot.CommandLineRunner}</b>, pour
+ * la même raison que {@link DemoDataSeeder} (fiche P-BS-02) : Spring l'appelait
+ * directement, en plus de {@link SeedRunner}, de sorte que
+ * {@code pair.seed.reference-data.enabled} ne gouvernait rien.
+ *
+ * <p>Le comportement ne change nulle part : ce drapeau vaut {@code true} dans
+ * {@code application.properties}, donc dans tous les profils, et {@code SeedRunner}
+ * appelle ce seeder dans chacun. Ce qui change, c'est qu'un {@code false} y serait
+ * désormais obéi.
+ */
 @Component
-@Order(1)
 @RequiredArgsConstructor
 @Slf4j
-public class ReferenceDataSeeder implements CommandLineRunner {
+public class ReferenceDataSeeder {
 
     private final CategoryRepository categoryRepository;
     private final ActivityRepository activityRepository;
@@ -35,7 +43,6 @@ public class ReferenceDataSeeder implements CommandLineRunner {
     private final LocalEmbeddingService embeddingService;
     private final ObjectMapper objectMapper;
 
-    @Override
     public void run(String... args) throws Exception {
         log.info("=== [ReferenceDataSeeder] Démarrage ===");
         seedCategories();

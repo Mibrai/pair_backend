@@ -7,6 +7,7 @@ import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.program.pair.config.Profils;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
@@ -14,16 +15,11 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.security.SecureRandom;
 import java.util.Date;
-import java.util.Set;
 import java.util.UUID;
 
 @Component
 @Slf4j
 public class JwtTokenProvider {
-
-    /** Profils sous lesquels l'absence de clé est une erreur de démarrage. */
-    private static final Set<String> PROFILS_DE_DEPLOIEMENT =
-        Set.of("prod", "railway", "staging");
 
     /**
      * Le claim qui dit à quoi sert un jeton, et la seule valeur qu'il prenne.
@@ -82,18 +78,19 @@ public class JwtTokenProvider {
             return;
         }
 
-        for (String profil : environment.getActiveProfiles()) {
-            if (PROFILS_DE_DEPLOIEMENT.contains(profil)) {
-                throw new IllegalStateException("""
-                    JWT_SECRET est absente sous un profil de déploiement.
+        // Profils.DEPLOIEMENT, et non Profils.PRODUCTION : staging compris. Une
+        // clé éphémère y serait tout aussi contournable qu'en production, et
+        // personne ne lit le journal de démarrage d'un environnement déployé.
+        if (Profils.actif(environment, Profils.DEPLOIEMENT)) {
+            throw new IllegalStateException("""
+                JWT_SECRET est absente sous un profil de déploiement.
 
-                    Cette clé signe les jetons d'accès. Sans elle, le serveur \
-                    refuse de démarrer plutôt que de se rabattre sur une clé de \
-                    repli : ce dépôt est public, une clé publiée laisserait forger \
-                    un jeton pour n'importe quel compte.
+                Cette clé signe les jetons d'accès. Sans elle, le serveur \
+                refuse de démarrer plutôt que de se rabattre sur une clé de \
+                repli : ce dépôt est public, une clé publiée laisserait forger \
+                un jeton pour n'importe quel compte.
 
-                    Posez JWT_SECRET, par exemple « openssl rand -base64 48 ».""");
-            }
+                Posez JWT_SECRET, par exemple « openssl rand -base64 48 ».""");
         }
 
         byte[] ephemere = new byte[48];

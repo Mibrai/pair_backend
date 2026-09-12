@@ -2,10 +2,13 @@ package org.program.pair.seed;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
+import org.program.pair.config.Profils;
+import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.Arrays;
 
 /**
  * Utility class to reset demo data in dev/staging environments.
@@ -21,8 +24,18 @@ public class ResetDemoDataCommand {
 
     private final JdbcTemplate jdbcTemplate;
 
-    @Value("${spring.profiles.active:default}")
-    private String activeProfile;
+    /**
+     * Les profils actifs, demandés à Spring et non déduits d'une chaîne.
+     *
+     * <p>La garde lisait la propriété {@code spring.profiles.active} et la
+     * comparait entière à {@code "prod"} puis {@code "production"}. Deux trous
+     * dans ce raisonnement, et le même que celui de la fiche P-BS-02 : un profil
+     * actif n'apparaît pas forcément dans cette propriété, et la production de
+     * ce projet s'appelle {@code railway}, que la comparaison ne reconnaissait
+     * pas. Une chaîne {@code "railway"} passait donc la garde, et cette commande
+     * supprime des lignes.
+     */
+    private final Environment environment;
 
     /**
      * Resets all demo data by deleting demo users and their associated data.
@@ -31,21 +44,24 @@ public class ResetDemoDataCommand {
      * - Logs warnings before and after deletion
      * - Deletes data in proper order to respect foreign key constraints
      *
-     * @throws IllegalStateException if attempted in production environment
+     * @throws IllegalStateException if attempted under a production profile
+     *                               ({@link Profils#PRODUCTION})
      */
     @Transactional
     public void resetDemoData() {
-        // SAFETY CHECK: Never allow this in production
-        if ("prod".equalsIgnoreCase(activeProfile) || "production".equalsIgnoreCase(activeProfile)) {
+        // SAFETY CHECK: Never allow this in production (Profils.PRODUCTION)
+        String profilDeProduction = Profils.premierProfilActif(environment, Profils.PRODUCTION);
+        if (profilDeProduction != null) {
             throw new IllegalStateException(
                 "SECURITY VIOLATION: Cannot reset demo data in production environment! " +
-                "Active profile: " + activeProfile
+                "Profil de production actif : " + profilDeProduction +
+                " (profils de production : " + Profils.PRODUCTION + ")"
             );
         }
 
         log.warn("========================================");
         log.warn("RESET DEMO DATA - Starting deletion process");
-        log.warn("Active profile: {}", activeProfile);
+        log.warn("Active profiles: {}", Arrays.toString(environment.getActiveProfiles()));
         log.warn("Target: All users with email like 'demo%@pair.app'");
         log.warn("========================================");
 
