@@ -5,7 +5,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.guardian.ConsentState;
 import org.program.pair.domain.guardian.Guardian;
 import org.program.pair.domain.incident.Incident;
-import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.email.GabaritEmail;
 import org.program.pair.domain.outbox.OutboxMessage;
@@ -22,6 +21,7 @@ import org.program.pair.repository.WatchEventRepository;
 import org.program.pair.repository.WatchRepository;
 import org.program.pair.shared.security.ShareToken;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -66,7 +66,13 @@ public class WatchEscalationService {
      */
     private final GabaritEmail gabarit;
     private final OutboxMessageRepository outboxRepository;
-    private final NotificationService notificationService;
+
+    /**
+     * Rien ne part d'ici en direct : tout ce qui s'adresse à quelqu'un passe par
+     * un {@link WatchNotificationDemandee}, que {@link WatchNotificationListener}
+     * fait partir après le commit. Voir l'événement pour le pourquoi.
+     */
+    private final ApplicationEventPublisher eventPublisher;
     private final org.program.pair.repository.IncidentRepository incidentRepository;
 
     @Value("${pair.public.base-url:https://lien.meetdo.fun}")
@@ -90,9 +96,10 @@ public class WatchEscalationService {
 
     /** Un rappel de retour à la personne veillée. Push time-sensitive, inscrit à la chronologie. */
     public void sendReminder(Watch watch) {
-        notificationService.notify(watch.getUserId(), NotificationType.WATCH_RETURN_REMINDER,
+        eventPublisher.publishEvent(WatchNotificationDemandee.parLHorloge(
+            watch.getUserId(), NotificationType.WATCH_RETURN_REMINDER,
             Map.of("watchId", watch.getId().toString(),
-                   "deadlineAt", watch.getDeadlineAt().toString()));
+                   "deadlineAt", watch.getDeadlineAt().toString())));
         inscrire(watch.getId(), WatchEventType.REMINDER_SENT, Instant.now());
     }
 
@@ -121,16 +128,18 @@ public class WatchEscalationService {
      * serait du bruit.
      */
     public void sendArrivalConfirmed(Watch watch) {
-        notificationService.notify(watch.getUserId(), NotificationType.WATCH_ARRIVAL_CONFIRMED,
+        eventPublisher.publishEvent(WatchNotificationDemandee.parLHorloge(
+            watch.getUserId(), NotificationType.WATCH_ARRIVAL_CONFIRMED,
             Map.of("watchId", watch.getId().toString(),
                    "scheduleId", watch.getScheduleId().toString(),
-                   "deadlineAt", watch.getDeadlineAt().toString()));
+                   "deadlineAt", watch.getDeadlineAt().toString())));
     }
 
     /** Une demande « tu y es ? » à la personne, sur le trajet aller. */
     public void sendArrivalPrompt(Watch watch) {
-        notificationService.notify(watch.getUserId(), NotificationType.WATCH_ARRIVAL_PROMPT,
-            Map.of("watchId", watch.getId().toString()));
+        eventPublisher.publishEvent(WatchNotificationDemandee.parLHorloge(
+            watch.getUserId(), NotificationType.WATCH_ARRIVAL_PROMPT,
+            Map.of("watchId", watch.getId().toString())));
         inscrire(watch.getId(), WatchEventType.ARRIVAL_PROMPTED, Instant.now());
     }
 
@@ -254,11 +263,12 @@ public class WatchEscalationService {
         Schedule slot = scheduleRepository.findById(watch.getScheduleId()).orElse(null);
         UUID organisateur = organisateurDe(slot);
         if (organisateur != null && !organisateur.equals(watch.getUserId())) {
-            notificationService.notify(organisateur, NotificationType.WATCH_LOST_ORGANIZER,
+            eventPublisher.publishEvent(WatchNotificationDemandee.parLHorloge(
+                organisateur, NotificationType.WATCH_LOST_ORGANIZER,
                 Map.of("watchId", watch.getId().toString(),
                        "personne", ctx.prenomNom(),
                        "heure", watch.getOccurrenceStartsAt() != null
-                           ? watch.getOccurrenceStartsAt().toString() : ""));
+                           ? watch.getOccurrenceStartsAt().toString() : "")));
         }
 
         // L'incident, jamais une absence.
@@ -451,8 +461,9 @@ public class WatchEscalationService {
 
         if (guardian.isMember()) {
             // Contact qui a un compte : alerte in-app, plus un e-mail à son adresse.
-            notificationService.notify(guardian.getMemberId(), NotificationType.WATCH_GUARDIAN_ALERT,
-                Map.of("watchId", watchId.toString(), "lien", ctx.lienStatut()));
+            eventPublisher.publishEvent(WatchNotificationDemandee.parLHorloge(
+                guardian.getMemberId(), NotificationType.WATCH_GUARDIAN_ALERT,
+                Map.of("watchId", watchId.toString(), "lien", ctx.lienStatut())));
             boolean parCourrier = userRepository.findById(guardian.getMemberId())
                 .map(User::getEmail)
                 .filter(e -> e != null && !e.isBlank())
