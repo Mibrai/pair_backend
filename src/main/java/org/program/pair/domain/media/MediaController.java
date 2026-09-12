@@ -8,13 +8,11 @@ import org.program.pair.shared.exception.ResourceNotFoundException;
 import org.program.pair.shared.security.UserPrincipal;
 import org.springframework.core.io.InputStreamResource;
 import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
-import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -115,18 +113,27 @@ public class MediaController {
         }
     }
 
-    @DeleteMapping("/files/{*path}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteFile(@AuthenticationPrincipal UserPrincipal principal, @PathVariable String path) {
-        String filename = path.startsWith("/") ? path.substring(1) : path;
-        try {
-            storageService.delete(filename);
-            log.info("User {} deleted file: {}", principal.getId(), filename);
-        } catch (IOException e) {
-            log.error("Error deleting file: {}", filename, e);
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Could not delete file");
-        }
-    }
+    // Il n'y a volontairement plus de DELETE /api/media/files/** ici.
+    //
+    // La route existait et n'a jamais été appelée, ni par l'application, ni par
+    // un test. Elle passait le chemin reçu à storageService.delete sans rien
+    // vérifier d'autre qu'un jeton valide : l'appelant ne servait qu'à écrire la
+    // ligne de journal. Or les chemins de fichiers sont publics — ils circulent
+    // dans les DTO (avatar d'un profil, image d'un programme, pièce jointe d'un
+    // signalement) — donc n'importe quel compte authentifié pouvait effacer le
+    // fichier de n'importe qui, y compris une pièce jointe de signalement.
+    //
+    // La suppression n'est pas « à sécuriser » ici, car rien sur le disque ne
+    // dit qui a déposé quoi : LocalStorageService.store ne garde pas d'auteur,
+    // et l'identifiant qu'il reçoit est parfois celui d'un programme ou d'une
+    // activité. Une garde d'autorisation n'aurait donc eu personne à comparer.
+    // La table de propriété des médias, et le service qui l'interroge avant de
+    // supprimer, viennent au lot suivant (fiche P-BS-01, partie B).
+    //
+    // En attendant, un DELETE sur ce motif rend 405 : le GET reste la seule
+    // méthode déclarée. Les suppressions légitimes passent par les routes qui
+    // connaissent le propriétaire de la ressource — DELETE /api/users/me/avatar
+    // pour son propre avatar, par exemple.
 
     private MediaType resolveContentType(String filename) {
         int lastDot = filename.lastIndexOf('.');
