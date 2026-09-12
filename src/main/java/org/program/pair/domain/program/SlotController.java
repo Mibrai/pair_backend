@@ -32,6 +32,24 @@ public class SlotController {
     private final SlotService slotService;
     private final SlotCancellationService slotCancellationService;
 
+    /**
+     * Le fil « autour de moi » — ce à quoi je peux encore me joindre.
+     *
+     * <p><b>Le fil borne le début</b>, là où {@code /slots/mine?upcoming=true}
+     * borne la fin (voir {@link #getMySlots}) : {@code starts_at BETWEEN :from
+     * AND :to} dans {@code ScheduleRepository.OPEN_SLOTS_VISIBLE_BASE}. Les deux
+     * règles sont justes et ne répondent pas à la même question — « à quoi
+     * puis-je me joindre » n'a pas de présent en cours, « mes engagements » en a
+     * un. Un créneau commencé disparaît donc du fil et reste dans mes créneaux.
+     *
+     * <p>Un créneau annulé n'y figure jamais : le prédicat de statut du fil ne
+     * retient que {@code OPEN} et {@code FULL}.
+     */
+    @Operation(summary = "Les créneaux autour de moi",
+        description = "Ne montre que ce qui **n'a pas commencé** : la fenêtre from/to "
+            + "porte sur le début des séances. Un créneau en cours n'y est plus, alors "
+            + "qu'il reste dans GET /api/slots/mine jusqu'à sa fin. Les créneaux annulés "
+            + "et terminés en sont absents.")
     @GetMapping("/feed")
     public List<SlotFeedItemDto> getFeed(
             @AuthenticationPrincipal UserPrincipal principal,
@@ -98,8 +116,16 @@ public class SlotController {
     @Operation(summary = "Rejoindre un créneau ouvert",
         description = "Même règle de non-chevauchement et même enveloppe de refus que "
             + "POST /api/programs/{programId}/join : le chemin d'entrée ne change pas ce "
-            + "qui est autorisé.")
+            + "qui est autorisé. La liste ordonnée des refus est désormais écrite une "
+            + "seule fois pour les deux routes (SlotEntryGuard) — blocage, propre "
+            + "créneau, ouverture aux partenaires, statut, séance commencée, capacité. "
+            + "La frontière du « trop tard » est le **début** de la séance.")
     @ApiResponse(responseCode = "201", description = "Participation enregistrée")
+    @ApiResponse(responseCode = "400",
+        description = "Créneau n'acceptant plus de participants (SLOT_NOT_ACCEPTING_PARTICIPANTS, "
+            + "ce qui couvre annulé et terminé), déjà commencé (SLOT_ALREADY_STARTED), "
+            + "fermé aux partenaires (SLOT_NOT_OPEN_TO_PARTNERS), complet (SLOT_FULL), "
+            + "son propre créneau (SLOT_OWN_SLOT) ou organisateur bloqué (USER_BLOCKED)")
     @ApiResponse(responseCode = "409", description = "Chevauchement d'agenda (SCHEDULE_CONFLICT)",
         content = @Content(schema = @Schema(implementation = ScheduleConflictResponse.class)))
     public SlotFeedItemDto join(
@@ -118,6 +144,41 @@ public class SlotController {
         slotService.leaveSlot(principal.getId(), scheduleId);
     }
 
+    /**
+     * Mes créneaux — ceux que j'héberge et ceux que j'ai rejoints.
+     *
+     * <p><b>« À venir » se mesure sur la fin, pas sur le début</b>, depuis le
+     * commit {@code 1b52d98} du 05/09/2026. Un créneau commencé reste donc dans
+     * cette liste jusqu'à ce qu'il soit réellement terminé : c'est le moment où
+     * l'on ouvre l'application pour retrouver l'adresse, et le filtre précédent,
+     * porté sur {@code startsAt}, la retirait précisément là (mesuré le 03/09 :
+     * créneau commencé depuis 45 minutes absent, créneau à +2 h présent). La
+     * convention de fin est celle de {@code SlotTiming} — déclarée, sinon deux
+     * heures.
+     *
+     * <p><b>Deux frontières différentes, et les deux sont justes.</b> Le fil
+     * ({@code GET /slots/feed}) et l'inscription ({@code POST
+     * /slots/{id}/join}, {@code POST /slots/{id}/waitlist}) ferment au
+     * <b>début</b> : on ne se joint pas à une séance commencée. Cette liste-ci
+     * ferme à la <b>fin</b> : on a encore besoin de ce à quoi on participe. Une
+     * documentation qui n'en décrirait qu'une des deux ferait passer l'autre pour
+     * un défaut.
+     *
+     * <p><b>Un créneau annulé reste dans la liste</b> tant que sa date n'est pas
+     * passée — on doit pouvoir ouvrir ce qu'annonce la notification — et se
+     * signale par {@code status = CANCELLED}, {@code cancelledAt} et
+     * {@code cancellationReason}. Son adresse exacte, en revanche, n'est plus
+     * rendue : voir {@code SlotAddressVisibility}.
+     */
+    @Operation(summary = "Mes créneaux, hébergés et rejoints",
+        description = "upcoming=true (défaut) garde ce qui n'est **pas encore terminé** — "
+            + "un créneau commencé y figure jusqu'à sa fin, la fin conventionnelle étant "
+            + "startsAt + 2 h quand endsAt n'est pas déclarée. C'est le fil et "
+            + "l'inscription qui ferment au début, pas cette liste. upcoming=false rend "
+            + "aussi le passé. Les créneaux annulés y figurent encore tant que leur date "
+            + "n'est pas passée, reconnaissables à status=CANCELLED, cancelledAt et "
+            + "cancellationReason ; leur adresse exacte et leurs coordonnées ne sont plus "
+            + "rendues.")
     @GetMapping("/mine")
     public List<SlotFeedItemDto> getMySlots(
             @AuthenticationPrincipal UserPrincipal principal,
@@ -138,7 +199,16 @@ public class SlotController {
         description = "Accepte les créneaux complets — c'est exactement ceux pour "
             + "lesquels cette route existe. Attendre n'est pas s'engager : on peut "
             + "patienter sur plusieurs créneaux qui se chevauchent, et c'est au moment "
-            + "de la promotion que le conflit d'agenda est vérifié.")
+            + "de la promotion que le conflit d'agenda est vérifié. **Un créneau qui "
+            + "n'est pas complet refuse** (SLOT_NOT_FULL) : il n'y a rien à y attendre, "
+            + "et l'app doit appeler POST /join à la place. **Un créneau annulé rend "
+            + "404**, comme s'il n'existait plus.")
+    @ApiResponse(responseCode = "201", description = "Place en file enregistrée")
+    @ApiResponse(responseCode = "400",
+        description = "Créneau non complet (SLOT_NOT_FULL), déjà commencé "
+            + "(SLOT_ALREADY_STARTED), fermé aux partenaires (SLOT_NOT_OPEN_TO_PARTNERS), "
+            + "son propre créneau (SLOT_OWN_SLOT) ou organisateur bloqué (USER_BLOCKED)")
+    @ApiResponse(responseCode = "404", description = "Créneau introuvable ou annulé")
     public SlotFeedItemDto joinWaitlist(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID scheduleId) {

@@ -16,7 +16,6 @@ import org.program.pair.domain.program.dto.SlotBoundsResponse;
 import org.program.pair.domain.program.dto.SlotFeedItemDto;
 import org.program.pair.domain.program.dto.SlotFeedRequest;
 import org.program.pair.domain.program.dto.SlotParticipantDto;
-import org.program.pair.domain.block.BlockFilterService;
 import org.program.pair.domain.user.User;
 import org.program.pair.domain.user.UserService;
 import org.program.pair.domain.user.dto.UserPublicDto;
@@ -77,7 +76,13 @@ public class SlotService {
     private final ChatService chatService;
     private final NotificationService notificationService;
     private final ScheduleConflictDetector conflictDetector;
-    private final BlockFilterService blockFilterService;
+    /**
+     * La liste ordonnée des refus d'entrée, partagée avec
+     * {@code ProgramEnrollmentService} : voir {@link SlotEntryGuard}. Le blocage
+     * en fait partie, si bien que ce service ne consulte plus lui-même
+     * {@code BlockFilterService} — la règle et son ordre vivent d'un seul côté.
+     */
+    private final SlotEntryGuard entryGuard;
     private final HtmlSanitizer sanitizer;
     private final ParticipantCounter participantCounter;
     private final WaitlistPromoter waitlistPromoter;
@@ -278,32 +283,13 @@ public class SlotService {
 
         User host = slot.getProgram().getUserActivity().getUser();
 
-        // En tête de la chaîne, et pas ailleurs : les refus qui suivent nomment
-        // précisément ce qui cloche, et l'un d'eux rendu à une personne bloquée
-        // lui apprendrait que le créneau existe, qu'il est ouvert, et qu'il a de
-        // la place.
-        if (blockFilterService.blockedBy(userId, host.getId())) {
-            throw new ValidationException(ErrorCode.USER_BLOCKED,
-                "Vous avez bloqué l'organisateur de ce créneau.");
-        }
-        if (blockFilterService.blocked(userId, host.getId())) {
-            // Bloqué par l'hôte : le créneau a déjà disparu de son fil, il ne
-            // doit pas réapparaître par son identifiant.
-            throw new ResourceNotFoundException("Créneau introuvable.");
-        }
+        // Blocage sous ses deux formes, propre créneau, ouverture aux
+        // partenaires, statut, séance commencée — dans cet ordre, et écrits une
+        // seule fois pour les deux portes d'entrée. Ce bloc vivait ici et nulle
+        // part ailleurs, alors que POST /programs/{id}/join ouvre la même
+        // séance : voir SlotEntryGuard.
+        entryGuard.assertMayEnter(userId, slot, Instant.now(), SlotEntryGuard.Door.SLOT);
 
-        if (host.getId().equals(userId)) {
-            throw new ValidationException(ErrorCode.SLOT_OWN_SLOT, "Vous ne pouvez pas rejoindre votre propre créneau.");
-        }
-        if (!Boolean.TRUE.equals(slot.getIsOpenToPartners())) {
-            throw new ValidationException(ErrorCode.SLOT_NOT_OPEN_TO_PARTNERS, "Ce créneau n'est pas ouvert aux partenaires.");
-        }
-        if (slot.getStatus() != SlotStatus.OPEN) {
-            throw new ValidationException(ErrorCode.SLOT_NOT_ACCEPTING_PARTICIPANTS, "Ce créneau n'accepte plus de participants.");
-        }
-        if (slot.getStartsAt().isBefore(Instant.now())) {
-            throw new ValidationException(ErrorCode.SLOT_ALREADY_STARTED, "Ce créneau est déjà passé.");
-        }
         // Sur l'ÉTAT de la participation, jamais sur l'existence de sa ligne.
         //
         // Le contrôle portait sur existsByScheduleIdAndUserId, donc sur la
@@ -338,10 +324,11 @@ public class SlotService {
             throw new BusinessException(ErrorCode.SLOT_ALREADY_WAITLISTED,
                 "Vous êtes déjà en liste d'attente sur ce créneau.");
         }
-        if (slot.getMaxParticipants() != null
-                && scheduleRepository.countConfirmedParticipants(scheduleId) >= slot.getMaxParticipants()) {
-            throw new ValidationException(ErrorCode.SLOT_FULL, "Ce créneau est complet.");
-        }
+        // Ici et pas dans la garde : après les deux réponses ci-dessus. Un
+        // créneau à une place rejoint par une personne est complet à cause
+        // d'elle, et « ce créneau est complet » serait une drôle de réponse à
+        // celle qui l'occupe. Voir SlotEntryGuard.assertHasRoom.
+        entryGuard.assertHasRoom(slot);
 
         // Même règle et même enveloppe que POST /programs/{id}/join : le chemin
         // d'entrée ne doit pas changer ce qui est autorisé. Vérifiée en dernier,
@@ -460,32 +447,20 @@ public class SlotService {
      * et en attente sur le même créneau n'aurait aucun sens.
      *
      * <p>Contrairement à {@code joinSlot}, un créneau {@code FULL} est accepté :
-     * c'est exactement celui pour lequel cette route existe.
+     * c'est exactement celui pour lequel cette route existe. Un créneau qui
+     * <b>n'est pas</b> complet, en revanche, se refuse : voir
+     * {@link SlotEntryGuard#assertFull}.
      */
     public SlotFeedItemDto joinWaitlist(UUID userId, UUID scheduleId) {
         Schedule slot = scheduleRepository.lockById(scheduleId)
             .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
 
-        User host = slot.getProgram().getUserActivity().getUser();
-
-        if (blockFilterService.blockedBy(userId, host.getId())) {
-            throw new ValidationException(ErrorCode.USER_BLOCKED,
-                "Vous avez bloqué l'organisateur de ce créneau.");
-        }
-        if (blockFilterService.blocked(userId, host.getId())) {
-            throw new ResourceNotFoundException("Créneau introuvable.");
-        }
-        if (host.getId().equals(userId)) {
-            throw new ValidationException(ErrorCode.SLOT_OWN_SLOT,
-                "Vous ne pouvez pas vous mettre en attente de votre propre créneau.");
-        }
-        if (!Boolean.TRUE.equals(slot.getIsOpenToPartners())) {
-            throw new ValidationException(ErrorCode.SLOT_NOT_OPEN_TO_PARTNERS,
-                "Ce créneau n'est pas ouvert aux partenaires.");
-        }
-        if (slot.getStartsAt().isBefore(Instant.now())) {
-            throw new ValidationException(ErrorCode.SLOT_ALREADY_STARTED, "Ce créneau est déjà passé.");
-        }
+        // La même chaîne que joinSlot, aux deux différences que la file
+        // implique : un créneau FULL est accepté, un créneau annulé rend
+        // introuvable. Rien de tout cela n'était vérifié ici sauf le blocage,
+        // le propre créneau, l'ouverture et le début — ni le statut, ni la
+        // capacité (P-BL-14 étape 4).
+        entryGuard.assertMayWait(userId, slot, Instant.now());
 
         SlotParticipation participation = participationRepository
             .findByScheduleIdAndUserId(scheduleId, userId)
@@ -501,6 +476,13 @@ public class SlotService {
                 "Vous avez déjà rejoint ce créneau.");
         }
         if (participation.getStatus() != ParticipationStatus.WAITLISTED) {
+            // On n'attend que derrière un créneau réellement complet, et c'est
+            // vérifié ici plutôt que dans la garde : après « vous y êtes déjà »
+            // et sans toucher au cas de celui qui attend déjà, dont l'appel
+            // reste idempotent. Le refus est un renvoi — l'app doit appeler
+            // join — et non une impasse.
+            entryGuard.assertFull(slot);
+
             participation.setStatus(ParticipationStatus.WAITLISTED);
             participation.setWithdrawnAt(null);
             participation.setWaitlistPosition(
@@ -559,6 +541,20 @@ public class SlotService {
             .toList();
     }
 
+    /**
+     * Mes créneaux, hébergés et rejoints.
+     *
+     * <p><b>« À venir » se mesure sur la fin, jamais sur le début</b>, et
+     * <b>un créneau annulé y reste</b> tant que sa date n'est pas passée : on
+     * doit pouvoir ouvrir ce qu'annonce la notification d'annulation, et l'app
+     * le barre. Il est reconnaissable à {@code status}, {@code cancelledAt} et
+     * {@code cancellationReason} — trois champs que ce DTO ne portait pas, si
+     * bien qu'un créneau annulé était strictement indiscernable d'un autre. Son
+     * adresse exacte, elle, n'est plus rendue ({@link SlotAddressVisibility}).
+     *
+     * <p>Les deux frontières du produit, côte à côte : ici la fin, dans le fil et
+     * à l'inscription le début. Voir {@code SlotController.getMySlots}.
+     */
     @Transactional(readOnly = true)
     public List<SlotFeedItemDto> getMySlots(UUID userId, boolean upcomingOnly) {
         List<Schedule> hosted = scheduleRepository.findHostedOpenSlots(userId);
@@ -740,6 +736,13 @@ public class SlotService {
             slot.getRecurrenceRule(),
             sessionDurationMinutes(slot, program),
             slot.getCreatedAt(),
+            // Le statut, l'instant et le motif d'annulation : trois champs que
+            // le DTO ne portait pas, et sans lesquels un créneau annulé était
+            // indiscernable d'un créneau normal — ni dans « Mes créneaux », ni
+            // sur sa fiche. Les dates ne disent pas l'annulation.
+            slot.getStatus() != null ? slot.getStatus().name() : null,
+            slot.getCancelledAt(),
+            slot.getCancellationReason(),
             slot.getMaxParticipants(),
             slot.getParticipantCount(),
             slot.getIsOpenToPartners(),

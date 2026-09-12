@@ -1,6 +1,5 @@
 package org.program.pair.domain.program;
 
-import org.program.pair.domain.block.BlockFilterService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -19,6 +18,7 @@ import org.program.pair.repository.ScheduleRepository;
 import org.program.pair.repository.SlotParticipationRepository;
 import org.program.pair.repository.UserRepository;
 import org.program.pair.shared.exception.BusinessException;
+import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.exception.ValidationException;
 import org.program.pair.shared.sanitizer.HtmlSanitizer;
 
@@ -35,6 +35,33 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
+/**
+ * Ce qui appartient encore à {@code SlotService} seul.
+ *
+ * <p><b>Deux tests de refus ont quitté cette classe</b>, et il faut dire où ils
+ * sont allés. P-BL-09 a sorti les refus d'entrée de {@code joinSlot} pour les
+ * porter dans {@link SlotEntryGuard}, commune aux deux portes d'inscription
+ * ({@code POST /slots/{id}/join} et {@code POST /programs/{id}/join}). Or une
+ * règle qui vaut pour deux chemins ne se vérifie pas dans le test d'un seul :
+ * ici, la garde est un bouchon, et n'importe quel refus qu'on lui ferait lever
+ * ne prouverait plus que {@code joinSlot} propage ce qu'on vient d'y mettre.
+ *
+ * <ul>
+ *   <li>« l'hôte ne rejoint pas son propre créneau » ({@code SLOT_OWN_SLOT}) est
+ *       prouvé en HTTP contre une vraie base par
+ *       {@code BusinessErrorCodeIntegrationTest.rejoindreSonPropreCreneau_doitRenvoyerUnCodeDistinctDuDoubleJoin} ;</li>
+ *   <li>« une séance commencée ne se rejoint plus » ({@code SLOT_ALREADY_STARTED})
+ *       l'est par {@code SlotRejoinIntegrationTest} sur la porte créneau, et par
+ *       {@code ProgramJoinGuardsIntegrationTest.uneSeanceDejaCommencee_doitEtreRefusee_parLesDeuxPortes}
+ *       sur <b>les deux</b> portes — ce que cette classe-ci ne pouvait pas faire.</li>
+ * </ul>
+ *
+ * <p>Ce qui reste vrai à ce niveau, et qui est testé ici : que {@code joinSlot}
+ * <b>consulte</b> la garde, avec les bons arguments et la bonne porte, et n'écrit
+ * rien si elle refuse ({@link #joinSlot_doitConsulterLaGardeDEntree_etNeRienEcrireSiElleRefuse}) ;
+ * et les règles qui n'ont jamais quitté ce service — l'état de la participation,
+ * la réactivation d'une ligne désistée, l'ouverture de la conversation.
+ */
 @ExtendWith(MockitoExtension.class)
 class SlotServiceTest {
 
@@ -49,8 +76,6 @@ class SlotServiceTest {
     @Mock ScheduleConflictDetector conflictDetector;
     @Mock HtmlSanitizer sanitizer;
 
-    @Mock BlockFilterService blockFilterService;
-
     // Non stubbés, pour la même raison que conflictDetector : ces deux-là écrivent
     // sur le créneau et sur la file, et ce que cette classe vérifie — les refus
     // d'entrée, et l'ouverture de conversation — se joue avant ou après eux. Ils
@@ -59,30 +84,60 @@ class SlotServiceTest {
     @Mock ParticipantCounter participantCounter;
     @Mock WaitlistPromoter waitlistPromoter;
 
+    // Même raison, et le commentaire ci-dessus avait décrit le piège d'avance :
+    // P-BL-09 a sorti les refus d'entrée de joinSlot pour les porter dans une garde
+    // commune aux deux portes d'inscription, et sans cette déclaration les six tests
+    // de cette classe tombaient sur « this.entryGuard is null ».
+    //
+    // Bouchon muet par défaut, comme conflictDetector : « la garde ne refuse rien »
+    // est le bon décor pour les chemins heureux de cette classe. Un seul test la
+    // fait lever, et c'est celui de la délégation — les règles qu'elle porte se
+    // prouvent ailleurs (voir la javadoc de la classe).
+    @Mock SlotEntryGuard entryGuard;
+
+    // BlockFilterService a disparu des collaborateurs de SlotService avec P-BL-09 :
+    // le blocage est en tête de SlotEntryGuard, qui le porte pour les deux portes.
+    // Le mock a été retiré plutôt que laissé inerte — un @Mock qui ne s'injecte
+    // nulle part annonce une dépendance qui n'existe plus.
+
     @InjectMocks
     SlotService slotService;
 
+    /**
+     * La délégation, et elle seule : le créneau verrouillé est soumis à la garde,
+     * sous la porte {@code SLOT}, et un refus arrête tout avant la première
+     * écriture.
+     *
+     * <p><b>Ce que ce test ne prouve pas, et pourquoi c'est assumé.</b> Il ne dit
+     * rien de ce que la garde refuse — le refus est celui qu'on vient de lui faire
+     * lever. Les règles elles-mêmes se prouvent contre une vraie base, sur les
+     * deux portes, et la javadoc de cette classe dit où. Ce qui reste ici est le
+     * seul fait qui appartienne encore à {@code joinSlot} : qu'il demande, à cet
+     * endroit-là de la méthode, et qu'il n'écrive rien si la réponse est non.
+     *
+     * <p>{@code verifyNoInteractions} sur les trois collaborateurs d'écriture est
+     * la vraie assertion : un jour où quelqu'un déplacerait la garde après la
+     * création de la participation, l'exception continuerait de remonter — et
+     * l'appelant aurait, lui, une ligne de trop.
+     */
     @Test
-    void joinSlot_devraitRejeter_hoteRejoignantSonProprCreneau() {
+    void joinSlot_doitConsulterLaGardeDEntree_etNeRienEcrireSiElleRefuse() {
         UUID hostId = UUID.randomUUID();
+        UUID joinerId = UUID.randomUUID();
         Schedule slot = buildOpenSlot(hostId, Instant.now().plus(1, ChronoUnit.DAYS));
         when(scheduleRepository.lockById(slot.getId())).thenReturn(Optional.of(slot));
 
-        assertThatThrownBy(() -> slotService.joinSlot(hostId, slot.getId(), new JoinSlotRequest(null)))
-            .isInstanceOf(ValidationException.class)
-            .hasMessageContaining("propre créneau");
-    }
-
-    @Test
-    void joinSlot_devraitRejeter_creneauDejaPasse() {
-        UUID hostId = UUID.randomUUID();
-        UUID joinerId = UUID.randomUUID();
-        Schedule slot = buildOpenSlot(hostId, Instant.now().minus(1, ChronoUnit.DAYS));
-        when(scheduleRepository.lockById(slot.getId())).thenReturn(Optional.of(slot));
+        doThrow(new ValidationException(ErrorCode.SLOT_NOT_ACCEPTING_PARTICIPANTS,
+                "refus posé par le test, pas par la règle"))
+            .when(entryGuard).assertMayEnter(eq(joinerId), eq(slot), any(Instant.class),
+                eq(SlotEntryGuard.Door.SLOT));
 
         assertThatThrownBy(() -> slotService.joinSlot(joinerId, slot.getId(), new JoinSlotRequest(null)))
-            .isInstanceOf(ValidationException.class)
-            .hasMessageContaining("passé");
+            .isInstanceOf(ValidationException.class);
+
+        verify(entryGuard).assertMayEnter(eq(joinerId), eq(slot), any(Instant.class),
+            eq(SlotEntryGuard.Door.SLOT));
+        verifyNoInteractions(participationRepository, chatService, notificationService);
     }
 
     @Test
@@ -167,7 +222,12 @@ class SlotServiceTest {
         assertThatCode(() -> slotService.joinSlot(joinerId, slot.getId(), new JoinSlotRequest(null)))
             .doesNotThrowAnyException();
 
-        verify(chatService, never()).createConversation(any(), any());
+        // La surcharge à quatre arguments, et pas celle à deux : c'est celle que
+        // joinSlot appelle. Le never() portait sur l'autre — que ce service
+        // n'appelle nulle part — si bien que l'assertion aurait tenu même si une
+        // conversation s'était ouverte. Un test vert qui ne prouve pas son titre
+        // est pire qu'un test absent : il fait croire la règle gardée.
+        verify(chatService, never()).createConversation(any(), any(), any(), any());
     }
 
     private void stubHappyPathJoin(Schedule slot, UUID joinerId) {

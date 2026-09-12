@@ -145,6 +145,21 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
         """, nativeQuery = true)
     long countConfirmedParticipants(@Param("scheduleId") UUID scheduleId);
 
+    /**
+     * Les créneaux que cette personne héberge, tous statuts confondus.
+     *
+     * <p><b>Aucun filtre de statut, et c'est voulu.</b> Un organisateur doit
+     * retrouver dans « mes créneaux » la séance qu'il vient d'annuler — ne
+     * serait-ce que pour vérifier que l'annulation a bien pris. Le tri temporel
+     * est fait par l'appelant, qui est aussi celui qui décide de « à venir » :
+     * {@code SlotService.getMySlots} borne sur la <b>fin</b> de la séance, jamais
+     * sur son début. Le statut, lui, est désormais rendu au client
+     * ({@code SlotFeedItemDto.status}), qui n'a plus à le deviner des dates.
+     *
+     * <p>{@code isOpenToPartners = true} en revanche filtre : un créneau fermé
+     * aux partenaires n'est pas une séance partagée, et cette liste-ci est celle
+     * du produit meetDo.
+     */
     @Query("SELECT s FROM Schedule s WHERE s.program.userActivity.user.id = :userId " +
            "AND s.isOpenToPartners = true ORDER BY s.startsAt DESC")
     List<Schedule> findHostedOpenSlots(@Param("userId") UUID userId);
@@ -193,9 +208,40 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
     List<Schedule> findNextOpenSlots(@Param("programIds") Collection<UUID> programIds,
                                      @Param("after") Instant after);
 
+    /**
+     * Créneaux dont une séance vient de se terminer, pour la relance de présence
+     * — les deux premières branches parlent de la ligne, la troisième de la
+     * séance que la ligne ne décrit plus.
+     *
+     * <ul>
+     *   <li>{@code endsAt BETWEEN :from AND :to} — le cas courant, fin
+     *       déclarée ;</li>
+     *   <li>{@code endsAt IS NULL AND startsAt BETWEEN :fromStart AND :toStart} —
+     *       la convention de {@link org.program.pair.domain.program.SlotTiming}
+     *       (deux heures) traduite en bornes, l'appelant ayant décalé la fenêtre
+     *       d'autant ;</li>
+     *   <li>{@code recurrenceRule IS NOT NULL AND lastOccurrenceEnd BETWEEN
+     *       :from AND :to} — <b>la branche sans laquelle un créneau récurrent ne
+     *       recevait jamais de relance</b>.</li>
+     * </ul>
+     *
+     * <p><b>Pourquoi la troisième branche.</b> Le rollover passe toutes les dix
+     * minutes et la relance toutes les heures : quand celle-ci cherche les fins
+     * entre H-3 et H-1, la ligne d'une série a déjà été avancée à la semaine
+     * suivante, et son {@code endsAt} est dans le futur. Les deux premières
+     * branches ne pouvaient donc jamais la retenir — aucune erreur, aucun
+     * journal, simplement une question jamais posée à qui pratique chaque
+     * semaine. {@code last_occurrence_end} (V57) porte la fin réellement vécue,
+     * et le rollover l'écrit toujours en même temps qu'il avance la ligne.
+     *
+     * <p>{@code status IN ('OPEN','FULL')} reste : une séance annulée ne se
+     * relance pas (P-BL-21), et {@code CANCELLED} est terminal — ni le rollover
+     * ni aucun job ne fait plus avancer sa ligne.
+     */
     @Query("SELECT s FROM Schedule s WHERE s.status IN ('OPEN', 'FULL') " +
            "AND ((s.endsAt IS NOT NULL AND s.endsAt BETWEEN :from AND :to) " +
-           "OR (s.endsAt IS NULL AND s.startsAt BETWEEN :fromStart AND :toStart))")
+           "OR (s.endsAt IS NULL AND s.startsAt BETWEEN :fromStart AND :toStart) " +
+           "OR (s.recurrenceRule IS NOT NULL AND s.lastOccurrenceEnd BETWEEN :from AND :to))")
     List<Schedule> findFinishedBetween(@Param("from") Instant from, @Param("to") Instant to,
                                         @Param("fromStart") Instant fromStart, @Param("toStart") Instant toStart);
 
@@ -271,6 +317,17 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
      * géographique, ses restrictions propres s'il en a,
      * {@link BlockSql#NOT_BLOCKED_U}, puis son classement. L'ordre des
      * {@code AND} est indifférent ; leur présence ne l'est pas.
+     *
+     * <p><b>La fenêtre porte sur le DÉBUT des séances</b> — {@code s.starts_at
+     * BETWEEN :fromTs AND :toTs} — et c'est volontaire. Le fil et la carte
+     * répondent à « à quoi puis-je me joindre », question qui n'a pas de présent
+     * en cours : une séance commencée n'est plus rejoignable
+     * ({@code SLOT_ALREADY_STARTED}), donc la montrer serait proposer une
+     * impasse. {@code GET /slots/mine?upcoming=true} borne au contraire la
+     * <b>fin</b> (voir {@code SlotService.getMySlots}), parce qu'un engagement
+     * déjà pris reste utile pendant la séance — c'est là qu'on cherche
+     * l'adresse. Les deux bornes diffèrent, les deux sont justes, et une note
+     * qui n'en décrirait qu'une ferait passer l'autre pour un défaut.
      *
      * <p><b>Le statut est sorti d'ici le 05/09</b>, et c'est le seul prédicat qui
      * l'ait été. Il est la seule chose que les deux géométries ne peuvent plus

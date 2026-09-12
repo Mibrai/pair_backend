@@ -21,7 +21,8 @@ public final class SlotAddressVisibility {
     /**
      * lat/lng/adresse ne sont renvoyés que si le lieu est PUBLIC, ou PRIVATE
      * avec showExactAddress=true, ou si l'appelant a déjà une participation
-     * CONFIRMED sur ce créneau. Un lieu ONLINE n'a jamais de coordonnées.
+     * CONFIRMED sur ce créneau. Un lieu ONLINE n'a jamais de coordonnées, et un
+     * créneau {@code CANCELLED} n'en a plus.
      * Sinon : tout est null (seul le nom générique du lieu reste visible côté
      * appelant), le créneau restant par ailleurs normalement trouvable.
      */
@@ -58,6 +59,23 @@ public final class SlotAddressVisibility {
      */
     private static Resolved resolve(Schedule slot, java.util.function.BooleanSupplier confirmedParticipant) {
         if (slot.getPlaceType() == PlaceType.ONLINE || slot.getLocation() == null) {
+            return Resolved.HIDDEN;
+        }
+
+        // Annulé : il n'y a plus de raison d'y aller, donc plus de raison de
+        // dire où. C'est la seule branche de cette règle qui ne parle pas du
+        // droit de voir mais de l'utilité de voir — et elle est ici, au tronc
+        // commun, pour la raison qui vaut pour tout le reste : une adresse
+        // retirée sur un chemin et rendue sur un autre serait pire que rien.
+        //
+        // Ce que l'inscrit garde : placeName, le motif et l'instant de
+        // l'annulation (voir SlotFeedItemDto). De quoi reconnaître la séance
+        // dont on parle, jamais de quoi s'y rendre.
+        //
+        // Conséquence assumée au-delà des fiches de créneau : le payload de
+        // SLOT_CANCELLED, composé après le passage au statut CANCELLED, ne
+        // porte plus addressPublic — et l'ICS d'une séance annulée non plus.
+        if (slot.getStatus() == SlotStatus.CANCELLED) {
             return Resolved.HIDDEN;
         }
 
