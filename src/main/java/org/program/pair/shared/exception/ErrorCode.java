@@ -253,6 +253,11 @@ public enum ErrorCode {
     // Le geste suppose quelqu'un à prévenir, et cette veille a été armée sans
     // contact. Rien ne sortira d'elle — c'est ce qui a été accepté à l'armement.
     WATCH_NO_GUARDIAN,
+    // La séance est terminée : il n'y a plus de retour à surveiller. Armer ici
+    // donnerait une veille dont l'échéance est derrière soi ou presque, donc une
+    // alerte au proche pour une soirée déjà finie. Un créneau ANNULÉ, lui, ne rend
+    // pas ce code mais un 404 : la veille n'a pas à confirmer qu'il a existé.
+    WATCH_SLOT_ENDED,
 
     // — affiches (AfficheService) —
     // Publier une affiche suppose d'avoir été là : le déclencheur est

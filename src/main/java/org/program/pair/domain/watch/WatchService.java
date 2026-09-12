@@ -7,6 +7,7 @@ import org.program.pair.domain.guardian.Guardian;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotAudience;
 import org.program.pair.domain.program.SlotParticipation;
+import org.program.pair.domain.program.SlotStatus;
 import org.program.pair.domain.program.SlotTiming;
 import org.program.pair.domain.user.User;
 import org.program.pair.domain.watch.dto.CreateWatchRequest;
@@ -125,6 +126,27 @@ public class WatchService {
             throw new ResourceNotFoundException("Créneau introuvable.");
         }
 
+        // Une veille ne s'arme pas sur une séance qui n'aura pas lieu, ou qui a
+        // déjà eu lieu. Sans ce refus, l'échéance figée à l'armement
+        // (fin du créneau + 1 h) tombait immédiatement ou était déjà passée, et la
+        // boucle retour faisait partir les rappels puis l'alerte au proche pour une
+        // soirée qui n'a jamais existé.
+        //
+        // Annulée : « introuvable », même forme que le refus d'appartenance
+        // ci-dessus. Ce n'est pas une pudeur inutile — le client rend un créneau
+        // annulé comme un créneau qui n'est plus là, et un code nommé n'apporterait
+        // rien qu'il ne sache déjà par le statut du créneau.
+        if (slot.getStatus() == SlotStatus.CANCELLED) {
+            throw new ResourceNotFoundException("Créneau introuvable.");
+        }
+        // Passée et non récurrente : il n'y a pas d'occurrence suivante à veiller.
+        // Un créneau récurrent marqué PAST, lui, porte encore la séance à venir —
+        // le rollover n'est passé qu'après — et s'arme normalement.
+        if (slot.getStatus() == SlotStatus.PAST && !estRecurrent(slot)) {
+            throw new BusinessException(ErrorCode.WATCH_SLOT_ENDED,
+                "Cette séance est terminée.");
+        }
+
         // Le contact est facultatif depuis le 03/09. Sans lui, la veille relance,
         // journalise et porte la validation de présence — mais rien ne sortira
         // d'elle, et elle se refermera en NO_CONTACT à l'échéance.
@@ -190,6 +212,14 @@ public class WatchService {
 
         inscrire(watch.getId(), WatchEventType.ARMED, now);
         return dto(watch);
+    }
+
+    /**
+     * Le créneau se répète-t-il ? Un {@code recurrenceRule} vide vaut « non » :
+     * la colonne accepte la chaîne vide, et un créneau unique en porte parfois une.
+     */
+    private static boolean estRecurrent(Schedule slot) {
+        return slot.getRecurrenceRule() != null && !slot.getRecurrenceRule().isBlank();
     }
 
     private void exigerContactAccepte(UUID userId, UUID guardianId) {
