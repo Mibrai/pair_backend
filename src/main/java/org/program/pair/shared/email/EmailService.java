@@ -252,17 +252,100 @@ public class EmailService {
         }
     }
 
-    private String subjectFor(NotificationType type, String programTitle) {
-        return type == NotificationType.SLOT_CANCELLED
-            ? "Séance annulée : " + programTitle
-            : "meetDo — " + programTitle;
+    /**
+     * L'objet, selon le type — et non selon « est-ce une annulation ? ».
+     *
+     * <p>Un {@code switch} plutôt qu'un ternaire, parce qu'il y a maintenant trois
+     * types à l'e-mail et que le ternaire donnait à tous ceux qui ne sont pas
+     * {@code SLOT_CANCELLED} un objet qui ne dit rien — « meetDo — Yoga du soir ».
+     * Un objet qui ne dit rien est un objet qu'on n'ouvre pas, et un e-mail
+     * qu'on n'ouvre pas est un déplacement pour rien.
+     */
+    String subjectFor(NotificationType type, String programTitle) {
+        return switch (type) {
+            case SLOT_CANCELLED -> texte("email.SLOT_CANCELLED.subject",
+                "Séance annulée : " + programTitle, programTitle);
+            case PROGRAM_CANCELLED -> texte("email.PROGRAM_CANCELLED.subject",
+                "Programme annulé : " + programTitle, programTitle);
+            case SCHEDULE_CHANGED -> texte("email.SCHEDULE_CHANGED.subject",
+                "Séance modifiée : " + programTitle, programTitle);
+            default -> "meetDo — " + programTitle;
+        };
     }
 
-    private String notificationText(NotificationType type, Map<String, Object> payload) {
+    /**
+     * Le corps, selon le type.
+     *
+     * <p><b>Le défaut fermé ici, et il aurait été grave.</b> Cette méthode
+     * écrivait « La séance « X » est annulée. » <b>quel que soit le type</b>, sans
+     * un {@code if}. Tant que {@code SCHEDULE_CHANGED} n'avait aucun producteur,
+     * personne ne pouvait s'en apercevoir ; le jour où il en a eu un (P-BL-06),
+     * avancer une séance d'une heure aurait envoyé à chaque inscrit un courriel
+     * annonçant son annulation. Le pire message possible : celui qui fait rester
+     * chez soi quelqu'un dont la séance a bien lieu.
+     *
+     * <p><b>Trois types à l'e-mail, trois textes.</b> {@code warrantsEmail} en
+     * nomme exactement trois, et le {@code default} ne sert donc qu'à satisfaire
+     * le compilateur : {@code sendNotificationEmail} a déjà écarté tout le reste.
+     * {@code EmailServiceTest} échoue si un type à l'e-mail n'a pas son texte
+     * propre.
+     *
+     * <p><b>Aucune date n'est écrite ici.</b> Le nouvel horaire demanderait un
+     * fuseau et une langue, dont ce point de sortie asynchrone ne dispose pas —
+     * ni {@code LocaleContextHolder}, ni l'appareil. L'e-mail dit ce qui a changé
+     * et renvoie à la fiche, qui porte l'heure exacte ; la phrase complète
+     * « avancée à 18 h, au lieu de 19 h » est composée par le client, qui a les
+     * deux. À revoir avec la localisation de l'e-mail (P-BL-20).
+     */
+    String notificationText(NotificationType type, Map<String, Object> payload) {
+        Object titre = payload.getOrDefault("programTitle", "votre créneau");
+        return switch (type) {
+            case SCHEDULE_CHANGED -> scheduleChangedText(payload, titre);
+            case PROGRAM_CANCELLED -> texte("email.PROGRAM_CANCELLED.body",
+                "Le programme « " + titre + " » est annulé.", titre);
+            default -> cancellationText(payload, titre);
+        };
+    }
+
+    /**
+     * Une modification, et surtout <b>pas</b> une annulation.
+     *
+     * <p>Trois phrases distinctes selon ce qui a bougé : l'heure, le lieu, ou les
+     * deux. Un texte unique « la séance a été modifiée » obligerait à ouvrir
+     * l'application pour savoir s'il faut se réorganiser, ce que la moitié des
+     * gens ne fera pas.
+     *
+     * <p>{@code changedFields} est lue par son écriture textuelle plutôt que
+     * déstructurée : elle arrive ici sous forme de liste en mémoire par le chemin
+     * courant, mais la même charge utile fait aussi l'aller-retour par une colonne
+     * {@code jsonb}, et deux façons de la lire divergeraient. Ce qui est demandé
+     * est une présence, pas un ordre.
+     */
+    private String scheduleChangedText(Map<String, Object> payload, Object titre) {
+        String champs = String.valueOf(payload.getOrDefault("changedFields", ""));
+        boolean heure = champs.contains("TIME");
+        boolean lieu = champs.contains("PLACE");
+
+        if (heure && lieu) {
+            return texte("email.SCHEDULE_CHANGED.body.both",
+                "L'horaire et le lieu de la séance « " + titre + " » ont changé."
+                    + " Retrouvez les nouveaux détails dans l'application.", titre);
+        }
+        if (lieu) {
+            return texte("email.SCHEDULE_CHANGED.body.place",
+                "Le lieu de la séance « " + titre + " » a changé."
+                    + " Retrouvez le nouveau lieu dans l'application.", titre);
+        }
+        return texte("email.SCHEDULE_CHANGED.body.time",
+            "L'horaire de la séance « " + titre + " » a changé."
+                + " Retrouvez le nouvel horaire dans l'application.", titre);
+    }
+
+    /** Le texte d'annulation, inchangé — motif et repli compris. */
+    private String cancellationText(Map<String, Object> payload, Object titre) {
         StringBuilder text = new StringBuilder();
-        text.append("La séance « ")
-            .append(payload.getOrDefault("programTitle", "votre créneau"))
-            .append(" » est annulée.");
+        text.append(texte("email.SLOT_CANCELLED.body",
+            "La séance « " + titre + " » est annulée.", titre));
 
         Object reason = payload.get("cancellationReason");
         if (reason != null && !String.valueOf(reason).isBlank()) {
@@ -278,6 +361,23 @@ public class EmailService {
         }
 
         return text.toString();
+    }
+
+    /**
+     * Le texte traduit de la clé, ou le français écrit ici à défaut.
+     *
+     * <p><b>Pourquoi un repli et non un appel direct.</b> La localisation de
+     * l'e-mail est P-BL-20 et les clés {@code email.*} appartiennent au bundle,
+     * que ce lot ne touche pas ; {@code getOrNull} rend {@code null} sur une clé
+     * absente là où {@code get} lèverait, et le léverait <b>dans un envoi
+     * asynchrone</b> — l'e-mail d'une annulation serait perdu par une clé
+     * manquante. Le même patron que {@code GlobalExceptionHandler.messageOf}, pour
+     * la même raison. Les trois langues arrivent d'elles-mêmes le jour où les
+     * clés sont posées, sans retoucher cette classe.
+     */
+    private String texte(String cle, String repliFrancais, Object... args) {
+        String traduit = messages.getOrNull(cle, args);
+        return traduit != null ? traduit : repliFrancais;
     }
 
     /**

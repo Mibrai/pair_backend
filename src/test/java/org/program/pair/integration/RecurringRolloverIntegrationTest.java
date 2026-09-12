@@ -185,9 +185,19 @@ class RecurringRolloverIntegrationTest extends AbstractIntegrationTest {
         deleteByRoute(slot);
 
         assertThat(statusInDb(slot.scheduleId())).isEqualTo("CANCELLED");
+        // Cette assertion disait l'inverse jusqu'à P-BL-19 : « DELETE ne pose aucune
+        // date d'annulation, et c'est ce qui rend la reprise difficile ». C'était vrai,
+        // et c'était le défaut — deux chemins d'annulation divergents, dont un qui
+        // n'écrivait ni motif, ni auteur, ni date. P-BL-19 fait déléguer deleteSchedule
+        // à SlotCancellationService : les deux chemins renseignent désormais la date.
+        //
+        // Ce qui change au-delà du test : la requête b) du runbook de reprise
+        // (REPRISE_CRENEAUX_ROUVERTS) ne servait qu'à retrouver, par la notification
+        // émise, les lignes qu'aucune date ne trahissait. Elle reste nécessaire pour
+        // l'historique déjà en base, et cesse de l'être pour tout ce qui vient.
         assertThat(cancelledAtInDb(slot.scheduleId()))
-            .as("DELETE ne pose aucune date d'annulation, et c'est ce qui rend la reprise difficile")
-            .isNull();
+            .as("depuis P-BL-19, DELETE annule par le chemin commun et date l'annulation")
+            .isNotNull();
 
         Instant antidate = antedateByWeeks(slot, 2);
 

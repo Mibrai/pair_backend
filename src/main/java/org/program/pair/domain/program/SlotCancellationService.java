@@ -7,8 +7,6 @@ import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.program.dto.CancelSlotRequest;
 import org.program.pair.domain.watch.WatchSlotLifecycle;
 import org.program.pair.repository.ScheduleRepository;
-import org.program.pair.repository.SlotParticipationRepository;
-import org.program.pair.repository.UserProgramRepository;
 import org.program.pair.repository.UserRepository;
 import org.program.pair.shared.exception.ResourceNotFoundException;
 import org.program.pair.shared.exception.ValidationException;
@@ -58,9 +56,10 @@ public class SlotCancellationService {
     private String zoneId;
 
     private final ScheduleRepository scheduleRepository;
-    private final SlotParticipationRepository participationRepository;
-    private final UserProgramRepository userProgramRepository;
     private final UserRepository userRepository;
+
+    /** À qui cette séance importait : la même réponse qu'à la suppression. */
+    private final SlotConcernedPeople concernedPeople;
     private final NotificationService notificationService;
     private final HtmlSanitizer sanitizer;
 
@@ -113,20 +112,11 @@ public class SlotCancellationService {
      * une promotion qui n'arrivera jamais.
      */
     private void notifyEveryone(Schedule slot, UUID cancellerId, String reason) {
-        Set<UUID> recipients = new LinkedHashSet<>();
-
-        participationRepository.findByScheduleId(slot.getId()).stream()
-            .filter(p -> p.getStatus() == ParticipationStatus.CONFIRMED
-                || p.getStatus() == ParticipationStatus.INTERESTED
-                || p.getStatus() == ParticipationStatus.WAITLISTED)
-            .map(p -> p.getUser().getId())
-            .forEach(recipients::add);
-
-        userProgramRepository
-            .findByProgramIdAndStatus(slot.getProgram().getId(), UserProgramStatus.ACTIVE).stream()
-            .filter(up -> up.getSchedule() != null && up.getSchedule().getId().equals(slot.getId()))
-            .map(up -> up.getUser().getId())
-            .forEach(recipients::add);
+        // Les quatre sources en un seul endroit depuis P-BL-06 : les mêmes que
+        // relisent la suppression et la modification d'horaire. Elles étaient
+        // recopiées en trois exemplaires, et un exemplaire qui oublie une source
+        // ne produit pas une erreur — il produit quelqu'un qui n'est pas prévenu.
+        Set<UUID> recipients = new LinkedHashSet<>(concernedPeople.of(slot));
 
         recipients.remove(cancellerId);
         if (recipients.isEmpty()) {

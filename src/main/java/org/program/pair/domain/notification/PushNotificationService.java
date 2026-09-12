@@ -714,6 +714,13 @@ public class PushNotificationService implements PushNotificationServiceInterface
             // les émet réellement.
             case SLOT_JOINED -> msg(locale, "push.SLOT_JOINED.title", arg(payload, "participantName"));
             case SLOT_CANCELLED -> msg(locale, "push.SLOT_CANCELLED.title", arg(payload, "programTitle"));
+            // Un titre à elle, et il le fallait absolument : sans ce cas, une
+            // modification d'horaire partait en « Nouvelle notification », que
+            // personne n'ouvre — et l'inscrit se présentait à l'ancienne heure.
+            // Ce type est critique et traverse les heures de silence : c'est
+            // voulu, une heure changée la nuit reste une heure changée.
+            case SCHEDULE_CHANGED -> msg(locale, "push.SCHEDULE_CHANGED.title",
+                arg(payload, "programTitle"));
             case WAITLIST_PROMOTED -> msg(locale, "push.WAITLIST_PROMOTED.title", arg(payload, "programTitle"));
             case ATTENDANCE_PROMPT -> msg(locale, "push.ATTENDANCE_PROMPT.title");
             case ACTIVITY_ALERT_MATCH -> msg(locale, "push.ACTIVITY_ALERT_MATCH.title", arg(payload, "activityName"));
@@ -808,6 +815,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
                 rawOr(payload, "programTitle", locale, "push.generic.body");
             case SLOT_JOINED -> rawOr(payload, "programTitle", locale, "push.generic.body");
             case SLOT_CANCELLED -> msg(locale, "push.SLOT_CANCELLED.body", arg(payload, "placeName"));
+            case SCHEDULE_CHANGED -> scheduleChangedBody(locale, zone, payload);
             case WAITLIST_PROMOTED -> msg(locale, "push.WAITLIST_PROMOTED.body", arg(payload, "placeName"));
             case ATTENDANCE_PROMPT -> msg(locale, "push.ATTENDANCE_PROMPT.body", arg(payload, "programTitle"));
             case ACTIVITY_ALERT_MATCH -> msg(locale, "push.ACTIVITY_ALERT_MATCH.body",
@@ -840,6 +848,96 @@ public class PushNotificationService implements PushNotificationServiceInterface
             case GUARDIAN_CONSENT_REQUEST -> msg(locale, "push.GUARDIAN_CONSENT_REQUEST.body");
             default -> msg(locale, "push.generic.body");
         };
+    }
+
+    /**
+     * Corps d'une modification de séance : ce qui a changé, avec l'ancienne valeur.
+     *
+     * <p>Trois corps distincts plutôt qu'un, parce que la notification doit dire
+     * <b>ce qui</b> a changé. « La séance a été modifiée » oblige à ouvrir
+     * l'application pour savoir s'il faut se réorganiser, ce que la moitié des
+     * gens ne fera pas ; « Nouvel horaire : mer. 17 sept. 18:00 (au lieu de
+     * 19:00) » se lit sur l'écran verrouillé et suffit à décider.
+     *
+     * <p><b>Date ET heure, pas l'heure seule.</b> {@code push.tpl.timePattern} est
+     * {@code HH:mm} : écrire l'heure seule effacerait le déplacement d'un jour à
+     * l'autre, qui est pourtant la modification la plus lourde de conséquences.
+     * Les deux motifs existants sont donc composés, plutôt qu'un troisième ajouté
+     * au vocabulaire — et ils restent les mêmes que ceux du texte Android, pour
+     * que la bannière et la notification n'écrivent pas deux formats.
+     *
+     * <p><b>Aucune adresse, et pas davantage l'ancienne.</b> La charge porte
+     * {@code previousAddress} quand l'ancienne était diffusable, et le client
+     * l'affiche dans sa fiche ; ce texte-ci s'écrit sur un écran verrouillé, s'y
+     * conserve et s'y capture (P-MS-10). Le nom du lieu y entre — il est déjà dans
+     * le corps d'une annulation et d'une promotion —, l'adresse jamais.
+     *
+     * <p><b>Une valeur manquante ne produit pas une phrase à trous.</b> Même
+     * raison qu'au rappel de retour : c'est le seul texte que la personne lit
+     * avant de décider où aller, et « Nouvel horaire :  (au lieu de ) » ne fait
+     * aller personne nulle part. Chaque forme n'est retenue que si ses deux
+     * valeurs sont lisibles ; à défaut on retombe sur l'autre forme, puis sur le
+     * corps générique.
+     *
+     * <p>{@code changedFields} est lue par son écriture textuelle : la même charge
+     * arrive tantôt en mémoire, tantôt relue d'une colonne {@code jsonb}, et ce
+     * qui est demandé ici est une présence, pas un ordre.
+     */
+    private String scheduleChangedBody(Locale locale, ZoneId zone, Map<String, Object> payload) {
+        String champs = String.valueOf(payload.getOrDefault("changedFields", ""));
+
+        String nouvelleHeure = atDeviceDateTime(locale, zone, payload, "sessionAt");
+        String ancienneHeure = atDeviceDateTime(locale, zone, payload, "previousStartsAt");
+        String nouveauLieu = arg(payload, "placeName").strip();
+        String ancienLieu = arg(payload, "previousPlaceName").strip();
+
+        boolean heure = champs.contains("TIME")
+            && !nouvelleHeure.isEmpty() && !ancienneHeure.isEmpty();
+        // Un lieu qui a bougé sans changer de nom — de nouvelles coordonnées sur
+        // le même « Studio Lumière » — n'a rien à écrire ici : « Nouveau lieu :
+        // Studio Lumière (au lieu de Studio Lumière) » ne dit rien à personne. Le
+        // vocabulaire n'a pas de forme sans valeur pour ce cas ; en attendant, la
+        // fiche du créneau porte la nouvelle position.
+        boolean lieu = champs.contains("PLACE")
+            && !nouveauLieu.isEmpty() && !ancienLieu.isEmpty()
+            && !nouveauLieu.equals(ancienLieu);
+
+        if (heure && lieu) {
+            return msg(locale, "push.SCHEDULE_CHANGED.body.both",
+                nouvelleHeure, nouveauLieu, ancienneHeure, ancienLieu);
+        }
+        if (heure) {
+            return msg(locale, "push.SCHEDULE_CHANGED.body.time", nouvelleHeure, ancienneHeure);
+        }
+        if (lieu) {
+            return msg(locale, "push.SCHEDULE_CHANGED.body.place", nouveauLieu, ancienLieu);
+        }
+        return msg(locale, "push.generic.body");
+    }
+
+    /**
+     * Un instant de la charge, écrit jour et heure dans le fuseau de l'appareil.
+     *
+     * <p>Les deux motifs du vocabulaire sont concaténés — {@code datePattern} puis
+     * {@code timePattern} — et non remplacés par un troisième : ce sont eux que
+     * lisent déjà le texte Android et le rappel de retour, et un format de plus
+     * ferait écrire la même séance de trois façons.
+     */
+    private String atDeviceDateTime(Locale locale, ZoneId zone, Map<String, Object> payload,
+                                    String key) {
+        String text = arg(payload, key).strip();
+        if (text.isEmpty() || "null".equals(text)) {
+            return "";
+        }
+        try {
+            String motif = msg(locale, "push.tpl.datePattern")
+                + " " + msg(locale, "push.tpl.timePattern");
+            return Instant.parse(text).atZone(zone)
+                .format(DateTimeFormatter.ofPattern(motif, locale));
+        } catch (DateTimeParseException e) {
+            log.warn("Push payload carries an unreadable '{}': {}", key, text);
+            return "";
+        }
     }
 
     /**

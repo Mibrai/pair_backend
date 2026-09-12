@@ -5,16 +5,16 @@ import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
+import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.domain.activity.UserActivity;
 import org.program.pair.domain.alert.ActivityAlertService;
 import org.program.pair.domain.media.StoredImageResolver;
-import org.program.pair.domain.notification.NotificationPayload;
-import org.program.pair.domain.notification.NotificationService;
-import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.program.dto.*;
 import org.program.pair.domain.subscription.SubscriptionService;
+import org.program.pair.domain.program.ScheduleChangedEvent.ScheduleChange;
 import org.program.pair.domain.watch.WatchSlotLifecycle;
 import org.program.pair.repository.*;
+import org.springframework.context.ApplicationEventPublisher;
 import org.program.pair.shared.exception.ForbiddenException;
 import org.program.pair.shared.exception.ResourceNotFoundException;
 import org.program.pair.shared.exception.ValidationException;
@@ -23,8 +23,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -40,7 +43,6 @@ public class ProgramService {
     private final ReviewRepository reviewRepository;
     private final UserProgramRepository userProgramRepository;
     private final SlotParticipationRepository slotParticipationRepository;
-    private final NotificationService notificationService;
     private final ActivityAlertService activityAlertService;
     private final SubscriptionService subscriptionService;
     private final HtmlSanitizer sanitizer;
@@ -48,12 +50,42 @@ public class ProgramService {
     private final StoredImageResolver storedImageResolver;
 
     /**
-     * Ce qui referme les veilles retour d'une séance annulée. Ce chemin-ci annule
-     * sans passer par {@link SlotCancellationService} — P-BL-19 unifiera les deux —
-     * et doit donc appeler la clôture lui-même, sans quoi une suppression de
-     * créneau avec inscrits laisserait leurs veilles armées.
+     * Ce qui déplace l'heure limite de retour des veilles quand la séance bouge.
+     *
+     * <p>La <b>clôture</b> des veilles d'une séance annulée n'est plus appelée
+     * d'ici : depuis P-BL-19, la branche « annuler » de {@link #deleteSchedule}
+     * délègue à {@link SlotCancellationService#cancel}, qui la fait. Ne reste
+     * ici que le décalage, qui appartient en propre à la modification.
      */
     private final WatchSlotLifecycle watchSlotLifecycle;
+
+    /**
+     * L'unique implémentation de l'annulation. « Supprimer » un créneau qui
+     * concerne quelqu'un <b>est</b> une annulation — même motif, même date, même
+     * auteur, mêmes veilles refermées, un seul message — et la faire en second
+     * exemplaire ici a produit exactement ce qu'on attend de deux copies : ce
+     * chemin posait {@code CANCELLED} sans rien d'autre et renotifiait tout le
+     * monde une seconde fois.
+     */
+    private final SlotCancellationService slotCancellationService;
+
+    /** À qui cette séance importe : la même réponse qu'à l'annulation. */
+    private final SlotConcernedPeople concernedPeople;
+
+    /**
+     * Le statut qui suit la capacité, et la file qui remonte quand des places
+     * s'ouvrent. {@code updateSchedule} changeait {@code maxParticipants} sans
+     * toucher ni l'un ni l'autre : ajouter deux places laissait le créneau
+     * {@code FULL} avec deux personnes qui l'attendaient dans la file.
+     */
+    private final ParticipantCounter participantCounter;
+    private final WaitlistPromoter waitlistPromoter;
+
+    /**
+     * Par où part la notification de modification — <b>après le commit</b>, et
+     * jamais depuis cette transaction. Voir {@link ScheduleChangedEvent}.
+     */
+    private final ApplicationEventPublisher eventPublisher;
     private final GeometryFactory geometryFactory = new GeometryFactory(
         new PrecisionModel(), 4326);
 
@@ -458,15 +490,86 @@ public class ProgramService {
         programRepository.save(program);
     }
 
+    /**
+     * Modifier un créneau : le lieu, l'heure, la capacité — et ce que cela oblige
+     * à faire ensuite.
+     *
+     * <p><b>Ce que cette méthode ignorait.</b> Elle chargeait sans verrou,
+     * n'avait aucun contrôle de statut, posait {@code startsAt} et {@code endsAt}
+     * sans les comparer, changeait {@code maxParticipants} sans toucher au statut
+     * ni à la file, et ne prévenait personne. Quatre défauts distincts, et le
+     * plus visible était le dernier : l'organisateur avançait sa séance d'une
+     * heure, la voyait bouger sur son écran, et trois personnes se présentaient
+     * à l'ancienne.
+     *
+     * <p><b>L'ordre des opérations n'est pas libre.</b> Les refus d'état passent
+     * avant toute écriture ; l'ancien état est capturé juste après, parce qu'il
+     * n'existera plus nulle part ensuite ; la cohérence des dates est jugée
+     * <b>après</b> application des champs, la requête étant partielle ; la file
+     * remonte avant le recalcul du statut ; et la notification ne part qu'après le
+     * commit. On ne notifie pas une modification qu'on va refuser trois lignes
+     * plus loin.
+     *
+     * <p><b>Ce que cette méthode ne fait toujours pas</b> : baisser la capacité
+     * sous le nombre d'inscrits n'en désinscrit personne. Le créneau passe
+     * simplement {@code FULL} et n'accepte plus d'entrée. Choisir à la place de
+     * l'organisateur qui perd sa place serait pire que l'incohérence temporaire
+     * d'un créneau à six inscrits pour quatre places.
+     */
     public ScheduleDto updateSchedule(UUID userId, UUID scheduleId,
                                        UpdateScheduleRequest request) {
-        Schedule schedule = scheduleRepository.findById(scheduleId)
+        // Verrou pessimiste, et non plus findById : cette méthode change désormais
+        // la capacité et fait remonter la file, ce que joinSlot et leaveSlot ne
+        // font que sous lockById. Sans lui, une inscription simultanée à une
+        // hausse de capacité promeut la même personne deux fois, ou dépasse
+        // ensemble le plafond qu'on vient de poser.
+        Schedule schedule = scheduleRepository.lockById(scheduleId)
             .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
 
         UUID ownerId = schedule.getProgram().getUserActivity().getUser().getId();
         if (!ownerId.equals(userId)) {
             throw new ForbiddenException("Vous ne pouvez pas modifier ce créneau.");
         }
+
+        Instant now = Instant.now();
+
+        // Annulé : un code nommé plutôt qu'un 404 comme l'appartenance. Celui qui
+        // modifie est l'organisateur, il sait que son créneau existe — lui
+        // répondre « introuvable » lui ferait croire à une panne au lieu de lui
+        // apprendre que l'annulation a déjà été enregistrée.
+        if (schedule.getStatus() == SlotStatus.CANCELLED) {
+            throw new ValidationException(ErrorCode.SLOT_CANCELLED_READONLY,
+                "Ce créneau est annulé : il ne se modifie plus.");
+        }
+
+        // Terminé, et seulement pour un créneau non récurrent : sur un récurrent la
+        // ligne décrit toujours la séance qui vient — le rollover l'a avancée —
+        // et « c'est fini » n'y veut rien dire. Le critère est celui de
+        // SlotTiming, le même que la confirmation de présence et les
+        // cartes-souvenirs : deux définitions de « terminé » ne produisent pas une
+        // erreur, elles produisent une séance qu'on peut modifier sans pouvoir y
+        // confirmer sa présence.
+        if (schedule.getRecurrenceRule() == null && SlotTiming.hasEndedBy(schedule, now)) {
+            throw new ValidationException(
+                "Cette séance est terminée : elle ne se modifie plus.");
+        }
+
+        // L'ancien état, avant la première écriture. C'est la moitié du message que
+        // recevront les inscrits — « avancée à 18 h, au lieu de 19 h » — et une
+        // fois la ligne réécrite, l'ancienne heure et l'ancien lieu n'existent
+        // plus nulle part.
+        Instant oldStart = schedule.getStartsAt();
+        Instant oldEnd = schedule.getEndsAt();
+        String oldPlaceName = schedule.getPlaceName();
+        PlaceType oldPlaceType = schedule.getPlaceType();
+        Point oldLocation = schedule.getLocation();
+        Integer oldMaxParticipants = schedule.getMaxParticipants();
+        // Résolue maintenant, et par la règle de visibilité partagée : c'est la
+        // seule façon que l'ancienne adresse ne parte dans une notification que si
+        // elle était déjà diffusable. Une modification peut faire passer un
+        // créneau de public à privé, et l'annonce ne doit pas être le chemin par
+        // lequel l'adresse qu'on vient de masquer ressort.
+        String oldAddress = SlotAddressVisibility.broadcastableAddress(schedule);
 
         if (request.placeName() != null)
             schedule.setPlaceName(sanitizer.sanitize(request.placeName()).strip());
@@ -517,11 +620,178 @@ public class ProgramService {
         if (request.accessibilityTags() != null)
             schedule.setAccessibilityTags(new java.util.LinkedHashSet<>(request.accessibilityTags()));
 
+        // Cohérence des dates, APRÈS application des champs. La requête est
+        // partielle : juger le nouveau startsAt sans le endsAt qui arrive dans le
+        // même corps refuserait une modification parfaitement valide, et
+        // l'inverse en laisserait passer une absurde.
+        if (schedule.getEndsAt() != null
+                && !schedule.getStartsAt().isBefore(schedule.getEndsAt())) {
+            throw new ValidationException(
+                "La fin du créneau doit être après son début.");
+        }
+
+        // Le début n'est exigé futur que S'IL A CHANGÉ. Sans cette condition,
+        // corriger le lieu d'une séance qui commence dans dix minutes deviendrait
+        // impossible — exactement le moment où on en a le plus besoin.
+        if (!Objects.equals(oldStart, schedule.getStartsAt())
+                && !schedule.getStartsAt().isAfter(now)) {
+            throw new ValidationException(
+                "Le début d'un créneau ne peut pas être déplacé dans le passé.");
+        }
+
+        // Capacité : la file remonte d'abord, le statut se recalcule ensuite.
+        // L'ordre compte — recalculer avant la promotion laisserait le créneau
+        // OPEN une fraction de seconde, puis FULL sans que rien ne l'ait rempli.
+        if (!Objects.equals(oldMaxParticipants, schedule.getMaxParticipants())) {
+            promouvoirTantQuIlYaDeLaPlace(schedule);
+            participantCounter.refresh(schedule);
+        }
+
         ScheduleDto dto = toScheduleDto(scheduleRepository.save(schedule), userId);
+
+        Set<ScheduleChange> changements = changementsAAnnoncer(
+            schedule, oldStart, oldEnd, oldPlaceName, oldPlaceType, oldLocation, oldAddress);
+
+        // Les veilles retour suivent la séance, dans CETTE transaction : leur
+        // échéance et la nouvelle heure doivent aboutir ensemble ou pas du tout.
+        // Sans ce décalage, une séance repoussée de deux heures laissait des
+        // veilles dont l'échéance tombait pendant la séance : trois rappels à
+        // quelqu'un encore sur place, puis l'alerte chez son proche.
+        boolean veillesDecalees = changements.contains(ScheduleChange.TIME)
+            && watchSlotLifecycle.shiftForUpdatedSlot(schedule, oldStart, oldEnd, now) > 0;
+
+        if (!changements.isEmpty()) {
+            // Publié, pas envoyé. L'écouteur attend le commit : rien ne part d'une
+            // modification qui échouerait au rafraîchissement ci-dessous.
+            eventPublisher.publishEvent(new ScheduleChangedEvent(
+                // Set.copyOf : l'écouteur lit cet ensemble après le commit, sur un
+                // autre fil. Lui passer l'EnumSet local le rendrait modifiable
+                // depuis ici, ce qui n'arrive pas aujourd'hui et n'a pas à pouvoir
+                // arriver demain.
+                schedule.getId(), userId, Set.copyOf(changements),
+                oldStart, oldEnd, oldPlaceName, oldAddress, veillesDecalees));
+        }
+
         refreshNextSessionAt(schedule.getProgram());
         return dto;
     }
 
+    /**
+     * Des places se sont ouvertes : la file y entre, autant qu'il y a de place.
+     *
+     * <p><b>Bornée par la taille de la file, et c'est indispensable.</b>
+     * {@link WaitlistPromoter#promoteFirstWaiting} promeut <i>une</i> personne par
+     * appel, et <b>saute</b> un candidat qui s'est engagé ailleurs entre-temps
+     * sans le retirer de la file. Une boucle qui ne s'arrêterait qu'à
+     * « plus de place » tournerait donc sans fin sur une file dont tous les
+     * candidats sont en conflit. Deux garde-fous plutôt qu'un : la borne, et
+     * l'arrêt dès qu'un appel ne promeut personne — le suivant reparcourrait la
+     * même file dans le même ordre, pour le même résultat.
+     *
+     * <p>Sous le verrou pessimiste posé en entrée de {@link #updateSchedule}, comme
+     * l'exige la javadoc du promoteur.
+     */
+    private void promouvoirTantQuIlYaDeLaPlace(Schedule slot) {
+        int borne = slotParticipationRepository.findWaitlist(slot.getId()).size();
+
+        for (int tour = 0; tour < borne; tour++) {
+            long avant = scheduleRepository.countConfirmedParticipants(slot.getId());
+            if (slot.getMaxParticipants() != null && avant >= slot.getMaxParticipants()) {
+                return;
+            }
+            waitlistPromoter.promoteFirstWaiting(slot);
+            if (scheduleRepository.countConfirmedParticipants(slot.getId()) == avant) {
+                return;
+            }
+        }
+    }
+
+    /**
+     * Ce qui a changé et mérite d'être annoncé : l'heure, le lieu, ou les deux.
+     *
+     * <p><b>Deux catégories, pas une par colonne.</b> La personne n'a pas besoin
+     * de savoir que {@code placeType} est passé de {@code PUBLIC} à
+     * {@code PRIVATE} — elle a besoin de savoir que le lieu a changé, et d'aller
+     * le relire.
+     *
+     * <p><b>Ce qui n'y entre pas est aussi important.</b> La note d'accueil, la
+     * langue, les étiquettes d'accessibilité, l'ouverture aux partenaires, la
+     * règle de récurrence, la capacité : rien de tout cela ne change ni quand ni
+     * où il faut être. Les y mettre transformerait la correction d'une faute de
+     * frappe dans la note d'accueil en un e-mail à tous les inscrits — et trois
+     * e-mails inutiles font couper le canal, y compris pour les annulations.
+     */
+    private Set<ScheduleChange> changementsAAnnoncer(
+            Schedule slot, Instant oldStart, Instant oldEnd, String oldPlaceName,
+            PlaceType oldPlaceType, Point oldLocation, String oldAddress) {
+        Set<ScheduleChange> changements = EnumSet.noneOf(ScheduleChange.class);
+
+        if (!Objects.equals(oldStart, slot.getStartsAt())
+                || !Objects.equals(oldEnd, slot.getEndsAt())) {
+            changements.add(ScheduleChange.TIME);
+        }
+
+        // L'adresse est comparée sur sa forme DIFFUSABLE, jamais sur la colonne :
+        // rendre l'adresse exacte d'un créneau privé est un changement de
+        // visibilité, pas un changement de lieu, et il s'annonce de lui-même en
+        // faisant apparaître une adresse qui n'était pas là.
+        if (!Objects.equals(oldPlaceName, slot.getPlaceName())
+                || oldPlaceType != slot.getPlaceType()
+                || aBouge(oldLocation, slot.getLocation())
+                || !Objects.equals(oldAddress, SlotAddressVisibility.broadcastableAddress(slot))) {
+            changements.add(ScheduleChange.PLACE);
+        }
+
+        return changements;
+    }
+
+    /**
+     * La position a-t-elle changé ?
+     *
+     * <p>{@code equalsExact} et non {@code equals} : la comparaison porte sur les
+     * coordonnées, et une modification qui repose le même point — ce que fait
+     * l'application à chaque enregistrement du formulaire, qui renvoie tous ses
+     * champs — ne doit pas passer pour un déplacement. Sans cela, corriger le nom
+     * du lieu enverrait « le lieu a changé » à tout le monde.
+     */
+    private static boolean aBouge(Point avant, Point apres) {
+        if (avant == null || apres == null) {
+            return avant != apres;
+        }
+        return !avant.equalsExact(apres);
+    }
+
+    /**
+     * Supprimer un créneau — ce qui, s'il concerne quelqu'un, est une annulation.
+     *
+     * <p><b>Deux chemins d'annulation qui divergeaient.</b>
+     * {@code POST /slots/{id}/cancel} renseignait le motif, la date et l'auteur,
+     * refermait les veilles, et retirait l'organisateur des destinataires. Cette
+     * méthode-ci posait {@code CANCELLED} et rien d'autre, ne testait pas le
+     * statut, et renotifiait tous les concernés — y compris ceux qui venaient de
+     * recevoir l'annulation une minute plus tôt. Annuler puis supprimer envoyait
+     * donc <b>deux</b> « la séance est annulée » pour un seul fait, et la seconde
+     * arrivait sans motif alors que la première en portait un.
+     *
+     * <p>Il n'y a plus qu'une implémentation : {@link SlotCancellationService#cancel}.
+     * Ce chemin ne décide plus que d'une chose — supprimer pour de bon, ou
+     * annuler —, ce que seule la présence de concernés tranche.
+     *
+     * <p><b>Le contrôle de propriété reste ici, avant la délégation.</b>
+     * {@code cancel} rend 404 à un tiers, là où cette route rend 403 depuis
+     * toujours : déléguer sans garder ce contrôle changerait le code rendu à
+     * l'application publiée. La divergence est assumée et vit dans ces deux
+     * lignes.
+     *
+     * <p><b>Un créneau déjà annulé ne notifie personne</b> et sa ligne reste : le
+     * fait a été annoncé, et une suppression définitive emporterait en cascade
+     * les participations qui portent encore la trace de qui devait venir.
+     *
+     * <p><b>La réponse ne change pas</b> : {@code 204} sans corps dans les deux
+     * cas, comme aujourd'hui. Dire ce qui a été fait — {@code 200 {outcome,
+     * schedule}} de la décision D3 — appartient à P-BA-16 ; l'appliquer ici
+     * casserait l'application publiée, qui attend un 204 vide.
+     */
     public void deleteSchedule(UUID userId, UUID scheduleId) {
         Schedule schedule = scheduleRepository.findById(scheduleId)
             .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
@@ -533,44 +803,19 @@ public class ProgramService {
 
         Program prog = schedule.getProgram();
 
-        // WAITLISTED compris : quelqu'un qui attendait une place a organisé sa
-        // journée autour de ce créneau autant qu'un inscrit. Ne pas le prévenir
-        // le laisserait attendre une promotion qui n'arrivera jamais.
-        List<UUID> slotParticipantIds = slotParticipationRepository.findByScheduleId(scheduleId).stream()
-            .filter(p -> p.getStatus() == ParticipationStatus.CONFIRMED
-                || p.getStatus() == ParticipationStatus.INTERESTED
-                || p.getStatus() == ParticipationStatus.WAITLISTED)
-            .map(p -> p.getUser().getId())
-            .toList();
-        List<UUID> programParticipantIds = userProgramRepository.findByProgramIdAndStatus(prog.getId(), UserProgramStatus.ACTIVE)
-            .stream()
-            .filter(up -> up.getSchedule() != null && up.getSchedule().getId().equals(scheduleId))
-            .map(up -> up.getUser().getId())
-            .toList();
-
-        if (slotParticipantIds.isEmpty() && programParticipantIds.isEmpty()) {
-            // Aucun participant : suppression définitive comme avant.
+        if (concernedPeople.of(schedule).isEmpty()) {
+            // Personne à prévenir, rien à conserver : suppression définitive,
+            // comme avant. Vaut aussi pour un créneau annulé que plus personne
+            // ne regarde.
             scheduleRepository.delete(schedule);
-        } else {
-            // Des personnes comptent sur ce créneau : on annule et on les
-            // prévient plutôt que de supprimer silencieusement la ligne
-            // (une suppression aurait cascade-delete les participations sans
-            // possibilité de notifier qui que ce soit).
-            schedule.setStatus(SlotStatus.CANCELLED);
-            scheduleRepository.save(schedule);
-
-            // Les veilles retour de la séance se referment avec elle, sans rien
-            // envoyer : sans cela la boucle retour envoyait ses rappels puis
-            // alertait le proche à l'heure d'une séance supprimée.
-            watchSlotLifecycle.closeForCancelledSlot(schedule, Instant.now());
-
-            java.util.stream.Stream.concat(slotParticipantIds.stream(), programParticipantIds.stream())
-                .distinct()
-                .forEach(participantId -> notificationService.notify(participantId,
-                    schedule.getProgram().getUserActivity().getUser().getId(),
-                    NotificationType.SLOT_CANCELLED,
-                    NotificationPayload.ofSchedule(schedule).build()));
+        } else if (schedule.getStatus() != SlotStatus.CANCELLED) {
+            // Des personnes comptent sur ce créneau : c'est une annulation, et
+            // elle se fait à un seul endroit — motif (aucun ici, le geste n'en
+            // demande pas), date, auteur, veilles refermées, un seul message.
+            slotCancellationService.cancel(userId, scheduleId, null);
         }
+        // Sinon : déjà annulé et encore regardé. La ligne reste, et personne n'est
+        // prévenu deux fois du même fait.
 
         refreshNextSessionAt(prog);
     }

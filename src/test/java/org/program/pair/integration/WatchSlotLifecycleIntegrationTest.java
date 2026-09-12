@@ -34,6 +34,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 import static org.awaitility.Awaitility.await;
 
 /**
@@ -202,7 +203,108 @@ class WatchSlotLifecycleIntegrationTest extends AbstractIntegrationTest {
             .until(() -> notificationsDe(moi, NotificationType.WATCH_RETURN_REMINDER).isEmpty());
     }
 
+    /**
+     * Une séance déplacée déplace l'heure limite de retour de ses veilles — et
+     * aucun rappel ne part pendant la séance (P-BL-04 étape 5).
+     *
+     * <p><b>Le défaut.</b> {@code deadlineAt}, {@code occurrenceStartsAt} et
+     * {@code outboundBaseAt} sont figés à l'armement, et rien ne les reliait à une
+     * modification du créneau. Un organisateur qui repoussait sa séance de deux
+     * heures laissait donc des veilles dont l'échéance tombait <b>pendant</b> la
+     * séance : les trois rappels de retour partaient à quelqu'un encore sur place,
+     * puis l'alerte chez son proche. Même fausse alerte que pour une annulation,
+     * par l'autre porte.
+     *
+     * <p><b>L'échéance est reculée avant le déplacement, et c'est le cœur du
+     * test.</b> Sans cela, la nouvelle échéance serait dans le futur de toute
+     * façon — la séance commence dans deux heures — et « aucun rappel » serait
+     * vrai sans que le décalage y soit pour quoi que ce soit. Ici un rappel est dû
+     * à l'instant même où la séance se déplace : seul le décalage l'empêche.
+     *
+     * <p>Le décalage est comparé à la seconde : les deux instants font le voyage
+     * par une colonne {@code timestamptz}, dont la précision n'est pas celle d'un
+     * {@code Instant}. Ce qui est vérifié est un déplacement de deux heures, pas
+     * une nanoseconde.
+     */
+    @Test
+    void decalerLaSeanceDeDeuxHeures_doitDecalerLEcheanceDeLaVeille() {
+        Compte moi = compte();
+        Creneau creneau = creerCreneauComplet(moi);
+        UUID watchId = armer(moi, creneau.scheduleId());
+        arriver(moi, watchId);
+
+        Instant debutAvant = creneau(creneau.scheduleId()).getStartsAt();
+        reculerEcheance(watchId, 16); // un rappel serait dû dans l'instant
+
+        Watch avant = watch(watchId);
+        Instant echeanceAvant = avant.getDeadlineAt();
+        Instant occurrenceAvant = avant.getOccurrenceStartsAt();
+        Instant allerAvant = avant.getOutboundBaseAt();
+
+        deplacer(moi, creneau, debutAvant.plus(2, ChronoUnit.HOURS));
+
+        Watch apres = watch(watchId);
+        assertThat(apres.getDeadlineAt())
+            .isCloseTo(echeanceAvant.plus(DEUX_HEURES), within(1, ChronoUnit.SECONDS));
+        assertThat(apres.getOccurrenceStartsAt())
+            .isCloseTo(occurrenceAvant.plus(DEUX_HEURES), within(1, ChronoUnit.SECONDS));
+        assertThat(apres.getOutboundBaseAt())
+            .isCloseTo(allerAvant.plus(DEUX_HEURES), within(1, ChronoUnit.SECONDS));
+
+        // La veille reste vivante : déplacer n'est pas annuler.
+        assertThat(apres.getState()).isEqualTo(WatchState.ON_SITE);
+        assertThat(apres.getClosedAt()).isNull();
+        // Et la chronologie dit pourquoi l'échéance a bougé : sans cette ligne,
+        // la relire laisserait croire à une saisie ou à un défaut.
+        assertThat(typesDeLaChronologie(watchId)).contains(WatchEventType.DEADLINE_SHIFTED);
+
+        returnLoopJob.tick();
+
+        assertThat(watch(watchId).getRemindersSent()).isZero();
+        assertThat(typesDeLaChronologie(watchId)).doesNotContain(WatchEventType.REMINDER_SENT);
+        await().during(Duration.ofSeconds(2)).atMost(Duration.ofSeconds(5))
+            .until(() -> notificationsDe(moi, NotificationType.WATCH_RETURN_REMINDER).isEmpty());
+    }
+
+    /**
+     * Corriger le nom du lieu ne touche à aucune veille : seule l'heure les
+     * concerne. Un décalage sans cause écrirait une ligne {@code DEADLINE_SHIFTED}
+     * dans une chronologie où rien n'a bougé.
+     */
+    @Test
+    void changerLeLieuSeul_neDoitPasToucherLEcheanceDeLaVeille() {
+        Compte moi = compte();
+        Creneau creneau = creerCreneauComplet(moi);
+        UUID watchId = armer(moi, creneau.scheduleId());
+        Instant echeanceAvant = watch(watchId).getDeadlineAt();
+
+        webTestClient.put()
+            .uri("/api/programs/{programId}/schedules/{scheduleId}",
+                creneau.programId(), creneau.scheduleId())
+            .headers(h -> h.setBearerAuth(moi.token()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("placeName", "Studio Lumière — salle 2"))
+            .exchange().expectStatus().isOk();
+
+        assertThat(watch(watchId).getDeadlineAt())
+            .isCloseTo(echeanceAvant, within(1, ChronoUnit.SECONDS));
+        assertThat(typesDeLaChronologie(watchId)).doesNotContain(WatchEventType.DEADLINE_SHIFTED);
+    }
+
     // ------------------------------------------------------------------ outils
+
+    private static final Duration DEUX_HEURES = Duration.ofHours(2);
+
+    /** L'organisateur repousse sa séance. Le créneau est le sien : 200 attendu. */
+    private void deplacer(Compte organisateur, Creneau creneau, Instant nouveauDebut) {
+        webTestClient.put()
+            .uri("/api/programs/{programId}/schedules/{scheduleId}",
+                creneau.programId(), creneau.scheduleId())
+            .headers(h -> h.setBearerAuth(organisateur.token()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("startsAt", nouveauDebut.toString()))
+            .exchange().expectStatus().isOk();
+    }
 
     private WatchState etat(UUID watchId) {
         return watch(watchId).getState();

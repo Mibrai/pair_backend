@@ -1183,6 +1183,155 @@ class PushNotificationServiceTest {
         return user(hour, (hour + 1) % 24);
     }
 
+    // ———————————————————————— P-BL-06 : la modification de créneau (SCHEDULE_CHANGED)
+
+    /**
+     * Le titre de la modification existe, et dans les trois langues.
+     *
+     * <p><b>Ce que ce test fixe.</b> {@code SCHEDULE_CHANGED} était classé critique
+     * et destiné à l'e-mail depuis le premier jour, sans aucun texte : il tombait
+     * dans le {@code default} et partait en « Nouvelle notification ». C'est le
+     * pire endroit où le faire — un titre qui ne dit rien ne fait rouvrir personne,
+     * et l'inscrit se présente à l'ancienne heure. Le test échoue aussi si une
+     * seule des trois langues perd sa clé.
+     */
+    @Test
+    void laPushDeModification_doitAvoirSonTitre_danslesTroisLangues() {
+        PushNotificationService service = service();
+        Map<String, Object> payload = Map.of("programTitle", "Yoga du soir");
+
+        assertThat(service.buildTitle(LocaleConfig.FRENCH, NotificationType.SCHEDULE_CHANGED, payload))
+            .isEqualTo("Séance modifiée : Yoga du soir");
+        assertThat(service.buildTitle(LocaleConfig.ENGLISH, NotificationType.SCHEDULE_CHANGED, payload))
+            .isEqualTo("Session changed: Yoga du soir");
+        assertThat(service.buildTitle(LocaleConfig.GERMAN, NotificationType.SCHEDULE_CHANGED, payload))
+            .isEqualTo("Termin geändert: Yoga du soir");
+
+        // Et surtout : plus le titre générique, qui était le défaut.
+        assertThat(service.buildTitle(LocaleConfig.FRENCH, NotificationType.SCHEDULE_CHANGED, payload))
+            .isNotEqualTo(service.buildTitle(
+                LocaleConfig.FRENCH, NotificationType.MATCH_FOUND, payload));
+    }
+
+    /**
+     * Le corps dit <b>ce qui</b> a changé, avec l'ancienne valeur — et l'heure est
+     * écrite dans le fuseau de l'appareil.
+     *
+     * <p>Trois corps distincts, parce que « la séance a été modifiée » oblige à
+     * ouvrir l'application pour savoir s'il faut se réorganiser. Le jour est écrit
+     * avec l'heure : {@code push.tpl.timePattern} est {@code HH:mm}, et l'heure
+     * seule effacerait le déplacement d'un jour à l'autre — la modification la plus
+     * lourde de conséquences.
+     */
+    @Test
+    void leCorpsDeModification_doitDireCeQuiAChange_avecLAncienneValeur() {
+        PushNotificationService service = service();
+
+        // 20/08/2026 19:00 à Paris, au lieu de 18:00 le même jour.
+        Map<String, Object> heure = new LinkedHashMap<>(Map.of(
+            "changedFields", List.of("TIME"),
+            "sessionAt", "2026-08-20T17:00:00Z",
+            "previousStartsAt", "2026-08-20T16:00:00Z",
+            "placeName", "Studio Lumière"));
+
+        String corps = service.buildBody(LocaleConfig.FRENCH, NotificationType.SCHEDULE_CHANGED, heure);
+        assertThat(corps).contains("19:00").contains("18:00").contains("au lieu de");
+        // Le jour y est : un déplacement du mardi au mercredi doit se voir.
+        assertThat(corps).contains("20");
+        assertThat(service.buildBody(LocaleConfig.ENGLISH, NotificationType.SCHEDULE_CHANGED, heure))
+            .contains("instead of");
+        assertThat(service.buildBody(LocaleConfig.GERMAN, NotificationType.SCHEDULE_CHANGED, heure))
+            .contains("statt");
+
+        Map<String, Object> lieu = new LinkedHashMap<>(Map.of(
+            "changedFields", List.of("PLACE"),
+            "placeName", "Gymnase Victor-Hugo",
+            "previousPlaceName", "Studio Lumière"));
+        assertThat(service.buildBody(LocaleConfig.FRENCH, NotificationType.SCHEDULE_CHANGED, lieu))
+            .contains("Gymnase Victor-Hugo").contains("Studio Lumière");
+
+        Map<String, Object> deux = new LinkedHashMap<>(heure);
+        deux.put("changedFields", List.of("TIME", "PLACE"));
+        deux.put("placeName", "Gymnase Victor-Hugo");
+        deux.put("previousPlaceName", "Studio Lumière");
+        assertThat(service.buildBody(LocaleConfig.FRENCH, NotificationType.SCHEDULE_CHANGED, deux))
+            .contains("19:00").contains("18:00")
+            .contains("Gymnase Victor-Hugo").contains("Studio Lumière");
+    }
+
+    /**
+     * Aucune adresse dans le corps, jamais — ni la nouvelle, ni l'ancienne.
+     *
+     * <p>Ces textes s'affichent sur un écran verrouillé, s'y conservent et s'y
+     * capturent (P-MS-10). Le nom du lieu y entre, comme dans le corps d'une
+     * annulation ; l'adresse que la charge porte parfois reste pour la fiche.
+     */
+    @Test
+    void leCorpsDeModification_neDoitJamaisPorterLAdresse() {
+        Map<String, Object> payload = new LinkedHashMap<>(Map.of(
+            "changedFields", List.of("PLACE"),
+            "placeName", "Gymnase Victor-Hugo",
+            "previousPlaceName", "Studio Lumière",
+            "addressPublic", "12 rue des Bouchers",
+            "previousAddress", "3 place Kléber"));
+
+        String corps = service().buildBody(
+            LocaleConfig.FRENCH, NotificationType.SCHEDULE_CHANGED, payload);
+
+        assertThat(corps).doesNotContain("12 rue des Bouchers");
+        assertThat(corps).doesNotContain("3 place Kléber");
+    }
+
+    /**
+     * Une valeur manquante ne produit pas une phrase à trous.
+     *
+     * <p>Même raison qu'au rappel de retour, et c'est le seul texte que la personne
+     * lit avant de décider où aller : « Nouvel horaire :  (au lieu de ) » ne fait
+     * aller personne nulle part. Une charge amputée — relue d'une version
+     * antérieure, ou tronquée — retombe sur l'autre forme, puis sur le générique.
+     */
+    @Test
+    void uneChargeSansAncienneValeur_neDoitPasProduireUneMentionVide() {
+        PushNotificationService service = service();
+
+        // TIME annoncé, mais aucune ancienne heure : on ne peut pas écrire
+        // « au lieu de », et le lieu est disponible — c'est lui qui parle.
+        Map<String, Object> ampute = new LinkedHashMap<>(Map.of(
+            "changedFields", List.of("TIME", "PLACE"),
+            "sessionAt", "2026-08-20T17:00:00Z",
+            "placeName", "Gymnase Victor-Hugo",
+            "previousPlaceName", "Studio Lumière"));
+        assertThat(service.buildBody(LocaleConfig.FRENCH, NotificationType.SCHEDULE_CHANGED, ampute))
+            .doesNotContain("au lieu de )")
+            .contains("Gymnase Victor-Hugo");
+
+        // Plus rien d'exploitable : le corps générique, et non une phrase à trous.
+        Map<String, Object> vide = Map.of("changedFields", List.of("TIME"));
+        assertThat(service.buildBody(LocaleConfig.FRENCH, NotificationType.SCHEDULE_CHANGED, vide))
+            .isEqualTo(service.buildBody(
+                LocaleConfig.FRENCH, NotificationType.MATCH_FOUND, Map.of()));
+    }
+
+    /**
+     * Un lieu qui bouge sans changer de nom n'écrit pas « X (au lieu de X) ».
+     *
+     * <p>De nouvelles coordonnées sur le même « Studio Lumière » : le vocabulaire
+     * n'a pas de forme sans valeur pour ce cas, et répéter le nom ne dit rien à
+     * personne. Le corps retombe donc sur l'heure si elle a bougé, sinon sur le
+     * générique — la fiche du créneau porte la nouvelle position.
+     */
+    @Test
+    void unLieuDeplaceSansChangerDeNom_neDoitPasSeRepeter() {
+        Map<String, Object> payload = new LinkedHashMap<>(Map.of(
+            "changedFields", List.of("PLACE"),
+            "placeName", "Studio Lumière",
+            "previousPlaceName", "Studio Lumière"));
+
+        assertThat(service().buildBody(
+            LocaleConfig.FRENCH, NotificationType.SCHEDULE_CHANGED, payload))
+            .doesNotContain("Studio Lumière (au lieu de Studio Lumière)");
+    }
+
     private static org.program.pair.domain.user.User quiet(int start, int end) {
         return user(start, end);
     }

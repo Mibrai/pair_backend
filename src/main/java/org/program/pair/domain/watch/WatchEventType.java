@@ -77,6 +77,27 @@ public enum WatchEventType {
     INTERRUPTED,
 
     /**
+     * La séance a été déplacée, et l'heure limite de retour avec elle.
+     *
+     * <p><b>Inscrit parce que l'échéance est figée à l'armement.</b> Rien, dans la
+     * ligne {@code watches}, ne dit d'où vient {@code deadlineAt} : relire une
+     * chronologie où l'échéance a bougé sans trace laisserait croire à une
+     * saisie, ou à un défaut. C'est la ligne qui explique pourquoi le rappel est
+     * parti deux heures plus tard que ce que la personne avait vu en armant.
+     *
+     * <p>Le décalage lui-même est écrit dans {@code detail} — « +2h00 » — parce
+     * que le nouvel horaire seul ne dit pas de combien on a bougé, et que
+     * l'ancien n'est plus nulle part une fois la ligne réécrite.
+     *
+     * <p>L'application 1.1.0+16 ne connaît pas ce type : son analyseur rend
+     * {@code null} et la chronologie écarte la ligne. Elle voit donc une
+     * échéance nouvelle sans savoir pourquoi — ce qui est exactement ce qu'elle
+     * voyait avant, en pire (l'échéance ne bougeait pas du tout). La tolérance et
+     * le libellé sont une suite côté client.
+     */
+    DEADLINE_SHIFTED,
+
+    /**
      * L'organisateur a signalé qu'il voit la personne : « elle est là ». Repousse
      * la relance d'arrivée de 15 min. L'organisateur ne valide pas l'arrivée et ne
      * crée aucun code — ce geste appartient à l'intéressée seule.
