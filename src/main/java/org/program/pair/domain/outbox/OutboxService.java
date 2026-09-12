@@ -41,8 +41,18 @@ public class OutboxService {
      */
     public static final int PRIORITE_VERIFICATION = 2;
 
-    /** Au-delà, le message est déclaré en échec plutôt que réessayé indéfiniment. */
-    private static final int MAX_ESSAIS = 5;
+    /**
+     * Au-delà, le message est déclaré en échec plutôt que réessayé indéfiniment.
+     *
+     * <p><b>Dix, et non cinq.</b> Le balayage passe toutes les dix secondes ;
+     * tant que les essais se suivaient sans délai, cinq essais s'épuisaient en
+     * moins d'une minute, et une panne fournisseur d'une minute suffisait à
+     * déclarer une alerte définitivement en échec. Avec le délai croissant de
+     * {@link OutboxMessage#markAttemptFailed} (30 s, 1 min, 2, 4, 8, 16, puis
+     * 30 min de plafond), dix essais couvrent un peu plus de deux heures de
+     * panne — sans tenir la file ouverte au-delà.
+     */
+    public static final int MAX_ESSAIS = 10;
     /** Taille d'un lot de balayage. */
     private static final int LOT = 50;
 
@@ -102,23 +112,39 @@ public class OutboxService {
     // ------------------------------------------------------------------ envoi
 
     /**
-     * Envoie ce qui attend, du plus prioritaire au plus ancien.
+     * Envoie ce qui attend et dont l'heure du prochain essai est venue, du plus
+     * prioritaire au plus ancien.
      *
-     * <p>Chaque message est traité dans sa propre transaction : l'échec d'un envoi
-     * ne doit pas annuler le succès des autres du même lot, ni faire rejouer un
-     * message déjà parti. Un envoi refusé laisse le message en attente jusqu'à
-     * épuisement des essais, puis le marque en échec — un échec est fait pour être
-     * vu, pas retenté sans fin.
+     * <p><b>Un envoi refusé n'est pas réessayé tout de suite.</b>
+     * {@link OutboxMessage#markAttemptFailed} pose une date de prochain essai
+     * dont le délai double (30 s, 1 min, 2, 4, ... plafonné à 30 min), et la
+     * lecture ci-dessous n'en reprend que les messages échus. Au bout de
+     * {@link #MAX_ESSAIS} essais — un peu plus de deux heures de panne — le
+     * message passe en échec : un échec est fait pour être vu, pas retenté sans
+     * fin.
+     *
+     * <p><b>Ce que cette méthode ne fait pas encore.</b> Sa javadoc a longtemps
+     * promis « chaque message dans sa propre transaction » ; c'était faux. Tout
+     * le lot tient dans <i>une seule</i> transaction — celle de cette méthode —
+     * et les appels au fournisseur s'y font, connexion tenue. Donc aujourd'hui :
+     * une exception qui s'échapperait d'ici annulerait les écritures de tout le
+     * lot, y compris celles des messages déjà remis (les {@code markSent} ne
+     * seraient pas écrits alors que le fournisseur, lui, a bien accepté). Aucune
+     * lecture n'est faite sous {@code FOR UPDATE SKIP LOCKED} : deux instances
+     * qui balaient en même temps peuvent remettre le même message deux fois.
+     * Ces deux défauts sont traités au lot 1 de P-BA-03 (réclamation sous
+     * verrou, envoi hors transaction, confirmation message par message) ; ce
+     * lot-ci ne traite que le délai entre essais.
      *
      * @return le nombre de messages effectivement remis à un fournisseur
      */
     @Transactional
     public int dispatchPending() {
-        List<OutboxMessage> lot = repository.findByStatusOrderByPriorityAscCreatedAtAsc(
-            OutboxStatus.PENDING, PageRequest.of(0, LOT));
+        Instant now = Instant.now();
+        List<OutboxMessage> lot = repository.findAEnvoyer(
+            OutboxStatus.PENDING, now, PageRequest.of(0, LOT));
 
         int envoyes = 0;
-        Instant now = Instant.now();
         for (OutboxMessage message : lot) {
             if (envoyer(message, now)) {
                 envoyes++;
@@ -224,7 +250,7 @@ public class OutboxService {
                         message.markSent(r.providerMessageId(), now);
                         yield true;
                     }
-                    message.markAttemptFailed(now, MAX_ESSAIS);
+                    echecDEssai(message, now);
                     yield false;
                 }
                 case EMAIL -> {
@@ -237,7 +263,7 @@ public class OutboxService {
                         reporterLEnvoiSurLeCompte(message);
                         yield true;
                     }
-                    message.markAttemptFailed(now, MAX_ESSAIS);
+                    echecDEssai(message, now);
                     reporterLEnvoiSurLeCompte(message);
                     yield false;
                 }
@@ -245,9 +271,32 @@ public class OutboxService {
         } catch (RuntimeException e) {
             log.error("Envoi outbox {} en échec ({}): {}",
                 message.getId(), message.getChannel(), e.getMessage());
-            message.markAttemptFailed(now, MAX_ESSAIS);
+            echecDEssai(message, now);
             reporterLEnvoiSurLeCompte(message);
             return false;
+        }
+    }
+
+    /**
+     * Compte un essai manqué, et journalise l'abandon s'il était le dernier.
+     *
+     * <p><b>Le journal ne porte ni destinataire ni corps.</b> Un message
+     * d'outbox transporte un nom, un lieu, une heure, et le numéro ou l'adresse
+     * d'un proche ; le journal, lui, est conservé plus longtemps que le message
+     * — la purge efface la ligne à sept jours, pas la trace. On y met de quoi
+     * retrouver la ligne tant qu'elle existe (l'identifiant), de quoi juger de
+     * la gravité (le canal, le nombre d'essais) et de quoi rattacher l'abandon à
+     * ce qui l'a produit (la veille). Rien d'autre.
+     *
+     * <p>L'abandon est un {@code error} et non un {@code warn} : c'est une
+     * alerte qui ne partira pas, et personne n'en sera averti autrement tant que
+     * la métrique {@code outbox.failed} du lot 1 n'existe pas.
+     */
+    private void echecDEssai(OutboxMessage message, Instant now) {
+        message.markAttemptFailed(now, MAX_ESSAIS);
+        if (message.getStatus() == OutboxStatus.FAILED) {
+            log.error("Outbox : message {} abandonné après {} essais ({}, veille {})",
+                message.getId(), message.getAttempts(), message.getChannel(), message.getWatchId());
         }
     }
 }
