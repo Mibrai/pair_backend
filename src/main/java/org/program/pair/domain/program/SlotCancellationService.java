@@ -5,6 +5,7 @@ import org.program.pair.domain.notification.NotificationPayload;
 import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.program.dto.CancelSlotRequest;
+import org.program.pair.domain.watch.WatchSlotLifecycle;
 import org.program.pair.repository.ScheduleRepository;
 import org.program.pair.repository.SlotParticipationRepository;
 import org.program.pair.repository.UserProgramRepository;
@@ -63,6 +64,13 @@ public class SlotCancellationService {
     private final NotificationService notificationService;
     private final HtmlSanitizer sanitizer;
 
+    /**
+     * Ce qui referme les veilles retour de la séance. Une annulation les laissait
+     * armées : la boucle retour envoyait ses trois rappels à l'heure dite, puis un
+     * message d'alerte au proche — pour une séance à laquelle personne n'est allé.
+     */
+    private final WatchSlotLifecycle watchSlotLifecycle;
+
     public void cancel(UUID userId, UUID scheduleId, CancelSlotRequest request) {
         Schedule slot = scheduleRepository.findById(scheduleId)
             .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
@@ -86,6 +94,13 @@ public class SlotCancellationService {
         slot.setCancelledBy(userRepository.getReferenceById(userId));
         slot.setCancellationReason(reason == null || reason.isBlank() ? null : reason);
         scheduleRepository.save(slot);
+
+        // Après le save, dans la même transaction : les veilles se referment avec
+        // l'annulation ou pas du tout. Rien n'est envoyé à personne — les inscrits
+        // apprennent l'annulation par la notification ci-dessous, et un proche qui
+        // recevrait quoi que ce soit ici découvrirait l'existence d'une veille dont
+        // il n'a jamais été question.
+        watchSlotLifecycle.closeForCancelledSlot(slot, Instant.now());
 
         notifyEveryone(slot, userId, reason);
     }

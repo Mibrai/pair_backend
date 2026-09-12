@@ -13,6 +13,7 @@ import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.program.dto.*;
 import org.program.pair.domain.subscription.SubscriptionService;
+import org.program.pair.domain.watch.WatchSlotLifecycle;
 import org.program.pair.repository.*;
 import org.program.pair.shared.exception.ForbiddenException;
 import org.program.pair.shared.exception.ResourceNotFoundException;
@@ -45,6 +46,14 @@ public class ProgramService {
     private final HtmlSanitizer sanitizer;
     private final RecurrenceExpander recurrenceExpander;
     private final StoredImageResolver storedImageResolver;
+
+    /**
+     * Ce qui referme les veilles retour d'une séance annulée. Ce chemin-ci annule
+     * sans passer par {@link SlotCancellationService} — P-BL-19 unifiera les deux —
+     * et doit donc appeler la clôture lui-même, sans quoi une suppression de
+     * créneau avec inscrits laisserait leurs veilles armées.
+     */
+    private final WatchSlotLifecycle watchSlotLifecycle;
     private final GeometryFactory geometryFactory = new GeometryFactory(
         new PrecisionModel(), 4326);
 
@@ -549,6 +558,11 @@ public class ProgramService {
             // possibilité de notifier qui que ce soit).
             schedule.setStatus(SlotStatus.CANCELLED);
             scheduleRepository.save(schedule);
+
+            // Les veilles retour de la séance se referment avec elle, sans rien
+            // envoyer : sans cela la boucle retour envoyait ses rappels puis
+            // alertait le proche à l'heure d'une séance supprimée.
+            watchSlotLifecycle.closeForCancelledSlot(schedule, Instant.now());
 
             java.util.stream.Stream.concat(slotParticipantIds.stream(), programParticipantIds.stream())
                 .distinct()
