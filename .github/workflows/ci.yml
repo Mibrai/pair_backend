@@ -1,0 +1,75 @@
+# Intégration continue — P-BA-09.
+#
+# Ce qui est vérifié ici, et pourquoi ce flux existe : l'image Docker se
+# construit avec `-DskipTests` (Dockerfile:10), et c'est voulu — Testcontainers
+# ne peut pas lancer Docker dans l'étape de construction de l'image. La suite ne
+# tournait donc nulle part automatiquement. Elle tourne ici.
+#
+# La branche par défaut du dépôt est `master` (et non `main` : `git branch -r`
+# donne `origin/HEAD -> origin/master`). Le dépôt est public, et la suite ne
+# demande aucun secret : `src/test/resources/application-test.properties` porte
+# une clé JWT de test en clair et ne contient aucun `${...}` à résoudre depuis
+# l'environnement.
+name: ci
+
+on:
+  pull_request: {}
+  push:
+    branches: [master]
+
+# Un seul passage par référence : un nouveau push annule le précédent, la suite
+# durant ~9 min.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    # ~9 min pour la suite en une seule JVM, plus la construction de l'image
+    # PostGIS + pgvector (pair-postgres/Dockerfile.postgres) et le
+    # téléchargement des dépendances au premier passage.
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Temurin 21, la version de la JRE d'exécution (Dockerfile:14). Le pom
+      # fixe encore `<java.version>17</java.version>` : compiler en cible 17
+      # sur un JDK 21 fonctionne, et l'élévation du pom à 21 avec la règle
+      # `requireJavaVersion` est l'étape 1 de la fiche, laissée en attente d'un
+      # JDK 21 sur la machine du propriétaire.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # Le tas de la suite n'est PAS réglé ici : `maven-surefire-plugin` le fixe
+      # lui-même dans le pom (`<argLine>-Xmx3g -Dspring.test.context.cache.maxSize=3</argLine>`),
+      # et c'est la JVM forkée par Surefire qui en a besoin, pas celle de Maven.
+      # Poser MAVEN_OPTS ici ne la toucherait pas et ne ferait que disputer la
+      # mémoire de l'exécuteur (16 Go).
+      #
+      # Le groupe de tests `model-integration` (chargement d'un vrai modèle ONNX,
+      # ~120 Mo) reste exclu : `pom.xml:32` le sort par défaut, ce flux en hérite
+      # sans rien déclarer.
+      - name: mvnw verify
+        run: ./mvnw -B verify
+
+      # Hygiène demandée par la fiche, mais qui appartient à P-BA-22 : neuf
+      # fichiers `.log` sont aujourd'hui suivis par git à la racine (app.log,
+      # app-debug.log, …). L'étape est donc écrite, visible, et tolérante :
+      # elle rougira en avertissement à chaque passage jusqu'à ce que P-BA-22
+      # les retire du suivi, et il suffira alors de supprimer la ligne
+      # `continue-on-error` pour qu'elle devienne bloquante.
+      - name: aucun fichier .log suivi par git (P-BA-22)
+        continue-on-error: true
+        run: test -z "$(git ls-files '*.log')"
+
+      - name: rapports surefire
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire
+          path: target/surefire-reports

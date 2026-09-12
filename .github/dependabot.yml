@@ -1,0 +1,18 @@
+# Mises à jour de dépendances — P-BA-09 étape 5, avec P-BS-20.
+#
+# Hebdomadaire, sur la branche par défaut du dépôt (`master`). Chaque PR
+# ouverte ici déclenche le flux `ci`, qui est précisément ce qui rend ces
+# montées de version lisibles : une PR Dependabot rouge se voit avant fusion.
+version: 2
+updates:
+  - package-ecosystem: maven
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
