@@ -1,0 +1,14 @@
+-- La date du prochain essai d'un message d'outbox (P-BA-03, lot 0).
+--
+-- Sans elle, un envoi refusé repartait au balayage suivant, dix secondes plus
+-- tard : cinq essais épuisés en moins d'une minute, et une alerte déclarée
+-- définitivement en échec pour une panne fournisseur d'une minute. La colonne
+-- porte l'heure à partir de laquelle le message redevient éligible ; le délai
+-- double à chaque essai (30 s, 1 min, 2 min... plafonné à 30 min), ce qui donne
+-- environ deux heures de couverture sur dix essais.
+--
+-- NULL veut dire « jamais essayé, donc éligible tout de suite » : la colonne est
+-- nullable et sans valeur par défaut, l'ALTER est donc instantané et ne réécrit
+-- pas la table. Les messages déjà en attente au déploiement partent au premier
+-- balayage, comme avant.
+ALTER TABLE outbox_messages ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ;

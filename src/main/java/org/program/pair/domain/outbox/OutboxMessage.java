@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import org.springframework.data.annotation.CreatedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -93,12 +94,35 @@ public class OutboxMessage {
     @Column(name = "last_attempt_at")
     private Instant lastAttemptAt;
 
+    /**
+     * À partir de quand ce message redevient éligible au balayage.
+     *
+     * <p>Nul veut dire « jamais essayé » : un message tout juste déposé part au
+     * premier passage, sans attendre. Après un refus, la date est repoussée d'un
+     * délai qui double à chaque essai — c'est ce qui fait qu'une panne
+     * fournisseur de quelques minutes n'épuise pas les essais d'une alerte.
+     */
+    @Column(name = "next_attempt_at")
+    private Instant nextAttemptAt;
+
     @Column(name = "sent_at")
     private Instant sentAt;
 
     @CreatedDate
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    /** Premier délai après un refus. Il double ensuite à chaque essai. */
+    private static final Duration DELAI_INITIAL = Duration.ofSeconds(30);
+
+    /**
+     * Plafond du délai entre deux essais.
+     *
+     * <p>Sans plafond, le doublement mettrait le dixième essai à plus de quatre
+     * heures : un message d'alerte remis si tard ne vaut plus rien, et la file
+     * garderait son corps sensible d'autant plus longtemps.
+     */
+    private static final Duration DELAI_MAX = Duration.ofMinutes(30);
 
     protected OutboxMessage() {}
 
@@ -165,6 +189,8 @@ public class OutboxMessage {
     public OutboxDelivery getDeliveryState() { return deliveryState; }
     public void setDeliveryState(OutboxDelivery deliveryState) { this.deliveryState = deliveryState; }
     public Instant getSentAt() { return sentAt; }
+    public Instant getLastAttemptAt() { return lastAttemptAt; }
+    public Instant getNextAttemptAt() { return nextAttemptAt; }
 
     public void markSent(String providerMessageId, Instant when) {
         this.status = OutboxStatus.SENT;
@@ -172,13 +198,53 @@ public class OutboxMessage {
         this.sentAt = when;
         this.lastAttemptAt = when;
         this.attempts++;
+        // Un message parti après deux refus n'a plus de prochain essai à attendre :
+        // la date laissée par ces refus n'a plus de sens, on l'efface.
+        this.nextAttemptAt = null;
     }
 
+    /**
+     * Enregistre un essai qui n'a pas abouti, et fixe quand le suivant aura lieu.
+     *
+     * <p><b>Le délai croît, et c'est tout l'objet.</b> Le balayage passe toutes
+     * les dix secondes ; sans date de prochain essai, cinq essais s'épuisaient en
+     * moins d'une minute et une panne fournisseur d'une minute suffisait à
+     * déclarer une alerte définitivement en échec. Le délai vaut donc
+     * {@code 30 s × 2^(essais-1)}, plafonné à {@link #DELAI_MAX} : 30 s, 1 min,
+     * 2 min, 4, 8, 16, puis 30 min. Sur dix essais, cela couvre un peu plus de
+     * deux heures de panne.
+     *
+     * <p>Au dernier essai, le message passe {@code FAILED} — un état terminal,
+     * fait pour être vu. On ne lui pose pas de nouvelle date : il n'y aura pas
+     * d'essai suivant, et {@code nextAttemptAt} garde celle du refus précédent,
+     * déjà passée, pour qu'une remise à {@code PENDING} à la main reparte
+     * immédiatement.
+     *
+     * @param when        l'instant de l'essai
+     * @param maxAttempts le nombre d'essais au-delà duquel on renonce
+     */
     public void markAttemptFailed(Instant when, int maxAttempts) {
         this.attempts++;
         this.lastAttemptAt = when;
         if (this.attempts >= maxAttempts) {
             this.status = OutboxStatus.FAILED;
+            return;
         }
+        this.nextAttemptAt = when.plus(delaiAvantProchainEssai(this.attempts));
+    }
+
+    /**
+     * Le délai à attendre après {@code essais} refus : {@code 30 s × 2^(essais-1)},
+     * plafonné à trente minutes.
+     *
+     * <p>L'exposant est borné avant le décalage : un nombre d'essais élevé — que
+     * produirait une remise à {@code PENDING} à la main sur un message épuisé —
+     * ferait sinon repasser le décalage par zéro, et rendrait le message
+     * éligible immédiatement, en boucle.
+     */
+    static Duration delaiAvantProchainEssai(int essais) {
+        int exposant = Math.min(Math.max(essais - 1, 0), 20);
+        long secondes = DELAI_INITIAL.toSeconds() << exposant;
+        return secondes >= DELAI_MAX.toSeconds() ? DELAI_MAX : Duration.ofSeconds(secondes);
     }
 }
