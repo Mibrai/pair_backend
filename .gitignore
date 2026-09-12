@@ -37,3 +37,54 @@ build/
 
 ### Local media storage ###
 uploads/
+
+### Journaux d'application ###
+# Neuf `.log` ont été suivis par git de l'« Init Commit » (26/06/2026) à
+# P-BA-22 : app.log, app-activities.log, app-clean.log, app-debug.log,
+# app-final.log, app-flyway.log, app-test.log, spring-boot.log et
+# test-output.log — 534 Ko de traces de démarrage d'un poste de dev.
+# Ils restent sur le disque, hors de git. L'étape CI
+# « aucun fichier .log suivi par git » les interdit désormais.
+*.log
+
+### Historique SQL antérieur à Flyway ###
+# 36 scripts joués à la main sur `pair_db` avant que les migrations existent.
+# `src/main/resources/db/migration` en porte aujourd'hui 105 : ce dossier est
+# une archive locale, pas une source. Il reste sur le disque, hors de git ;
+# l'historique git le conserve de toute façon.
+/SQLHistory/
+
+### Configuration propre au poste ###
+# frontend-config.local.json pointait l'IP privée d'une machine (192.168.x.x).
+# `local/` est l'emplacement prévu pour un magasin de clés de développement.
+frontend-config.local.json
+/local/
+
+### Secrets d'environnement ###
+# `.env.example` est le gabarit suivi ; aucun `.env` réel ne doit partir.
+.env
+.env.*
+!.env.example
+
+### Claude Code — état local du poste ###
+# `.claude/memories/` portait six copies au bit près de docs/specs/*.md
+# (200 Ko dupliqués) ; le contenu de référence est docs/specs/.
+/.claude/settings.local.json
+/.claude/scheduled_tasks.json
+/.claude/scheduled_tasks.lock
+/.claude/worktrees/
+/.claude/memories/
+
+### Dépôt public — deux dossiers volontairement hors suivi ###
+# Ce dépôt est public. `audit/` décrit 62 constats exploitables d'une
+# application en production (son README l'interdit explicitement) et
+# `docs/runbooks/` contient des procédures qui nomment des comptes réels.
+# Sans ces deux lignes, un `git add -A` distrait les publie : rien ne les
+# ignorait jusqu'ici (`git check-ignore audit docs/runbooks` sortait en 1).
+#
+# Deux limites à connaître : une règle d'ignorance ne « désuit » rien, donc
+# docs/runbooks/RUNBOOK_MIGRATION_BASE_EUROPE_2026-08-24.md — déjà suivi et
+# sans secret en clair — reste suivi et ses modifications restent visibles ;
+# et un futur runbook que l'on veut publier demandera un `git add -f`.
+/audit/
+/docs/runbooks/
