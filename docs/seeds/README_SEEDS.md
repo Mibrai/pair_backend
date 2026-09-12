@@ -4,6 +4,18 @@
 > **Version** : 1.0  
 > **Date** : Juin 2026
 
+> **Le mot de passe des comptes de démonstration n'est plus publié** (fiche
+> d'audit P-BS-02). Il était écrit en clair dans ce document, dans un dépôt
+> public, alors que les mêmes comptes — vérifiés, et au même mot de passe —
+> avaient été créés en production. Il est désormais **défini par
+> `PAIR_SEED_DEMO_PASSWORD`** (propriété `pair.seed.demo-password`) :
+> `application-dev.properties` pose une valeur pour le développement local,
+> staging reçoit la variable d'environnement, et aucun profil de production ne
+> peut plus allumer le seed de démonstration — `SeedRunner` refuse le démarrage
+> sous `prod` comme sous `railway`. Sans la propriété, le seeder refuse de créer
+> les comptes plutôt que de se rabattre sur un défaut : un défaut inscrit dans
+> le dépôt serait à nouveau un mot de passe publié.
+
 ## 📦 Vue d'ensemble
 
 Le système de seeds permet de peupler automatiquement la base de données avec :
@@ -153,7 +165,7 @@ curl -X POST http://localhost:8090/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{
     "email": "demo1@pair.app",
-    "password": "Demo1234!"
+    "password": "<défini par PAIR_SEED_DEMO_PASSWORD>"
   }'
 ```
 
@@ -191,15 +203,18 @@ curl -X POST http://localhost:8090/api/admin/seed/status
 
 | # | Email | Nom | Mot de passe | Activités |
 |---|-------|-----|--------------|-----------|
-| 1 | demo1@pair.app | Camille Bertrand | Demo1234! | Yoga, Céramique |
-| 2 | demo2@pair.app | Karim Haddad | Demo1234! | Course à pied, Trail |
-| 3 | demo3@pair.app | Léa Moreau | Demo1234! | Échecs, Jeux de société |
-| 4 | demo4@pair.app | Thomas Girard | Demo1234! | Guitare, Jam session |
-| 5 | demo5@pair.app | Sophie Lefebvre | Demo1234! | Escalade, Randonnée |
-| ... | ... | ... | Demo1234! | ... |
-| 20 | demo20@pair.app | Benjamin Girard | Demo1234! | Écriture |
+| 1 | demo1@pair.app | Camille Bertrand | `PAIR_SEED_DEMO_PASSWORD` | Yoga, Céramique |
+| 2 | demo2@pair.app | Karim Haddad | `PAIR_SEED_DEMO_PASSWORD` | Course à pied, Trail |
+| 3 | demo3@pair.app | Léa Moreau | `PAIR_SEED_DEMO_PASSWORD` | Échecs, Jeux de société |
+| 4 | demo4@pair.app | Thomas Girard | `PAIR_SEED_DEMO_PASSWORD` | Guitare, Jam session |
+| 5 | demo5@pair.app | Sophie Lefebvre | `PAIR_SEED_DEMO_PASSWORD` | Escalade, Randonnée |
+| ... | ... | ... | `PAIR_SEED_DEMO_PASSWORD` | ... |
+| 20 | demo20@pair.app | Benjamin Girard | `PAIR_SEED_DEMO_PASSWORD` | Écriture |
 
-**Note** : Tous les comptes partagent le même mot de passe pour simplifier les tests.
+**Note** : les vingt comptes partagent le même mot de passe, pour simplifier les
+tests — et c'est précisément pourquoi il ne doit pas être écrit dans le dépôt. Il
+est **défini par `PAIR_SEED_DEMO_PASSWORD`** ; voir la note en tête de ce
+document.
 
 ## ⚙️ Configuration
 
