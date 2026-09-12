@@ -284,6 +284,69 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!--
+          Le registre Prometheus d'Actuator (P-BA-21). Sans lui,
+          /actuator/prometheus n'existe pas : Actuator expose ses métriques à
+          Micrometer, et Micrometer n'a aucun format de sortie tant qu'aucun
+          registre n'est au classpath — l'endpoint est alors absent, sans erreur
+          ni avertissement.
+
+          En portée compile plutôt que runtime (ce que montrent les guides Boot) :
+          les tests et le code de P-BA-21 nomment `PrometheusMeterRegistry` et
+          `Counter`/`Timer` du registre pour vérifier ce qui est publié, et une
+          portée runtime ne compile pas ces références.
+
+          Version gérée par la BOM de spring-boot-starter-parent (micrometer 1.17.0).
+        -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!--
+          AOP, déclarée explicitement bien qu'elle se résolve déjà par une
+          transitive : spring-boot-starter-data-jpa → spring-boot-data-jpa →
+          spring-aspects → aspectjweaver, en portée compile.
+          Pourquoi l'écrire quand même : ScheduledJobMetricsAspect (P-BA-21) est
+          un @Aspect, et AopAutoConfiguration se conditionne sur la présence
+          d'org.aspectj.weaver.Advice. Tant que cette classe n'arrive que par le
+          starter de persistance, toute l'observabilité des 14 tâches planifiées
+          pend à une transitive : le jour où quelqu'un remanie la persistance,
+          l'aspect cesse d'être tissé — sans erreur, sans test rouge, et les
+          métriques de job disparaissent en silence. C'est le genre de panne
+          qu'on ne remarque qu'en cherchant pourquoi une alerte n'a pas sonné.
+
+          Le nom de l'artefact est bien « aspectj » et non « aop » : Spring Boot 4
+          a réorganisé ses modules, et c'est spring-boot-starter-aspectj que la BOM
+          4.1.0 déclare (comme spring-boot-flyway a remplacé
+          spring-boot-starter-flyway plus haut). Avec l'ancien nom, Maven ne lit
+          même pas le pom : « version is missing », la BOM ne gérant pas un
+          artefact qui n'existe plus.
+        -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aspectj</artifactId>
+        </dependency>
+
+        <!--
+          Caffeine, pour le limiteur de débit (P-BS-08). Ses compteurs sont
+          aujourd'hui des `ConcurrentHashMap` qui ne se vident jamais — voir
+          shared/security/RateLimiter l. 113 et le @BeforeEach resetRateLimiter()
+          qu'AbstractIntegrationTest a dû ajouter pour que la suite tienne. Un
+          cache à expiration remplace la carte : les entrées d'une fenêtre
+          écoulée disparaissent sans qu'un job ait à les balayer.
+
+          Ce que cela ne règle pas, et qu'il faut dire ici pour que personne ne
+          s'y trompe : un cache en mémoire reste local à l'instance. Le limiteur
+          ne devient pas multi-instance pour autant — c'est le même obstacle que
+          celui que la note d'exploitation de P-BA-04 décrit.
+
+          Version gérée par la BOM de spring-boot-starter-parent (caffeine 3.2.4).
+        -->
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+        </dependency>
 
         <!-- Dev Tools -->
         <dependency>
