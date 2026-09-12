@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -235,7 +236,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
                 return composed;
             }
         }
-        return buildBody(group.locale(), type, payload);
+        return buildBody(group.locale(), group.zone(), type, payload);
     }
 
     /**
@@ -734,6 +735,26 @@ public class PushNotificationService implements PushNotificationServiceInterface
             // ne fait rouvrir personne, et le fil d'accueil ne touche que ceux qui
             // reviennent d'eux-mêmes.
             case AFFICHE_READY -> msg(locale, "push.AFFICHE_READY.title");
+            // ── Veille retour et consentement d'un contact ────────────────────
+            // Ces cinq-là étaient émis depuis le premier jour du module et
+            // partaient tous en « Nouvelle notification ». C'est le pire endroit
+            // où le faire : les trois rappels de retour sont les trois occasions
+            // de lever l'alerte soi-même, et un titre qui ne dit rien les fait
+            // ignorer — l'alerte part alors chez un proche pour une soirée qui
+            // s'est bien passée, ce que ce module existe pour empêcher.
+            //
+            // AUCUN LIEU dans ces textes, et aucune adresse : ils s'affichent sur
+            // un écran verrouillé, s'y conservent et s'y capturent (P-MS-10).
+            case WATCH_RETURN_REMINDER -> msg(locale, "push.WATCH_RETURN_REMINDER.title");
+            case WATCH_ARRIVAL_PROMPT -> msg(locale, "push.WATCH_ARRIVAL_PROMPT.title");
+            // Le contact apprend qu'il est attendu, et rien de plus : ni le nom de
+            // la personne qu'il veille, ni le lieu, ni le lien de statut que porte
+            // la charge. Ce qui s'écrit sur son écran verrouillé ne renseigne
+            // personne d'autre que lui, et il sait déjà qui l'a choisi.
+            case WATCH_GUARDIAN_ALERT -> msg(locale, "push.WATCH_GUARDIAN_ALERT.title");
+            case WATCH_LOST_ORGANIZER -> msg(locale, "push.WATCH_LOST_ORGANIZER.title");
+            case GUARDIAN_CONSENT_REQUEST -> msg(locale, "push.GUARDIAN_CONSENT_REQUEST.title",
+                arg(payload, "ownerName"));
             // Valeurs legacy utilisées uniquement par les données de seed (V12/V13/V27) —
             // jamais émises par notify(), donc pas de titre push dédié.
             default -> msg(locale, "push.generic.title");
@@ -741,11 +762,33 @@ public class PushNotificationService implements PushNotificationServiceInterface
     }
 
     /**
+     * Corps de la notification, composé dans le fuseau de référence de
+     * l'application.
+     *
+     * <p>Surcharge de commodité pour les appelants qui n'ont pas d'appareil sous
+     * la main — les tests, et tout futur appel hors envoi. Le chemin d'envoi
+     * réel passe par {@link #buildBody(Locale, ZoneId, NotificationType, Map)}
+     * avec le fuseau de l'appareil destinataire : {@code zoneOf(null)} rend
+     * exactement le repli que cet appareil aurait eu sans fuseau déclaré.
+     */
+    String buildBody(Locale locale, NotificationType type, Map<String, Object> payload) {
+        return buildBody(locale, androidText.zoneOf(null), type, payload);
+    }
+
+    /**
      * Corps de la notification. Certains corps sont une donnée brute du payload
      * (aperçu de message, titre de programme) : elle est affichée telle quelle,
      * la traduction ne portant que sur le repli quand elle manque.
+     *
+     * <p><b>Le fuseau est celui de l'appareil destinataire</b>, comme pour le
+     * texte Android : une heure limite écrite dans le fuseau du serveur dirait
+     * « avant 21:00 » à qui doit rentrer avant 23:00 chez lui. Il vient de
+     * {@code device_tokens.timezone} via {@code androidText.zoneOf}, et c'est le
+     * même fuseau qui décide déjà des heures de silence — la bannière et la
+     * décision de l'envoyer parlent ainsi du même moment.
      */
-    String buildBody(Locale locale, NotificationType type, Map<String, Object> payload) {
+    String buildBody(Locale locale, ZoneId zone, NotificationType type,
+                     Map<String, Object> payload) {
         return switch (type) {
             case NEW_MESSAGE -> rawOr(payload, "messageBody", locale, "push.NEW_MESSAGE.body");
             case NEW_MATCH -> msg(locale, "push.NEW_MATCH.body");
@@ -775,8 +818,71 @@ public class PushNotificationService implements PushNotificationServiceInterface
             // Le titre du programme, quand la charge le porte : « ta séance de
             // mardi » se reconnaît, « une séance » non. Repli traduit sinon.
             case AFFICHE_READY -> rawOr(payload, "programTitle", locale, "push.AFFICHE_READY.body");
+            // ── Veille retour et consentement d'un contact ────────────────────
+            // Même raison que dans buildTitle, et la même contrainte : aucun lieu,
+            // aucune adresse, rien que la personne veillée ne voudrait pas voir
+            // s'afficher sur un écran verrouillé.
+            case WATCH_RETURN_REMINDER -> returnReminderBody(locale, zone, payload);
+            case WATCH_ARRIVAL_PROMPT -> msg(locale, "push.WATCH_ARRIVAL_PROMPT.body");
+            // Le strict nécessaire : quelqu'un qui l'a choisi n'a pas confirmé son
+            // retour, et il faut ouvrir l'application. Le lien de statut que porte
+            // la charge n'entre PAS dans le texte — un lien lisible sur un écran
+            // verrouillé est un lien que n'importe qui peut suivre.
+            case WATCH_GUARDIAN_ALERT -> msg(locale, "push.WATCH_GUARDIAN_ALERT.body");
+            // Le nom, parce que l'organisateur doit savoir QUI chercher. L'heure
+            // que porte aussi la charge n'y est pas : elle ne lui apprend rien
+            // qu'il ne sache déjà de son propre créneau, et le nom seul suffit à
+            // le faire ouvrir l'application.
+            case WATCH_LOST_ORGANIZER -> msg(locale, "push.WATCH_LOST_ORGANIZER.body",
+                arg(payload, "personne"));
+            // Le corps ne répète pas le nom du titre, et surtout ne porte jamais
+            // le consentToken de la charge : c'est lui qui vaut accord.
+            case GUARDIAN_CONSENT_REQUEST -> msg(locale, "push.GUARDIAN_CONSENT_REQUEST.body");
             default -> msg(locale, "push.generic.body");
         };
+    }
+
+    /**
+     * Corps du rappel de retour, avec l'heure limite dans le fuseau de
+     * l'appareil.
+     *
+     * <p>Le motif d'heure est celui du texte Android
+     * ({@code push.tpl.timePattern}) : les deux écrivent la même heure de la même
+     * façon, et une personne qui voit les deux ne lit pas deux formats.
+     *
+     * <p><b>Une échéance absente ou illisible ne doit pas produire
+     * « Confirme ton retour avant , sinon… ».</b> Le repli est une phrase
+     * complète sans heure, et non un argument vide : le texte est ce que la
+     * personne lit sur un écran verrouillé à l'instant où elle décide de répondre
+     * ou non, et c'est le seul endroit du module où une faute de rendu se paie en
+     * alerte partie chez un proche.
+     */
+    private String returnReminderBody(Locale locale, ZoneId zone, Map<String, Object> payload) {
+        String deadline = atDeviceTime(locale, zone, payload, "deadlineAt");
+        return deadline.isEmpty()
+            ? msg(locale, "push.WATCH_RETURN_REMINDER.bodyWithoutDeadline")
+            : msg(locale, "push.WATCH_RETURN_REMINDER.body", deadline);
+    }
+
+    /**
+     * Un instant ISO 8601 de la charge, écrit à l'heure du fuseau donné, ou la
+     * chaîne vide s'il est absent ou illisible. Une date qu'on ne sait pas lire
+     * ne fait pas échouer la composition : la push part sans l'heure, pas du
+     * tout.
+     */
+    private String atDeviceTime(Locale locale, ZoneId zone, Map<String, Object> payload,
+                                String key) {
+        String text = arg(payload, key).strip();
+        if (text.isEmpty() || "null".equals(text)) {
+            return "";
+        }
+        try {
+            return Instant.parse(text).atZone(zone)
+                .format(DateTimeFormatter.ofPattern(msg(locale, "push.tpl.timePattern"), locale));
+        } catch (DateTimeParseException e) {
+            log.warn("Push payload carries an unreadable '{}': {}", key, text);
+            return "";
+        }
     }
 
     /**

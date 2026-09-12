@@ -951,6 +951,208 @@ class PushNotificationServiceTest {
         verify(firebaseMessaging, times(1)).sendEachForMulticast(any(MulticastMessage.class));
     }
 
+    // ─── P-BL-11 — les pushes de veille disent ce qu'elles demandent ──────────
+
+    /**
+     * Les types qu'un producteur émet réellement, aujourd'hui, dans ce dépôt.
+     *
+     * <p><b>Cette liste est la donnée du test, et il faut la tenir à jour.</b>
+     * Elle a été établie en cherchant les appels réels
+     * ({@code notificationService.notify} et {@code notifyPushOnly}), pas en
+     * recopiant l'enum : la moitié des valeurs de {@link NotificationType} ne
+     * vient que des données de seed V12/V13/V27 ou attend son émetteur, et leur
+     * demander un texte poserait des clés que personne n'affiche.
+     *
+     * <p>Le jour où quelqu'un écrit un nouveau producteur, il ajoute son type ici
+     * et {@link #aucunTypeEmis_neDoitRetomberSurLeTitreGenerique()} lui réclame
+     * ses trois textes. C'est le seul point où le défaut P-BL-11 — cinq types de
+     * veille partis en « Nouvelle notification » pendant tout un module — se
+     * rejoue sans qu'on le voie.
+     *
+     * <p>Producteur de chacun, au 12/09/2026 :
+     * <ul>
+     *   <li>{@code NEW_MESSAGE}, {@code PROGRAM_BROADCAST} — {@code ChatPushListener}</li>
+     *   <li>{@code NEW_FOLLOWER}, {@code AUTHOR_NEW_ACTIVITY}, {@code AUTHOR_NEW_PROGRAM},
+     *       {@code ACTIVITY_NEW_PROGRAM}, {@code ACTIVITY_UPDATED},
+     *       {@code CATEGORY_NEW_ACTIVITY} — {@code SubscriptionService}</li>
+     *   <li>{@code NEARBY_PROGRAM} — {@code SubscriptionService} le prévoit
+     *       ({@code EMISSION_PRIORITY}, et la provenance nulle du {@code Candidate}),
+     *       mais aucun chemin n'en construit encore un. Gardé ici parce que ses
+     *       textes existent déjà et que l'émetteur est écrit pour arriver : le
+     *       retirer ferait perdre la garde le jour où il arrive.</li>
+     *   <li>{@code SLOT_JOINED} — {@code SlotService}</li>
+     *   <li>{@code SLOT_CANCELLED} — {@code SlotCancellationService}, {@code ProgramService}</li>
+     *   <li>{@code WAITLIST_PROMOTED} — {@code WaitlistPromoter}</li>
+     *   <li>{@code PROGRAM_REMINDER} — {@code ProgramReminderJob}</li>
+     *   <li>{@code ATTENDANCE_PROMPT} — {@code AttendancePromptJob}</li>
+     *   <li>{@code ACTIVITY_ALERT_MATCH} — {@code ActivityAlertService}</li>
+     *   <li>{@code CYCLE_NUDGE} — {@code CycleNudgeJob}</li>
+     *   <li>{@code AFFICHE_READY} — {@code AfficheReadyListener}</li>
+     *   <li>{@code WATCH_RETURN_REMINDER}, {@code WATCH_ARRIVAL_PROMPT},
+     *       {@code WATCH_ARRIVAL_CONFIRMED}, {@code WATCH_LOST_ORGANIZER},
+     *       {@code WATCH_GUARDIAN_ALERT} — {@code WatchEscalationService}</li>
+     *   <li>{@code GUARDIAN_CONSENT_REQUEST} — {@code GuardianService}</li>
+     * </ul>
+     */
+    private static final java.util.Set<NotificationType> TYPES_EMIS = java.util.EnumSet.of(
+        NotificationType.NEW_MESSAGE,
+        NotificationType.PROGRAM_BROADCAST,
+        NotificationType.NEW_FOLLOWER,
+        NotificationType.AUTHOR_NEW_ACTIVITY,
+        NotificationType.AUTHOR_NEW_PROGRAM,
+        NotificationType.ACTIVITY_NEW_PROGRAM,
+        NotificationType.ACTIVITY_UPDATED,
+        NotificationType.CATEGORY_NEW_ACTIVITY,
+        NotificationType.NEARBY_PROGRAM,
+        NotificationType.SLOT_JOINED,
+        NotificationType.SLOT_CANCELLED,
+        NotificationType.WAITLIST_PROMOTED,
+        NotificationType.PROGRAM_REMINDER,
+        NotificationType.ATTENDANCE_PROMPT,
+        NotificationType.ACTIVITY_ALERT_MATCH,
+        NotificationType.CYCLE_NUDGE,
+        NotificationType.AFFICHE_READY,
+        NotificationType.WATCH_RETURN_REMINDER,
+        NotificationType.WATCH_ARRIVAL_PROMPT,
+        NotificationType.WATCH_ARRIVAL_CONFIRMED,
+        NotificationType.WATCH_LOST_ORGANIZER,
+        NotificationType.WATCH_GUARDIAN_ALERT,
+        NotificationType.GUARDIAN_CONSENT_REQUEST);
+
+    /** Les trois langues servies, dans l'ordre où le produit les relit. */
+    private static final List<java.util.Locale> LANGUES =
+        List.of(LocaleConfig.FRENCH, LocaleConfig.ENGLISH, LocaleConfig.GERMAN);
+
+    @Test
+    void leRappelDeRetour_doitDireCeQuIlDemande_danslesTroisLangues() {
+        // Le constat P-BL-11 : la bannière disait « Nouvelle notification », et
+        // rien n'indiquait qu'un geste était attendu avant une heure. Trois
+        // rappels ignorés, puis une alerte chez un proche.
+        PushNotificationService service = service();
+        // 21:00 UTC, soit 23:00 à Paris — l'heure limite que la personne doit lire.
+        Map<String, Object> payload = Map.of(
+            "watchId", UUID.randomUUID().toString(),
+            "deadlineAt", "2026-08-17T21:00:00Z");
+
+        assertThat(service.buildTitle(LocaleConfig.FRENCH,
+                NotificationType.WATCH_RETURN_REMINDER, payload))
+            .isEqualTo("Tu es bien rentré·e ?");
+        assertThat(service.buildTitle(LocaleConfig.ENGLISH,
+                NotificationType.WATCH_RETURN_REMINDER, payload))
+            .isEqualTo("Are you home safe?");
+        assertThat(service.buildTitle(LocaleConfig.GERMAN,
+                NotificationType.WATCH_RETURN_REMINDER, payload))
+            .isEqualTo("Sind Sie gut zu Hause angekommen?");
+
+        // Le corps dit les deux choses qui font agir : l'heure limite, et ce qui
+        // arrive faute de réponse. Aucun lieu, jamais : écran verrouillé.
+        assertThat(service.buildBody(LocaleConfig.FRENCH, ZONE,
+                NotificationType.WATCH_RETURN_REMINDER, payload))
+            .isEqualTo("Confirme ton retour avant 23:00, sinon ton contact sera prévenu.");
+        assertThat(service.buildBody(LocaleConfig.ENGLISH, ZONE,
+                NotificationType.WATCH_RETURN_REMINDER, payload))
+            .isEqualTo("Confirm your return before 23:00, or your contact will be alerted.");
+        assertThat(service.buildBody(LocaleConfig.GERMAN, ZONE,
+                NotificationType.WATCH_RETURN_REMINDER, payload))
+            .isEqualTo("Bestätigen Sie Ihre Rückkehr vor 23:00, "
+                + "sonst wird Ihr Kontakt benachrichtigt.");
+    }
+
+    @Test
+    void lHeureLimite_doitSuivreLeFuseauDeLAppareil() {
+        // Une échéance écrite dans le fuseau du serveur dirait « avant 23:00 » à
+        // quelqu'un dont le téléphone affiche 06:00. Le fuseau vient de
+        // l'appareil, comme pour le texte Android et pour les heures de silence.
+        PushNotificationService service = service();
+        Map<String, Object> payload = Map.of("deadlineAt", "2026-08-17T21:00:00Z");
+
+        assertThat(service.buildBody(LocaleConfig.FRENCH, ZoneId.of("Asia/Tokyo"),
+                NotificationType.WATCH_RETURN_REMINDER, payload))
+            .contains("06:00");
+        assertThat(service.buildBody(LocaleConfig.FRENCH, ZoneId.of("America/Los_Angeles"),
+                NotificationType.WATCH_RETURN_REMINDER, payload))
+            .contains("14:00");
+    }
+
+    @Test
+    void rappelDeRetourSansEcheanceLisible_doitQuandMemeDemanderLeGeste() {
+        // Le pire rendu serait « Confirme ton retour avant , sinon… » : une phrase
+        // cassée à l'instant précis où la personne décide de répondre ou non. Le
+        // repli est une phrase entière, sans heure.
+        PushNotificationService service = service();
+
+        for (java.util.Locale locale : LANGUES) {
+            assertThat(service.buildBody(locale, ZONE,
+                    NotificationType.WATCH_RETURN_REMINDER, Map.of("deadlineAt", "pas une date")))
+                .as("repli sans échéance en %s", locale)
+                .isNotBlank()
+                .doesNotContain("  ")
+                .doesNotContain(" ,");
+        }
+        assertThat(service.buildBody(LocaleConfig.FRENCH, ZONE,
+                NotificationType.WATCH_RETURN_REMINDER, Map.of()))
+            .isEqualTo("Confirme ton retour, sinon ton contact sera prévenu.");
+    }
+
+    @Test
+    void aucunTypeEmis_neDoitRetomberSurLeTitreGenerique() {
+        // Déclaratif : c'est TYPES_EMIS qui porte la connaissance, et ce test qui
+        // la fait tenir. Un producteur neuf sans texte échoue ici, dans les trois
+        // langues, plutôt qu'à la première bannière lue par un utilisateur.
+        PushNotificationService service = service();
+        Messages messages = messages();
+
+        for (NotificationType type : TYPES_EMIS) {
+            for (java.util.Locale locale : LANGUES) {
+                String generique = messages.getIn(locale, "push.generic.title");
+                assertThat(service.buildTitle(locale, type, Map.of()))
+                    .as("titre de %s en %s", type, locale)
+                    .isNotBlank()
+                    .isNotEqualTo(generique);
+            }
+        }
+    }
+
+    @Test
+    void lAlerteAuContact_neDoitPasContenirDeLieu() {
+        // Un contact d'urgence apprend qu'il est attendu, et rien d'autre. Ce qui
+        // s'écrit sur son écran verrouillé — et s'y conserve, et s'y capture — ne
+        // doit renseigner personne sur où la personne veillée se trouvait, ni
+        // donner le lien de statut à qui passe derrière lui.
+        PushNotificationService service = service();
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("watchId", UUID.randomUUID().toString());
+        payload.put("lien", "https://lien.meetdo.fun/v/abcdef123456");
+        // Des clés que la charge ne porte pas aujourd'hui, plantées exprès : si un
+        // jour elles y entrent, le texte ne doit toujours pas les écrire.
+        payload.put("placeName", "Studio Zen");
+        payload.put("address", "12 rue des Lilas, Lyon");
+        payload.put("personne", "Camille Roche");
+        payload.put("lat", "45.7578");
+        payload.put("lng", "4.8320");
+
+        for (java.util.Locale locale : LANGUES) {
+            String titre = service.buildTitle(locale, NotificationType.WATCH_GUARDIAN_ALERT, payload);
+            String corps = service.buildBody(locale, ZONE,
+                NotificationType.WATCH_GUARDIAN_ALERT, payload);
+
+            assertThat(titre + " / " + corps)
+                .as("alerte au contact en %s", locale)
+                .doesNotContain("Studio Zen")
+                .doesNotContain("12 rue des Lilas")
+                .doesNotContain("Lyon")
+                .doesNotContain("45.75")
+                .doesNotContain("4.83")
+                .doesNotContain("https://")
+                .doesNotContain("lien.meetdo.fun")
+                .doesNotContain("abcdef123456")
+                // Ni le nom de la personne veillée : le contact sait qui l'a
+                // choisi, et l'écran verrouillé ne l'apprend à personne d'autre.
+                .doesNotContain("Camille");
+            assertThat(corps).as("corps de l'alerte en %s", locale).isNotBlank();
+        }
+    }
+
     /**
      * Un service dont le dépôt rend cet utilisateur-là.
      *
