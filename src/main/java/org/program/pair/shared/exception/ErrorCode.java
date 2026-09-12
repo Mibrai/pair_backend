@@ -73,6 +73,17 @@ public enum ErrorCode {
     SLOT_ALREADY_WAITLISTED,
     SLOT_FULL,
     SLOT_PARTICIPANTS_HOST_ONLY,
+    // Un créneau annulé ne se modifie plus : ni son heure, ni son lieu, ni sa
+    // capacité. Nommé plutôt que rendu en 404 comme l'appartenance : celui qui
+    // modifie est l'organisateur, il sait que son créneau existe — lui répondre
+    // « introuvable » lui ferait croire à une panne au lieu de lui apprendre que
+    // l'annulation a déjà été enregistrée.
+    SLOT_CANCELLED_READONLY,
+    // Entrer en file d'attente suppose un créneau réellement complet. Sur un
+    // créneau OPEN qui a encore des places, la file n'est pas le bon geste : le
+    // client doit appeler « rejoindre ». Nommé pour qu'il sache rebasculer tout
+    // seul, plutôt que d'afficher un refus à quelqu'un dont la place est libre.
+    SLOT_NOT_FULL,
 
     // — programmes et inscriptions (ProgramEnrollmentService) —
     PROGRAM_NOT_ACTIVE,
@@ -100,11 +111,51 @@ public enum ErrorCode {
     // Deux refus, deux textes chez le client.
     PROGRAM_BROADCAST_READ_ONLY,
 
+    // — référentiel d'activités (ActivityService) —
+    // Les trois doublons du référentiel, rendus en 409. Ils étaient des
+    // IllegalStateException, donc un CONFLICT générique dont le message
+    // technique partait tel quel au client (P-BA-10).
+    //
+    // À ne pas confondre avec ACTIVITY_ALREADY_COMPLETED / _SKIPPED ci-dessus :
+    // ceux-là parlent d'une séance dans le parcours de quelqu'un, ceux-ci du
+    // référentiel partagé.
+    //
+    // Une activité de ce nom existe déjà dans cette catégorie. Le même nom dans
+    // une autre catégorie est licite : l'unicité est par couple.
+    ACTIVITY_ALREADY_EXISTS,
+    // Une catégorie de ce nom existe déjà. L'unicité est globale, à la casse près.
+    CATEGORY_ALREADY_EXISTS,
+    // Cette activité est déjà au profil de l'appelant. État et non refus de
+    // droit : le client stabilise l'affichage sur « ajoutée » sans bandeau
+    // d'erreur, comme pour ALREADY_SUBSCRIBED.
+    USER_ACTIVITY_ALREADY_ADDED,
+
     // — historique de recherche (SearchHistoryService) —
     SEARCH_HISTORY_ENTRY_NOT_FOUND,
 
     // — médias (StorageService) —
     MEDIA_FILE_NOT_FOUND,
+    // Le fichier visé a été déposé par quelqu'un d'autre. Rendu en 403 : c'est
+    // bien un refus de droit, et le fichier existe — le nier serait faux, son
+    // chemin circule déjà dans les DTO.
+    MEDIA_FORBIDDEN,
+    // L'adresse présentée comme pièce jointe ou photo de souvenir ne désigne pas
+    // un fichier déposé par l'appelant : adresse externe, chemin inconnu du
+    // registre, ou fichier d'un autre compte. Les trois cas rendent le même
+    // code — distinguer « ce fichier est à quelqu'un d'autre » de « ce fichier
+    // n'existe pas » renseignerait sur le contenu du stockage.
+    MEDIA_URL_INVALID,
+    // Le type du fichier téléversé n'est pas de ceux qu'on accepte ici. Le type
+    // réellement détecté ne part jamais dans la réponse — il ne sert qu'au
+    // journal (P-BS-17/P-BS-19).
+    MEDIA_TYPE_NOT_ALLOWED,
+
+    // — présences (AttendanceService) —
+    // La séance est annulée : aucune présence ne s'y enregistre, donc aucun
+    // compteur, badge ou « présence partagée » n'en découle. Une séance qui a
+    // réellement eu lieu avant l'annulation d'une série reste valable : c'est
+    // l'occurrence postérieure à l'annulation qui est refusée.
+    SLOT_CANCELLED_NO_ATTENDANCE,
 
     // — cartes-souvenirs de créneau (SlotRecapService) —
     // Publication refusée : personne d'autre que l'hôte n'a confirmé sa
