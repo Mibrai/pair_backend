@@ -255,11 +255,29 @@
             <version>9.2.0</version>
         </dependency>
 
-        <!-- Phase 4: Quartz (Scheduled Jobs) -->
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-quartz</artifactId>
-        </dependency>
+        <!--
+          Ici se trouvait spring-boot-starter-quartz, retiré le 12/09 (P-BA-04,
+          décision D4 option A).
+
+          Il était déclaré et jamais utilisé : aucun `org.quartz` dans src/,
+          aucune propriété `spring.quartz` dans les ressources, et
+          `dependency:tree` ne le montrait amené par rien d'autre que cette
+          déclaration (spring-boot-starter-quartz → spring-boot-quartz →
+          org.quartz-scheduler:quartz 2.5.2). Les deux seules mentions de Quartz
+          dans le code sont des commentaires, et ils disent précisément que le
+          planificateur n'a jamais été écrit (EmailService l. 204,
+          NotificationService l. 95).
+
+          Ce qu'il coûtait n'était pas le poids du jar. Sa présence au classpath
+          faisait démarrer l'autoconfiguration Quartz : un second ordonnanceur,
+          ses fils, et un candidat de plus à la résolution par type — dans une
+          application dont les 14 méthodes @Scheduled tournaient déjà sur le
+          planificateur du courtier STOMP faute de candidat nommé.
+
+          La planification de ce dépôt est celle de Spring (@EnableScheduling +
+          config/SchedulingConfig). Ne pas remettre ce starter pour ajouter un
+          verrou distribué : c'est ShedLock qui s'en chargera (P-BA-04 lot 2).
+        -->
 
         <!-- Phase 4: Spring Actuator (Monitoring) -->
         <dependency>
@@ -297,6 +315,33 @@
         <dependency>
             <groupId>org.awaitility</groupId>
             <artifactId>awaitility</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!--
+          ArchUnit : les règles d'architecture, écrites en Java et vérifiées comme
+          des tests (P-BA-04, P-BA-10, puis P-BA-12 qui en fera le magasin).
+
+          Version explicite : la BOM de spring-boot-starter-parent ne gère pas
+          ArchUnit. 1.5.0 est la dernière publiée (04/08/2026).
+
+          La compatibilité JUnit a été vérifiée à la main, parce qu'elle
+          n'est pas évidente : ce dépôt tourne sur JUnit Jupiter 6.0.3 (imposé par
+          Boot 4.1.0) alors qu'archunit-junit5-engine 1.5.0 est compilé contre
+          junit-platform-engine 1.14.4. Maven ne garde qu'une version de
+          junit-platform-engine, celle de la BOM (6.0.3) : un moteur de test qui
+          appellerait une méthode disparue ne casserait pas seulement ses propres
+          règles, il ferait échouer la découverte de TOUTE la suite, puisque la
+          plateforme charge ses moteurs par ServiceLoader au lancement. Les 30
+          références `org.junit.platform.*` du moteur ont donc été extraites de son
+          bytecode et retrouvées une à une dans les jars 6.0.3, `TestEngine` et
+          `HierarchicalTestEngine` comprises. Relire cette vérification avant de
+          monter ArchUnit ou JUnit.
+        -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <version>1.5.0</version>
             <scope>test</scope>
         </dependency>
 
