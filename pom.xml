@@ -373,24 +373,33 @@
                          même endroit. Quatre contextes suffisent — le but du
                          conteneur singleton est justement qu'ils soient presque tous
                          identiques donc réutilisés. -->
-                    <!-- 12/09 : porté de 3 à 4, et le tas de 3 à 4 Go. Le commentaire
-                         ci-dessus disait déjà « quatre contextes suffisent » quand la
-                         valeur en disait trois ; c'est la valeur qui avait tort.
-                         Ce que coûtait l'écart : la suite a gagné une quatrième
-                         configuration de contexte distincte (WatchLoopPartialFailure-
-                         IntegrationTest et son @MockitoSpyBean, seul moyen de faire
-                         échouer une veille — la voie « par les données » a été
-                         cherchée puis démontrée fermée, voir sa javadoc). À maxSize=3,
-                         cette quatrième évince les trois autres, qui sont aussitôt
-                         reconstruites : 37 min au lieu de 9, et — signature trompeuse —
-                         quatorze « Timeout on blocking read for 30 s » dans
-                         PublicProgramPageIntegrationTest, classe sans aucun rapport,
-                         qui passe 16/16 en 48 s jouée seule. Ce n'étaient pas des
-                         requêtes lentes mais le ramasse-miettes, la machine paginant.
-                         Ne pas redescendre à 3 sans retirer d'abord une configuration
-                         de contexte : plusieurs classes portent déjà un @MockitoBean
-                         NotificationService et forment leur propre configuration. -->
-                    <argLine>-Xmx4g -Dspring.test.context.cache.maxSize=4</argLine>
+                    <!-- 12/09 : le cache passe de 3 à 4, le tas reste à 3 Go.
+                         Le commentaire ci-dessus disait déjà « quatre contextes
+                         suffisent » quand la valeur en disait trois : c'est la valeur
+                         qui avait tort. La suite a gagné une quatrième configuration
+                         distincte (WatchLoopPartialFailureIntegrationTest et son
+                         @MockitoSpyBean, seul moyen de faire échouer une veille — la
+                         voie « par les données » a été cherchée puis démontrée fermée,
+                         voir sa javadoc), et à maxSize=3 cette quatrième évinçait les
+                         trois autres, aussitôt reconstruites.
+
+                         Deux corrections à ce que ce commentaire a d'abord affirmé,
+                         parce qu'une justification fausse coûte plus cher qu'aucune :
+                         les quatorze « Timeout on blocking read for 30 s » de
+                         PublicProgramPageIntegrationTest n'étaient PAS l'effet de
+                         cette éviction. Ils venaient d'un blocage définitif de fil
+                         HTTP — l'indexation soumise pendant le commit, en
+                         REQUIRES_NEW, réclamant le verrou de sa propre transaction
+                         (voir domain/indexation/ApresCommit). Et le tas de 4 Go que
+                         cette lecture erronée avait fait poser ne tient pas sur une
+                         machine de 16 Go où tournent Docker, un simulateur iOS et
+                         l'IDE : la JVM s'y fait tuer au démarrage, faute de mémoire.
+                         3 Go restent la valeur juste, et elle est éprouvée.
+
+                         Ne pas redescendre le cache à 3 sans retirer d'abord une
+                         configuration : plusieurs classes portent un @MockitoBean
+                         NotificationService et forment déjà la leur. -->
+                    <argLine>-Xmx3g -Dspring.test.context.cache.maxSize=4</argLine>
                     <!-- Charge un vrai modèle ONNX (~120 Mo, téléchargement réseau) :
                          exclu par défaut, exécuter avec -DexcludedGroups= . -->
                     <excludedGroups>${excludedGroups}</excludedGroups>
