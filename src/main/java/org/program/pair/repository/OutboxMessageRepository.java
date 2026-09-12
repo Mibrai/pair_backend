@@ -1,8 +1,8 @@
 package org.program.pair.repository;
 
+import org.program.pair.domain.outbox.MessageAEnvoyer;
 import org.program.pair.domain.outbox.OutboxMessage;
 import org.program.pair.domain.outbox.OutboxStatus;
-import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -10,34 +10,43 @@ import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface OutboxMessageRepository extends JpaRepository<OutboxMessage, UUID> {
 
     /**
-     * Le lot à envoyer : les messages de cet état <b>dont l'heure du prochain
-     * essai est venue</b>, du plus prioritaire au plus ancien.
+     * De quoi remettre au fournisseur le message qu'on vient de réclamer, et
+     * rien de plus.
      *
-     * <p><b>{@code nextAttemptAt} nul vaut « tout de suite ».</b> C'est le cas
-     * d'un message qui vient d'être déposé — il ne doit pas attendre — et celui
-     * des messages déjà en attente au moment du déploiement qui a ajouté la
-     * colonne. Sans cette branche, la migration aurait gelé la file existante.
+     * <p><b>La sélection du lot ne se fait plus ici.</b> Elle se fait en SQL, par
+     * {@code OutboxClaimer}, parce qu'elle doit poser un verrou
+     * ({@code FOR UPDATE SKIP LOCKED}) et rendre les identifiants retenus
+     * ({@code RETURNING}) — deux choses que JPA ne sait pas faire sous
+     * {@code @Modifying}. Ce dépôt ne sert plus qu'à relire, un par un, ce que la
+     * réclamation a retenu.
      *
-     * <p>Le tri reste celui de l'index partiel {@code idx_outbox_a_envoyer} :
-     * une alerte (priorité 0) passe devant un e-mail de vérification. Le filtre
-     * sur la date est une condition résiduelle, évaluée sur les seules lignes
-     * que cet index a déjà rapprochées.
+     * <p><b>Une projection, et pas l'entité</b> : cette lecture a lieu hors
+     * transaction, et {@code open-in-view} ne couvre pas les jobs. Voir
+     * {@link MessageAEnvoyer}.
+     *
+     * <p>L'état est passé en paramètre plutôt que codé : l'appelant ne veut que
+     * les messages qu'il a lui-même réclamés, c'est-à-dire
+     * {@link OutboxStatus#SENDING}. Un message qui n'y serait plus — purgé,
+     * confirmé entre-temps par un balayage qui avait pris le relais après
+     * expiration du verrou — ne doit surtout pas être renvoyé, et l'absence de
+     * résultat est ce qui l'en empêche.
      */
     @Query("""
-        SELECT m FROM OutboxMessage m
-         WHERE m.status = :status
-           AND (m.nextAttemptAt IS NULL OR m.nextAttemptAt <= :now)
-         ORDER BY m.priority ASC, m.createdAt ASC
+        SELECT new org.program.pair.domain.outbox.MessageAEnvoyer(
+                   m.id, m.channel, m.recipient, m.subject, m.body)
+          FROM OutboxMessage m
+         WHERE m.id = :id
+           AND m.status = :status
         """)
-    List<OutboxMessage> findAEnvoyer(@Param("status") OutboxStatus status,
-                                     @Param("now") Instant now,
-                                     Pageable page);
+    Optional<MessageAEnvoyer> findAEnvoyer(@Param("id") UUID id,
+                                           @Param("status") OutboxStatus status);
 
     /** Y a-t-il un message pour cette veille et ce canal ? Pour ne pas ré-escalader deux fois. */
     boolean existsByWatchIdAndChannel(UUID watchId, org.program.pair.domain.outbox.OutboxChannel channel);
