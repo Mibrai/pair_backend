@@ -28,6 +28,7 @@ public class MediaController {
     private final StorageService storageService;
     private final MediaValidator mediaValidator;
     private final ImageProcessor imageProcessor;
+    private final MediaFileService mediaFileService;
 
     @PostMapping("/upload/image")
     public MediaUploadResponse uploadImage(
@@ -94,10 +95,26 @@ public class MediaController {
         "webp", MediaType.valueOf("image/webp")
     );
 
+    /**
+     * Sert un fichier du stockage.
+     *
+     * <p><b>Un seul usage est restreint en lecture</b> : la pièce jointe d'un
+     * incident, réservée à son déposant (fiche P-BS-11, étape 3). Jusqu'ici,
+     * tout compte connecté servait tout fichier — et les pièces jointes sont
+     * rangées dans {@code program_image/} comme les couvertures, puisque
+     * l'application les téléverse par le chemin générique. Quiconque connaissait
+     * l'URL lisait donc la preuve d'un harcèlement.
+     *
+     * <p>Le refus est un <b>404</b>, identique au fichier absent : un 403
+     * confirmerait que la pièce existe. Avatars, couvertures et photos de
+     * souvenir ne changent pas, et un fichier sans ligne de propriété reste
+     * lisible — la table n'est pas une liste blanche de lecture.
+     */
     @GetMapping("/files/{*path}")
     public ResponseEntity<InputStreamResource> serveFile(@AuthenticationPrincipal UserPrincipal principal,
                                                           @PathVariable String path) {
         String filename = path.startsWith("/") ? path.substring(1) : path;
+        mediaFileService.verifierLectureAutorisee(filename, principal == null ? null : principal.getId());
         try {
             InputStream inputStream = storageService.loadAsResource(filename);
 

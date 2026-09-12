@@ -5,8 +5,15 @@ import org.program.pair.AbstractIntegrationTest;
 import org.program.pair.domain.auth.dto.AuthResponse;
 import org.program.pair.domain.auth.dto.LoginRequest;
 import org.program.pair.domain.auth.dto.RegisterRequest;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.MultipartBodyBuilder;
+import org.springframework.web.reactive.function.BodyInserters;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -166,7 +173,151 @@ class IncidentIntegrationTest extends AbstractIntegrationTest {
             .expectBody().jsonPath("$.code").isEqualTo("INCIDENT_NOTE_REQUIRED");
     }
 
+    // ———————————————————— pièces jointes (P-BS-01 / P-BS-11) ————————————————————
+
+    /**
+     * Une pièce jointe doit avoir été déposée par l'auteur de l'incident.
+     *
+     * <p>Le chemin d'un fichier n'est pas un secret : il circule en clair dans
+     * les DTO. Il suffisait donc de lire une réponse d'API pour joindre la photo
+     * de quelqu'un d'autre à son propre signalement — et, une fois la lecture
+     * restreinte au déposant (P-BS-11), pour fabriquer un signalement dont la
+     * pièce jointe serait illisible par son propre auteur.
+     */
+    @Test
+    void unePieceJointe_devraitEtreRefusee_quandUnAutreCompteLaDeposee() throws IOException {
+        Compte auteur = compte();
+        Compte tiers = compte();
+        String fichierDuTiers = deposerImage(tiers.token());
+
+        webTestClient.post().uri("/api/incidents")
+            .headers(h -> h.setBearerAuth(auteur.token()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("target", "PLACE", "note", "Lieu peu rassurant.",
+                "attachmentUrl", fichierDuTiers))
+            .exchange().expectStatus().isBadRequest()
+            .expectBody().jsonPath("$.code").isEqualTo("MEDIA_URL_INVALID");
+    }
+
+    /**
+     * Le volet serveur de P-MS-01 : une URL externe est refusée.
+     *
+     * <p>Sans ce refus, l'URL était rangée telle quelle et l'application
+     * chargeait ensuite l'image avec son client Dio <b>authentifié</b> : le
+     * jeton de la personne partait vers l'hôte choisi par qui avait posté
+     * l'URL. Le préfixe {@code /api/media/files/} qui apparaît dans l'adresse ne
+     * change rien — c'est le début de la chaîne qui est vérifié, pas sa
+     * présence quelque part.
+     */
+    @Test
+    void unePieceJointe_devraitEtreRefusee_quandLurlEstExterne() {
+        Compte moi = compte();
+
+        webTestClient.post().uri("/api/incidents")
+            .headers(h -> h.setBearerAuth(moi.token()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("target", "PLACE", "note", "Lieu peu rassurant.",
+                "attachmentUrl", "https://evil.tld/api/media/files/program_image/x.jpg"))
+            .exchange().expectStatus().isBadRequest()
+            .expectBody().jsonPath("$.code").isEqualTo("MEDIA_URL_INVALID");
+    }
+
+    /** Un chemin inventé n'est pas plus recevable qu'une URL externe. */
+    @Test
+    void unePieceJointe_devraitEtreRefusee_quandLeFichierNexistePas() {
+        Compte moi = compte();
+
+        webTestClient.post().uri("/api/incidents")
+            .headers(h -> h.setBearerAuth(moi.token()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("target", "PLACE", "note", "Lieu peu rassurant.",
+                "attachmentUrl", "/api/media/files/program_image/" + UUID.randomUUID() + ".jpg"))
+            .exchange().expectStatus().isBadRequest()
+            .expectBody().jsonPath("$.code").isEqualTo("MEDIA_URL_INVALID");
+    }
+
+    /**
+     * Le chemin nominal, et la restriction de lecture qui en découle.
+     *
+     * <p>C'est le rattachement qui marque le fichier comme pièce jointe : avant,
+     * il était rangé dans {@code program_image/} et rigoureusement
+     * indiscernable d'une couverture de programme. Le refus de lecture est un
+     * <b>404</b> et non un 403 — une preuve de harcèlement ne doit pas se
+     * révéler à qui devine son chemin.
+     */
+    @Test
+    void unePieceJointe_neDevraitEtreLisible_queParSonAuteur() throws IOException {
+        Compte auteur = compte();
+        Compte tiers = compte();
+        String fichier = deposerImage(auteur.token());
+
+        webTestClient.post().uri("/api/incidents")
+            .headers(h -> h.setBearerAuth(auteur.token()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("target", "PLACE", "note", "Lieu peu rassurant.",
+                "attachmentUrl", fichier))
+            .exchange().expectStatus().isCreated()
+            .expectBody().jsonPath("$.attachmentUrl").isEqualTo(fichier);
+
+        webTestClient.get().uri(fichier)
+            .headers(h -> h.setBearerAuth(auteur.token()))
+            .exchange().expectStatus().isOk();
+
+        webTestClient.get().uri(fichier)
+            .headers(h -> h.setBearerAuth(tiers.token()))
+            .exchange().expectStatus().isNotFound()
+            .expectBody().jsonPath("$.code").isEqualTo("MEDIA_FILE_NOT_FOUND");
+    }
+
+    /**
+     * Non-régression : la très grande majorité des incidents n'a pas de pièce
+     * jointe, et la validation ne doit pas rendre l'absence suspecte.
+     */
+    @Test
+    void unIncidentSansPieceJointe_devraitResterAccepte() {
+        Compte moi = compte();
+
+        webTestClient.post().uri("/api/incidents")
+            .headers(h -> h.setBearerAuth(moi.token()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("target", "TRANSIT", "note", "Perdue en chemin."))
+            .exchange().expectStatus().isCreated()
+            .expectBody().jsonPath("$.attachmentUrl").isEmpty();
+    }
+
     // ------------------------------------------------------------------ outils
+
+    private String deposerImage(String token) throws IOException {
+        Map<?, ?> reponse = webTestClient.post().uri("/api/media/upload/image")
+            .headers(h -> h.setBearerAuth(token))
+            .contentType(MediaType.MULTIPART_FORM_DATA)
+            .body(BodyInserters.fromMultipartData(corpsPng().build()))
+            .exchange().expectStatus().isOk()
+            .expectBody(Map.class).returnResult().getResponseBody();
+
+        assertThat(reponse).isNotNull();
+        String url = String.valueOf(reponse.get("url"));
+        assertThat(url).startsWith("/api/media/files/");
+        return url;
+    }
+
+    private MultipartBodyBuilder corpsPng() throws IOException {
+        MultipartBodyBuilder builder = new MultipartBodyBuilder();
+        builder.part("file", new ByteArrayResource(pngValide()) {
+            @Override
+            public String getFilename() {
+                return "piece.png";
+            }
+        }).contentType(MediaType.IMAGE_PNG);
+        return builder;
+    }
+
+    private byte[] pngValide() throws IOException {
+        BufferedImage image = new BufferedImage(16, 16, BufferedImage.TYPE_INT_RGB);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ImageIO.write(image, "png", out);
+        return out.toByteArray();
+    }
 
     private record Compte(UUID id, String token) {}
 

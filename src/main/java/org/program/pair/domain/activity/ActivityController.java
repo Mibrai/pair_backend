@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.activity.dto.*;
 import org.program.pair.domain.media.ImageProcessor;
+import org.program.pair.domain.media.MediaFileService;
 import org.program.pair.domain.media.MediaType;
 import org.program.pair.domain.media.MediaValidator;
 import org.program.pair.domain.media.StorageService;
@@ -33,6 +34,7 @@ public class ActivityController {
     private final ActivityBrowseService activityBrowseService;
     private final SuggestedActivityService suggestedActivityService;
     private final StorageService storageService;
+    private final MediaFileService mediaFileService;
     private final MediaValidator mediaValidator;
     private final ImageProcessor imageProcessor;
 
@@ -182,33 +184,81 @@ public class ActivityController {
             principal.getId(), userActivityId, request.visible());
     }
 
+    // ———————————————————— icônes d'activité ————————————————————
+    //
+    // LA LECTURE QUI TRANCHE (fiche P-BS-01, étape 9). La table `activities`
+    // NE PORTE PAS D'AUTEUR : V3 la crée avec parent_id, category_id, name,
+    // slug, description, embedding et created_at, V22 y ajoute `icon` et V38
+    // `image_url` ; aucune colonne ne désigne un créateur, et l'entité
+    // `Activity` n'en a pas non plus. C'est un référentiel PARTAGÉ, alimenté
+    // par les migrations de catalogue (V3, V103), pas un objet que quelqu'un
+    // possède.
+    //
+    // Conséquence, et elle est décidée par cette lecture et non par une
+    // préférence : le changement d'icône RESTE PERMIS à tout compte connecté.
+    // Un 403 MEDIA_FORBIDDEN aurait supposé un auteur à comparer ; il n'y en a
+    // pas, et inventer une règle de propriété sur un référentiel partagé
+    // casserait le parcours publié de l'application (create_activity_sheet,
+    // edit_activity_sheet) sans protéger quoi que ce soit.
+    //
+    // Ce qui change, c'est le SORT DE L'ANCIEN FICHIER : il n'est effacé que si
+    // son déposant est l'appelant. C'était le vrai dégât — tout compte pouvait
+    // remplacer l'icône d'une activité partagée et détruire au passage le
+    // fichier déposé par quelqu'un d'autre. Les trois routes reçoivent donc
+    // maintenant l'appelant, ce qui leur manquait.
+
     @PatchMapping("/activities/{activityId}/icon")
     public ActivityDto setActivityIcon(
+            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID activityId,
             @RequestParam("icon") String icon) {
-        return activityService.updateActivityIcon(activityId, icon);
+        ActivityService.IconChange change = activityService.updateActivityIcon(activityId, icon);
+        oublierAncienneIcone(change.previousIcon(), icon, principal);
+        return change.activity();
     }
 
     @PostMapping("/activities/{activityId}/icon/upload")
     public ActivityDto uploadActivityIcon(
+            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID activityId,
             @RequestParam("file") MultipartFile file) throws IOException {
         mediaValidator.validateImage(file);
         InputStream processedImage = imageProcessor.processImage(file);
         ProcessedMultipartFile processedFile = new ProcessedMultipartFile(
             file.getOriginalFilename(), processedImage);
-        String filename = storageService.store(processedFile, activityId, MediaType.ACTIVITY_ICON);
-        return activityService.updateActivityIcon(activityId, "/api/media/files/" + filename);
+        // Le déposant est l'appelant, pas l'activité : cette ligne passait
+        // `activityId`, et c'est la moitié « activité » de la racine du défaut.
+        String filename = storageService.store(processedFile, principal.getId(), MediaType.ACTIVITY_ICON);
+        String nouvelleIcone = MediaFileService.URL_PREFIX + filename;
+
+        ActivityService.IconChange change = activityService.updateActivityIcon(activityId, nouvelleIcone);
+        oublierAncienneIcone(change.previousIcon(), nouvelleIcone, principal);
+        return change.activity();
     }
 
     @DeleteMapping("/activities/{activityId}/icon")
-    public ActivityDto deleteActivityIcon(@PathVariable UUID activityId) throws IOException {
-        ActivityService.IconRemovalResult result = activityService.removeActivityIcon(activityId);
-        String prefix = "/api/media/files/";
-        if (result.previousIcon() != null && result.previousIcon().startsWith(prefix)) {
-            storageService.delete(result.previousIcon().substring(prefix.length()));
+    public ActivityDto deleteActivityIcon(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID activityId) {
+        ActivityService.IconChange change = activityService.removeActivityIcon(activityId);
+        oublierAncienneIcone(change.previousIcon(), null, principal);
+        return change.activity();
+    }
+
+    /**
+     * Efface l'ancienne icône <b>seulement</b> si l'appelant l'avait déposée.
+     *
+     * <p>Silencieux par construction : une ligature Material, une URL externe,
+     * un fichier antérieur à V109 ou un fichier déposé par un tiers laissent
+     * tous les octets en place, et le changement d'icône réussit quand même.
+     * C'est le comportement demandé — on ne refuse pas le geste, on refuse la
+     * destruction collatérale.
+     */
+    private void oublierAncienneIcone(String ancienne, String nouvelle, UserPrincipal principal) {
+        if (ancienne == null || ancienne.equals(nouvelle) || principal == null) {
+            return;
         }
-        return result.activity();
+        mediaFileService.supprimerUrlSiAuteur(ancienne, principal.getId());
     }
 
     private static class ProcessedMultipartFile implements MultipartFile {

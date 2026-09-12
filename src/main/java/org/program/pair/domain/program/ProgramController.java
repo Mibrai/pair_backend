@@ -3,6 +3,7 @@ package org.program.pair.domain.program;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.media.ImageProcessor;
+import org.program.pair.domain.media.MediaFileService;
 import org.program.pair.domain.media.MediaType;
 import org.program.pair.domain.media.MediaValidator;
 import org.program.pair.domain.media.StorageService;
@@ -33,6 +34,7 @@ public class ProgramController {
     private final ProgramService programService;
     private final ReportService reportService;
     private final StorageService storageService;
+    private final MediaFileService mediaFileService;
     private final MediaValidator mediaValidator;
     private final ImageProcessor imageProcessor;
     private final org.program.pair.domain.publicslot.PublicProgramService publicProgramService;
@@ -104,6 +106,15 @@ public class ProgramController {
         programService.deleteProgram(principal.getId(), programId);
     }
 
+    /**
+     * Dépose la couverture d'un programme.
+     *
+     * <p><b>Le déposant est l'appelant, pas le programme.</b> Cette ligne
+     * passait {@code programId} à {@code store(...)} — un identifiant de
+     * programme là où le stockage attendait une personne. Le fichier
+     * n'appartenait donc à personne, et aucune suppression ne pouvait être
+     * autorisée : c'est la moitié « programme » de la racine du défaut P-BS-01.
+     */
     @PostMapping("/{programId}/image/upload")
     public ProgramDto uploadProgramImage(
             @AuthenticationPrincipal UserPrincipal principal,
@@ -113,25 +124,29 @@ public class ProgramController {
         InputStream processedImage = imageProcessor.processImage(file);
         ProcessedMultipartFile processedFile = new ProcessedMultipartFile(
             file.getOriginalFilename(), processedImage);
-        String filename = storageService.store(processedFile, programId, MediaType.PROGRAM_IMAGE);
+        String filename = storageService.store(processedFile, principal.getId(), MediaType.PROGRAM_IMAGE);
         return programService.updateProgramImage(
-            principal.getId(), programId, "/api/media/files/" + filename);
+            principal.getId(), programId, MediaFileService.URL_PREFIX + filename);
     }
 
+    /**
+     * Retire la couverture, et efface le fichier <b>si l'appelant l'a déposé</b>.
+     *
+     * <p>{@code removeProgramImage} garantit déjà que l'appelant est l'hôte du
+     * programme ; ce que la seconde ligne ajoute, c'est de ne pas détruire les
+     * octets d'un tiers. Le cas existe : les couvertures déposées avant V109
+     * n'ont aucun déposant connaissable (l'ancien code enregistrait un
+     * {@code programId}), et les couvertures de seed sont des URL externes.
+     * Dans ces deux cas le programme oublie bien son image, et les octets
+     * restent — un fichier sans ligne n'est supprimable par personne.
+     */
     @DeleteMapping("/{programId}/image")
     public ProgramDto deleteProgramImage(
             @AuthenticationPrincipal UserPrincipal principal,
-            @PathVariable UUID programId) throws IOException {
+            @PathVariable UUID programId) {
         String previousImageUrl = programService.removeProgramImage(principal.getId(), programId);
-        deleteStoredFile(previousImageUrl);
+        mediaFileService.supprimerUrlSiAuteur(previousImageUrl, principal.getId());
         return programService.getProgram(programId, principal.getId());
-    }
-
-    private void deleteStoredFile(String url) throws IOException {
-        String prefix = "/api/media/files/";
-        if (url != null && url.startsWith(prefix)) {
-            storageService.delete(url.substring(prefix.length()));
-        }
     }
 
     @PostMapping("/{programId}/schedules")

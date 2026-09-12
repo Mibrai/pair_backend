@@ -10,6 +10,7 @@ import org.program.pair.domain.block.BlockFilterService;
 import org.program.pair.domain.attendance.dto.PracticeStatsDto;
 import org.program.pair.domain.media.dto.MediaUploadResponse;
 import org.program.pair.domain.media.ImageProcessor;
+import org.program.pair.domain.media.MediaFileService;
 import org.program.pair.domain.media.MediaValidator;
 import org.program.pair.domain.media.StorageService;
 import org.program.pair.domain.program.ProgramService;
@@ -39,6 +40,7 @@ public class UserController {
 
     private final UserService userService;
     private final StorageService storageService;
+    private final MediaFileService mediaFileService;
     private final MediaValidator mediaValidator;
     private final ImageProcessor imageProcessor;
     private final ProgramService programService;
@@ -151,14 +153,24 @@ public class UserController {
         return userService.getMyProfile(principal.getId());
     }
 
+    /**
+     * Retire son avatar, et efface le fichier <b>si l'appelant l'a déposé</b>.
+     *
+     * <p>La suppression ne passe plus par {@code storageService.delete}, qui ne
+     * vérifie rien : c'est {@link org.program.pair.domain.media.MediaFileService}
+     * qui consulte la ligne {@code media_files} (V109) avant de toucher au
+     * disque. En pratique le déposant est toujours le propriétaire du profil —
+     * l'avatar n'a qu'un chemin de dépôt, {@code POST /api/users/me/avatar}.
+     * Deux cas font pourtant échouer la comparaison, et doivent échouer
+     * <b>silencieusement</b> : un avatar déposé avant V109 (aucune ligne, donc
+     * personne ne peut l'effacer) et une URL externe de seed. Dans les deux cas
+     * le profil oublie bien son avatar ; seuls les octets restent.
+     */
     @DeleteMapping("/me/avatar")
     public UserPrivateDto deleteAvatar(
-            @AuthenticationPrincipal UserPrincipal principal) throws IOException {
+            @AuthenticationPrincipal UserPrincipal principal) {
         String previousAvatarUrl = userService.removeAvatar(principal.getId());
-        String prefix = "/api/media/files/";
-        if (previousAvatarUrl != null && previousAvatarUrl.startsWith(prefix)) {
-            storageService.delete(previousAvatarUrl.substring(prefix.length()));
-        }
+        mediaFileService.supprimerUrlSiAuteur(previousAvatarUrl, principal.getId());
         return userService.getMyProfile(principal.getId());
     }
 
