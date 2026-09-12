@@ -210,9 +210,42 @@ public class UserService {
         return previousAvatarUrl;
     }
 
+    /**
+     * Retire le compte de la circulation — et <b>rien d'autre</b>.
+     *
+     * <p><b>Pourquoi ce n'est pas {@code findActiveUser}.</b> Toutes les autres
+     * méthodes de ce service refusent un compte déjà inactif, et c'est juste :
+     * on ne modifie pas le profil de quelqu'un qui n'est plus là. Celle-ci est
+     * le seul cas où le refus est faux. Elle est appelée par les deux routes de
+     * suppression, que l'application déclenche sur un geste unique et rejoue
+     * après une coupure réseau : le second appel tombait alors sur le {@code 404}
+     * de {@code findActiveUser}, que l'app affiche comme un échec de la
+     * suppression — alors qu'elle avait réussi. L'état visé est atteint, on rend
+     * donc le même succès. Un compte <i>inconnu</i> reste, lui, un {@code 404} :
+     * il n'y a rien à désactiver.
+     *
+     * <p><b>Ce que cette méthode ne fait délibérément pas.</b> Annuler les
+     * créneaux animés, désinscrire des créneaux d'autrui, prévenir les inscrits,
+     * révoquer les jetons de session : tout cela est attendu et arrive dans un
+     * lot dédié. Les poser ici les mettrait dans <i>cette</i> transaction, où le
+     * moindre échec annulerait le {@code is_active = false} — et la demande de
+     * suppression serait à nouveau perdue, pour une raison de plus.
+     *
+     * <p>La date de la demande n'est pas écrite sur le compte : la colonne
+     * n'existe pas encore. C'est la ligne d'audit {@code GDPR_DELETE_REQUEST}
+     * posée par les contrôleurs qui la porte, et elle suffit à faire courir le
+     * délai de trente jours.
+     */
     public void deactivateAccount(UUID userId) {
-        User user = findActiveUser(userId);
+        User user = userRepository.findById(userId)
+            .orElseThrow(() -> new UserNotFoundException("Utilisateur introuvable."));
+        if (!Boolean.TRUE.equals(user.getIsActive())) {
+            return;
+        }
         user.setIsActive(false);
+        // Le compte disparaît de la carte dans le même mouvement : laisser le
+        // point public survivre à la désactivation serait le contraire de ce
+        // qu'on vient de demander.
         user.setLocationPublic(false);
         userRepository.save(user);
     }

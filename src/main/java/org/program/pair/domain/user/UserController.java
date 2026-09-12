@@ -4,6 +4,8 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.attendance.PracticeStatsService;
+import org.program.pair.domain.audit.AuditActionType;
+import org.program.pair.domain.audit.AuditLogService;
 import org.program.pair.domain.block.BlockFilterService;
 import org.program.pair.domain.attendance.dto.PracticeStatsDto;
 import org.program.pair.domain.media.dto.MediaUploadResponse;
@@ -44,6 +46,7 @@ public class UserController {
     private final BlockFilterService blockFilterService;
     private final EmailChangeService emailChangeService;
     private final RateLimiter rateLimiter;
+    private final AuditLogService auditLogService;
 
     @GetMapping
     public Page<UserPublicDto> searchUsers(
@@ -195,10 +198,28 @@ public class UserController {
         return userService.getPublicProfile(id, principal.getId());
     }
 
+    /**
+     * L'autre porte de la suppression de compte, et la plus ancienne.
+     *
+     * <p>Elle a toujours désactivé le compte ; c'est
+     * {@code DELETE /api/gdpr/delete-account} — celle que l'application appelle
+     * réellement — qui ne faisait rien. Les deux mènent maintenant au même
+     * endroit, <b>trace comprise</b> : la ligne {@code GDPR_DELETE_REQUEST} est
+     * écrite ici aussi, faute de quoi le registre RGPD dépendrait de la route
+     * empruntée et l'on ne pourrait pas dater une demande arrivée par celle-ci.
+     * La date vit dans cette ligne tant que {@code users.deactivated_at}
+     * n'existe pas.
+     *
+     * <p>Le geste est le même pour qui appelle : {@code 204}, sans corps, y
+     * compris sur un compte déjà inactif (voir
+     * {@link UserService#deactivateAccount}).
+     */
     @DeleteMapping("/me")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deactivateAccount(@AuthenticationPrincipal UserPrincipal principal) {
         userService.deactivateAccount(principal.getId());
+        auditLogService.log(
+            principal.getId(), AuditActionType.GDPR_DELETE_REQUEST, "USER", principal.getId());
     }
 
     @PostMapping("/me/change-password")
