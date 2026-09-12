@@ -18,6 +18,18 @@ public enum AuditActionType {
     GDPR_PURGE,
     GDPR_ANONYMIZE,
 
+    /**
+     * La demande de suppression elle-même, au moment où elle est reçue.
+     *
+     * <p>Distincte de {@link #GDPR_ANONYMIZE}, qui vient trente jours plus tard
+     * et n'est pas une demande mais son exécution. Tant que la colonne
+     * {@code users.deactivated_at} n'existe pas (elle arrive avec la purge),
+     * <b>cette ligne est la seule date de la demande</b> : c'est elle qui fait
+     * courir le délai, et sans elle rien en base ne dit qu'on a demandé quoi que
+     * ce soit — c'était exactement l'état de la route jusqu'ici.
+     */
+    GDPR_DELETE_REQUEST,
+
     // Data operations
     CREATE,
     UPDATE,
