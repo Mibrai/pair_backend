@@ -36,6 +36,15 @@ import java.util.List;
  * {@code ProgramDto.nextSessionAt} — deviennent corrects sans rien changer chez
  * eux.
  *
+ * <p><b>Ce que ce job ne touche pas.</b> Une série annulée. {@code CANCELLED}
+ * est terminal : ni la date ni le statut d'un créneau annulé ne bougent plus
+ * ici, et c'est ce qui manquait — un créneau hebdomadaire annulé rouvrait la
+ * semaine suivante, ses inscriptions toujours confirmées, et le rappel J-2h
+ * repartait vers des gens dont la séance avait été annulée. À ne pas confondre
+ * avec {@code PAST}, qui reste balayé : une série close par son {@code UNTIL}
+ * est laissée en l'état parce que la règle n'a plus d'occurrence, pas parce que
+ * son statut l'exclut.
+ *
  * <p><b>Fenêtre résiduelle.</b> Entre le passage d'une occurrence et l'exécution
  * suivante, le créneau reste daté dans le passé, donc vu comme sans séance à
  * venir. D'où une cadence de dix minutes plutôt que d'une heure : la fenêtre
@@ -61,7 +70,25 @@ public class RecurringSlotRolloverJob {
             int rolled = 0;
             int exhausted = 0;
             int inProgress = 0;
+            int cancelled = 0;
             for (Schedule schedule : stale) {
+                // CANCELLED est terminal, et la garde ne dépend pas de la
+                // requête.
+                //
+                // Le filtre vit aussi dans findRecurringStartedBefore, où il est
+                // indispensable — un index le rend gratuit et la requête est
+                // faite pour ce job. Mais une requête se réutilise, et le jour
+                // où un autre appelant la reprend sans ce filtre, ou l'élargit,
+                // c'est ici que la règle doit tenir : une série annulée ne
+                // change plus jamais ni de date ni de statut. Le défaut relevé
+                // en production — un créneau hebdomadaire annulé qui rouvre la
+                // semaine suivante, inscrits compris — passait exactement par
+                // cette boucle.
+                if (schedule.getStatus() == SlotStatus.CANCELLED) {
+                    cancelled++;
+                    continue;
+                }
+
                 // Commencé ne veut pas dire terminé. Le balayage retient tout
                 // ce dont starts_at est passé — un index sur une colonne, pas
                 // une expression — et c'est ici qu'on écarte les séances encore
@@ -103,7 +130,24 @@ public class RecurringSlotRolloverJob {
 
                 schedule.setStartsAt(next);
                 schedule.setEndsAt(duration != null ? next.plus(duration) : null);
-                schedule.setStatus(SlotStatus.OPEN);
+
+                // Le statut n'est réouvert que depuis les trois états qu'une
+                // date gouverne. OPEN et FULL disent l'occupation du créneau,
+                // PAST dit seulement que sa séance est derrière lui : la
+                // déplacer les rend tous les trois ouvrables, et c'est
+                // participantCounter.refresh, juste en dessous, qui retranchera
+                // FULL si les places sont prises.
+                //
+                // Écrit en liste blanche plutôt qu'en « tout sauf CANCELLED » :
+                // un état ajouté plus tard à SlotStatus — un créneau suspendu,
+                // un créneau en attente de validation — ne sera pas rouvert par
+                // ce job sans que quelqu'un l'ait décidé ici.
+                SlotStatus before = schedule.getStatus();
+                if (before == SlotStatus.OPEN
+                        || before == SlotStatus.FULL
+                        || before == SlotStatus.PAST) {
+                    schedule.setStatus(SlotStatus.OPEN);
+                }
 
                 // Le compteur est RECALCULÉ, plus remis à zéro.
                 //
@@ -125,10 +169,11 @@ public class RecurringSlotRolloverJob {
                 rolled++;
             }
 
-            if (rolled > 0 || exhausted > 0 || inProgress > 0) {
+            if (rolled > 0 || exhausted > 0 || inProgress > 0 || cancelled > 0) {
                 log.info("Recurring slot rollover: {} avancé(s) à leur prochaine occurrence, "
-                    + "{} série(s) close(s) laissée(s) en l'état, {} séance(s) encore en cours",
-                    rolled, exhausted, inProgress);
+                    + "{} série(s) close(s) laissée(s) en l'état, {} séance(s) encore en cours, "
+                    + "{} série(s) annulée(s) ignorée(s)",
+                    rolled, exhausted, inProgress, cancelled);
             }
         } catch (Exception e) {
             log.error("Recurring slot rollover job failed", e);
