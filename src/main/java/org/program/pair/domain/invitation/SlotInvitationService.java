@@ -77,9 +77,24 @@ public class SlotInvitationService {
             .inviteCode(ShareToken.nextUnique(invitationRepository::existsByInviteCode))
             .build());
 
+        // ── LE JETON PUBLIC EST CRÉÉ ICI S'IL N'EXISTE PAS ────────────────────
+        // Inviter quelqu'un **est** un partage : le lien devra s'ouvrir chez une
+        // personne sans compte, et cela suppose une adresse publique. Elle
+        // n'était créée que par `GET /slots/{id}/share-link` — si bien qu'inviter
+        // sans avoir d'abord appuyé sur « Partager » produisait un lien vers un
+        // créneau sans adresse publique. La règle d'accès est la même que celle
+        // de `shareLink` (être du créneau), et elle vient d'être vérifiée
+        // au-dessus.
+        if (slot.getPublicShareToken() == null) {
+            slot.setPublicShareToken(
+                ShareToken.nextUnique(scheduleRepository::existsByPublicShareToken));
+            slot = scheduleRepository.save(slot);
+        }
+
         return new InvitationLinkDto(
             invitation.getInviteCode(),
-            publicBaseUrl + "/i/" + invitation.getInviteCode());
+            publicBaseUrl + "/i/" + invitation.getInviteCode(),
+            slot.getPublicShareToken());
     }
 
     /**

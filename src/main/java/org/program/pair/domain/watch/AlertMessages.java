@@ -1,5 +1,7 @@
 package org.program.pair.domain.watch;
 
+import org.program.pair.domain.email.GabaritEmail;
+
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -108,14 +110,18 @@ public final class AlertMessages {
             + "tout va bien. Merci d'avoir été là. — meetDo";
     }
 
-    /** ③ Levée, par e-mail — le pendant de {@link #leveeSms} pour le canal courrier. */
+    /**
+     * ③ Levée, par e-mail — le pendant de {@link #leveeSms} pour le canal courrier.
+     *
+     * <p>Fragment nu : l'enveloppe de marque est posée par
+     * {@code WatchEscalationService}, qui seul sait de quel accent ce message
+     * relève. La signature « — meetDo » a disparu du corps : le pied de
+     * l'enveloppe la porte désormais, avec le logo et le copyright.
+     */
     public static String leveeEmailHtml(Contexte c) {
-        return """
-            <h2>Fausse alerte — %s vient de confirmer</h2>
-            <p>%s a confirmé son retour. Tout va bien ; il n'y a rien à faire.
-               Merci d'avoir été là.</p>
-            <p style="color:#6b757d;font-size:13px;">— meetDo</p>
-            """.formatted(escape(c.prenom()), escape(c.prenom()));
+        return GabaritEmail.titre("Fausse alerte — " + escape(c.prenom()) + " vient de confirmer")
+            + "<p>" + escape(c.prenom()) + " a confirmé son retour. Tout va bien ;"
+            + " il n'y a rien à faire. Merci d'avoir été là.</p>";
     }
 
     /**
@@ -140,11 +146,9 @@ public final class AlertMessages {
 
     /** ⑥ L'annonce de retour, par e-mail. Voir {@link #retourAnnonceSms}. */
     public static String retourAnnonceEmailHtml(Contexte c) {
-        return """
-            <h2>%s est bien rentrée</h2>
-            <p>%s a demandé à vous prévenir de son retour. Il n'y a rien à faire.</p>
-            <p style="color:#6b757d;font-size:13px;">— meetDo</p>
-            """.formatted(escape(c.prenom()), escape(c.prenom()));
+        return GabaritEmail.titre(escape(c.prenom()) + " est bien rentrée")
+            + "<p>" + escape(c.prenom()) + " a demandé à vous prévenir de son retour."
+            + " Il n'y a rien à faire.</p>";
     }
 
     /**
@@ -179,13 +183,10 @@ public final class AlertMessages {
 
     /** ⑦ Le renoncement, par e-mail. Voir {@link #renoncementSms}. */
     public static String renoncementEmailHtml(Contexte c) {
-        return """
-            <h2>%s a renoncé à s'y rendre</h2>
-            <p>Il n'y a plus lieu de s'inquiéter, et le message précédent est sans
-               objet. Il n'y a rien à faire.</p>
-            <p>Merci d'avoir été là.</p>
-            <p style="color:#6b757d;font-size:13px;">— meetDo</p>
-            """.formatted(escape(c.prenom()));
+        return GabaritEmail.titre(escape(c.prenom()) + " a renoncé à s'y rendre")
+            + "<p>Il n'y a plus lieu de s'inquiéter, et le message précédent est sans"
+            + " objet. Il n'y a rien à faire.</p>"
+            + "<p>Merci d'avoir été là.</p>";
     }
 
     /**
@@ -201,37 +202,35 @@ public final class AlertMessages {
         return c.prenom() + " — plus d'inquiétude à avoir";
     }
 
-    /** ④ E-mail d'alerte : la version longue de ②, avec la chronologie et un lien en bouton. */
+    /**
+     * ④ E-mail d'alerte : la version longue de ②, avec la chronologie et un lien
+     * en bouton.
+     *
+     * <p><b>La clause 112 est dans un encart, et c'est un choix de fond.</b> Elle
+     * était un {@code <em>} au milieu du texte, à l'endroit exact que saute
+     * quelqu'un qui parcourt un message reçu à minuit. C'est pourtant la seule
+     * ligne qui dise ce que meetDo sait et ce qu'il ne sait pas — et la seule qui
+     * donne un numéro à appeler.
+     */
     public static String alerteRetourEmailHtml(Contexte c, String lienDesabonnement) {
         String titreLigne = (c.titre() == null || c.titre().isBlank())
             ? ""
             : "<li>Activité : <strong>" + escape(c.titre()) + "</strong>"
                 + (c.heureFin() != null ? ", terminée à " + heure(c.heureFin()) : "") + "</li>";
-        return """
-            <h2>%s n'a pas confirmé son retour</h2>
-            <p>Son heure limite de retour était <strong>%s</strong>, et trois rappels
-               lui ont été adressés sans réponse.</p>
-            <ul>
-              <li>Dernier signe de vie : <strong>%s</strong>%s</li>
-              %s
-            </ul>
-            <p><a href="%s" style="background:#b3261e;color:#fff;padding:12px 24px;border-radius:6px;text-decoration:none;display:inline-block;">
-              Voir la page de suivi
-            </a></p>
-            <p style="margin-top:16px;"><em>%s</em></p>
-            <p style="color:#6b757d;font-size:13px;margin-top:24px;">
-              Vous recevez ce message parce que %s vous a désigné comme contact de
-              confiance. <a href="%s">Ne plus être contacté</a>.
-            </p>
-            """.formatted(
-                escape(c.prenomNom()),
-                jourHeure(c.heureLimite()),
-                jourHeure(c.dernierSigneDeVie()), escape(lieuEtVille(c)),
-                titreLigne,
-                c.lienStatut(),
-                CLAUSE_112,
-                escape(c.prenomNom()),
-                lienDesabonnement);
+        return GabaritEmail.titre(escape(c.prenomNom()) + " n'a pas confirmé son retour")
+            + "<p>Son heure limite de retour était <strong>" + jourHeure(c.heureLimite())
+            + "</strong>, et trois rappels lui ont été adressés sans réponse.</p>"
+            + "<ul style=\"margin:0 0 4px;padding-left:20px;\">"
+            + "<li>Dernier signe de vie : <strong>" + jourHeure(c.dernierSigneDeVie())
+            + "</strong>" + escape(lieuEtVille(c)) + "</li>"
+            + titreLigne
+            + "</ul>"
+            + GabaritEmail.bouton(c.lienStatut(), "Voir la page de suivi",
+                GabaritEmail.Accent.CORAL)
+            + GabaritEmail.encart(CLAUSE_112, GabaritEmail.Accent.CORAL)
+            + GabaritEmail.note("Vous recevez ce message parce que " + escape(c.prenomNom())
+                + " vous a désigné comme contact de confiance. <a href=\"" + lienDesabonnement
+                + "\">Ne plus être contacté</a>.");
     }
 
     /**

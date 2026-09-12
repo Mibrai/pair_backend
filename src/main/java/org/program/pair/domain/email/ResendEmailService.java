@@ -20,15 +20,29 @@ public class ResendEmailService {
     private final String fromName;
     private final boolean enabled;
 
+    /**
+     * L'enveloppe de marque, appliquée ici parce que c'est <b>la porte de sortie
+     * unique</b> de tout courrier meetDo.
+     *
+     * <p>Habiller chez chaque producteur aurait marché aussi, jusqu'au premier
+     * gabarit écrit sans y penser — et celui-là serait parti nu, sans que rien
+     * ne le signale. Ici, un e-mail non habillé ne peut pas exister.
+     * {@code envelopper} est idempotent : un producteur qui choisit son accent
+     * (l'alerte retour, par exemple) enveloppe lui-même et passe intact.
+     */
+    private final GabaritEmail gabarit;
+
     public ResendEmailService(
             @Value("${resend.api-key:}") String apiKey,
             @Value("${resend.from-email:infos@meetdo.fun}") String fromEmail,
             @Value("${resend.from-name:MeetDo}") String fromName,
-            @Value("${resend.enabled:false}") boolean enabled) {
+            @Value("${resend.enabled:false}") boolean enabled,
+            GabaritEmail gabarit) {
 
         this.fromEmail = fromEmail;
         this.fromName = fromName;
         this.enabled = enabled;
+        this.gabarit = gabarit;
 
         // Initialize WebClient with Resend API
         this.webClient = WebClient.builder()
@@ -70,7 +84,7 @@ public class ResendEmailService {
         emailRequest.put("from", fromName + " <" + fromEmail + ">");
         emailRequest.put("to", new String[]{to});
         emailRequest.put("subject", subject);
-        emailRequest.put("html", htmlContent);
+        emailRequest.put("html", gabarit.envelopper(htmlContent));
 
         return sendEmailForId(emailRequest, to, subject);
     }
@@ -107,7 +121,7 @@ public class ResendEmailService {
         emailRequest.put("to", new String[]{to});
         emailRequest.put("subject", subject);
         emailRequest.put("text", textContent);
-        emailRequest.put("html", htmlContent);
+        emailRequest.put("html", gabarit.envelopper(htmlContent));
 
         return sendEmail(emailRequest, to, subject);
     }
