@@ -3,11 +3,13 @@ package org.program.pair.domain.watch;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.program.Schedule;
+import org.program.pair.domain.program.SlotTiming;
 import org.program.pair.repository.WatchEventRepository;
 import org.program.pair.repository.WatchRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.EnumSet;
 import java.util.List;
@@ -23,6 +25,11 @@ import java.util.Set;
  * rappels à quelqu'un qui n'est jamais parti, puis un message d'alerte à son
  * proche. Une fausse alerte au proche est exactement ce que ce module existe pour
  * ne pas produire.
+ *
+ * <p><b>Deux gestes, une même cause.</b> {@link #closeForCancelledSlot} referme
+ * ce qui n'aura pas lieu ; {@link #shiftForUpdatedSlot} déplace ce qui a bougé.
+ * L'un et l'autre existent parce que l'échéance est figée à l'armement : sans
+ * eux, la boucle retour travaille sur un horaire que le créneau n'a plus.
  *
  * <p><b>Pourquoi {@code CLOSED} et {@code ABANDONED}.</b> Il n'existe pas d'état
  * « annulée », et en créer un obligerait l'application à connaître une valeur
@@ -93,5 +100,142 @@ public class WatchSlotLifecycle {
         log.info("Créneau {} annulé : {} veille(s) refermée(s), rien envoyé à personne",
             slot.getId(), aReferm.size());
         return aReferm.size();
+    }
+
+    /**
+     * La séance a été déplacée : l'heure limite de retour de ses veilles suit.
+     *
+     * <p><b>Le défaut que ceci referme.</b> {@code deadlineAt},
+     * {@code occurrenceStartsAt} et {@code outboundBaseAt} sont figés à
+     * l'armement, et rien ne les reliait à une modification du créneau. Un
+     * organisateur qui repoussait sa séance de deux heures laissait donc des
+     * veilles dont l'échéance tombait <b>pendant la séance</b> : les trois rappels
+     * de retour partaient à quelqu'un qui était encore sur place, puis l'alerte
+     * chez son proche. Exactement la fausse alerte que
+     * {@link #closeForCancelledSlot} ferme pour l'annulation, par l'autre porte.
+     *
+     * <p><b>Le décalage, et non un recalcul.</b> L'échéance peut avoir été saisie
+     * par la personne, repoussée d'une demi-heure par un {@code SNOOZED}, et
+     * {@code outboundBaseAt} avancé d'un quart d'heure par un
+     * {@code STILL_COMING}. La recalculer depuis la nouvelle fin effacerait ces
+     * trois gestes. On applique donc la <b>différence</b> : ce que la personne a
+     * décidé garde sa position relative à la séance.
+     *
+     * <p><b>Deux différences distinctes</b>, et il en faut deux : le début et la
+     * fin d'un créneau ne bougent pas forcément du même pas — raccourcir une
+     * séance ne déplace que sa fin. {@code occurrenceStartsAt} et
+     * {@code outboundBaseAt} suivent le début, {@code deadlineAt} suit la fin.
+     * Les deux « fins » sont prises au sens de {@link SlotTiming#endOf}, qui est
+     * exactement celui dont l'échéance a été dérivée à l'armement : une séance
+     * sans fin déclarée en a une par convention, et comparer une convention à un
+     * {@code null} déplacerait l'échéance de n'importe quoi.
+     *
+     * <p><b>Seules les veilles vivantes hors {@code ESCALATED}</b> — le même
+     * ensemble que la clôture, {@link #A_REFERMER}. Une veille escaladée a, par
+     * construction, une échéance déjà dépassée et un message déjà parti chez un
+     * proche : lui poser une échéance dans le futur ferait mentir la chronologie
+     * sur l'instant où l'alerte est sortie, sans rien réparer. Elle reste à lever
+     * par la personne, comme à l'annulation. <i>La fiche P-BL-04 écrit « chaque
+     * veille non terminale », ce qui inclurait {@code ESCALATED} ; c'est un écart
+     * assumé, pour la même raison qui l'exclut de la clôture.</i>
+     *
+     * <p><b>Une échéance repoussée dans le passé referme la veille</b> plutôt que
+     * de la laisser vivante avec une heure limite dépassée : une séance avancée à
+     * hier n'a plus de retour à surveiller. La chronologie porte alors les deux
+     * lignes — le décalage, puis l'abandon — parce que les deux faits ont eu
+     * lieu, et qu'une clôture sans son décalage serait illisible après coup.
+     *
+     * <p>Rejoint la transaction de l'appelant, {@code ProgramService.updateSchedule},
+     * dont la modification et ce décalage doivent aboutir ensemble ou pas du tout.
+     *
+     * @param oldStart le début qu'avait la séance avant la modification
+     * @param oldEnd   la fin <b>déclarée</b> qu'elle avait, {@code null} comprise :
+     *                 la convention est appliquée ici, avec {@code oldStart}
+     * @return combien de veilles ont été déplacées (celles refermées comprises)
+     */
+    @Transactional
+    public int shiftForUpdatedSlot(Schedule slot, Instant oldStart, Instant oldEnd, Instant now) {
+        if (oldStart == null || slot.getStartsAt() == null) {
+            return 0;
+        }
+
+        Duration debut = Duration.between(oldStart, slot.getStartsAt());
+        Duration fin = Duration.between(
+            oldEnd != null ? oldEnd : oldStart.plus(SlotTiming.DEFAULT_DURATION),
+            SlotTiming.endOf(slot));
+
+        if (debut.isZero() && fin.isZero()) {
+            return 0;
+        }
+
+        List<Watch> aDecaler = watchRepository
+            .findByScheduleIdAndStateIn(slot.getId(), A_REFERMER).stream()
+            .filter(watch -> concerneLOccurrence(watch, oldStart))
+            .toList();
+
+        if (aDecaler.isEmpty()) {
+            return 0;
+        }
+
+        for (Watch watch : aDecaler) {
+            if (watch.getOccurrenceStartsAt() != null) {
+                watch.setOccurrenceStartsAt(watch.getOccurrenceStartsAt().plus(debut));
+            }
+            if (watch.getOutboundBaseAt() != null) {
+                watch.setOutboundBaseAt(watch.getOutboundBaseAt().plus(debut));
+            }
+            if (watch.getDeadlineAt() != null) {
+                watch.setDeadlineAt(watch.getDeadlineAt().plus(fin));
+            }
+
+            eventRepository.save(new WatchEvent(watch.getId(), WatchEventType.DEADLINE_SHIFTED,
+                now, decrire(debut, fin)));
+
+            if (watch.getDeadlineAt() != null && !watch.getDeadlineAt().isAfter(now)) {
+                // La séance a été avancée au point que l'heure limite est
+                // derrière nous : il n'y a plus de retour à surveiller, et
+                // laisser la veille vivante ferait partir un rappel au prochain
+                // passage de la boucle.
+                watch.setState(WatchState.CLOSED);
+                watch.setClosedAt(now);
+                eventRepository.save(new WatchEvent(watch.getId(), WatchEventType.ABANDONED, now));
+            }
+        }
+
+        log.info("Créneau {} déplacé ({} / {}) : {} veille(s) décalée(s)",
+            slot.getId(), debut, fin, aDecaler.size());
+        return aDecaler.size();
+    }
+
+    /**
+     * La veille surveille-t-elle bien l'occurrence qu'on vient de déplacer ?
+     *
+     * <p>La question compte pour un créneau récurrent : le rollover avance la
+     * ligne de semaine en semaine, et une veille armée pour la séance de la
+     * semaine dernière ne doit pas voir son échéance bouger parce que celle de
+     * cette semaine a changé d'heure.
+     *
+     * <p><b>À la seconde près, et non à l'identique.</b> Les deux instants ont
+     * fait le voyage par une colonne {@code timestamptz}, dont la précision
+     * n'est pas celle d'un {@code Instant} : une égalité stricte échouerait sur
+     * des nanosecondes qu'aucune des deux valeurs ne porte vraiment. Deux
+     * occurrences d'un même créneau sont séparées d'un jour au moins, donc une
+     * tolérance d'une seconde ne peut pas en confondre deux.
+     */
+    private static boolean concerneLOccurrence(Watch watch, Instant oldStart) {
+        Instant occurrence = watch.getOccurrenceStartsAt();
+        return occurrence != null
+            && Duration.between(occurrence, oldStart).abs().compareTo(Duration.ofSeconds(1)) < 0;
+    }
+
+    /** « début +2h00, fin +2h00 » — de quoi relire un décalage sans l'ancien horaire. */
+    private static String decrire(Duration debut, Duration fin) {
+        return "début " + signe(debut) + ", fin " + signe(fin);
+    }
+
+    private static String signe(Duration duree) {
+        long minutes = duree.toMinutes();
+        return String.format("%s%dh%02d", minutes < 0 ? "-" : "+",
+            Math.abs(minutes) / 60, Math.abs(minutes) % 60);
     }
 }

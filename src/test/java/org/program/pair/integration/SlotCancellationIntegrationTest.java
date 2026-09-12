@@ -179,7 +179,161 @@ class SlotCancellationIntegrationTest extends AbstractIntegrationTest {
         assertThat(NotificationType.NEARBY_PROGRAM.isCritical()).isFalse();
     }
 
+    // ————————————————————————————————— P-BL-19 : un seul chemin d'annulation
+
+    /**
+     * Annuler puis supprimer n'envoie qu'<b>une</b> annulation.
+     *
+     * <p><b>Le défaut.</b> Il existait deux implémentations de l'annulation.
+     * {@code POST /slots/{id}/cancel} renseignait motif, date et auteur ;
+     * {@code DELETE .../schedules/{id}} posait {@code CANCELLED} sans rien d'autre,
+     * ne testait pas le statut, et renotifiait tous les concernés. Un organisateur
+     * qui annulait puis nettoyait son agenda envoyait donc deux « la séance est
+     * annulée » pour un seul fait, et la seconde arrivait sans motif alors que la
+     * première en portait un.
+     */
+    @Test
+    void annulerPuisSupprimer_neDoitEnvoyerQuUneAnnulation() {
+        String host = registerAndLogin();
+        Creneau creneau = publishSlotComplet(host, 5);
+        String participant = registerAndLogin();
+        join(participant, creneau.scheduleId());
+
+        cancel(host, creneau.scheduleId(), "Le gymnase est fermé");
+        assertThat(cancellationsFor(participant)).isEqualTo(1);
+
+        supprimer(host, creneau);
+
+        // Et elle reste à une : une seconde n'arrive pas en retard. Sans la
+        // fenêtre d'observation, « il n'y en a qu'une » serait vrai simplement
+        // parce que la deuxième n'est pas encore partie.
+        UUID participantId = userId(participant);
+        org.awaitility.Awaitility.await()
+            .during(java.time.Duration.ofSeconds(2))
+            .atMost(java.time.Duration.ofSeconds(6))
+            .until(() -> compterAnnulations(participantId) == 1L);
+    }
+
+    /**
+     * Supprimer un créneau qui concerne quelqu'un est une annulation complète :
+     * date et auteur enregistrés, comme par la route d'annulation.
+     *
+     * <p><b>Le motif reste nul, et c'est exact</b> : le geste « supprimer » n'en
+     * porte aucun — la route n'a pas de corps. Ce que la délégation apporte est
+     * qu'il y a désormais une colonne pour l'accueillir, et un auteur pour répondre
+     * plus tard à « qui a annulé cette séance, et quand ». La fiche P-BL-19
+     * nommait ce test « doitPoserMotifDateEtAuteur » ; le motif n'était pas
+     * atteignable par ce chemin.
+     */
+    @Test
+    void supprimerUnCreneauAvecInscrits_doitPoserDateEtAuteur() {
+        String host = registerAndLogin();
+        Creneau creneau = publishSlotComplet(host, 5);
+        String participant = registerAndLogin();
+        join(participant, creneau.scheduleId());
+
+        supprimer(host, creneau);
+
+        Map<String, Object> row = jdbcTemplate.queryForMap(
+            "SELECT status, cancelled_at, cancelled_by, cancellation_reason"
+                + " FROM schedules WHERE id = ?", creneau.scheduleId());
+
+        assertThat(row.get("status")).isEqualTo("CANCELLED");
+        assertThat(row.get("cancelled_at")).isNotNull();
+        assertThat(row.get("cancelled_by")).isEqualTo(userId(host));
+        assertThat(row.get("cancellation_reason")).isNull();
+
+        // Et l'inscrit est prévenu une fois, par le chemin unique.
+        assertThat(cancellationsFor(participant)).isEqualTo(1);
+    }
+
+    /** Personne à prévenir : la ligne disparaît pour de bon, comme avant. */
+    @Test
+    void supprimerUnCreneauSansPersonne_doitLeSupprimer() {
+        String host = registerAndLogin();
+        Creneau creneau = publishSlotComplet(host, 5);
+
+        supprimer(host, creneau);
+
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM schedules WHERE id = ?", Long.class, creneau.scheduleId()))
+            .isZero();
+    }
+
+    /**
+     * Un seul producteur de {@code SLOT_CANCELLED} dans tout le code source.
+     *
+     * <p><b>Pourquoi un test déclaratif et non un comptage.</b> Un comptage de
+     * notifications prouve qu'un chemin donné n'en envoie qu'une ; il ne dit rien
+     * du troisième chemin que quelqu'un écrira dans six mois. Ce test-ci échoue
+     * dès qu'un second appelant passe {@code SLOT_CANCELLED} à {@code notify},
+     * même si aucun test fonctionnel ne le traverse — c'est exactement le défaut
+     * qu'a produit {@code deleteSchedule}, invisible à chaque test pris séparément.
+     *
+     * <p>La recherche porte sur l'<b>appel</b> et non sur la mention : le type est
+     * nommé légitimement par sa propre énumération, par la composition des textes
+     * push, par l'e-mail et par la règle de visibilité du lieu. Seul
+     * {@code notify(… SLOT_CANCELLED …)} est un envoi.
+     */
+    @Test
+    void unSeulProducteur_doitEmettreSlotCancelled() throws java.io.IOException {
+        java.util.regex.Pattern envoi =
+            java.util.regex.Pattern.compile("notify\\([^;]*SLOT_CANCELLED");
+
+        List<String> producteurs;
+        try (var chemins = java.nio.file.Files.walk(java.nio.file.Path.of("src/main/java"))) {
+            producteurs = chemins
+                .filter(c -> c.toString().endsWith(".java"))
+                .filter(c -> {
+                    try {
+                        return envoi.matcher(java.nio.file.Files.readString(c)).find();
+                    } catch (java.io.IOException e) {
+                        throw new java.io.UncheckedIOException(e);
+                    }
+                })
+                .map(c -> c.getFileName().toString())
+                .sorted()
+                .toList();
+        }
+
+        assertThat(producteurs).containsExactly("SlotCancellationService.java");
+    }
+
     // — helpers —
+
+    private record Creneau(UUID scheduleId, UUID programId) {}
+
+    /** {@code DELETE} rend toujours 204 sans corps : dire ce qu'il a fait est P-BA-16. */
+    private void supprimer(String token, Creneau creneau) {
+        webTestClient.delete()
+            .uri("/api/programs/{programId}/schedules/{scheduleId}",
+                creneau.programId(), creneau.scheduleId())
+            .headers(h -> h.setBearerAuth(token))
+            .exchange().expectStatus().isNoContent();
+    }
+
+    private Creneau publishSlotComplet(String token, int maxParticipants) {
+        UUID activityId = activityRepository.findAll().get(0).getId();
+        Map<?, ?> body = webTestClient.post().uri("/api/quick-slots")
+            .headers(h -> h.setBearerAuth(token))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(new QuickSlotRequest(
+                activityId, Instant.now().plus(3, ChronoUnit.DAYS), null,
+                "Parc de l'Orangerie", PlaceType.PUBLIC, LAT, LNG,
+                "1 avenue de l'Europe", null, "Strasbourg", maxParticipants, null, null, null))
+            .exchange().expectStatus().isCreated()
+            .expectBody(Map.class).returnResult().getResponseBody();
+        assertThat(body).isNotNull();
+        return new Creneau(
+            UUID.fromString(String.valueOf(body.get("scheduleId"))),
+            UUID.fromString(String.valueOf(body.get("programId"))));
+    }
+
+    private long compterAnnulations(UUID userId) {
+        return jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND type = 'SLOT_CANCELLED'",
+            Long.class, userId);
+    }
 
     private void cancel(String token, UUID slotId, String reason) {
         webTestClient.post().uri("/api/slots/{id}/cancel", slotId)
