@@ -8,6 +8,7 @@ import org.program.pair.domain.badge.BadgeService;
 import org.program.pair.domain.program.ParticipationStatus;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotOccurrence;
+import org.program.pair.domain.program.SlotStatus;
 import org.program.pair.domain.program.SlotTiming;
 import org.program.pair.domain.program.UserProgramStatus;
 import org.program.pair.domain.recap.SlotRecapService;
@@ -20,6 +21,7 @@ import org.program.pair.repository.SlotParticipationRepository;
 import org.program.pair.repository.UserProgramRepository;
 import org.program.pair.repository.UserRepository;
 import org.program.pair.shared.exception.BusinessException;
+import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.exception.ForbiddenException;
 import org.program.pair.shared.exception.ResourceNotFoundException;
 import org.program.pair.shared.exception.ValidationException;
@@ -60,10 +62,29 @@ public class AttendanceService {
      * confirmer sa présence redevenait impossible et {@code attendedAt}
      * enregistrait la date de la séance <i>suivante</i>. Voir
      * {@link SlotTiming#lastEndedOccurrence}.
+     *
+     * <p><b>Une séance annulée ne se confirme pas.</b> Le contrôle vérifiait
+     * « terminée », « inscrit », « pas déjà répondu pour cette occurrence » —
+     * jamais le statut. Une séance qui n'a pas eu lieu produisait donc des
+     * présences {@code CONFIRMED}, et avec elles un compteur de pratique, des
+     * badges et une « présence partagée » adossés à un moment que personne n'a
+     * vécu. Le refus est posé avant tout le reste : il ne dépend ni de
+     * l'occurrence, ni du lien de la personne au créneau.
+     *
+     * <p>Le statut, et non {@code cancelledAt} : une série annulée garde ses
+     * séances antérieures à l'annulation, mais le rollover ne fait plus avancer
+     * une ligne {@code CANCELLED} — l'occurrence que
+     * {@link SlotTiming#lastEndedOccurrence} désigne après une annulation est
+     * donc toujours celle sur laquelle l'annulation porte.
      */
     public AttendanceDto confirm(UUID userId, UUID scheduleId, boolean wasPresent) {
         Schedule slot = scheduleRepository.findById(scheduleId)
             .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+
+        if (slot.getStatus() == SlotStatus.CANCELLED) {
+            throw new BusinessException(ErrorCode.SLOT_CANCELLED_NO_ATTENDANCE,
+                "Cette séance est annulée : votre présence ne peut plus y être enregistrée.");
+        }
 
         SlotOccurrence occurrence = SlotTiming.lastEndedOccurrence(slot, Instant.now());
 
@@ -134,6 +155,7 @@ public class AttendanceService {
      *       {@code CONFIRMED}, <b>ou</b> j'ai une inscription de programme
      *       {@code ACTIVE} rattachée à ce créneau — les trois mêmes sources que
      *       {@code confirm} interroge avant de rendre son {@code 403} ;</li>
+     *   <li>la séance n'est pas annulée ;</li>
      *   <li>une occurrence est terminée ({@link SlotTiming#lastEndedOccurrence}) ;</li>
      *   <li>je n'ai pas déjà répondu <b>pour cette occurrence-là</b>.</li>
      * </ol>
@@ -182,6 +204,10 @@ public class AttendanceService {
         return java.util.stream.Stream.of(hosted, slotJoined, programJoined)
             .flatMap(List::stream)
             .distinct()
+            // Annulée : la question ne se pose pas, et la poser quand même
+            // proposerait un geste que confirm refuse désormais — ce que le
+            // contrat de cette liste interdit (voir l'invariant ci-dessus).
+            .filter(s -> s.getStatus() != SlotStatus.CANCELLED)
             .map(s -> new Pending(s, SlotTiming.lastEndedOccurrence(s, now)))
             .filter(p -> p.occurrence() != null)
             .filter(p -> !attendanceRepository.existsByScheduleIdAndUserIdAndAttendedAt(

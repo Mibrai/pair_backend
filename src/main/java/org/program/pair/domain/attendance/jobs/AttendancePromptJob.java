@@ -8,6 +8,7 @@ import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotParticipation;
 import org.program.pair.domain.program.SlotAudience;
+import org.program.pair.domain.program.SlotOccurrence;
 import org.program.pair.domain.program.SlotStatus;
 import org.program.pair.domain.program.SlotTiming;
 import org.program.pair.repository.AttendanceRepository;
@@ -25,6 +26,28 @@ import java.util.UUID;
 /**
  * Relance post-créneau. RÈGLE : une seule relance, jamais de rappel insistant
  * — le job ne notifie que les créneaux terminés entre 1h et 3h auparavant.
+ *
+ * <p><b>Une occurrence, pas une ligne.</b> Trois défauts tenaient au même
+ * raccourci — prendre la ligne {@code schedules} pour la séance qui vient d'avoir
+ * lieu — et ils se cumulaient sur les créneaux récurrents :
+ *
+ * <ol>
+ *   <li>la requête lisait {@code endsAt}, que le rollover avait déjà avancé :
+ *       <b>une série ne recevait jamais aucune relance</b>. Voir
+ *       {@link ScheduleRepository#findFinishedBetween} ;</li>
+ *   <li>le filtre « a déjà répondu » portait sur la ligne : qui avait confirmé sa
+ *       présence la première semaine n'était <b>plus jamais relancé</b>, même
+ *       fenêtre corrigée. {@code AttendanceService.confirm} raisonnait déjà par
+ *       occurrence de son côté ;</li>
+ *   <li>le payload portait {@code startsAt} de la ligne, donc la date de la
+ *       séance <b>suivante</b> : « tu y étais ? » pour un moment qui n'a pas eu
+ *       lieu.</li>
+ * </ol>
+ *
+ * <p>Et un quatrième, qui n'est pas propre aux récurrents : une fenêtre de deux
+ * heures balayée toutes les heures retient chaque séance lors de deux passages.
+ * Sans marqueur, un non-répondant recevait deux fois la même question — d'où
+ * {@code schedules.attendance_prompted_for} (V110).
  */
 @Component
 @RequiredArgsConstructor
@@ -62,17 +85,49 @@ public class AttendancePromptJob {
             List<Schedule> finished = scheduleRepository.findFinishedBetween(from, to, fromStart, toStart);
 
             int notified = 0;
+            int skipped = 0;
             for (Schedule slot : finished) {
-                for (UUID userId : unconfirmedParticipantIds(slot)) {
+                // De quelle séance parle-t-on ? Jamais de celle que porte la
+                // ligne : sur une série, le rollover l'a déjà avancée.
+                SlotOccurrence occurrence = SlotTiming.lastEndedOccurrence(slot, now);
+                if (occurrence == null) {
+                    continue;
+                }
+
+                // La requête présélectionne sur trois branches dont deux bornent
+                // une colonne qui n'est pas forcément celle de l'occurrence
+                // retenue ici (endsAt pour une série déjà avancée, par exemple).
+                // C'est donc ici que la fenêtre est réellement appliquée, sur la
+                // fin de la séance dont on va parler.
+                if (occurrence.endsAt().isBefore(from) || occurrence.endsAt().isAfter(to)) {
+                    continue;
+                }
+
+                // Idempotence au grain de l'occurrence. Deux passages successifs
+                // voient la même séance — la fenêtre fait deux heures, le job
+                // tourne toutes les heures — et le second ne doit rien envoyer.
+                if (occurrence.startsAt().equals(slot.getAttendancePromptedFor())) {
+                    skipped++;
+                    continue;
+                }
+
+                for (UUID userId : unconfirmedParticipantIds(slot, occurrence)) {
                     notificationService.notify(userId,
                         slot.getProgram().getUserActivity().getUser().getId(),
                         NotificationType.ATTENDANCE_PROMPT,
-                        NotificationPayload.ofSchedule(slot).build());
+                        payloadFor(slot, occurrence));
                     notified++;
                 }
+
+                // Posé même quand personne n'était à relancer : la question a été
+                // posée à tout le monde qui devait l'être, et le passage suivant
+                // n'a rien à reprendre. Le marqueur dit « cette occurrence a été
+                // traitée », pas « un message est parti ».
+                slot.setAttendancePromptedFor(occurrence.startsAt());
+                scheduleRepository.save(slot);
             }
-            log.info("Attendance prompt job completed: {} slots checked, {} notifications sent",
-                finished.size(), notified);
+            log.info("Attendance prompt job completed: {} slots checked, {} already prompted, "
+                + "{} notifications sent", finished.size(), skipped, notified);
         } catch (Exception e) {
             log.error("Attendance prompt job failed", e);
         }
@@ -149,15 +204,60 @@ public class AttendancePromptJob {
     }
 
     /**
-     * Les inscrits du créneau, moins ceux qui ont déjà répondu. La liste de base
-     * vient de {@link SlotAudience} — partagée avec le rappel T-2h, pour que
-     * « les inscrits » ne finisse pas par vouloir dire deux choses différentes
-     * selon le job qui pose la question. Le filtre de présence, lui, n'appartient
-     * qu'ici : il est le sens même de cette relance.
+     * Les inscrits du créneau, moins ceux qui ont déjà répondu <b>pour cette
+     * séance-là</b>. La liste de base vient de {@link SlotAudience} — partagée
+     * avec le rappel T-2h, pour que « les inscrits » ne finisse pas par vouloir
+     * dire deux choses différentes selon le job qui pose la question. Le filtre
+     * de présence, lui, n'appartient qu'ici : il est le sens même de cette
+     * relance.
+     *
+     * <p><b>Par occurrence, et c'est le second défaut fermé.</b> Le filtre
+     * portait sur {@code existsByScheduleIdAndUserId}, donc sur l'existence
+     * d'une présence <i>quelle qu'en soit la date</i> : sur un créneau
+     * hebdomadaire, avoir répondu une fois suffisait à ne plus jamais être
+     * relancé. La clé est celle de {@code uq_attendance (schedule_id, user_id,
+     * attended_at)} et de {@code AttendanceService.confirm}, qui écrit le début
+     * de l'occurrence dans {@code attended_at} : les deux côtés posent enfin la
+     * même question.
      */
-    private List<UUID> unconfirmedParticipantIds(Schedule slot) {
+    private List<UUID> unconfirmedParticipantIds(Schedule slot, SlotOccurrence occurrence) {
         return slotAudience.participantIds(slot).stream()
-            .filter(userId -> !attendanceRepository.existsByScheduleIdAndUserId(slot.getId(), userId))
+            .filter(userId -> !attendanceRepository.existsByScheduleIdAndUserIdAndAttendedAt(
+                slot.getId(), userId, occurrence.startsAt()))
             .toList();
+    }
+
+    /**
+     * La charge utile, datée de la séance <b>qui vient de se terminer</b>.
+     *
+     * <p>{@code NotificationPayload.ofSchedule} lit la ligne, donc la séance
+     * suivante sur un créneau récurrent : {@code sessionAt} — la clé que
+     * {@code NotificationDto} relit pour exposer {@code scheduledAt} — annonçait
+     * une date future dans une notification qui demande « tu y étais ? ». Les
+     * trois clés de temps sont réécrites d'un coup pour qu'aucune ne reste sur
+     * l'autre séance.
+     *
+     * <p>{@code occurrenceStartsAt} est ajoutée en clair : c'est l'identité de la
+     * séance, celle que {@code attendances.attended_at} porte. L'app 1.1.0+16
+     * l'ignore — elle route {@code ATTENDANCE_PROMPT} sur le créneau, et
+     * {@code confirm} déduit l'occurrence lui-même — mais un client qui veut
+     * afficher « la séance de mardi » n'a pas à la recalculer.
+     */
+    private static Map<String, Object> payloadFor(Schedule slot, SlotOccurrence occurrence) {
+        NotificationPayload payload = NotificationPayload.ofSchedule(slot)
+            .with("sessionAt", occurrence.startsAt())
+            .with("startsAt", occurrence.startsAt())
+            .with("occurrenceStartsAt", occurrence.startsAt());
+
+        // La fin n'est réécrite que si le créneau en déclare une. La convention
+        // des deux heures de SlotTiming sert à décider qu'une séance est
+        // terminée, pas à annoncer une heure que personne n'a donnée — c'est la
+        // même règle que AttendanceService.getPending applique, et ofSchedule
+        // n'écrit déjà pas la clé quand endsAt est nulle.
+        if (slot.getEndsAt() != null) {
+            payload = payload.with("endsAt", occurrence.endsAt());
+        }
+
+        return payload.build();
     }
 }

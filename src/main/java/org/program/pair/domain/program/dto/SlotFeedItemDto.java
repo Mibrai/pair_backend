@@ -51,6 +51,24 @@ public record SlotFeedItemDto(
         + "neuf ? », que startsAt ne sait pas exprimer.")
     Instant createdAt,
 
+    @Schema(description = "État du créneau : OPEN, FULL, CANCELLED ou PAST. **C'est la "
+        + "seule chose que les dates ne savent pas dire : l'annulation.** Un créneau "
+        + "annulé restait indiscernable d'un créneau normal dans « Mes créneaux » comme "
+        + "sur sa fiche — startsAt et endsAt continuaient d'annoncer une séance qui "
+        + "n'aurait pas lieu. Une annulation ne peut venir que du serveur : ce champ "
+        + "prime sur tout calcul de statut fait à partir des dates.",
+        allowableValues = {"OPEN", "FULL", "CANCELLED", "PAST"})
+    String status,
+
+    @Schema(description = "Instant de l'annulation, en UTC. Nul tant que le créneau n'est "
+        + "pas annulé.")
+    Instant cancelledAt,
+
+    @Schema(description = "Motif donné par l'organisateur, à montrer tel quel aux "
+        + "inscrits. Nul si le créneau n'est pas annulé, ou si l'organisateur n'a pas "
+        + "donné de motif — l'annulation reste valable sans lui.")
+    String cancellationReason,
+
     Integer maxParticipants,
     Integer participantCount,
     Boolean isOpenToPartners,

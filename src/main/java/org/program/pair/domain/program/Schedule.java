@@ -112,6 +112,28 @@ public class Schedule {
     private Instant reminderSentFor;
 
     /**
+     * Début de l'occurrence pour laquelle la relance de présence a été émise —
+     * pas un booléen, et pas {@code startsAt} non plus.
+     *
+     * <p>Le jumeau de {@link #reminderSentFor}, à une différence près qui est
+     * tout le sujet : le rappel T-2h parle de la séance <b>que la ligne
+     * porte</b>, la relance de présence parle de celle <b>qui vient de se
+     * terminer</b>. Sur un créneau récurrent, le rollover a déjà avancé la ligne
+     * quand la relance part : marquer {@code startsAt} reviendrait à déclarer la
+     * séance suivante déjà relancée, et la série n'en recevrait plus jamais
+     * aucune. C'est donc le début de l'occurrence — la même clé que
+     * {@code attendances.attended_at} et {@code slot_recaps} — qui est inscrit
+     * ici. Voir {@link SlotOccurrence}.
+     *
+     * <p>Ce qu'un booléen aurait coûté : une remise à zéro à chaque rollover,
+     * dans un chemin qui n'a aucune raison de connaître la relance de présence.
+     * La comparaison, elle, rend une nouvelle occurrence éligible sans que rien
+     * ne l'annonce. Voir {@code AttendancePromptJob} (V110).
+     */
+    @Column(name = "attendance_prompted_for")
+    private Instant attendancePromptedFor;
+
+    /**
      * Début de la dernière séance que {@code RecurringSlotRolloverJob} a
      * retirée en avançant {@code startsAt}.
      *

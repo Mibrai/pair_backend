@@ -35,6 +35,13 @@ public class ProgramEnrollmentService {
     private final ScheduleConflictDetector conflictDetector;
     private final ParticipantCounter participantCounter;
     private final WaitlistPromoter waitlistPromoter;
+    /**
+     * Les refus d'entrée, écrits une fois pour les deux portes : voir
+     * {@link SlotEntryGuard}. Ce service n'en appliquait aucun — ni blocage, ni
+     * statut, ni séance commencée, ni ouverture aux partenaires — alors qu'il
+     * ouvre exactement les mêmes créneaux que {@code POST /slots/{id}/join}.
+     */
+    private final SlotEntryGuard entryGuard;
 
     /**
      * Enroll a user in a program
@@ -57,6 +64,18 @@ public class ProgramEnrollmentService {
         // Validate program exists and is active
         Program program = programRepository.findById(programId)
             .orElseThrow(() -> new ResourceNotFoundException("Program not found"));
+
+        // Le blocage, en tête et avant tout le reste — y compris avant « le
+        // programme est-il actif » et « êtes-vous déjà inscrit ». Un refus
+        // nommé rendu à une personne bloquée lui apprendrait que le programme
+        // existe et dans quel état il est ; c'est la règle de SlotEntryGuard, et
+        // c'est pour cela qu'elle vient d'abord.
+        //
+        // Posé ici, il couvre les DEUX formes d'inscription : avec un
+        // scheduleId, où la garde complète repassera plus bas, et sans, où
+        // l'inscription porte sur tout le programme et où il n'y a aucun créneau
+        // à confronter. Ce second chemin ne vérifiait rien du tout.
+        entryGuard.assertNotBlocked(userId, program.getUserActivity().getUser().getId());
 
         if (program.getStatus() != ProgramStatus.ACTIVE) {
             throw new ValidationException(ErrorCode.PROGRAM_NOT_ACTIVE, "Program is not active and cannot accept new participants");
@@ -85,15 +104,18 @@ public class ProgramEnrollmentService {
                 throw new ValidationException(ErrorCode.PROGRAM_SCHEDULE_MISMATCH, "Schedule does not belong to this program");
             }
 
-            // Check schedule capacity (toutes sources de participation confondues)
-            if (schedule.getMaxParticipants() != null) {
-                long currentParticipants = scheduleRepository
-                    .countConfirmedParticipants(scheduleId);
-
-                if (currentParticipants >= schedule.getMaxParticipants()) {
-                    throw new ValidationException(ErrorCode.PROGRAM_SCHEDULE_FULL, "This schedule is full");
-                }
-            }
+            // La même liste ordonnée de refus que POST /slots/{id}/join, sous le
+            // verrou : statut (donc créneau annulé), séance commencée, et le
+            // blocage à nouveau — la garde est la définition entière, et
+            // redemander coûte deux existences indexées là où une seconde
+            // définition coûterait un contournement.
+            //
+            // Le contrôle de capacité qui vivait ici a disparu : c'était un
+            // doublon, et il répondait PROGRAM_SCHEDULE_FULL là où l'autre porte
+            // répond SLOT_FULL pour le même refus. Voir assertHasRoom, appelée
+            // juste après, à la place que la vérification occupait.
+            entryGuard.assertMayEnter(userId, schedule, Instant.now(), SlotEntryGuard.Door.PROGRAM);
+            entryGuard.assertHasRoom(schedule);
         }
 
         // Règle de non-chevauchement, vérifiée après les refus propres au programme
