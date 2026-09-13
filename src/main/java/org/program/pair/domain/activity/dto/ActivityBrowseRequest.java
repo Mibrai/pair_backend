@@ -27,7 +27,7 @@ public record ActivityBrowseRequest(
     @Schema(description = "Page indexée à 0.", defaultValue = "0")
     Integer page,
 
-    @Schema(description = "Taille de page. Défaut 20, plafonnée à 100.", defaultValue = "20")
+    @Schema(description = "Taille de page. Défaut 20, plafonnée à 100.", defaultValue = "20", maximum = "100")
     Integer size,
 
     @Schema(description = "Catégories retenues. Vide ou absent : toutes.")

@@ -101,8 +101,8 @@ public class ProgressionService {
         return toDto(progression);
     }
 
-    public Page<ProgressionDto> getProgressionsByProgram(UUID programId, UUID requestingUserId, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size);
+    /** {@code pageable} arrive borné par le contrôleur ({@code Pages.borne}, P-BA-14). */
+    public Page<ProgressionDto> getProgressionsByProgram(UUID programId, UUID requestingUserId, Pageable pageable) {
 
         Program program = programRepository.findById(programId)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Program not found"));
@@ -116,8 +116,7 @@ public class ProgressionService {
         }
     }
 
-    public Page<ProgressionDto> getProgressionsByUser(UUID userId, int page, int size) {
-        Pageable pageable = PageRequest.of(page, size);
+    public Page<ProgressionDto> getProgressionsByUser(UUID userId, Pageable pageable) {
         return progressionRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable)
             .map(this::toDto);
     }

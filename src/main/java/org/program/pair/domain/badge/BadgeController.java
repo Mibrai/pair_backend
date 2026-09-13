@@ -1,5 +1,7 @@
 package org.program.pair.domain.badge;
 
+import org.program.pair.shared.exception.UserNotFoundException;
+import org.program.pair.domain.block.BlockFilterService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -22,6 +24,7 @@ import java.util.UUID;
 public class BadgeController {
 
     private final BadgeService badgeService;
+    private final BlockFilterService blockFilterService;
 
     @GetMapping
     @Operation(summary = "Liste tous les badges disponibles")
@@ -44,7 +47,14 @@ public class BadgeController {
 
     @GetMapping("/users/{userId}")
     @Operation(summary = "Badges d'un utilisateur", description = "Récupère les badges publics d'un utilisateur")
-    public ResponseEntity<List<BadgeAwardDto>> getUserBadges(@PathVariable UUID userId) {
+    public ResponseEntity<List<BadgeAwardDto>> getUserBadges(
+            @AuthenticationPrincipal UserPrincipal currentUser,
+            @PathVariable UUID userId) {
+        // P-BS-14 : les badges d'une personne bloquée, dans un sens ou dans
+        // l'autre, sont introuvables — même règle que le profil public.
+        if (blockFilterService.blocked(currentUser.getId(), userId)) {
+            throw new UserNotFoundException("Utilisateur introuvable.");
+        }
         List<BadgeAwardDto> awards = badgeService.getUserBadges(userId).stream()
             .map(BadgeAwardDto::fromEntity)
             .toList();

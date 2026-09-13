@@ -1,5 +1,8 @@
 package org.program.pair.domain.progression;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.Parameter;
+import org.program.pair.shared.web.Pages;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.progression.dto.*;
@@ -54,24 +57,24 @@ public class ProgressionController {
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID programId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return progressionService.getProgressionsByProgram(programId, principal.getId(), page, size);
+            @RequestParam(defaultValue = "20") @Parameter(schema = @Schema(maximum = "50", defaultValue = "20")) int size) {
+        return progressionService.getProgressionsByProgram(programId, principal.getId(), Pages.borne(page, size));
     }
 
     @GetMapping("/user/{userId}")
     public Page<ProgressionDto> getProgressionsByUser(
             @PathVariable UUID userId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return progressionService.getProgressionsByUser(userId, page, size);
+            @RequestParam(defaultValue = "20") @Parameter(schema = @Schema(maximum = "50", defaultValue = "20")) int size) {
+        return progressionService.getProgressionsByUser(userId, Pages.borne(page, size));
     }
 
     @GetMapping("/my")
     public Page<ProgressionDto> getMyProgressions(
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return progressionService.getProgressionsByUser(principal.getId(), page, size);
+            @RequestParam(defaultValue = "20") @Parameter(schema = @Schema(maximum = "50", defaultValue = "20")) int size) {
+        return progressionService.getProgressionsByUser(principal.getId(), Pages.borne(page, size));
     }
 
     @GetMapping("/my/streak")

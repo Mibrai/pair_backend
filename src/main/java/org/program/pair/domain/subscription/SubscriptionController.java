@@ -1,5 +1,8 @@
 package org.program.pair.domain.subscription;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.Parameter;
+import org.program.pair.shared.web.Pages;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -26,8 +29,6 @@ import java.util.UUID;
 @SecurityRequirement(name = "bearerAuth")
 public class SubscriptionController {
 
-    /** Même plafond que /notifications : une page ne dépasse pas cinquante entrées. */
-    private static final int MAX_PAGE_SIZE = 50;
 
     private final SubscriptionService subscriptionService;
 
@@ -156,14 +157,14 @@ public class SubscriptionController {
     public Page<SubscriptionDto> getMySubscriptions(
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "20") @Parameter(schema = @Schema(maximum = "50", defaultValue = "20")) int size,
             @RequestParam(required = false) SubscriptionType type,
             @RequestParam(defaultValue = "desc") String direction) {
 
         Sort sort = Sort.by("asc".equalsIgnoreCase(direction) ? Sort.Direction.ASC : Sort.Direction.DESC,
             "createdAt");
         return subscriptionService.listMySubscriptions(
-            principal.getId(), type, PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE), sort));
+            principal.getId(), type, Pages.borne(page, size, sort));
     }
 
     /**
@@ -183,13 +184,12 @@ public class SubscriptionController {
     public Page<SubscriberDto> getMySubscribers(
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "20") @Parameter(schema = @Schema(maximum = "50", defaultValue = "20")) int size,
             @RequestParam(required = false) SubscriptionType type,
             @RequestParam(required = false) UUID targetId) {
 
         return subscriptionService.listMySubscribers(
             principal.getId(), type, targetId,
-            PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE),
-                Sort.by(Sort.Direction.DESC, "createdAt")));
+            Pages.borne(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
     }
 }

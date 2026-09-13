@@ -1,5 +1,10 @@
 package org.program.pair.domain.recommendation;
 
+import org.program.pair.shared.exception.UserNotFoundException;
+import org.program.pair.domain.block.BlockFilterService;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.Parameter;
+import org.program.pair.shared.web.Pages;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -27,6 +32,7 @@ import java.util.UUID;
 public class PeerRecommendationController {
 
     private final PeerRecommendationService recommendationService;
+    private final BlockFilterService blockFilterService;
 
     @PostMapping
     @Operation(
@@ -58,9 +64,9 @@ public class PeerRecommendationController {
     public ResponseEntity<Page<PeerRecommendationDto>> getMyRecommendations(
             @AuthenticationPrincipal UserPrincipal currentUser,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") @Parameter(schema = @Schema(maximum = "50", defaultValue = "20")) int size) {
 
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = Pages.borne(page, size);
         Page<PeerRecommendationDto> recommendations = recommendationService
             .getRecommendationsReceived(currentUser.getId(), pageable)
             .map(PeerRecommendationDto::fromEntity);
@@ -76,9 +82,9 @@ public class PeerRecommendationController {
     public ResponseEntity<Page<PeerRecommendationDto>> getMyGivenRecommendations(
             @AuthenticationPrincipal UserPrincipal currentUser,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") @Parameter(schema = @Schema(maximum = "50", defaultValue = "20")) int size) {
 
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = Pages.borne(page, size);
         Page<PeerRecommendationDto> recommendations = recommendationService
             .getRecommendationsGiven(currentUser.getId(), pageable)
             .map(PeerRecommendationDto::fromEntity);
@@ -92,11 +98,13 @@ public class PeerRecommendationController {
         description = "Recommandations publiques reçues par un utilisateur"
     )
     public ResponseEntity<Page<PeerRecommendationDto>> getUserRecommendations(
+            @AuthenticationPrincipal UserPrincipal currentUser,
             @PathVariable UUID userId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") @Parameter(schema = @Schema(maximum = "50", defaultValue = "20")) int size) {
 
-        Pageable pageable = PageRequest.of(page, size);
+        introuvableSiBloque(currentUser, userId);
+        Pageable pageable = Pages.borne(page, size);
         Page<PeerRecommendationDto> recommendations = recommendationService
             .getRecommendationsReceived(userId, pageable)
             .map(PeerRecommendationDto::fromEntity);
@@ -109,7 +117,10 @@ public class PeerRecommendationController {
         summary = "Statistiques de recommandations",
         description = "Statistiques des recommandations d'un utilisateur (reçues, données, moyenne)"
     )
-    public ResponseEntity<RecommendationStatsDto> getUserStats(@PathVariable UUID userId) {
+    public ResponseEntity<RecommendationStatsDto> getUserStats(
+            @AuthenticationPrincipal UserPrincipal currentUser,
+            @PathVariable UUID userId) {
+        introuvableSiBloque(currentUser, userId);
         RecommendationStatsDto stats = recommendationService.getUserStats(userId);
         return ResponseEntity.ok(stats);
     }
@@ -135,5 +146,16 @@ public class PeerRecommendationController {
 
         RecommendationStatsDto stats = recommendationService.getUserStats(currentUser.getId());
         return ResponseEntity.ok(stats);
+    }
+
+    /**
+     * Les recommandations d'une personne bloquée — dans un sens ou dans l'autre —
+     * sont introuvables, avec le message d'un compte qui n'existe pas (P-BS-14).
+     * Même règle que {@code GET /api/users/{id}} : un 403 apprendrait le blocage.
+     */
+    private void introuvableSiBloque(UserPrincipal appelant, UUID userId) {
+        if (blockFilterService.blocked(appelant.getId(), userId)) {
+            throw new UserNotFoundException("Utilisateur introuvable.");
+        }
     }
 }

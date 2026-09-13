@@ -105,6 +105,34 @@ class OpenApiContractIntegrationTest extends AbstractIntegrationTest {
         assertThat(docs.path("components").path("schemas").has("VisibilityRequest")).isFalse();
     }
 
+    /**
+     * P-BA-14 — chaque paramètre {@code size} du contrat annonce son maximum. Un
+     * client qui lit la spec sait qu'au-delà, la page est ramenée — ou refusée.
+     */
+    @Test
+    void apiDocs_chaqueParametreSize_annonceSonMaximum() throws Exception {
+        JsonNode paths = fetchApiDocs().path("paths");
+        java.util.List<String> sansMaximum = new java.util.ArrayList<>();
+        int vus = 0;
+
+        for (var route : (Iterable<java.util.Map.Entry<String, JsonNode>>) paths::fields) {
+            for (var operation : (Iterable<java.util.Map.Entry<String, JsonNode>>) route.getValue()::fields) {
+                for (JsonNode parametre : operation.getValue().path("parameters")) {
+                    if ("size".equals(parametre.path("name").asText())
+                            && "query".equals(parametre.path("in").asText())) {
+                        vus++;
+                        if (!parametre.path("schema").has("maximum")) {
+                            sansMaximum.add(operation.getKey().toUpperCase() + " " + route.getKey());
+                        }
+                    }
+                }
+            }
+        }
+
+        assertThat(vus).as("le contrat porte bien des routes paginées").isGreaterThan(10);
+        assertThat(sansMaximum).as("paramètres size sans maximum").isEmpty();
+    }
+
     private JsonNode fetchApiDocs() throws Exception {
         byte[] raw = webTestClient.get()
             .uri("/v3/api-docs")
