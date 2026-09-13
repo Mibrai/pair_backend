@@ -62,6 +62,22 @@ class OpenApiContractIntegrationTest extends AbstractIntegrationTest {
         assertThat(reponses.has("200")).isFalse();
     }
 
+    /**
+     * P-BA-12 — le contrat ne publie plus l'entité de signalement comme réponse.
+     * La création référence {@code ReportDto}, et ni {@code Report} ni son nom
+     * d'entité {@code ReportPhase3} n'apparaissent parmi les schémas.
+     */
+    @Test
+    void apiDocs_neDoitPublierAucunSchemaDEntiteDeSignalement() throws Exception {
+        JsonNode docs = fetchApiDocs();
+        JsonNode schemas = docs.path("components").path("schemas");
+
+        assertThat(schemas.has("Report")).isFalse();
+        assertThat(schemas.has("ReportPhase3")).isFalse();
+        assertThat(docs.path("paths").path("/api/reports").path("post").path("responses")
+            .path("201").toString()).contains("#/components/schemas/ReportDto");
+    }
+
     private JsonNode fetchApiDocs() throws Exception {
         byte[] raw = webTestClient.get()
             .uri("/v3/api-docs")

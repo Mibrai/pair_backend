@@ -6,6 +6,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.report.dto.CreateReportRequest;
+import org.program.pair.domain.report.dto.ReportDto;
+import org.program.pair.domain.report.dto.ReportModerationDto;
 import org.program.pair.domain.report.dto.ReportSummaryDto;
 import org.program.pair.shared.security.UserPrincipal;
 import org.springframework.data.domain.Page;
@@ -25,6 +27,9 @@ import java.util.UUID;
 @SecurityRequirement(name = "bearerAuth")
 public class ReportController {
 
+    // Aucune méthode ne rend l'entité Report, ni directement ni dans une Page
+    // (P-BA-12) : ArchitectureTest le vérifie pour tous les contrôleurs.
+
     private final ReportService reportService;
 
     /**
@@ -39,11 +44,11 @@ public class ReportController {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "Signaler un contenu", description = "Signaler un utilisateur, programme, message ou avis")
-    public Report createReport(
+    public ReportDto createReport(
             @AuthenticationPrincipal UserPrincipal currentUser,
             @Valid @RequestBody CreateReportRequest request) {
 
-        return reportService.createReport(currentUser.getId(), request);
+        return ReportDto.from(reportService.createReport(currentUser.getId(), request));
     }
 
     /**
@@ -74,24 +79,24 @@ public class ReportController {
     @GetMapping("/pending")
     @PreAuthorize("hasRole('MODERATOR') or hasRole('ADMIN')")
     @Operation(summary = "Signalements en attente (Modérateurs)", description = "Liste des signalements à traiter")
-    public ResponseEntity<Page<Report>> getPendingReports(
+    public ResponseEntity<Page<ReportModerationDto>> getPendingReports(
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
 
-        Page<Report> reports = reportService.getPendingReports(PageRequest.of(page, size));
-        return ResponseEntity.ok(reports);
+        return ResponseEntity.ok(reportService.getPendingReports(PageRequest.of(page, size))
+            .map(ReportModerationDto::from));
     }
 
     @PutMapping("/{reportId}/review")
     @PreAuthorize("hasRole('MODERATOR') or hasRole('ADMIN')")
     @Operation(summary = "Traiter un signalement (Modérateurs)", description = "Changer le statut d'un signalement")
-    public ResponseEntity<Report> reviewReport(
+    public ResponseEntity<ReportModerationDto> reviewReport(
             @PathVariable UUID reportId,
             @AuthenticationPrincipal UserPrincipal currentUser,
             @RequestParam ReportStatus status,
             @RequestParam(required = false) String notes) {
 
-        Report report = reportService.reviewReport(reportId, currentUser.getId(), status, notes);
-        return ResponseEntity.ok(report);
+        return ResponseEntity.ok(ReportModerationDto.from(
+            reportService.reviewReport(reportId, currentUser.getId(), status, notes)));
     }
 }

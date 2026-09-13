@@ -3,7 +3,9 @@ package org.program.pair.domain.report;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -19,13 +21,16 @@ import java.util.UUID;
         columnNames = {"reporter_id", "reported_entity_type", "reported_entity_id"}
     )
 )
-@Data
+@Getter
+@Setter
+@ToString(onlyExplicitlyIncluded = true)
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class Report {
 
     @Id
+    @ToString.Include
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
@@ -67,4 +72,19 @@ public class Report {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+
+    /**
+     * Identité seule, et stable avant comme après {@code persist} (P-BA-12).
+     * L'{@code equals} de {@code @Data} comparait tous les champs, associations
+     * paresseuses comprises : une comparaison pouvait charger la base, ou boucler.
+     */
+    @Override
+    public boolean equals(Object o) {
+        return this == o || (o instanceof Report autre && id != null && id.equals(autre.id));
+    }
+
+    @Override
+    public int hashCode() {
+        return Report.class.hashCode();
+    }
 }
