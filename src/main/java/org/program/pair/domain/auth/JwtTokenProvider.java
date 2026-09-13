@@ -223,6 +223,11 @@ public class JwtTokenProvider {
         return java.time.Duration.ofMillis(refreshTokenExpiryMs);
     }
 
+    /** L'échéance d'un jeton valide — ce que la session STOMP garde pour ses trames suivantes. */
+    public Instant echeanceDe(String token) {
+        return verifier(token).getExpiration().toInstant();
+    }
+
     public UUID extractUserId(String token) {
         return UUID.fromString(verifier(token).getSubject());
     }

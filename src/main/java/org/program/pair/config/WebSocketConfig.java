@@ -1,29 +1,20 @@
 package org.program.pair.config;
 
 import lombok.RequiredArgsConstructor;
-import org.program.pair.domain.auth.JwtTokenProvider;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
-import org.springframework.messaging.simp.stomp.StompCommand;
-import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
-import org.springframework.messaging.support.ChannelInterceptor;
-import org.springframework.messaging.support.MessageHeaderAccessor;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
 
-import java.util.UUID;
 
 @Configuration
 @EnableWebSocketMessageBroker
 @RequiredArgsConstructor
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
-    private final JwtTokenProvider tokenProvider;
+    private final StompAuthentification stompAuthentification;
     private final CorsProperties corsProperties;
 
     @Override
@@ -71,30 +62,6 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
      */
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
-        registration.interceptors(new ChannelInterceptor() {
-            @Override
-            public Message<?> preSend(Message<?> message, MessageChannel channel) {
-                StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(
-                    message, StompHeaderAccessor.class);
-
-                if (accessor == null || !StompCommand.CONNECT.equals(accessor.getCommand())) {
-                    return message;
-                }
-
-                String header = accessor.getFirstNativeHeader("Authorization");
-                if (header == null || !header.startsWith("Bearer ")) {
-                    throw new AccessDeniedException("Connexion WebSocket sans jeton.");
-                }
-
-                String token = header.substring(7);
-                if (!tokenProvider.validateToken(token)) {
-                    throw new AccessDeniedException("Connexion WebSocket avec un jeton invalide.");
-                }
-
-                UUID userId = tokenProvider.extractUserId(token);
-                accessor.setUser(() -> userId.toString());
-                return message;
-            }
-        });
+        registration.interceptors(stompAuthentification);
     }
 }
