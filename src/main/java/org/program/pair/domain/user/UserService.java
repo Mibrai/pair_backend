@@ -143,7 +143,6 @@ public class UserService {
         }
         Set<UUID> actifs = users.stream().map(User::getId).collect(Collectors.toSet());
 
-        Map<UUID, Long> abonnes = subscriptionService.countAuthorSubscribers(actifs);
         Set<UUID> suivis = subscriptionService.subscribedAuthorIds(requesterId, actifs);
         Map<UUID, List<BadgeAward>> badges = badgeAwardRepository.findByUserIdsWithBadge(actifs)
             .stream()
@@ -153,7 +152,6 @@ public class UserService {
         for (User user : users) {
             profils.put(user.getId(), toPublicDto(
                 user,
-                abonnes.getOrDefault(user.getId(), 0L),
                 suivis.contains(user.getId()),
                 badges.getOrDefault(user.getId(), List.of())));
         }
@@ -177,7 +175,7 @@ public class UserService {
     @Transactional(readOnly = true)
     public UserPublicDto getMyProfilePreview(UUID userId) {
         User me = findActiveUser(userId);
-        return toPublicDto(me, subscriptionService.countAuthorSubscribers(userId), false);
+        return toPublicDto(me, false);
     }
 
     public UserPrivateDto updateProfile(UUID userId, UpdateProfileRequest request) {
@@ -408,16 +406,13 @@ public class UserService {
             requesterId
         );
 
-        // Compteurs et état d'abonnement en deux requêtes pour toute la page,
-        // et non deux par entrée.
+        // L'état d'abonnement en une requête pour toute la page, et non une par
+        // entrée.
         List<UUID> pageUserIds = users.stream().map(User::getId).toList();
-        Map<UUID, Long> subscriberCounts = subscriptionService.countAuthorSubscribers(pageUserIds);
         Set<UUID> subscribedTo = subscriptionService.subscribedAuthorIds(requesterId, pageUserIds);
 
         List<UserPublicDto> userDtos = users.stream()
-            .map(user -> toPublicDto(user,
-                subscriberCounts.getOrDefault(user.getId(), 0L),
-                subscribedTo.contains(user.getId())))
+            .map(user -> toPublicDto(user, subscribedTo.contains(user.getId())))
             .toList();
 
         return new PageImpl<>(userDtos, PageRequest.of(page, size), total);
@@ -438,7 +433,6 @@ public class UserService {
      */
     private UserPublicDto toPublicDto(User user, UUID requesterId) {
         return toPublicDto(user,
-            subscriptionService.countAuthorSubscribers(user.getId()),
             subscriptionService.isSubscribedToAuthor(requesterId, user.getId()));
     }
 
@@ -458,7 +452,7 @@ public class UserService {
      * masquer ne protégerait personne : ça casserait l'application.
      *
      * <p><b>Ce qui se masque :</b> la biographie, les badges, la présence en
-     * ligne, le nombre d'abonnés et le signal de fiabilité. Autrement dit ce qui
+     * ligne et le signal de fiabilité. Autrement dit ce qui
      * relève de la fiche, pas de l'identification.
      *
      * <p><b>Sur {@code FRIENDS} :</b> meetDo n'a pas de notion d'amitié. Le seul
@@ -467,8 +461,8 @@ public class UserService {
      * filtre ne coûte aucune requête supplémentaire — ce qui compte, puisque ce
      * mapping est appelé une fois par participant sur certaines pages.
      */
-    private UserPublicDto toPublicDto(User user, long subscriberCount, boolean subscribed) {
-        return toPublicDto(user, subscriberCount, subscribed, null);
+    private UserPublicDto toPublicDto(User user, boolean subscribed) {
+        return toPublicDto(user, subscribed, null);
     }
 
     /**
@@ -479,7 +473,7 @@ public class UserService {
      *                          décision de visibilité, elle, reste écrite une
      *                          fois, plus bas.
      */
-    private UserPublicDto toPublicDto(User user, long subscriberCount, boolean subscribed,
+    private UserPublicDto toPublicDto(User user, boolean subscribed,
                                       List<BadgeAward> awardsDejaCharges) {
         PrivacySettings privacy = user.getPrivacySettings() != null
             ? user.getPrivacySettings()
@@ -534,7 +528,9 @@ public class UserService {
             badgeCodes,
             List.of(), // activities — rempli par ActivityService
             showOnline,
-            detailsVisible ? subscriberCount : null,
+            // Jamais le nombre d'abonnés d'autrui (P-BL-17, décision du 13/09) :
+            // pas de compteur public. Le sien se lit sur GET /users/me.
+            null,
             subscribed,
             detailsVisible
                 ? ReliabilitySignal.of(user.getJoinedSlotsCount(), user.getAttendanceCount())

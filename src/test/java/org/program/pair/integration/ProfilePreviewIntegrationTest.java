@@ -88,7 +88,9 @@ class ProfilePreviewIntegrationTest extends AbstractIntegrationTest {
         UserPublicDto seen = publicProfile(registerAndLogin("Inconnu"), myId);
 
         assertThat(seen.bio()).isEqualTo("Je cours le dimanche");
-        assertThat(seen.subscriberCount()).isNotNull();
+        // Pas un masque de confidentialité : aucun profil ne publie plus son
+        // nombre d'abonnés (P-BL-17).
+        assertThat(seen.subscriberCount()).isNull();
     }
 
     @Test

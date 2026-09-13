@@ -94,7 +94,12 @@ public class UserController {
     }
 
     /**
-     * Statistiques de pratique d'une personne.
+     * Statistiques de pratique : les siennes seulement.
+     *
+     * <p><b>Pour toute autre personne, 404</b> (P-BL-17, décision du 13/09) : les
+     * séances, semaines et partenaires d'une personne ne regardent qu'elle. L'app
+     * masque déjà la carte quand la route échoue. Ses propres statistiques se
+     * lisent aussi sur {@code /me/practice-stats}.
      *
      * <p><b>Cette route n'avait aucun contrôle</b> : ni appelant identifié, ni
      * vérification de blocage. N'importe qui pouvait lire les compteurs bruts de
@@ -111,7 +116,7 @@ public class UserController {
     public PracticeStatsDto getPracticeStats(
             @PathVariable UUID userId,
             @AuthenticationPrincipal UserPrincipal principal) {
-        if (blockFilterService.blocked(principal.getId(), userId)) {
+        if (!principal.getId().equals(userId)) {
             throw new UserNotFoundException("Utilisateur introuvable.");
         }
         return practiceStatsService.getStats(userId);

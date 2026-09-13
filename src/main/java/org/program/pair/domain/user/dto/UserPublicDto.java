@@ -15,11 +15,9 @@ public record UserPublicDto(
     List<UserActivitySummaryDto> activities,
     boolean isOnline,
 
-    @Schema(description = "Nombre d'abonnés de type AUTHOR. Compte cette personne seule : "
-        + "il n'agrège pas les abonnés de ses activités, et l'additionner avec eux ne "
-        + "donnerait pas la portée d'une publication — la déduplication à l'émission rend "
-        + "ce nombre plus petit que la somme. Nul quand le DTO est rendu hors contexte "
-        + "d'abonnement, par exemple comme fiche d'identité dans une conversation.")
+    @Schema(deprecated = true, nullable = true,
+        description = "Toujours null depuis le 13/09 (P-BL-17) : le nombre d'abonnés d'une "
+        + "autre personne ne se publie plus. Le sien se lit sur GET /users/me (UserPrivateDto).")
     Long subscriberCount,
 
     @Schema(description = "L'appelant suit-il cette personne ? Reste vrai pour un "

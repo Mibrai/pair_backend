@@ -59,10 +59,9 @@ class ReliabilitySignalIntegrationTest extends AbstractIntegrationTest {
         // suffirait à reconstituer le pourcentage avec attendanceCount, déjà
         // présent. Ce test existe pour que l'ajout se voie.
         String viewer = registerAndLogin();
-        String other = registerAndLogin();
 
         String body = new String(webTestClient.get()
-            .uri("/api/users/{id}/practice-stats", userId(other))
+            .uri("/api/users/{id}/practice-stats", userId(viewer))
             .headers(h -> h.setBearerAuth(viewer))
             .exchange().expectStatus().isOk()
             .expectBody().returnResult().getResponseBody());
@@ -70,6 +69,20 @@ class ReliabilitySignalIntegrationTest extends AbstractIntegrationTest {
         assertThat(body).contains("attendanceCount");
         assertThat(body).doesNotContain("joinedSlotsCount");
         assertThat(body).doesNotContain("reliability");
+    }
+
+    /** P-BL-17 (décision du 13/09) : les séances d'une personne ne regardent qu'elle. */
+    @Test
+    void lesStatsDePratiqueDUnAutre_doiventEtreIntrouvables() {
+        String viewer = registerAndLogin();
+        String other = registerAndLogin();
+
+        webTestClient.get().uri("/api/users/{id}/practice-stats", userId(other))
+            .headers(h -> h.setBearerAuth(viewer))
+            .exchange().expectStatus().isNotFound();
+        webTestClient.get().uri("/api/users/me/practice-stats")
+            .headers(h -> h.setBearerAuth(viewer))
+            .exchange().expectStatus().isOk();
     }
 
     @Test

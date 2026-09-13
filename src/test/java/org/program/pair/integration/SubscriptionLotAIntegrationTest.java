@@ -141,7 +141,8 @@ class SubscriptionLotAIntegrationTest extends AbstractIntegrationTest {
             .returnResult().getResponseBody();
 
         assertThat(profile.subscribed()).isTrue();
-        assertThat(profile.subscriberCount()).isGreaterThanOrEqualTo(1L);
+        // P-BL-17 : le nombre d'abonnés d'autrui ne se publie plus.
+        assertThat(profile.subscriberCount()).isNull();
     }
 
     @Test
@@ -306,7 +307,8 @@ class SubscriptionLotAIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(refus.code()).isEqualTo("SUBSCRIPTIONS_NOT_ALLOWED");
 
-        // L'abonné d'avant est toujours là, et le compteur le dit.
+        // L'abonné d'avant est toujours là. Le compteur d'autrui ne se publie plus
+        // (P-BL-17) : c'est subscribed qui le dit.
         UserPublicDto profil = webTestClient.get().uri("/api/users/{id}", cibleId)
             .headers(h -> h.setBearerAuth(suiveurAvant))
             .exchange()
@@ -315,7 +317,7 @@ class SubscriptionLotAIntegrationTest extends AbstractIntegrationTest {
             .returnResult().getResponseBody();
 
         assertThat(profil.subscribed()).isTrue();
-        assertThat(profil.subscriberCount()).isEqualTo(1L);
+        assertThat(profil.subscriberCount()).isNull();
     }
 
     /**
