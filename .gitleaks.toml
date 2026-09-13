@@ -1,0 +1,45 @@
+# gitleaks — P-BS-06, étape 5.
+#
+# Le dépôt est public. Ce qui y a été publié est réputé brûlé et tourné (décision
+# P-BS/D6 option C : aucune réécriture d'historique). La CI ne scanne donc que les
+# commits NOUVEAUX d'un push ou d'une PR (voir .github/workflows/ci.yml) : elle
+# bloque le prochain secret, sans rougir sur ceux d'hier.
+#
+# Les règles par défaut de gitleaks ne reconnaissent pas une empreinte bcrypt :
+# c'est pourtant ce que V27 et V33 ont publié. D'où la règle dédiée ci-dessous,
+# que MigrationsSansSecretTest double côté suite de tests.
+
+title = "meetDo"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "bcrypt-hash"
+description = "Empreinte bcrypt — un mot de passe hors ligne à portée de quiconque lit le dépôt"
+regex = '''\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}'''
+keywords = ["$2a$", "$2b$", "$2y$"]
+
+[rules.allowlist]
+# Les empreintes factices des fixtures de test, qui se lisent comme telles :
+# l'alphabet dans l'ordre, « neverused… », « notused… », et l'exemple public de
+# la documentation Spring Security. Aucune ne protège un compte.
+regexes = [
+  '''\$2[aby]\$\d{2}\$abcdefghijklmnopqrstuvwxyz''',
+  '''\$2[aby]\$\d{2}\$(never|not)used''',
+  '''\$2a\$10\$N9qo8uLOickgx2ZMRZoMy''',
+]
+
+[allowlist]
+description = "Faux secrets voulus, et migrations historiques figées par Flyway"
+paths = [
+  # Clé JWT de test, en clair par construction : la suite ne demande aucun secret.
+  '''src/test/resources/application-test\.properties''',
+  # « Clé du forgeur » que le serveur doit refuser : c'est l'objet même du test.
+  '''src/test/java/.*/JwtTokenProviderSecretTest\.java''',
+  # Contre-épreuve de MigrationsSansSecretTest : une fausse empreinte à détecter.
+  '''src/test/java/.*/MigrationsSansSecretTest\.java''',
+  # Publiées, brûlées, et intouchables : leurs sommes de contrôle Flyway en dépendent.
+  '''src/main/resources/db/migration/V27__.*\.sql''',
+  '''src/main/resources/db/migration/V33__.*\.sql''',
+]
