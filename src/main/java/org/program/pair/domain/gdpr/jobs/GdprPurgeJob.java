@@ -1,5 +1,6 @@
 package org.program.pair.domain.gdpr.jobs;
 
+import org.program.pair.shared.observabilite.ScheduledJobMetricsAspect;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.audit.AuditLogService;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Component;
 public class GdprPurgeJob {
 
     private final GdprService gdprService;
+    private final ScheduledJobMetricsAspect metriques;
     private final AuditLogService auditLogService;
 
     /**
@@ -75,6 +77,7 @@ public class GdprPurgeJob {
             log.info("Purge RGPD : {} effacé(s), {} échec(s) sur {} candidat(s)",
                 resultat.effaces(), resultat.echecs(), resultat.candidats());
         } catch (Exception echec) {
+            metriques.echecAvale(this, "purgeInactiveAccounts");
             log.error("Purge RGPD : la sélection des comptes a échoué, aucun compte traité", echec);
         }
     }
@@ -91,6 +94,7 @@ public class GdprPurgeJob {
             auditLogService.purgeOldLogs();
             log.info("Audit log purge job completed");
         } catch (Exception e) {
+            metriques.echecAvale(this, "purgeOldAuditLogs");
             log.error("Audit log purge job failed", e);
         }
     }

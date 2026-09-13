@@ -1,5 +1,6 @@
 package org.program.pair.domain.watch.jobs;
 
+import org.program.pair.shared.observabilite.ScheduledJobMetricsAspect;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.program.Schedule;
@@ -86,6 +87,7 @@ public class WatchReturnLoopJob {
     private static final long ESCALADE_MIN = 60;
 
     private final WatchRepository watchRepository;
+    private final ScheduledJobMetricsAspect metriques;
     private final ScheduleRepository scheduleRepository;
     private final WatchEscalationService escalation;
     private final WatchSlotLifecycle slotLifecycle;
@@ -119,6 +121,7 @@ public class WatchReturnLoopJob {
                     agis++;
                 }
             } catch (RuntimeException e) {
+                metriques.echecAvale(this, "tick");
                 // Une veille qui lève n'emporte plus que la sienne. Le prochain
                 // passage la reprendra ; les autres ont déjà commité.
                 log.error("Boucle retour : échec sur la veille {}", id, e);

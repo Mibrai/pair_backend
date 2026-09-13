@@ -1,5 +1,6 @@
 package org.program.pair.domain.program.jobs;
 
+import org.program.pair.shared.observabilite.ScheduledJobMetricsAspect;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.notification.NotificationPayload;
@@ -118,6 +119,7 @@ public class CycleNudgeJob {
     private static final short STAGE_CYCLE_CLOSED = 7;
 
     private final ProgramRepository programRepository;
+    private final ScheduledJobMetricsAspect metriques;
     private final CycleNudgeRepository cycleNudgeRepository;
     private final NotificationService notificationService;
 
@@ -176,6 +178,7 @@ public class CycleNudgeJob {
             log.info("Cycle nudge job completed: stage2={} stage4={} stage7={} (stage2 delay={}d)",
                 stage2, stage4, stage7, stage2DelayDays);
         } catch (Exception e) {
+            metriques.echecAvale(this, "sendCycleNudges");
             // Même posture que les autres jobs : une exécution ratée ne doit pas
             // empêcher la suivante. Rien n'a été marqué pour les programmes non
             // traités, ils restent candidats.

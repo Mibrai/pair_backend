@@ -1,5 +1,6 @@
 package org.program.pair.domain.outbox;
 
+import org.program.pair.shared.observabilite.ScheduledJobMetricsAspect;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.repository.OutboxMessageRepository;
@@ -35,6 +36,7 @@ public class OutboxSweepJob {
     private static final int RETENTION_JOURS = 7;
 
     private final OutboxService outboxService;
+    private final ScheduledJobMetricsAspect metriques;
     private final OutboxMessageRepository repository;
 
     @Scheduled(fixedDelay = 10_000, initialDelay = 15_000)
@@ -45,6 +47,7 @@ public class OutboxSweepJob {
                 log.debug("Outbox : {} message(s) remis au fournisseur", envoyes);
             }
         } catch (Exception e) {
+            metriques.echecAvale(this, "envoyer");
             log.error("Balayage de l'outbox en échec", e);
         }
     }
@@ -59,6 +62,7 @@ public class OutboxSweepJob {
                 log.info("Outbox : {} message(s) parti(s) purgé(s)", effaces);
             }
         } catch (Exception e) {
+            metriques.echecAvale(this, "purger");
             log.error("Purge de l'outbox en échec", e);
         }
     }

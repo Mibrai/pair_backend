@@ -1,5 +1,6 @@
 package org.program.pair.domain.program.jobs;
 
+import org.program.pair.shared.observabilite.ScheduledJobMetricsAspect;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.notification.NotificationPayload;
@@ -63,6 +64,7 @@ public class ProgramReminderJob {
     static final Duration REMINDER_LEAD = Duration.ofHours(2);
 
     private final ScheduleRepository scheduleRepository;
+    private final ScheduledJobMetricsAspect metriques;
     private final SlotAudience slotAudience;
     private final NotificationService notificationService;
     private final UserRepository userRepository;
@@ -86,6 +88,7 @@ public class ProgramReminderJob {
             log.info("Program reminder job completed: {} slots swept, {} notifications sent",
                 due.size(), notified);
         } catch (Exception e) {
+            metriques.echecAvale(this, "sendUpcomingSlotReminders");
             // Même posture que les autres jobs : une exécution ratée ne doit pas
             // empêcher la suivante. Les créneaux non marqués restent éligibles.
             log.error("Program reminder job failed", e);

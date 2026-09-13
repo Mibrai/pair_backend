@@ -50,6 +50,8 @@ class ProgramReminderJobTest {
     @Mock NotificationService notificationService;
     @Mock UserRepository userRepository;
 
+    @Mock org.program.pair.shared.observabilite.ScheduledJobMetricsAspect metriques;
+
     @InjectMocks ProgramReminderJob job;
 
     @Test

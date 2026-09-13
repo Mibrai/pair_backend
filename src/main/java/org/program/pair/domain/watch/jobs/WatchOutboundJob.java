@@ -1,5 +1,6 @@
 package org.program.pair.domain.watch.jobs;
 
+import org.program.pair.shared.observabilite.ScheduledJobMetricsAspect;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.program.Schedule;
@@ -71,6 +72,7 @@ public class WatchOutboundJob {
         EnumSet.of(WatchState.ARMED, WatchState.EN_ROUTE);
 
     private final WatchRepository watchRepository;
+    private final ScheduledJobMetricsAspect metriques;
     private final ScheduleRepository scheduleRepository;
     private final WatchEscalationService escalation;
     private final WatchSlotLifecycle slotLifecycle;
@@ -98,6 +100,7 @@ public class WatchOutboundJob {
                 log.info("Boucle aller : {} arrivée(s) validée(s) par le délai", valides);
             }
         } catch (RuntimeException e) {
+            metriques.echecAvale(this, "tick");
             log.error("Boucle aller : échec de la bascule automatique des arrivées", e);
         }
 
@@ -116,6 +119,7 @@ public class WatchOutboundJob {
                     agis++;
                 }
             } catch (RuntimeException e) {
+                metriques.echecAvale(this, "tick");
                 log.error("Boucle aller : échec sur la veille {}", id, e);
             }
         }
