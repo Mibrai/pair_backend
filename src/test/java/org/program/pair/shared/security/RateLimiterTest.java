@@ -25,6 +25,15 @@ import static org.assertj.core.api.Assertions.catchThrowable;
  * légitime qui se trompe de mot de passe, réessaie, et se voit refuser plus
  * longtemps à chaque essai n'a aucun moyen de comprendre ce qui lui arrive.
  *
+ * <p><b>Depuis le 12/09, le budget serré ne verrouille plus le compte d'un
+ * autre.</b> Il portait sur le compte seul : dix mots de passe faux sur une
+ * adresse e-mail — que n'importe qui connaît ou devine — fermaient la porte à
+ * qui la porte, depuis chez lui et avec le bon mot de passe. C'est le point le
+ * plus grave de la fiche P-BS-08, et il se prouve par un test qui aurait échoué
+ * avant : le propriétaire entre depuis une autre adresse. Les deux garde-fous
+ * plus larges ont leurs tests aussi, faute de quoi le remède rendrait le plafond
+ * contournable en changeant d'adresse.
+ *
  * <p><b>Depuis le 10/09, le refus dit aussi quand revenir</b>, et cela se prouve
  * avec la même horloge réglable : un délai est un instant franchi, pas un
  * booléen. Les tests qui suivent vérifient qu'il vaut la fenêtre de la route,
@@ -56,7 +65,7 @@ class RateLimiterTest {
 
         for (int i = 0; i < 50; i++) {
             limiteur.checkLogin(IP, "moi@example.org");
-            limiteur.recordLoginSuccess("moi@example.org");
+            limiteur.recordLoginSuccess(IP, "moi@example.org");
         }
 
         assertThatCode(() -> limiteur.checkLogin(IP, "moi@example.org"))
@@ -161,7 +170,7 @@ class RateLimiterTest {
         assertThatThrownBy(() -> limiteur.checkLogin(IP, "moi@example.org"))
             .isInstanceOf(TooManyRequestsException.class);
 
-        limiteur.recordLoginSuccess("moi@example.org");
+        limiteur.recordLoginSuccess(IP, "moi@example.org");
         assertThatCode(() -> limiteur.checkLogin(IP, "moi@example.org"))
             .doesNotThrowAnyException();
     }
@@ -253,7 +262,7 @@ class RateLimiterTest {
         RateLimiter limiteur = new RateLimiter();
         assertThatCode(() -> limiteur.checkLogin(IP, null)).doesNotThrowAnyException();
         assertThatCode(() -> limiteur.recordLoginFailure(IP, null)).doesNotThrowAnyException();
-        assertThatCode(() -> limiteur.recordLoginSuccess(null)).doesNotThrowAnyException();
+        assertThatCode(() -> limiteur.recordLoginSuccess(IP, null)).doesNotThrowAnyException();
     }
 
     @Test
@@ -280,6 +289,169 @@ class RateLimiterTest {
         assertThatCode(() -> limiteur.checkLogin(IP, "moi@example.org"))
             .doesNotThrowAnyException();
         assertThat(limiteur.taillePourTests()).isZero();
+    }
+
+    // ------------------------------------------- le verrouillage du compte d'autrui
+
+    @Test
+    void dixEchecsDepuisUneAdresse_nEmpechentPasLeProprietaireDeSeConnecterDAilleurs() {
+        // Le défaut le plus grave de la fiche P-BS-08, et celui que ce test
+        // ferme : le budget serré portait sur le compte seul, si bien qu'un tiers
+        // fermait la porte au propriétaire en dix requêtes, sans rien savoir de
+        // lui — un déni de service ciblé contre la personne de son choix.
+        RateLimiter limiteur = new RateLimiter();
+        String cible = "proprietaire@example.org";
+
+        for (int i = 0; i < 10; i++) {
+            limiteur.recordLoginFailure("198.51.100.4", cible);
+        }
+
+        // Le nuisible s'est fermé la porte à lui-même, et à lui seul.
+        assertThatThrownBy(() -> limiteur.checkLogin("198.51.100.4", cible))
+            .isInstanceOf(TooManyRequestsException.class);
+        assertThatCode(() -> limiteur.checkLogin("203.0.113.77", cible))
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    void centEchecsRepartisSurCentAdresses_fermentQuandMemeLeCompte() {
+        // Le couple seul serait contournable : dix échecs, on change d'adresse,
+        // on recommence. Le plafond de compte reste donc posé par-dessus, dix
+        // fois plus large — hors de portée d'un tiers qui veut nuire à peu de
+        // frais, atteint par un balayage distribué.
+        RateLimiter limiteur = new RateLimiter();
+        String cible = "cible@example.org";
+
+        for (int i = 0; i < 100; i++) {
+            limiteur.recordLoginFailure("10.1." + (i / 250) + "." + (i % 250), cible);
+        }
+
+        TooManyRequestsException refus =
+            refusDe(() -> limiteur.checkLogin("203.0.113.88", cible));
+        // Le refus vient du compte, pas de la connexion : aucune des cent
+        // adresses n'a plus d'un échec à son actif.
+        assertThat(refus).hasMessageContaining("ce compte");
+        assertThat(refus.getRetryAfterSecondes()).isEqualTo(Duration.ofMinutes(15).toSeconds());
+    }
+
+    @Test
+    void quatreVingtDixNeufEchecsRepartis_laissentLeProprietaireEntrer() {
+        // La contrepartie du test précédent : le garde-fou global ne doit pas se
+        // refermer avant son plafond, sans quoi le verrouillage d'autrui
+        // reviendrait par la petite porte.
+        RateLimiter limiteur = new RateLimiter();
+        String cible = "tenace@example.org";
+
+        for (int i = 0; i < 99; i++) {
+            limiteur.recordLoginFailure("10.2." + (i / 250) + "." + (i % 250), cible);
+        }
+
+        assertThatCode(() -> limiteur.checkLogin("203.0.113.99", cible))
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    void unSuccesDuProprietaire_effaceLeCoupleEtLeCompteurGlobal() {
+        // Une réussite prouve que les échecs précédents n'étaient pas une attaque
+        // contre ce compte-là. Laisser le compteur global à quatre-vingt-dix-neuf
+        // le laisserait à un essai du refus, pour tout le monde.
+        RateLimiter limiteur = new RateLimiter();
+        String cible = "moi@example.org";
+        for (int i = 0; i < 99; i++) {
+            limiteur.recordLoginFailure("10.3." + (i / 250) + "." + (i % 250), cible);
+        }
+
+        limiteur.recordLoginSuccess(IP, cible);
+
+        // Cent échecs de plus seraient nécessaires pour refermer : le compteur
+        // global est bien reparti de zéro, et pas seulement décrémenté.
+        for (int i = 0; i < 99; i++) {
+            limiteur.recordLoginFailure("10.4." + (i / 250) + "." + (i % 250), cible);
+        }
+        assertThatCode(() -> limiteur.checkLogin("203.0.113.55", cible))
+            .doesNotThrowAnyException();
+    }
+
+    // --------------------------------------------------------- la mémoire bornée
+
+    @Test
+    void laCarte_neGardeJamaisPlusDEntreesQueSaBorne() {
+        // La carte était un ConcurrentHashMap dont une clé ne partait qu'à la
+        // relecture : qui essaie mille adresses e-mail n'en relit aucune, et
+        // chacune restait pour la vie du processus. Une voie d'épuisement mémoire
+        // à coût nul, sur un conteneur dont le tas se compte en centaines de
+        // mégaoctets.
+        //
+        // La borne éprouvée ici est petite, celle de production ne l'est pas :
+        // fabriquer cinquante mille clés dans la suite paierait en mémoire de
+        // test ce que cette borne existe pour économiser en production.
+        RateLimiter limiteur = new RateLimiter(new HorlogeReglable(), 100);
+
+        for (int i = 0; i < 5_000; i++) {
+            limiteur.recordLoginFailure("10.5." + (i / 250) + "." + (i % 250),
+                "inconnu" + i + "@example.org");
+        }
+
+        assertThat(limiteur.taillePourTests()).isPositive().isLessThanOrEqualTo(100);
+    }
+
+    @Test
+    void uneCleQuePersonneNeConsultePlus_estOubliee() {
+        // Le second mécanisme de la borne : l'expiration. Elle est réglée sur
+        // l'horloge du limiteur, pour qu'un test puisse la franchir.
+        HorlogeReglable horloge = new HorlogeReglable();
+        RateLimiter limiteur = new RateLimiter(horloge);
+
+        limiteur.recordLoginFailure(IP, "moi@example.org");
+        assertThat(limiteur.taillePourTests()).isPositive();
+
+        horloge.avancer(Duration.ofHours(3));
+
+        assertThat(limiteur.taillePourTests()).isZero();
+    }
+
+    // ------------------------------------------ la réinitialisation de mot de passe
+
+    @Test
+    void reinitialiserUnMotDePasse_estBorneParAdresse() {
+        // La route n'était bornée par rien. Le jeton de 122 bits rend la
+        // devinette vaine, mais chaque appel coûte un accès en base et un hachage
+        // BCrypt : une boucle y prenait tout le processeur qu'elle voulait.
+        RateLimiter limiteur = new RateLimiter();
+
+        for (int i = 0; i < 20; i++) {
+            assertThatCode(() -> limiteur.checkResetPasswordAttempt(IP))
+                .doesNotThrowAnyException();
+        }
+
+        assertThatThrownBy(() -> limiteur.checkResetPasswordAttempt(IP))
+            .isInstanceOf(TooManyRequestsException.class)
+            .hasMessageContaining("réinitialisation");
+        // Une autre connexion n'a rien consommé : le plafond est par adresse.
+        assertThatCode(() -> limiteur.checkResetPasswordAttempt("203.0.113.200"))
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    void leRefusDeReinitialisation_peutAnnoncerMoinsDeCinqSecondes() {
+        // À consigner, parce qu'un contrat écrit dit le contraire :
+        // modules/session/REPONSE_BACKEND_2026-09-11.md §4 affirme qu'un
+        // Retry-After servi par ce limiteur sera « toujours très au-dessus » du
+        // seuil de cinq secondes de l'application. Une fenêtre glissante n'a pas
+        // cette propriété — le délai rendu est ce qui reste à la plus ancienne
+        // tentative retenue, et il tend vers zéro. Le document doit être corrigé
+        // sur place ; la route n'étant pas rejouée automatiquement, rien ne casse
+        // côté client.
+        HorlogeReglable horloge = new HorlogeReglable();
+        RateLimiter limiteur = new RateLimiter(horloge);
+
+        for (int i = 0; i < 20; i++) {
+            limiteur.checkResetPasswordAttempt(IP);
+        }
+        horloge.avancer(Duration.ofHours(1).minusSeconds(3));
+
+        assertThat(refusDe(() -> limiteur.checkResetPasswordAttempt(IP))
+            .getRetryAfterSecondes()).isEqualTo(3);
     }
 
     // ------------------------------------------------- le délai avant nouvel essai

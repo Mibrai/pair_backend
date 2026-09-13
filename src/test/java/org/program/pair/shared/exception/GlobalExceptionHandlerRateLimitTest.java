@@ -7,6 +7,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.program.pair.shared.dto.ErrorResponse;
 import org.program.pair.shared.i18n.Messages;
+import org.program.pair.shared.security.RateLimiter;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +15,7 @@ import org.springframework.http.ResponseEntity;
 import java.time.Duration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 
@@ -61,6 +63,34 @@ class GlobalExceptionHandlerRateLimitTest {
         assertThat(reponse.getBody()).isNotNull();
         assertThat(reponse.getBody().code()).isEqualTo(ErrorCode.RATE_LIMITED.name());
         assertThat(reponse.getBody().message()).isEqualTo("Too many requests recently.");
+    }
+
+    @Test
+    void unRefusDeReinitialisation_partAvecSonRetryAfter() {
+        // Le refus tel que la route /auth/reset-password le produit réellement,
+        // du limiteur jusqu'à l'en-tête : la fiche P-BS-08 demande les deux
+        // moitiés, et seule la composition des deux prouve que l'en-tête porte le
+        // délai de cette fenêtre-là — une heure, et non le quart d'heure de la
+        // connexion.
+        //
+        // Vingt-et-un appels depuis une même adresse, sans horloge réglable :
+        // c'est le vingt-et-unième qui refuse, et le délai annoncé vaut la
+        // fenêtre pleine puisque les vingt premiers datent de la même seconde.
+        doReturn(null).when(messages).getOrNull(anyString());
+        RateLimiter limiteur = new RateLimiter();
+        for (int i = 0; i < 20; i++) {
+            limiteur.checkResetPasswordAttempt("203.0.113.7");
+        }
+
+        Throwable refus = catchThrowable(() -> limiteur.checkResetPasswordAttempt("203.0.113.7"));
+        assertThat(refus).isInstanceOf(TooManyRequestsException.class);
+
+        ResponseEntity<ErrorResponse> reponse =
+            handler.handleRateLimit((TooManyRequestsException) refus);
+        assertThat(reponse.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        assertThat(reponse.getHeaders().getFirst(HttpHeaders.RETRY_AFTER)).isEqualTo("3600");
+        assertThat(reponse.getBody()).isNotNull();
+        assertThat(reponse.getBody().code()).isEqualTo(ErrorCode.RATE_LIMITED.name());
     }
 
     @Test
