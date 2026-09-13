@@ -84,6 +84,22 @@ class ProfilRailwayTest {
     }
 
     /**
+     * V116 ferme les comptes de démonstration sur la base de production, et
+     * seulement là : le placeholder vaut {@code true} sous railway et prod,
+     * {@code false} partout ailleurs (P-BS-02 étape 5).
+     */
+    @Test
+    void laFermetureDesComptesDemo_neDoitSappliquerQuEnProduction() throws IOException {
+        String cle = "spring.flyway.placeholders.fermer_comptes_demo";
+        assertThat(charger("application-railway.properties").getProperty(cle)).isEqualTo("true");
+        assertThat(charger("application-prod.properties").getProperty(cle)).isEqualTo("true");
+        assertThat(charger("application.properties").getProperty(cle)).isEqualTo("false");
+        assertThat(charger("application-staging.properties").getProperty(cle))
+            .as("staging garde ses comptes de démonstration").isNull();
+        assertThat(charger("application-dev.properties").getProperty(cle)).isNull();
+    }
+
+    /**
      * Staging garde {@code true}, et c'est voulu : c'est l'environnement fait
      * pour ces comptes. Ce test est là pour que personne ne « corrige » staging
      * en croyant prolonger le correctif de production — et pour rendre visible,
