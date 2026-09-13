@@ -170,6 +170,55 @@ public class ChatService {
     }
 
     /**
+     * Le blocage vaut aussi dans un fil <b>déjà ouvert</b>.
+     *
+     * <p><b>Le défaut fermé ici.</b> {@code blockFilterService} n'était consulté
+     * qu'à la création d'une conversation. Or le fil à deux naît tout seul en
+     * rejoignant un créneau ({@code SlotService.joinSlot}) : au moment du
+     * blocage, il existe déjà dans la quasi-totalité des cas, et rien n'empêchait
+     * plus d'y écrire. Bloquer quelqu'un et le voir continuer d'écrire est ce qui
+     * fait qu'on n'utilise plus l'application.
+     *
+     * <p><b>Deux refus, deux formes, et c'est toute la règle.</b> Celle qui a
+     * bloqué reçoit un code nommé — elle sait pourquoi, c'est sa décision. Celle
+     * qui est bloquée reçoit le refus d'accès générique, mot pour mot celui qu'un
+     * non-membre reçoit : un code nommé lui apprendrait le blocage.
+     *
+     * <p><b>La lecture n'est jamais touchée.</b> L'historique reste lisible des
+     * deux côtés (D6) : c'est une preuve pour un signalement, et l'effacer d'un
+     * côté priverait la personne visée de ce qu'elle a besoin de montrer.
+     *
+     * <p>Les fils de groupe et de diffusion ne passent pas par ici : on n'y refuse
+     * rien, on y retire des destinataires (voir {@link #persistAndDeliver}). Un
+     * fil à trente personnes ne se ferme pas parce que deux de ses membres se sont
+     * bloqués.
+     */
+    private void assertNotBlockedIn(Conversation conv, UUID senderId) {
+        if (conv.getType() != ConversationType.DIRECT) {
+            return;
+        }
+        UUID other = otherMemberOf(conv, senderId);
+        if (other == null) {
+            return;
+        }
+        if (blockFilterService.blockedBy(senderId, other)) {
+            throw new ForbiddenException(ErrorCode.USER_BLOCKED,
+                "Vous avez bloqué cette personne.");
+        }
+        if (blockFilterService.blocked(senderId, other)) {
+            throw new ForbiddenException("Accès conversation refusé.");
+        }
+    }
+
+    /** L'autre membre d'un fil à deux, ou {@code null} s'il n'y en a pas. */
+    private UUID otherMemberOf(Conversation conv, UUID userId) {
+        return conversationMemberRepository.findUserIdsByConversationId(conv.getId()).stream()
+            .filter(id -> !id.equals(userId))
+            .findFirst()
+            .orElse(null);
+    }
+
+    /**
      * Un fil de diffusion n'a qu'une plume.
      *
      * <p>Les participants y sont en lecture seule — le composeur disparaît chez
@@ -288,10 +337,15 @@ public class ChatService {
             .orElseThrow(() -> new ForbiddenException("Accès conversation refusé."));
         assertMayRead(conv, senderId);
 
-        // 1 bis. Un fil de diffusion n'a qu'une plume : celle de l'auteur.
+        // 1 bis. Le blocage, avant tous les autres refus d'écriture : ceux qui
+        // suivent nomment le programme et son réglage, et l'un d'eux rendu à une
+        // personne bloquée lui apprendrait que le fil vit toujours.
+        assertNotBlockedIn(conv, senderId);
+
+        // 1 ter. Un fil de diffusion n'a qu'une plume : celle de l'auteur.
         assertMayWriteInBroadcast(conv, senderId);
 
-        // 1 ter. Le refus de l'auteur vaut aussi sur un fil déjà ouvert.
+        // 1 quater. Le refus de l'auteur vaut aussi sur un fil déjà ouvert.
         //
         // Ne le vérifier qu'à la création laisserait passer tout participant
         // ayant déjà écrit une fois — et la conversation ouverte
@@ -345,7 +399,20 @@ public class ChatService {
         // Destinataires. Pour un fil de diffusion, ils sont dérivés des
         // inscriptions actives au moment de l'envoi — pas d'une liste de membres
         // recopiée, qui aurait divergé dès la première inscription.
-        List<UUID> memberIds = recipientsOf(conv);
+        //
+        // Puis retrait de ceux pour qui l'expéditeur est invisible. C'est la
+        // moitié « groupe » de la règle de blocage : dans un fil à deux l'envoi
+        // est déjà refusé (assertNotBlockedIn), mais un fil de groupe ou de
+        // diffusion ne se ferme pas — il cesse simplement de porter jusqu'à ceux
+        // qui ont bloqué l'auteur, WebSocket comme push.
+        //
+        // Un seul appel à invisibleTo par envoi, jamais un par message : sur un
+        // fil de diffusion à trente personnes, la différence est celle entre une
+        // requête et trente (P-BA-15).
+        Set<UUID> invisibleToSender = blockFilterService.invisibleTo(senderId);
+        List<UUID> memberIds = recipientsOf(conv).stream()
+            .filter(memberId -> !invisibleToSender.contains(memberId))
+            .toList();
 
         // La sourdine ne retire personne d'ici : une application ouverte sur le
         // fil doit voir le message arriver. Elle ne coupe que la push, plus bas.
@@ -414,6 +481,11 @@ public class ChatService {
     public MessageDto shareLocation(UUID senderId, UUID conversationId, ShareLocationRequest request) {
         Conversation conv = loadConversation(conversationId);
         assertMayRead(conv, senderId);
+        // Dans le même ordre que sendMessage, et c'est le contrôle qui compte le
+        // plus ici : une position partagée dit où l'on est, et la partager à
+        // quelqu'un qu'on a bloqué — ou qui nous a bloqué — est exactement ce que
+        // le blocage existe pour empêcher.
+        assertNotBlockedIn(conv, senderId);
         assertMayWriteInBroadcast(conv, senderId);
         assertMayWriteInProgramThread(conv, senderId);
 
@@ -510,8 +582,15 @@ public class ChatService {
         assertMayRead(conv, userId);
 
         TypingEventDto event = new TypingEventDto(conversationId, userId, typing);
+
+        // Même retrait qu'à l'envoi, et pour la même raison : « untel écrit… »
+        // est un signe de présence, et le faire apparaître chez quelqu'un qui a
+        // bloqué son auteur rendrait le blocage inutile sur le seul écran où il
+        // compte le plus.
+        Set<UUID> invisibleToSender = blockFilterService.invisibleTo(userId);
+
         for (UUID memberId : recipientsOf(conv)) {
-            if (!memberId.equals(userId)) {
+            if (!memberId.equals(userId) && !invisibleToSender.contains(memberId)) {
                 messagingTemplate.convertAndSendToUser(
                     memberId.toString(), "/queue/typing", event);
             }
@@ -599,9 +678,17 @@ public class ChatService {
         Map<UUID, ConversationContextDto> contexts = contextsOf(
             conversations.stream().map(Conversation::getId).toList());
 
+        // Un seul calcul des masquages pour toute la liste, et non un par fil :
+        // c'est la règle que BlockFilterService pose pour les surfaces qui n'ont
+        // pas d'autre choix que de filtrer en mémoire.
+        Set<UUID> invisible = blockFilterService.invisibleTo(userId);
+
         return conversations.stream()
             .map(conv -> toSummaryDto(conv, userId,
-                contexts.getOrDefault(conv.getId(), ConversationContextDto.empty(conv.getId()))))
+                contexts.getOrDefault(conv.getId(), ConversationContextDto.empty(conv.getId())),
+                // Pas de relecture du réglage d'autorisation par ligne : voir
+                // readOnlyReasonFor.
+                invisible, false))
             .filter(summary -> summary.archived() == archived)
             .collect(Collectors.toList());
     }
@@ -620,13 +707,47 @@ public class ChatService {
             .orElseGet(() -> ConversationContextDto.empty(conversationId));
     }
 
+    /**
+     * L'historique d'un fil.
+     *
+     * <p><b>Un fil à deux garde tout, y compris après un blocage</b>, et c'est la
+     * décision D6 : ce qui a été écrit avant est une preuve pour un signalement, et
+     * l'effacer de la vue de la personne visée la priverait de ce qu'elle a besoin
+     * de montrer. Le fil ne s'écrit plus (voir {@link #assertNotBlockedIn}), mais
+     * lecture seule veut dire lecture.
+     *
+     * <p><b>Un fil de groupe ou de diffusion, lui, écarte les messages de qui est
+     * invisible pour l'appelant.</b> La différence tient à ce qu'un fil à deux se
+     * quitte — il disparaît de la liste des deux côtés — là où un fil de groupe
+     * continue de servir vingt-neuf autres personnes.
+     *
+     * <p>Ce filtre passe <b>après</b> le {@code LIMIT}, ce que
+     * {@code BlockFilterService} déconseille en général : une page peut donc
+     * rendre moins d'éléments que demandé. C'est acceptable ici et nulle part
+     * ailleurs — cette lecture n'est pas paginée par curseur, elle rend « les N
+     * derniers », et un N un peu plus petit ne fait perdre aucun message au
+     * client. Filtrer en base demanderait de porter la liste des personnes
+     * masquées dans la requête, ce que le prédicat de {@code BlockSql} ne sait
+     * pas faire sur l'auteur d'un message.
+     */
     @Transactional(readOnly = true)
     public List<MessageDto> getMessages(UUID userId, UUID conversationId, int limit) {
-        assertMayRead(loadConversation(conversationId), userId);
+        Conversation conv = loadConversation(conversationId);
+        assertMayRead(conv, userId);
 
-        return messageRepository
-            .findByConversationIdOrderBySentAtDesc(conversationId, limit)
-            .stream()
+        List<Message> messages = messageRepository
+            .findByConversationIdOrderBySentAtDesc(conversationId, limit);
+
+        if (conv.getType() != ConversationType.DIRECT) {
+            Set<UUID> invisible = blockFilterService.invisibleTo(userId);
+            if (!invisible.isEmpty()) {
+                messages = messages.stream()
+                    .filter(msg -> !invisible.contains(msg.getSender().getId()))
+                    .toList();
+            }
+        }
+
+        return messages.stream()
             .map(this::toMessageDto)
             .collect(Collectors.toList());
     }
@@ -685,8 +806,22 @@ public class ChatService {
         return toSummaryDto(conv, currentUserId, contextOf(conv.getId()));
     }
 
+    /**
+     * Le résumé d'un fil rendu seul — création, réglages.
+     *
+     * <p>Un fil seul paie ce que la liste ne peut pas payer : le calcul des
+     * masquages et, s'il le faut, le réglage d'autorisation de son programme.
+     * Voir {@link #readOnlyReasonFor}.
+     */
     private ConversationSummaryDto toSummaryDto(Conversation conv, UUID currentUserId,
                                                 ConversationContextDto context) {
+        return toSummaryDto(conv, currentUserId, context,
+            blockFilterService.invisibleTo(currentUserId), true);
+    }
+
+    private ConversationSummaryDto toSummaryDto(Conversation conv, UUID currentUserId,
+                                                ConversationContextDto context,
+                                                Set<UUID> invisible, boolean readProgramPolicy) {
         // Get other user for DIRECT conversation
         UserPublicDto otherUser = null;
         if (conv.getType() == ConversationType.DIRECT) {
@@ -711,10 +846,8 @@ public class ChatService {
             }
         }
 
-        // Get last message
-        Message lastMsg = messageRepository
-            .findFirstByConversationIdOrderBySentAtDesc(conv.getId())
-            .orElse(null);
+        // Get last message — celui que l'appelant peut voir, pas celui qui existe.
+        Message lastMsg = lastVisibleMessage(conv, invisible);
 
         // Non lus du fil : les messages des autres, arrivés depuis la dernière
         // lecture. Ses propres messages et ceux qui ont été supprimés n'en sont
@@ -749,8 +882,115 @@ public class ChatService {
             lastMsg != null ? lastMsg.getSentAt() : conv.getCreatedAt(),
             unreadCount,
             own != null && own.getMutedAt() != null,
-            own != null && own.getArchivedAt() != null
+            own != null && own.getArchivedAt() != null,
+            readOnlyReasonFor(conv, currentUserId, invisible, readProgramPolicy)
         );
+    }
+
+    /**
+     * Combien de messages on remonte pour trouver un aperçu visible.
+     *
+     * <p>Une borne, et non « tous » : l'aperçu d'un fil de diffusion dont les
+     * vingt derniers messages viennent de quelqu'un de masqué se rend vide, ce qui
+     * est juste — il n'y a rien à montrer de récent — et ne coûte pas la lecture
+     * d'un fil entier.
+     */
+    private static final int PREVIEW_LOOKBACK = 20;
+
+    /**
+     * Le dernier message que cette personne peut voir dans ce fil.
+     *
+     * <p><b>Le défaut fermé ici.</b> L'aperçu de la liste des fils était lu sans
+     * aucun filtre : sur un fil de diffusion, le texte du message de quelqu'un de
+     * bloqué s'affichait dans la liste — le masquage tenait dans le fil et tombait
+     * sur l'écran qui y mène.
+     *
+     * <p>La seconde lecture n'a lieu que si le dernier message est masqué, donc
+     * jamais dans le cas ordinaire. Un fil à deux n'est pas concerné : son
+     * historique reste entier (D6), et il quitte de toute façon la liste dès le
+     * blocage.
+     */
+    private Message lastVisibleMessage(Conversation conv, Set<UUID> invisible) {
+        Message last = messageRepository
+            .findFirstByConversationIdOrderBySentAtDesc(conv.getId())
+            .orElse(null);
+
+        if (last == null
+                || conv.getType() == ConversationType.DIRECT
+                || invisible.isEmpty()
+                || !invisible.contains(last.getSender().getId())) {
+            return last;
+        }
+
+        return messageRepository
+            .findByConversationIdOrderBySentAtDesc(conv.getId(), PREVIEW_LOOKBACK)
+            .stream()
+            .filter(msg -> !invisible.contains(msg.getSender().getId()))
+            .findFirst()
+            .orElse(null);
+    }
+
+    /**
+     * Pourquoi ce fil ne s'écrit pas pour cette personne, ou {@code null} s'il
+     * s'écrit.
+     *
+     * <p>Le pendant, côté lecture, des refus que lèveraient
+     * {@link #assertNotBlockedIn}, {@link #assertMayWriteInBroadcast} et
+     * {@link #assertMayWriteInProgramThread} : les quatre causes de lecture seule
+     * du produit, nommées une fois, pour que l'application retire son composeur
+     * avant la frappe au lieu de perdre un message dans un 403.
+     *
+     * <p><b>Le côté décide de la valeur, pour le blocage seulement.</b> Celle qui
+     * a bloqué lit {@code BLOCKED} ; celle qui est bloquée lit la forme neutre
+     * {@code PARTICIPANT_UNAVAILABLE}, qu'un compte désactivé rendrait aussi. Voir
+     * {@link ConversationReadOnlyReason}.
+     *
+     * @param invisible          qui est masqué pour l'appelant, calculé une fois
+     *                           par requête
+     * @param readProgramPolicy  vrai si l'on accepte de relire le réglage
+     *                           d'autorisation du programme — une requête par fil,
+     *                           que la liste des fils ne paie pas. Conséquence
+     *                           assumée : un fil dont l'auteur refuse les messages
+     *                           de ses participants est annoncé en lecture seule
+     *                           par {@code GET /api/conversations/{id}}, qui porte
+     *                           le composeur, et pas par la liste, qui n'en a pas.
+     */
+    private ConversationReadOnlyReason readOnlyReasonFor(Conversation conv, UUID userId,
+                                                         Set<UUID> invisible,
+                                                         boolean readProgramPolicy) {
+        // La condition sur l'ensemble d'abord : sans personne de masquée — le cas
+        // de presque tous les appels — il n'y a pas de membre à relire.
+        if (conv.getType() == ConversationType.DIRECT && !invisible.isEmpty()) {
+            UUID other = otherMemberOf(conv, userId);
+            if (other != null && invisible.contains(other)) {
+                return blockFilterService.blockedBy(userId, other)
+                    ? ConversationReadOnlyReason.BLOCKED
+                    : ConversationReadOnlyReason.PARTICIPANT_UNAVAILABLE;
+            }
+        }
+
+        if (conv.getType() == ConversationType.PROGRAM_BROADCAST) {
+            boolean isAuthor = conv.getProgramId() != null
+                && messagingPolicyOf(conv.getProgramId())
+                    .map(policy -> userId.equals(policy.authorId()))
+                    .orElse(false);
+            return isAuthor ? null : ConversationReadOnlyReason.PROGRAM_BROADCAST_READ_ONLY;
+        }
+
+        if (readProgramPolicy && conv.getProgramId() != null) {
+            return messagingPolicyOf(conv.getProgramId())
+                .filter(policy -> !userId.equals(policy.authorId()))
+                .filter(policy -> !Boolean.TRUE.equals(policy.allowParticipantMessages()))
+                // La même condition que le refus : deux participants qui parlent
+                // d'un programme entre eux ne sont pas concernés par un réglage
+                // qui porte sur ce que son auteur reçoit.
+                .filter(policy -> conversationMemberRepository
+                    .existsByConversationIdAndUserId(conv.getId(), policy.authorId()))
+                .map(policy -> ConversationReadOnlyReason.PROGRAM_MESSAGES_DISABLED)
+                .orElse(null);
+        }
+
+        return null;
     }
 
     @Transactional(readOnly = true)
@@ -794,7 +1034,10 @@ public class ChatService {
             context.scheduleEndsAt(),
             conv.getType() == ConversationType.PROGRAM_BROADCAST ? context.programTitle() : null,
             conv.getType() == ConversationType.PROGRAM_BROADCAST ? members.size() : null,
-            conv.getCreatedAt()
+            conv.getCreatedAt(),
+            // C'est cet écran qui porte le composeur : il paie donc la relecture
+            // du réglage du programme, que la liste des fils ne paie pas.
+            readOnlyReasonFor(conv, userId, blockFilterService.invisibleTo(userId), true)
         );
     }
 
@@ -833,6 +1076,17 @@ public class ChatService {
             throw new ValidationException("Impossible de modifier un message supprimé.");
         }
 
+        // 1 bis. Modifier est écrire.
+        //
+        // Ce chemin n'est pas dans la fiche, et il referme pourtant le même défaut
+        // qu'elle : un message déjà envoyé se réécrit entièrement, la nouvelle
+        // version part en WebSocket sur /queue/messages.edited, et une application
+        // ouverte l'affiche. Sans ce contrôle, une personne bloquée n'avait qu'à
+        // reprendre son dernier message pour continuer d'écrire à quelqu'un qui
+        // l'a bloquée — refuser l'envoi et laisser la modification ouverte aurait
+        // fermé la porte et laissé la fenêtre.
+        assertNotBlockedIn(message.getConversation(), userId);
+
         // 2. Sanitize new content
         String cleanContent = sanitizer.sanitize(request.content());
         if (!StringUtils.hasText(cleanContent)) {
@@ -854,11 +1108,17 @@ public class ChatService {
 
         MessageDto dto = toMessageDto(message);
 
-        // 5. Broadcast update via WebSocket
+        // 5. Broadcast update via WebSocket — sans ceux pour qui l'auteur est
+        // invisible, comme à l'envoi. Un fil à deux n'est plus concerné (la
+        // modification y est refusée plus haut) ; un fil de groupe l'est.
+        Set<UUID> invisibleToSender = blockFilterService.invisibleTo(userId);
         List<UUID> memberIds = conversationMemberRepository
             .findUserIdsByConversationId(message.getConversation().getId());
 
         for (UUID memberId : memberIds) {
+            if (invisibleToSender.contains(memberId)) {
+                continue;
+            }
             messagingTemplate.convertAndSendToUser(
                 memberId.toString(),
                 "/queue/messages.edited",
