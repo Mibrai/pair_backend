@@ -1,5 +1,6 @@
 package org.program.pair.seed;
 
+import org.program.pair.shared.logging.Masque;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.locationtech.jts.geom.Coordinate;
@@ -128,7 +129,7 @@ public class DemoDataSeeder {
 
         for (DemoProfile profile : profiles) {
             try {
-                log.info("Creating demo user: {}", profile.email());
+                log.info("Creating demo user: {}", Masque.email(profile.email()));
 
                 // Create user with random location near center
                 Point userLocation = randomPointNear(centerLat, centerLng, 5000);
@@ -150,13 +151,13 @@ public class DemoDataSeeder {
                     .build();
 
                 user = userRepository.save(user);
-                log.info("Created user: {} ({})", user.getDisplayName(), user.getEmail());
+                log.info("Created user: {} ({})", user.getDisplayName(), Masque.email(user.getEmail()));
 
                 // Attach activities and programs
                 attachActivitiesAndPrograms(user, profile.activities());
 
             } catch (Exception e) {
-                log.error("Error creating demo user {}: {}", profile.email(), e.getMessage(), e);
+                log.error("Error creating demo user {}: {}", Masque.email(profile.email()), e.getMessage(), e);
             }
         }
     }

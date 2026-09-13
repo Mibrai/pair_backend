@@ -1,5 +1,6 @@
 package org.program.pair.shared.email;
 
+import org.program.pair.shared.logging.Masque;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.config.Profils;
@@ -291,7 +292,7 @@ public class EmailService {
         boolean sent = resendEmailService.sendHtmlEmail(email,
             "Réinitialisation de votre mot de passe — meetDo", html);
         if (!sent) {
-            log.error("Failed to send password reset email to {}", email);
+            log.error("Failed to send password reset email to {}", Masque.email(email));
         }
     }
 
@@ -347,7 +348,7 @@ public class EmailService {
         if (!sent) {
             // Un e-mail perdu ne doit pas emporter l'annulation elle-même : le
             // push et la notification in-app sont déjà partis.
-            log.error("Échec de l'e-mail {} vers {}", type, email);
+            log.error("Échec de l'e-mail {} vers {} (utilisateur {})", type, Masque.email(email), userId);
         }
     }
 
@@ -530,7 +531,7 @@ public class EmailService {
         boolean sent = resendEmailService.sendHtmlEmail(email,
             qui + " vous a désigné comme contact de confiance — meetDo", html);
         if (!sent) {
-            log.error("Failed to send guardian consent email to {}", email);
+            log.error("Failed to send guardian consent email to {}", Masque.email(email));
         }
     }
 
@@ -546,11 +547,9 @@ public class EmailService {
      * auteur ait à connaître le drapeau.
      *
      * <p><b>Ce que la branche fermée n'écrit pas : rien du destinataire.</b> Ni
-     * le lien, ni le jeton, ni l'adresse — pas même masquée. Le masque
-     * {@code Masque.email} appartient à P-BS-19, qui n'est pas livrée ; l'écrire
-     * ici pour l'occasion aurait produit un second masqueur à retirer plus tard,
-     * et surtout une adresse partiellement lisible là où P-BS-19 veut n'en voir
-     * aucune. L'absence de fournisseur est une panne de configuration globale, la
+     * le lien, ni le jeton, ni l'adresse — pas même masquée par
+     * {@link Masque#email} : une adresse partiellement lisible reste une donnée
+     * personnelle, et elle n'apporterait rien ici. L'absence de fournisseur est une panne de configuration globale, la
      * même pour tout le monde : nommer un destinataire n'aide personne à la
      * diagnostiquer, et le savoir coûte une donnée personnelle par e-mail
      * tenté.

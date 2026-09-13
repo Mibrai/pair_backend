@@ -1,5 +1,6 @@
 package org.program.pair.domain.notification;
 
+import org.program.pair.shared.logging.Masque;
 import com.google.firebase.messaging.*;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.config.LocaleConfig;
@@ -680,7 +681,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
                     errorCode == MessagingErrorCode.INVALID_ARGUMENT) {
                     String invalidToken = tokens.get(i);
                     deviceTokenRepository.deleteByToken(invalidToken);
-                    log.info("Removed invalid device token: {}", invalidToken.substring(0, 10) + "...");
+                    log.info("Removed invalid device token: {}", Masque.jeton(invalidToken));
                 }
             }
         }
