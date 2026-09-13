@@ -107,7 +107,8 @@ public class AttendanceService {
         // motif que la première avait été confirmée.
         if (attendanceRepository.existsByScheduleIdAndUserIdAndAttendedAt(
                 scheduleId, userId, occurrence.startsAt())) {
-            throw new BusinessException("Présence déjà confirmée.");
+            throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION, "ATTENDANCE_ALREADY_CONFIRMED",
+                "Présence déjà confirmée.");
         }
 
         Attendance attendance = new Attendance();

@@ -3,6 +3,7 @@ package org.program.pair.shared.exception;
 public class ForbiddenException extends RuntimeException implements HasErrorCode {
 
     private final ErrorCode errorCode;
+    private String messageKey;
 
     public ForbiddenException(String message) {
         super(message);
@@ -14,8 +15,22 @@ public class ForbiddenException extends RuntimeException implements HasErrorCode
         this.errorCode = errorCode;
     }
 
+    /**
+     * Un refus dont le code ne change pas — l'app le lit — mais dont le message se
+     * traduit par sa propre clé {@code error.<messageKey>} (P-BA-11).
+     */
+    public ForbiddenException(ErrorCode errorCode, String messageKey, String message) {
+        this(errorCode, message);
+        this.messageKey = messageKey;
+    }
+
     @Override
     public ErrorCode getErrorCode() {
         return errorCode;
+    }
+
+    @Override
+    public String getMessageKey() {
+        return messageKey;
     }
 }
