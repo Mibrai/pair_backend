@@ -9,6 +9,7 @@ import org.locationtech.jts.geom.PrecisionModel;
 import org.program.pair.domain.trust.BadgeAward;
 import org.program.pair.domain.attendance.ReliabilitySignal;
 import org.program.pair.domain.guidelines.Guidelines;
+import org.program.pair.domain.notification.DeviceTokenService;
 import org.program.pair.domain.subscription.SubscriptionService;
 import org.program.pair.domain.user.dto.*;
 import org.program.pair.repository.AfficheRepository;
@@ -65,6 +66,22 @@ public class UserService {
      * demande au dépôt.
      */
     private final AfficheRepository afficheRepository;
+
+    /**
+     * Pour le seul {@code deactivateAccount}, qui détache les appareils du compte
+     * qu'il ferme (P-BL-12, étape 5).
+     *
+     * <p>Une dépendance de plus au constructeur, avec le mode de panne que les
+     * deux notes ci-dessus décrivent : {@code UserServiceTest} monte ce service
+     * par {@code @InjectMocks} avec la liste <b>exacte</b> de ses dépendances, et
+     * une doublure manquante fait tomber des méthodes qui n'ont rien à voir. La
+     * doublure est posée dans le même mouvement que ce champ.
+     *
+     * <p>Le service des jetons est appelé et <b>non modifié</b> : c'est un autre
+     * paquet, en cours de reprise pour les autres étapes de P-BL-12.
+     */
+    private final DeviceTokenService deviceTokenService;
+
     private final GeometryFactory geometryFactory = new GeometryFactory(
         new PrecisionModel(), 4326);
 
@@ -231,10 +248,35 @@ public class UserService {
      * moindre échec annulerait le {@code is_active = false} — et la demande de
      * suppression serait à nouveau perdue, pour une raison de plus.
      *
-     * <p>La date de la demande n'est pas écrite sur le compte : la colonne
-     * n'existe pas encore. C'est la ligne d'audit {@code GDPR_DELETE_REQUEST}
-     * posée par les contrôleurs qui la porte, et elle suffit à faire courir le
-     * délai de trente jours.
+     * <p><b>La date de la demande, maintenant que la colonne existe (V111).</b>
+     * Elle est écrite ici et nulle part ailleurs, et c'est depuis elle seule que
+     * la purge compte ses trente jours. Le paragraphe précédent disait que la
+     * ligne d'audit {@code GDPR_DELETE_REQUEST} « suffit à faire courir le délai »
+     * : ce n'était pas vrai et il faut le corriger, parce que
+     * {@code AuditLogService.log} porte {@code @Async} — la ligne part sur un
+     * autre fil, sans garantie qu'elle arrive. Une demande de suppression dont
+     * l'horodatage peut se perdre est une demande dont le délai ne peut pas
+     * commencer. C'est désormais la colonne qui le porte, dans la même
+     * transaction que le {@code is_active = false}.
+     *
+     * <p><b>Elle n'est écrite qu'au passage de actif à inactif.</b> Le retour
+     * anticipé ci-dessus s'en charge : un second appel — celui que l'application
+     * rejoue après une coupure réseau — ne doit pas repousser l'échéance de
+     * trente jours de la personne qui a demandé la suppression trois semaines
+     * plus tôt.
+     *
+     * <p><b>Et les appareils sont détachés (P-BL-12, étape 5).</b> Sans cela, un
+     * compte fermé continue de recevoir les notifications de ses conversations et
+     * de ses créneaux pendant les trente jours du délai, sur un téléphone dont
+     * l'application affiche un écran de connexion : la seule chose qu'on ait
+     * promise en fermant le compte est justement que cela s'arrête.
+     * {@code unregisterAllUserTokens} est appelé tel quel — sa signature convient
+     * — et volontairement <b>dans</b> cette transaction : un appareil qui reste
+     * attaché à un compte désactivé est un défaut visible de l'extérieur, alors
+     * qu'un échec ici rend un {@code 500} sur une route que l'application rejoue
+     * et qui est idempotente. C'est l'exception assumée au paragraphe ci-dessus,
+     * et la seule : il s'agit d'un {@code DELETE} sur des lignes que ce compte est
+     * seul à posséder, pas d'un travail qui parle au réseau.
      */
     public void deactivateAccount(UUID userId) {
         User user = userRepository.findById(userId)
@@ -243,11 +285,14 @@ public class UserService {
             return;
         }
         user.setIsActive(false);
+        user.setDeactivatedAt(Instant.now());
         // Le compte disparaît de la carte dans le même mouvement : laisser le
         // point public survivre à la désactivation serait le contraire de ce
         // qu'on vient de demander.
         user.setLocationPublic(false);
         userRepository.save(user);
+
+        deviceTokenService.unregisterAllUserTokens(userId);
     }
 
     public void changePassword(UUID userId, ChangePasswordRequest request) {

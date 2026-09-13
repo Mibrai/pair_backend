@@ -38,9 +38,18 @@ public class GdprService {
     private final ProgressionRepository progressionRepository;
     private final NotificationRepository notificationRepository;
     private final AuditLogRepository auditLogRepository;
-    private final SearchLogRepository searchLogRepository;
     private final ConversationMemberRepository conversationMemberRepository;
     private final AuditLogService auditLogService;
+
+    /**
+     * L'effacement d'un compte vit dans un <b>autre</b> bean, et c'est la seule
+     * façon d'obtenir une transaction par compte : un appel sur {@code this}
+     * n'aurait pas franchi le proxy, et l'annotation de la méthode appelée aurait
+     * été ignorée — le défaut que ce lot ferme.
+     */
+    private final GdprAccountEraser eraser;
+
+    private final MetriquesPurgeRgpd metriques;
 
     /**
      * Export all user data (GDPR Article 15: Right of access)
@@ -77,58 +86,89 @@ public class GdprService {
         return export;
     }
 
+    /** Le délai de la décision D2, compté depuis la demande de suppression. */
+    public static final int DELAI_DE_RETENTION_JOURS = 30;
+
     /**
-     * Purge inactive accounts (GDPR Article 17: Right to erasure + Article 5.1.e)
-     * Called by scheduled job
+     * Ce qu'une passe de purge a réellement fait.
+     *
+     * <p>La méthode rendait auparavant {@code inactiveUsers.size()}, c'est-à-dire
+     * le nombre de <b>candidats</b>, et le journal l'annonçait comme un nombre de
+     * comptes purgés. Il pouvait donc dire « 7 comptes purgés » pour sept comptes
+     * toujours en base. Les deux nombres sont désormais séparés, parce qu'ils ne
+     * disent pas la même chose et que c'est leur écart qui se surveille.
+     *
+     * @param effaces comptes dont la ligne {@code users} n'existe plus
+     * @param echecs  comptes que la purge a laissés derrière elle, chacun
+     *                journalisé avec sa cause et compté dans
+     *                {@code gdpr.purge.failures}
      */
-    @Transactional
-    public int purgeInactiveAccounts() {
-        Instant cutoff = Instant.now().minus(30, ChronoUnit.DAYS);
-        log.info("Purging accounts deactivated before {}", cutoff);
+    public record ResultatDePurge(int effaces, int echecs) {
 
-        List<User> inactiveUsers = userRepository.findInactiveAccountsBefore(cutoff);
-
-        for (User user : inactiveUsers) {
-            try {
-                anonymizeUserData(user.getId());
-                log.info("Purged inactive account: {}", user.getId());
-            } catch (Exception e) {
-                log.error("Failed to purge account {}", user.getId(), e);
-            }
+        public int candidats() {
+            return effaces + echecs;
         }
-
-        return inactiveUsers.size();
     }
 
     /**
-     * Anonymize all user data (GDPR Article 17: Right to erasure)
+     * Efface les comptes dont la suppression a été demandée il y a plus de
+     * {@link #DELAI_DE_RETENTION_JOURS} jours (RGPD articles 17 et 5.1.e).
+     *
+     * <p><b>Cette méthode n'est plus {@code @Transactional}, et c'est le cœur du
+     * correctif.</b> Elle l'était, et elle appelait l'effacement sur
+     * {@code this} : l'auto-invocation ne franchit pas le proxy Spring, si bien
+     * que l'annotation de la méthode appelée était décorative et que toute la
+     * nuit tenait dans une seule transaction. Un seul compte bloqué par une clé
+     * étrangère la marquait {@code rollback-only}, et le commit final levait
+     * {@code UnexpectedRollbackException} : <b>aucun</b> compte n'était effacé,
+     * pas même ceux qui n'avaient rien de bloquant, et l'échec était attribué au
+     * compte suivant dans le journal. Voir {@link GdprAccountEraser} pour le
+     * détail de l'enchaînement.
+     *
+     * <p>La boucle ne tient donc aucune transaction : elle lit une liste
+     * d'identifiants, puis appelle un <b>autre bean</b> qui ouvre la sienne par
+     * compte. Un échec reste un échec de ce compte-là.
+     *
+     * <p><b>{@code Exception} et non {@code RuntimeException}</b> dans le
+     * {@code catch} : une violation de contrainte remonte en
+     * {@code DataIntegrityViolationException}, mais le point de cette boucle est
+     * qu'<i>aucun</i> échec d'un compte ne fasse tomber les autres — y compris un
+     * échec qu'on n'a pas prévu. {@code Error} n'est volontairement pas attrapé.
      */
-    @Transactional
-    public void anonymizeUserData(UUID userId) {
-        log.info("Anonymizing all data for user {}", userId);
+    public ResultatDePurge purgeInactiveAccounts() {
+        Instant limite = Instant.now().minus(DELAI_DE_RETENTION_JOURS, ChronoUnit.DAYS);
+        List<UUID> candidats = userRepository.findDeactivatedBefore(limite);
+        log.info("Purge RGPD : {} compte(s) dont la suppression a été demandée avant {}",
+            candidats.size(), limite);
 
-        // Log the anonymization
-        auditLogService.log(userId, AuditActionType.GDPR_ANONYMIZE, "USER", userId);
+        int effaces = 0;
+        int echecs = 0;
+        for (UUID userId : candidats) {
+            try {
+                eraser.eraseOne(userId);
+                effaces++;
+                metriques.compteEfface();
+            } catch (Exception echec) {
+                echecs++;
+                metriques.compteEnEchec();
+                // L'identifiant et la cause racine : sans la racine, le journal
+                // rend une pile de proxys transactionnels où la violation de
+                // contrainte est à vingt lignes du message.
+                log.error("Purge RGPD : compte {} non effacé — {}",
+                    userId, causeRacine(echec).toString(), echec);
+            }
+        }
 
-        // Anonymize messages
-        messageRepository.anonymizeBySenderId(userId);
+        log.info("Purge RGPD terminée : {} effacé(s), {} échec(s)", effaces, echecs);
+        return new ResultatDePurge(effaces, echecs);
+    }
 
-        // Anonymize reviews
-        reviewRepository.anonymizeByReviewerId(userId);
-
-        // Anonymize recommendations
-        recommendationRepository.anonymizeByRecommenderId(userId);
-
-        // Delete search logs
-        searchLogRepository.deleteByUserId(userId);
-
-        // Anonymize audit logs
-        auditLogRepository.anonymizeByUserId(userId);
-
-        // Delete user entity last
-        userRepository.deleteById(userId);
-
-        log.info("User {} fully anonymized", userId);
+    private static Throwable causeRacine(Throwable echec) {
+        Throwable racine = echec;
+        while (racine.getCause() != null && racine.getCause() != racine) {
+            racine = racine.getCause();
+        }
+        return racine;
     }
 
     // ========== Private Helper Methods ==========
