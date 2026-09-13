@@ -1,5 +1,9 @@
 package org.program.pair.domain.auth;
 
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -11,6 +15,7 @@ import org.program.pair.domain.auth.dto.LogoutRequest;
 import org.program.pair.domain.auth.dto.RefreshRequest;
 import org.program.pair.domain.auth.dto.RegisterRequest;
 import org.program.pair.domain.auth.dto.ResetPasswordRequest;
+import org.program.pair.shared.exception.EmailAlreadyExistsException;
 import org.program.pair.shared.exception.InvalidCredentialsException;
 import org.program.pair.shared.security.RateLimiter;
 import org.springframework.http.HttpHeaders;
@@ -28,13 +33,44 @@ public class AuthController {
     private final AuthService authService;
     private final RateLimiter rateLimiter;
     private final ReponseVerificationEmail reponseVerification;
+    private final MeterRegistry registre;
 
+    /** Nom du compteur des inscriptions refusées sur une adresse déjà connue (P-BS-13). */
+    static final String COMPTEUR_EMAIL_EXISTANT = "auth.register.email_exists";
+
+    /**
+     * Inscription.
+     *
+     * <p><b>Le 409 {@code EMAIL_EXISTS} révèle qu'un compte existe, et c'est un
+     * choix</b> (P-BS-13, D8 option A, confirmé le 13/09) : l'inscription connecte
+     * immédiatement, et l'app dit à l'écran pourquoi elle refuse. Le balayage
+     * d'adresses est borné par le quota par IP et <b>compté</b> — chaque refus
+     * incrémente {@code auth.register.email_exists}, sans étiquette d'adresse
+     * (une série par IP ferait exploser la cardinalité) : un pic se lit sur la
+     * série, l'adresse dans les journaux d'accès.
+     */
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
+    @Operation(summary = "Créer un compte",
+        description = "Crée le compte et ouvre une session. Le 409 EMAIL_EXISTS révèle qu'un compte "
+            + "existe pour cette adresse : choix assumé tant que l'inscription connecte immédiatement. "
+            + "Borné par le quota de la route (5 par adresse visée, 30 par IP, par heure) et compté "
+            + "côté serveur (auth.register.email_exists).")
+    @ApiResponse(responseCode = "201", description = "Compte créé, session ouverte")
+    @ApiResponse(responseCode = "409", description = "EMAIL_EXISTS — un compte existe déjà pour cette adresse")
+    @ApiResponse(responseCode = "429", description = "RATE_LIMITED — quota d'inscription atteint")
     public AuthResponse register(@Valid @RequestBody RegisterRequest request,
                                   HttpServletRequest httpRequest) {
         rateLimiter.checkRegister(adresseAppelante(httpRequest), request.email());
-        return authService.register(request);
+        try {
+            return authService.register(request);
+        } catch (EmailAlreadyExistsException e) {
+            Counter.builder(COMPTEUR_EMAIL_EXISTANT)
+                .description("Inscriptions refusées : adresse déjà utilisée (P-BS-13)")
+                .register(registre)
+                .increment();
+            throw e;
+        }
     }
 
     /**
