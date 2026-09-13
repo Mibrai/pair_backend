@@ -141,6 +141,15 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
     int countPresentByUserId(@Param("userId") UUID userId);
 
     /**
+     * Toutes les séances auxquelles la personne a répondu, présente ou non : le
+     * dénominateur du signal de fiabilité (P-BL-16). Une ligne par occurrence,
+     * exactement comme {@link #countPresentByUserId} — les deux côtés de la
+     * division comptent enfin la même unité.
+     */
+    @Query("SELECT COUNT(a) FROM Attendance a WHERE a.user.id = :userId")
+    int countAnsweredByUserId(@Param("userId") UUID userId);
+
+    /**
      * Nombre de PERSONNES DIFFÉRENTES avec qui l'utilisateur a pratiqué.
      * C'est la métrique de valeur centrale de meetDo — jamais un classement.
      */
