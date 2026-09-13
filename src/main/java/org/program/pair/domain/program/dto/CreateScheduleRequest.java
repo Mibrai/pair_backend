@@ -1,5 +1,6 @@
 package org.program.pair.domain.program.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.*;
 import org.program.pair.domain.program.PlaceType;
 
@@ -36,5 +37,13 @@ public record CreateScheduleRequest(
 
     // Étiquettes d'accueil. Déclaratives, jamais vérifiées : le contrat le dit,
     // l'interface doit le dire aussi.
-    java.util.Set<org.program.pair.domain.program.AccessibilityTag> accessibilityTags
+    java.util.Set<org.program.pair.domain.program.AccessibilityTag> accessibilityTags,
+
+    // Niveau attendu, dit par l'organisateur. Absent ou vide : non précisé, et
+    // rien ne s'affiche. Jamais déduit du niveau personnel de l'hôte.
+    @Schema(description = "Niveau attendu pour la séance : un nom de ActivityLevel "
+        + "(BEGINNER, INTERMEDIATE, ADVANCED, EXPERT, ANY). Absent ou vide : non précisé. "
+        + "Jamais déduit du niveau que l'organisateur a déclaré sur son profil.",
+        allowableValues = {"BEGINNER", "INTERMEDIATE", "ADVANCED", "EXPERT", "ANY", ""})
+    String level
 ) {}

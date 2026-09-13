@@ -56,7 +56,10 @@ public record QuickSlotRequest(
 
     @Size(max = 300) String welcomeNote,
 
-    @Schema(description = "Niveau attendu. Absent, vaut ANY.")
+    @Schema(description = "Niveau attendu pour ce créneau. Absent, le créneau n'en "
+        + "déclare pas. Il sert aussi de niveau au profil quand l'activité y est ajoutée "
+        + "par cette requête (ANY s'il est absent) ; un profil existant n'est jamais "
+        + "réécrit.")
     ActivityLevel level,
 
     @Schema(description = "Format. Absent, vaut ANY.")

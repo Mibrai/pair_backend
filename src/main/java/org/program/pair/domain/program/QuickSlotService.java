@@ -99,7 +99,11 @@ public class QuickSlotService {
                 // un écran de publication en une fois n'a pas la place de tout
                 // demander, et l'organisateur pourra les ajouter ensuite.
                 null,
-                null));
+                null,
+                // Le niveau, lui, part sur le créneau : c'est « le niveau attendu »
+                // que le formulaire demande. Absent, il reste non précisé — le ANY
+                // par défaut ne vaut que pour le profil, créé plus haut.
+                request.level() != null ? request.level().name() : null));
 
         // Rendu par le même chemin que /api/slots/{id} : le client n'a qu'un seul
         // modèle de créneau à maintenir, et il est identique par construction

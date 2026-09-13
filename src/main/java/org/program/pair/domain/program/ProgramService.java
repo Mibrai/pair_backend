@@ -6,6 +6,7 @@ import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.Point;
 import org.locationtech.jts.geom.PrecisionModel;
 import org.program.pair.shared.exception.ErrorCode;
+import org.program.pair.domain.activity.ActivityLevel;
 import org.program.pair.domain.activity.UserActivity;
 import org.program.pair.domain.alert.ActivityAlertService;
 import org.program.pair.domain.media.StoredImageResolver;
@@ -263,6 +264,7 @@ public class ProgramService {
             scheduleCopy.setStatus(SlotStatus.OPEN);
             scheduleCopy.setParticipantCount(0);
             scheduleCopy.setWelcomeNote(schedule.getWelcomeNote());
+            scheduleCopy.setLevel(schedule.getLevel());
             scheduleRepository.save(scheduleCopy);
         }
 
@@ -443,6 +445,7 @@ public class ProgramService {
         if (request.accessibilityTags() != null) {
             schedule.setAccessibilityTags(new java.util.LinkedHashSet<>(request.accessibilityTags()));
         }
+        schedule.setLevel(declaredLevel(request.level()));
 
         Schedule saved = scheduleRepository.save(schedule);
         ScheduleDto dto = toScheduleDto(saved, userId);
@@ -619,6 +622,9 @@ public class ProgramService {
                 : request.primaryLanguage().strip().toLowerCase(java.util.Locale.ROOT));
         if (request.accessibilityTags() != null)
             schedule.setAccessibilityTags(new java.util.LinkedHashSet<>(request.accessibilityTags()));
+        // Clé absente : inchangé. C'est ce qui laisse un client qui ignore encore
+        // ce champ modifier un créneau sans effacer le niveau déclaré.
+        if (request.level() != null)          schedule.setLevel(declaredLevel(request.level()));
 
         // Cohérence des dates, APRÈS application des champs. La requête est
         // partielle : juger le nouveau startsAt sans le endsAt qui arrive dans le
@@ -1113,7 +1119,25 @@ public class ProgramService {
             s.getIsOpenToPartners(),
             s.getStatus().name(),
             s.getParticipantCount(),
-            s.getWelcomeNote()
+            s.getWelcomeNote(),
+            s.getLevel() != null ? s.getLevel().name() : null
         );
+    }
+
+    /**
+     * Le niveau tel que l'organisateur l'a écrit : nul ou vide veut dire « non
+     * précisé ». Toute valeur de {@link ActivityLevel} est acceptée, pas seulement
+     * les trois que propose le formulaire — un client plus ancien ou plus récent
+     * peut en envoyer une autre, et elle doit rester lisible.
+     */
+    static ActivityLevel declaredLevel(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return ActivityLevel.valueOf(raw.strip().toUpperCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            throw new ValidationException("Niveau inconnu : " + raw.strip() + ".");
+        }
     }
 }

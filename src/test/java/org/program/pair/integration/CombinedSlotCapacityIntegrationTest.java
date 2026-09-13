@@ -318,7 +318,7 @@ class CombinedSlotCapacityIntegrationTest extends AbstractIntegrationTest {
     private static UpdateScheduleRequest requete(Instant debut, Instant fin,
                                                   Integer places, String nomDuLieu) {
         return new UpdateScheduleRequest(nomDuLieu, null, null, null, null, null, null,
-            debut, fin, null, places, null, null, null, null);
+            debut, fin, null, places, null, null, null, null, null);
     }
 
     private void register(String email) {

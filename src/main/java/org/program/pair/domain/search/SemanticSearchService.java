@@ -251,10 +251,18 @@ public class SemanticSearchService {
             }
         }
 
-        // Filtrer par niveau si spécifié par le LLM
+        // Filtrer par niveau si spécifié par le LLM. N'écarte que ce qui DÉCLARE
+        // un autre niveau : un niveau non précisé veut dire « on ne sait pas »,
+        // et « tous niveaux » accueille aussi le débutant — même principe que la
+        // langue d'un créneau. Tant que le filtre exigeait une égalité, il lisait
+        // le niveau personnel de l'organisateur ; depuis que ce niveau n'est plus
+        // rendu (P-MU-07), l'égalité stricte aurait vidé toute recherche
+        // « tennis débutant ».
         if (intent.level() != null && !results.isEmpty()) {
             results = results.stream()
-                .filter(r -> r.level() != null && r.level().equalsIgnoreCase(intent.level()))
+                .filter(r -> r.level() == null
+                    || r.level().equalsIgnoreCase("ANY")
+                    || r.level().equalsIgnoreCase(intent.level()))
                 .toList();
         }
 
@@ -362,7 +370,8 @@ public class SemanticSearchService {
             distanceMeters,
             timeProximityScore(schedule.getStartsAt(), now),
             activity.getName(),
-            userActivity.getLevel() != null ? userActivity.getLevel().name() : null,
+            // Le niveau du créneau, jamais celui de l'hôte — même règle que le fil.
+            schedule.getLevel() != null ? schedule.getLevel().name() : null,
             userActivity.getFormat() != null ? userActivity.getFormat().name() : null,
             false,
             host.getVerificationStatus().name(),
@@ -561,7 +570,10 @@ public class SemanticSearchService {
                 venue != null ? venue.distanceMeters() : null,
                 0f,
                 act.getName(),
-                ua.getLevel() != null ? ua.getLevel().name() : null,
+                // Aucun niveau sur un programme : seul un créneau en déclare un.
+                // Le niveau personnel de l'organisateur ne dit rien de ce qu'il
+                // attend des participants (P-MU-07).
+                null,
                 ua.getFormat() != null ? ua.getFormat().name() : null,
                 isOnline,
                 owner.getVerificationStatus().name(),

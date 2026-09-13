@@ -781,7 +781,10 @@ public class SlotService {
             activity.getName(),
             category != null ? category.getId() : null,
             category != null ? category.getColorRamp() : null,
-            userActivity.getLevel() != null ? userActivity.getLevel().name() : null,
+            // Le niveau du créneau, jamais celui de l'hôte : le niveau personnel
+            // déclaré à l'onboarding s'affichait ici comme une exigence que
+            // l'organisateur n'avait jamais formulée (P-MU-07).
+            slot.getLevel() != null ? slot.getLevel().name() : null,
             userActivity.getFormat() != null ? userActivity.getFormat().name() : null,
             context.profiles().get(userActivity.getUser().getId()),
             slot.getPlaceName(),
