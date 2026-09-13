@@ -93,6 +93,22 @@ class AttendanceConfirmIntegrationTest extends AbstractIntegrationTest {
         assertThat(refreshed.getDistinctPartnersCount()).isEqualTo(0);
     }
 
+    @Test
+    void confirmerSaPresenceSansWasPresent_doitRendre400() {
+        // P-BS-15 : @NotNull était posé sur le DTO mais inerte, faute de @Valid. Le
+        // service recevait null et le traitait comme une absence.
+        String token = registerAndLogin(uniqueEmail("confirm-sans-corps"));
+
+        webTestClient.post()
+            .uri("/api/attendances/{scheduleId}/confirm", java.util.UUID.randomUUID())
+            .headers(h -> h.setBearerAuth(token))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue("{}")
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody().jsonPath("$.code").isEqualTo("VALIDATION_ERROR");
+    }
+
     private String registerAndLogin(String email) {
         org.program.pair.domain.auth.dto.RegisterRequest registerReq =
             new org.program.pair.domain.auth.dto.RegisterRequest(email, "Password123!", email.split("@")[0]);

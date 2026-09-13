@@ -179,7 +179,7 @@ public class ActivityController {
     public UserActivityDto toggleVisibility(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID userActivityId,
-            @RequestBody VisibilityRequest request) {
+            @Valid @RequestBody VisibilityRequest request) {
         return activityService.toggleMapVisibility(
             principal.getId(), userActivityId, request.visible());
     }

@@ -37,7 +37,7 @@ public class ActivityAlertController {
     public ActivityAlertDto update(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID alertId,
-            @RequestBody UpdateActivityAlertRequest request) {
+            @Valid @RequestBody UpdateActivityAlertRequest request) {
         return alertService.updateAlert(principal.getId(), alertId, request);
     }
 
