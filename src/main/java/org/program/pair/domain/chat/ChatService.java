@@ -733,11 +733,55 @@ public class ChatService {
      */
     @Transactional(readOnly = true)
     public List<MessageDto> getMessages(UUID userId, UUID conversationId, int limit) {
+        return getMessages(userId, conversationId, limit, null, null);
+    }
+
+    /** Plafond d'une page d'historique (règle commune de P-BA-14). */
+    public static final int HISTORIQUE_MAX = org.program.pair.shared.web.Pages.TAILLE_MAX;
+
+    /**
+     * L'historique d'un fil, avec curseur (demande mobile du 13/09, P-BA-14).
+     *
+     * <ul>
+     *   <li><b>sans curseur</b> : les {@code limit} derniers messages, <b>du plus
+     *       récent au plus ancien</b> — l'ordre que l'app publiée lit déjà ;</li>
+     *   <li><b>{@code after}</b> : les messages postérieurs à ce message, <b>du plus
+     *       ancien au plus récent</b> — la relecture d'un fil ouvert, qui rend
+     *       {@code []} quand rien n'est arrivé ;</li>
+     *   <li><b>{@code before}</b> : la page précédente, <b>du plus ancien au plus
+     *       récent</b> — « charger plus ».</li>
+     * </ul>
+     *
+     * <p>Un curseur inconnu, ou d'un autre fil, rend {@code 400} : une liste vide
+     * silencieuse ferait croire au client qu'il est à jour. Les deux curseurs à la
+     * fois aussi.
+     */
+    @Transactional(readOnly = true)
+    public List<MessageDto> getMessages(UUID userId, UUID conversationId, int limit, UUID after, UUID before) {
+        if (limit < 1) {
+            throw new ValidationException(ErrorCode.INVALID_PARAMETER, "La limite doit valoir au moins 1.");
+        }
+        if (after != null && before != null) {
+            throw new ValidationException(ErrorCode.INVALID_PARAMETER,
+                "after et before ne se combinent pas : un seul curseur à la fois.");
+        }
         Conversation conv = loadConversation(conversationId);
         assertMayRead(conv, userId);
 
-        List<Message> messages = messageRepository
-            .findByConversationIdOrderBySentAtDesc(conversationId, limit);
+        org.springframework.data.domain.Pageable page =
+            org.springframework.data.domain.PageRequest.of(0, Math.min(limit, HISTORIQUE_MAX));
+        List<Message> messages;
+        if (after != null) {
+            Message curseur = curseur(conversationId, after);
+            messages = messageRepository.findAfter(conversationId, curseur.getSentAt(), curseur.getId(), page);
+        } else if (before != null) {
+            Message curseur = curseur(conversationId, before);
+            messages = new java.util.ArrayList<>(
+                messageRepository.findBefore(conversationId, curseur.getSentAt(), curseur.getId(), page));
+            java.util.Collections.reverse(messages);
+        } else {
+            messages = messageRepository.findLatest(conversationId, page);
+        }
 
         if (conv.getType() != ConversationType.DIRECT) {
             Set<UUID> invisible = blockFilterService.invisibleTo(userId);
@@ -751,6 +795,14 @@ public class ChatService {
         return messages.stream()
             .map(this::toMessageDto)
             .collect(Collectors.toList());
+    }
+
+    /** Le message qui sert de curseur : il doit exister, et dans ce fil. */
+    private Message curseur(UUID conversationId, UUID messageId) {
+        return messageRepository.findById(messageId)
+            .filter(m -> m.getConversation().getId().equals(conversationId))
+            .orElseThrow(() -> new ValidationException(ErrorCode.INVALID_PARAMETER,
+                "Curseur inconnu : ce message n'appartient pas à ce fil."));
     }
 
     /**
@@ -924,7 +976,7 @@ public class ChatService {
         }
 
         return messageRepository
-            .findByConversationIdOrderBySentAtDesc(conv.getId(), PREVIEW_LOOKBACK)
+            .findLatest(conv.getId(), org.springframework.data.domain.PageRequest.of(0, PREVIEW_LOOKBACK))
             .stream()
             .filter(msg -> !invisible.contains(msg.getSender().getId()))
             .findFirst()

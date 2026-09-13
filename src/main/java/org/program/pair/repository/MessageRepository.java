@@ -15,8 +15,41 @@ import java.util.UUID;
 @Repository
 public interface MessageRepository extends JpaRepository<Message, UUID> {
 
-    @Query("SELECT m FROM Message m WHERE m.conversation.id = :conversationId ORDER BY m.sentAt DESC")
-    List<Message> findByConversationIdOrderBySentAtDesc(@Param("conversationId") UUID conversationId, int limit);
+    /**
+     * Les derniers messages d'un fil, du plus récent au plus ancien.
+     *
+     * <p><b>Le nombre est borné par le {@code Pageable}.</b> La signature portait
+     * un {@code int limit} que la requête n'utilisait pas : Spring Data ignore un
+     * paramètre qui n'est ni nommé ni pageable, et chaque appel rendait le fil
+     * entier (relevé mobile du 13/09 : {@code limit=2} rendait 36 messages).
+     * L'identifiant départage deux messages de la même microseconde, pour que les
+     * curseurs ci-dessous ne sautent ni ne répètent rien.
+     */
+    @Query("SELECT m FROM Message m WHERE m.conversation.id = :conversationId ORDER BY m.sentAt DESC, m.id DESC")
+    List<Message> findLatest(@Param("conversationId") UUID conversationId,
+                             org.springframework.data.domain.Pageable page);
+
+    /** Les messages postérieurs au curseur, du plus ancien au plus récent. */
+    @Query("""
+        SELECT m FROM Message m
+         WHERE m.conversation.id = :conversationId
+           AND (m.sentAt > :sentAt OR (m.sentAt = :sentAt AND m.id > :id))
+         ORDER BY m.sentAt ASC, m.id ASC
+        """)
+    List<Message> findAfter(@Param("conversationId") UUID conversationId,
+                            @Param("sentAt") Instant sentAt, @Param("id") UUID id,
+                            org.springframework.data.domain.Pageable page);
+
+    /** Les messages antérieurs au curseur, du plus récent au plus ancien. */
+    @Query("""
+        SELECT m FROM Message m
+         WHERE m.conversation.id = :conversationId
+           AND (m.sentAt < :sentAt OR (m.sentAt = :sentAt AND m.id < :id))
+         ORDER BY m.sentAt DESC, m.id DESC
+        """)
+    List<Message> findBefore(@Param("conversationId") UUID conversationId,
+                             @Param("sentAt") Instant sentAt, @Param("id") UUID id,
+                             org.springframework.data.domain.Pageable page);
 
     Optional<Message> findFirstByConversationIdOrderBySentAtDesc(UUID conversationId);
 

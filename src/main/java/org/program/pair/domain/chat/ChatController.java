@@ -94,11 +94,21 @@ public class ChatController {
 
     @GetMapping("/api/conversations/{conversationId}/messages")
     @ResponseBody
+    @Operation(summary = "Historique d'un fil",
+        description = "Sans curseur : les `limit` derniers messages, du plus récent au plus ancien. "
+            + "`after=<messageId>` : les messages postérieurs, du plus ancien au plus récent (`[]` si "
+            + "rien de neuf). `before=<messageId>` : la page précédente, du plus ancien au plus récent. "
+            + "`limit` est plafonné à 50. Un curseur inconnu ou d'un autre fil, ou les deux curseurs "
+            + "ensemble, rendent 400 INVALID_PARAMETER.")
     public List<MessageDto> getMessages(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID conversationId,
-            @RequestParam(defaultValue = "50") int limit) {
-        return chatService.getMessages(principal.getId(), conversationId, Math.min(limit, 100));
+            @RequestParam(defaultValue = "50")
+            @io.swagger.v3.oas.annotations.Parameter(schema = @io.swagger.v3.oas.annotations.media.Schema(
+                minimum = "1", maximum = "50", defaultValue = "50")) int limit,
+            @RequestParam(required = false) UUID after,
+            @RequestParam(required = false) UUID before) {
+        return chatService.getMessages(principal.getId(), conversationId, limit, after, before);
     }
 
     @PostMapping("/api/conversations/{conversationId}/read")
