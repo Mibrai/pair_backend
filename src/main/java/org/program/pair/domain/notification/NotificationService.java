@@ -86,10 +86,11 @@ public class NotificationService {
     public void notify(UUID userId, NotificationType type, Map<String, Object> payload) {
         log.debug("Sending notification {} to user {}", type, userId);
 
-        // 1. Récupérer les préférences
-        NotificationPref pref = prefRepository
-            .findByUserIdAndNotificationType(userId, type)
-            .orElse(defaultPref(userId, type));
+        // 1. Récupérer les préférences — sans effet sur un type verrouillé
+        // (P-BL-20) : aucun réglage ne fait taire l'alerte à un proche.
+        NotificationPref pref = type.isSettable()
+            ? prefRepository.findByUserIdAndNotificationType(userId, type).orElse(defaultPref(userId, type))
+            : defaultPref(userId, type);
 
         // 2. Notification in-app (toujours)
         saveInAppNotification(userId, type, payload);
@@ -99,16 +100,15 @@ public class NotificationService {
         // Messages compris — il n'y a qu'un badge par app (voir UnreadCounter).
         long badgeCount = unreadCounter.badge(userId);
 
-        // 3. Email selon préférence
+        // 3. Email selon préférence. La fréquence n'y entre plus : aucun résumé
+        // n'existe, et DAILY_DIGEST / WEEKLY faisaient disparaître l'e-mail en
+        // silence (P-BA-18 option B). Toute fréquence vaut immédiat.
         if (Boolean.TRUE.equals(pref.getEmailEnabled())) {
-            if (pref.getFrequency() == NotificationFrequency.IMMEDIATE) {
-                try {
-                    emailService.sendNotificationEmail(userId, type, payload);
-                } catch (Exception e) {
-                    log.error("Failed to send email notification: {}", e.getMessage());
-                }
+            try {
+                emailService.sendNotificationEmail(userId, type, payload);
+            } catch (Exception e) {
+                log.error("Failed to send email notification: {}", e.getMessage());
             }
-            // DAILY_DIGEST et WEEKLY_DIGEST géré par jobs Quartz
         }
 
         // 4. Push selon préférence
@@ -181,9 +181,19 @@ public class NotificationService {
         }
     }
 
-    /**
-     * Préférences par défaut
-     */
+    /** La valeur effective d'une préférence stockée sur un type verrouillé, sans toucher l'entité. */
+    private static NotificationPref effective(NotificationPref stockee) {
+        return NotificationPref.builder()
+            .id(stockee.getId())
+            .user(stockee.getUser())
+            .notificationType(stockee.getNotificationType())
+            .emailEnabled(true)
+            .pushEnabled(true)
+            .frequency(NotificationFrequency.IMMEDIATE)
+            .build();
+    }
+
+    /** Préférences par défaut. */
     private NotificationPref defaultPref(UUID userId, NotificationType type) {
         return NotificationPref.builder()
             .user(userRepository.getReferenceById(userId))
@@ -261,15 +271,25 @@ public class NotificationService {
      */
     @Transactional(readOnly = true)
     public List<NotificationPref> getUserPreferences(UUID userId) {
-        return prefRepository.findByUserId(userId);
+        return prefRepository.findByUserId(userId).stream()
+            .map(pref -> pref.getNotificationType().isSettable() ? pref : effective(pref))
+            .toList();
     }
 
     /**
-     * Mettre à jour les préférences
+     * Mettre à jour les préférences.
+     *
+     * <p>Un type verrouillé est accepté sans effet : rien n'est écrit, et la
+     * réponse porte la valeur effective — tout activé, immédiat (P-BL-20). Une
+     * fréquence de résumé s'enregistre comme {@code IMMEDIATE} (P-BA-18).
      */
+    @SuppressWarnings("deprecation")
     public NotificationPref updatePreference(UUID userId, NotificationType type,
                                              Boolean emailEnabled, Boolean pushEnabled,
                                              NotificationFrequency frequency) {
+        if (!type.isSettable()) {
+            return defaultPref(userId, type);
+        }
         NotificationPref pref = prefRepository
             .findByUserIdAndNotificationType(userId, type)
             .orElse(NotificationPref.builder()
@@ -279,7 +299,7 @@ public class NotificationService {
 
         if (emailEnabled != null) pref.setEmailEnabled(emailEnabled);
         if (pushEnabled != null) pref.setPushEnabled(pushEnabled);
-        if (frequency != null) pref.setFrequency(frequency);
+        if (frequency != null) pref.setFrequency(NotificationFrequency.IMMEDIATE);
 
         return prefRepository.save(pref);
     }

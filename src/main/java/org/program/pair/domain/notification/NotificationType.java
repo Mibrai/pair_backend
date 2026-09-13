@@ -279,6 +279,27 @@ public enum NotificationType {
     public static final java.time.LocalDate FIN_DE_COUPURE_AFFICHE_READY =
         java.time.LocalDate.of(2026, 10, 15);
 
+    /**
+     * Les types qu'aucun réglage ne coupe (P-BL-20, décision du 13/09) —
+     * exactement ceux que l'app affiche verrouillés
+     * ({@code kNotificationTypesNotSettable}), ni plus ni moins.
+     *
+     * <p>L'app ne propose pas d'interrupteur pour eux, mais la route de
+     * préférences les acceptait : un appel direct pouvait faire taire l'alerte
+     * à un proche ou le rappel d'une veille armée. Le serveur les envoie
+     * désormais quel que soit le réglage stocké, et la route rend la valeur
+     * effective.
+     */
+    private static final java.util.Set<NotificationType> NOT_SETTABLE = java.util.EnumSet.of(
+        ACCOUNT_VERIFICATION, PASSWORD_RESET,
+        WATCH_RETURN_REMINDER, WATCH_ARRIVAL_PROMPT, WATCH_ARRIVAL_CONFIRMED,
+        GUARDIAN_CONSENT_REQUEST, WATCH_GUARDIAN_ALERT);
+
+    /** Vrai si un réglage de préférence peut couper ce type. */
+    public boolean isSettable() {
+        return !NOT_SETTABLE.contains(this);
+    }
+
     /** Vrai si cette notification passe outre les heures de silence. */
     public boolean isCritical() {
         return CRITICAL.contains(this);
