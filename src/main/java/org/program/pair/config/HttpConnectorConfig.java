@@ -11,12 +11,16 @@ import org.springframework.context.annotation.Profile;
 /**
  * Connecteur HTTP en clair (8091), à côté du HTTPS de développement.
  *
- * <p><b>Profil dev seulement</b> (P-BS-12). Sans profil, il s'ouvrait partout — y
- * compris dans le conteneur Railway, où rien ne l'exposait mais où rien ne le
- * justifiait non plus. Hors dev, l'application n'écoute que son port principal.
+ * <p><b>Profils dev et railway.</b> P-BS-12 l'avait réservé au dev en le croyant
+ * inutile en production : c'était faux. Le domaine personnalisé
+ * {@code lien.meetdo.fun} est routé par Railway vers le port <b>8091</b>, et le
+ * retirer a rendu 502 sur tous les liens publics, e-mails et liens universels
+ * compris (incident du 13/09, 21:20 → correctif). Il reste absent sans profil et
+ * sous staging. Ne pas le retirer de railway sans avoir d'abord changé le port
+ * cible du domaine dans Railway.
  */
 @Configuration
-@Profile("dev")
+@Profile({"dev", "railway"})
 public class HttpConnectorConfig {
 
     @Value("${server.http.port:8091}")

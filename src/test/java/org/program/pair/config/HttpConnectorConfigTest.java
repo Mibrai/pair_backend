@@ -11,10 +11,14 @@ class HttpConnectorConfigTest {
     private final ApplicationContextRunner runner = new ApplicationContextRunner()
         .withUserConfiguration(HttpConnectorConfig.class);
 
+    /**
+     * Le domaine lien.meetdo.fun cible le port 8091 dans Railway : sans ce
+     * connecteur sous railway, tous les liens publics rendent 502 (incident du 13/09).
+     */
     @Test
-    void sousLeProfilRailway_aucunConnecteurHttpAdditionnelNEstDeclare() {
+    void sousLeProfilRailway_leConnecteurDuDomainePersonnaliseEstDeclare() {
         runner.withPropertyValues("spring.profiles.active=railway")
-            .run(contexte -> assertThat(contexte).doesNotHaveBean("httpConnector"));
+            .run(contexte -> assertThat(contexte).hasBean("httpConnector"));
     }
 
     @Test
