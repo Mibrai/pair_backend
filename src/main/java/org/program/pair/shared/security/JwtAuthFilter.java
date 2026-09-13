@@ -1,11 +1,15 @@
 package org.program.pair.shared.security;
 
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.auth.JwtTokenProvider;
+import org.program.pair.domain.auth.JwtTokenProvider.JetonLu;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -23,6 +27,16 @@ public class JwtAuthFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider tokenProvider;
     private final UserDetailsServiceImpl userDetailsService;
+    private final MeterRegistry registre;
+
+    /**
+     * {@code Server-Timing: auth;dur=…} sur chaque réponse authentifiée
+     * (P-BA-05, étape 1) : de quoi mesurer le coût de l'authentification depuis
+     * l'app, sans accès aux métriques. Éteint par défaut — un en-tête de plus
+     * sur chaque réponse ne se publie pas sans raison.
+     */
+    @Value("${pair.observabilite.server-timing:false}")
+    private boolean serverTiming;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -30,10 +44,22 @@ public class JwtAuthFilter extends OncePerRequestFilter {
                                     FilterChain chain) throws ServletException, IOException {
         String token = extractToken(request);
         if (token != null) {
-            MotifRefusJwt motif = motifDeRefus(token);
-            if (motif == null) {
-                authentifier(request, token);
-            } else {
+            // auth.filter (P-BA-05) : lecture du jeton et chargement du compte.
+            // La chaîne qui suit n'est pas comptée — c'est le coût propre de
+            // l'authentification que le plancher de ~750 ms met en cause.
+            long debut = System.nanoTime();
+            MotifRefusJwt motif = motifDeRefus(token, request);
+            long duree = System.nanoTime() - debut;
+            Timer.builder("auth.filter")
+                .description("Lecture du jeton et chargement du compte, par requête")
+                .tag("issue", motif == null ? "authentifie" : "refuse")
+                .register(registre)
+                .record(duree, java.util.concurrent.TimeUnit.NANOSECONDS);
+            if (serverTiming) {
+                response.addHeader("Server-Timing",
+                    String.format(java.util.Locale.ROOT, "auth;dur=%.1f", duree / 1_000_000.0));
+            }
+            if (motif != null) {
                 // Le filtre ne répond jamais lui-même : la chaîne se poursuit sans
                 // authentification et c'est le point d'entrée de SecurityConfig qui
                 // rend le 401 — un seul endroit qui écrit le corps d'erreur. Le
@@ -65,18 +91,26 @@ public class JwtAuthFilter extends OncePerRequestFilter {
      * d'accès », et c'est {@code estJetonDeRafraichissement} qui porte cette
      * asymétrie.
      */
-    private MotifRefusJwt motifDeRefus(String token) {
-        return switch (tokenProvider.etatDe(token)) {
-            case EXPIRE -> MotifRefusJwt.EXPIRE;
-            case INVALIDE -> MotifRefusJwt.INVALIDE;
-            case VALIDE -> tokenProvider.estJetonDeRafraichissement(token)
-                ? MotifRefusJwt.JETON_DE_RAFRAICHISSEMENT
-                : null;
-        };
+    private MotifRefusJwt motifDeRefus(String token, HttpServletRequest request) {
+        // Une seule lecture du jeton (P-BA-05) : l'état, le type et le sujet
+        // sortaient de trois vérifications de signature successives.
+        // instanceof et non un switch à motifs : le projet compile encore en cible
+        // Java 17, où le switch sur une interface scellée n'existe pas.
+        JetonLu lu = tokenProvider.lire(token);
+        if (lu instanceof JetonLu.Expire) {
+            return MotifRefusJwt.EXPIRE;
+        }
+        if (!(lu instanceof JetonLu.Valide valide)) {
+            return MotifRefusJwt.INVALIDE;
+        }
+        if (valide.rafraichissement()) {
+            return MotifRefusJwt.JETON_DE_RAFRAICHISSEMENT;
+        }
+        authentifier(request, valide.sujet());
+        return null;
     }
 
-    private void authentifier(HttpServletRequest request, String token) {
-        UUID userId = tokenProvider.extractUserId(token);
+    private void authentifier(HttpServletRequest request, UUID userId) {
         UserDetails userDetails = userDetailsService.loadUserById(userId);
         UsernamePasswordAuthenticationToken auth =
             new UsernamePasswordAuthenticationToken(
