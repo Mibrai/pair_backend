@@ -77,7 +77,22 @@ public final class AlertMessages {
         Instant heureLimite, Instant dernierSigneDeVie,
         String lieuNom, String ville, String titre,
         Instant heureDebut, Instant heureFin,
-        String lienStatut) {}
+        String lienStatut,
+        int reports) {}
+
+    /**
+     * « L'heure limite a été repoussée N fois. » — rien quand elle ne l'a pas été
+     * (P-BL-22). Un fait, pas une inquiétude : quelqu'un de retenu repousse, et le
+     * proche doit savoir que l'heure qu'on lui donne n'était pas la première.
+     */
+    static String phraseReports(int reports) {
+        if (reports <= 0) {
+            return "";
+        }
+        return reports == 1
+            ? "L'heure limite a été repoussée une fois."
+            : "L'heure limite a été repoussée " + reports + " fois.";
+    }
 
     /** ② Alerte retour, par SMS. */
     public static String alerteRetourSms(Contexte c) {
@@ -92,6 +107,9 @@ public final class AlertMessages {
                 m.append(", terminée à ").append(heure(c.heureFin()));
             }
             m.append(". ");
+        }
+        if (c.reports() > 0) {
+            m.append(phraseReports(c.reports())).append(" ");
         }
         m.append("Suivi : ").append(c.lienStatut()).append(". ");
         m.append(CLAUSE_112);
@@ -224,6 +242,7 @@ public final class AlertMessages {
             + "<li>Dernier signe de vie : <strong>" + jourHeure(c.dernierSigneDeVie())
             + "</strong>" + escape(lieuEtVille(c)) + "</li>"
             + titreLigne
+            + (c.reports() > 0 ? "<li>" + phraseReports(c.reports()) + "</li>" : "")
             + "</ul>"
             + GabaritEmail.bouton(c.lienStatut(), "Voir la page de suivi",
                 GabaritEmail.Accent.CORAL)

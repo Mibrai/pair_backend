@@ -56,6 +56,31 @@ class WatchExitsIntegrationTest extends AbstractIntegrationTest {
             .isEqualTo(echeanceAvant.plus(30, ChronoUnit.MINUTES));
     }
 
+    /** P-BL-22 (décision du 13/09) : trois reports, pas un de plus. */
+    @Test
+    void unQuatriemeReport_doitEtreRefuse_etLHeureLimiteNePlusReculer() {
+        Compte moi = compte();
+        UUID watchId = surPlace(moi);
+        Instant echeanceAvant = watch(watchId).getDeadlineAt();
+
+        for (int restants : new int[] {2, 1, 0}) {
+            webTestClient.post().uri("/api/watches/{id}/snooze", watchId)
+                .headers(h -> h.setBearerAuth(moi.token()))
+                .exchange().expectStatus().isOk()
+                .expectBody().jsonPath("$.snoozesLeft").isEqualTo(restants);
+        }
+
+        webTestClient.post().uri("/api/watches/{id}/snooze", watchId)
+            .headers(h -> h.setBearerAuth(moi.token()))
+            .exchange().expectStatus().isEqualTo(409)
+            .expectBody().jsonPath("$.code").isEqualTo("WATCH_SNOOZE_LIMIT");
+
+        assertThat(watch(watchId).getDeadlineAt())
+            .as("trois reports de 30 minutes, et rien après")
+            .isEqualTo(echeanceAvant.plus(90, ChronoUnit.MINUTES));
+        assertThat(watch(watchId).getSnoozeCount()).isEqualTo(3);
+    }
+
     @Test
     void panic_faitPartirLeMessageImmediatement() {
         Compte moi = compte();

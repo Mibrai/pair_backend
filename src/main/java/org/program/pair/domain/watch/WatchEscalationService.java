@@ -546,7 +546,8 @@ public class WatchEscalationService {
             displayName, GivenName.from(displayName),
             watch.getDeadlineAt(), dernierSigne,
             lieuNom, ville, titre,
-            watch.getOccurrenceStartsAt(), heureFin, lien);
+            watch.getOccurrenceStartsAt(), heureFin, lien,
+            watch.getSnoozeCount());
     }
 
     private static String titreActivite(Schedule slot) {

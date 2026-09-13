@@ -203,6 +203,11 @@ public class Watch {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
+    /** Reports déjà faits, plafonnés (P-BL-22). Voir {@code WatchService.snooze}. */
+    @Column(name = "snooze_count", nullable = false)
+    @Builder.Default
+    private int snoozeCount = 0;
+
     public boolean estActive() {
         return state.estActive();
     }

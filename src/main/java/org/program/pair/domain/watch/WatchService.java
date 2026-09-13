@@ -1014,13 +1014,37 @@ public class WatchService {
         Watch watch = exigerVeille(userId, watchId);
         exigerSurPlace(watch);
 
-        watch.setDeadlineAt(watch.getDeadlineAt().plus(Duration.ofMinutes(30)));
+        // P-BL-22 (décision du 13/09) : un report a une fin. Au-delà, l'heure
+        // limite ne recule plus et l'escalade suit son cours.
+        if (reportsRestants(watch) <= 0) {
+            throw new ConflictException(ErrorCode.WATCH_SNOOZE_LIMIT,
+                "L'heure limite a déjà été repoussée autant que possible.");
+        }
+        watch.setSnoozeCount(watch.getSnoozeCount() + 1);
+        watch.setDeadlineAt(watch.getDeadlineAt().plus(PAS_DE_REPORT));
         watch.setRemindersSent(0);
         if (watch.getState() == WatchState.REMINDING) {
             watch.setState(WatchState.ON_SITE);
         }
         inscrire(watchId, WatchEventType.SNOOZED, Instant.now());
         return dto(watch);
+    }
+
+    /** Un report repousse l'heure limite de cette durée. */
+    static final Duration PAS_DE_REPORT = Duration.ofMinutes(30);
+    /** Au plus trois reports… */
+    static final int REPORTS_MAX = 3;
+    /** …et jamais plus de deux heures cumulées. */
+    static final Duration REPORT_CUMULE_MAX = Duration.ofHours(2);
+
+    /**
+     * Combien de reports restent : le plus petit des deux plafonds. Avec un pas de
+     * 30 minutes, c'est le nombre qui mord (1 h 30) ; le cumul protège un pas qui
+     * grandirait.
+     */
+    public static int reportsRestants(Watch watch) {
+        int parCumul = (int) (REPORT_CUMULE_MAX.toMinutes() / PAS_DE_REPORT.toMinutes());
+        return Math.max(0, Math.min(REPORTS_MAX, parCumul) - watch.getSnoozeCount());
     }
 
     /**

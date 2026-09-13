@@ -24,7 +24,8 @@ class AlertMessagesTest {
             "Studio Lumière", "Strasbourg", "Yoga",
             Instant.parse("2026-09-01T18:00:00Z"),
             Instant.parse("2026-09-01T21:00:00Z"),
-            "https://lien.meetdo.fun/public/watch/abc123");
+            "https://lien.meetdo.fun/public/watch/abc123",
+            0);
     }
 
     @Test
@@ -91,5 +92,29 @@ class AlertMessagesTest {
             .contains("https://lien.meetdo.fun/public/watch/abc123")
             .contains("https://lien.meetdo.fun/public/guardian-consent/tok")
             .containsIgnoringCase("ne plus être contacté");
+    }
+
+    /** P-BL-22 : le contact apprend que l'heure limite a été repoussée, et combien de fois. */
+    @Test
+    void leMessageAuContact_doitDireCombienDeFoisCestRepousse() {
+        AlertMessages.Contexte sansReport = contexte();
+        AlertMessages.Contexte reporte = new AlertMessages.Contexte(
+            sansReport.prenomNom(), sansReport.prenom(), sansReport.heureLimite(),
+            sansReport.dernierSigneDeVie(), sansReport.lieuNom(), sansReport.ville(),
+            sansReport.titre(), sansReport.heureDebut(), sansReport.heureFin(),
+            sansReport.lienStatut(), 3);
+
+        assertThat(AlertMessages.alerteRetourSms(reporte)).contains("repoussée 3 fois");
+        assertThat(AlertMessages.alerteRetourEmailHtml(reporte, "https://lien.meetdo.fun/x"))
+            .contains("repoussée 3 fois");
+        assertThat(AlertMessages.alerteRetourSms(sansReport)).doesNotContain("repoussée");
+    }
+
+    @Test
+    void lePlafondDeReports_estLePlusPetitDesDeuxLimites() {
+        Watch veille = Watch.builder().build();
+        assertThat(WatchService.reportsRestants(veille)).isEqualTo(3);
+        veille.setSnoozeCount(3);
+        assertThat(WatchService.reportsRestants(veille)).isZero();
     }
 }

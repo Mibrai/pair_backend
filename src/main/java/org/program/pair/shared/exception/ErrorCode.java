@@ -291,6 +291,9 @@ public enum ErrorCode {
     // Le code a déjà été renvoyé pour ce cycle. Un seul renvoi, pour ne pas faire
     // du renvoi une porte dérobée de contournement du plafond d'essais.
     WATCH_RESEND_ALREADY_USED,
+    // Plus de report possible : trois reports, ou deux heures cumulées (P-BL-22).
+    // L'heure limite ne recule plus, l'escalade suit son cours.
+    WATCH_SNOOZE_LIMIT,
     // Le mot de passe du compte, exigé pour renvoyer le code, est faux.
     WATCH_PASSWORD_REQUIRED,
     // L'arrivée a déjà été déclarée. La personne a touché deux fois : c'est un

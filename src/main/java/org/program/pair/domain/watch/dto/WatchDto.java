@@ -81,7 +81,12 @@ public record WatchDto(
         + "DELIVERED, BOUNCED, FAILED. Porté sur la liste active à dessein : c'est le seul "
         + "endroit qu'un bandeau global peut lire sans relire la veille — et un BOUNCED y est "
         + "la seule information qui dise que le proche n'a pas été joint.")
-    String alertDelivery
+    String alertDelivery,
+
+    @Schema(description = "Reports encore possibles (P-BL-22) : 3 au départ, plafonnés aussi à "
+        + "deux heures cumulées. À 0, le bouton « reporter » se grise — le serveur refuse "
+        + "de toute façon (409 WATCH_SNOOZE_LIMIT).")
+    int snoozesLeft
 ) {
 
     /**
@@ -111,6 +116,7 @@ public record WatchDto(
             url,
             w.getGuardianSeenAt(),
             w.getGuardianCalledAt(),
-            alertDelivery);
+            alertDelivery,
+            org.program.pair.domain.watch.WatchService.reportsRestants(w));
     }
 }
