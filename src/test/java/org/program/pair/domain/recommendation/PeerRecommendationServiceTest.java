@@ -109,7 +109,6 @@ class PeerRecommendationServiceTest {
 
         PeerRecommendation result = recommendationService.createRecommendation(fromId, request);
 
-        assertThat(result.getRating()).isNull();
         assertThat(result.getComment()).isNull();
         assertThat(result.getInteractionProofType()).isEqualTo(InteractionProofType.CONVERSATION);
     }

@@ -70,9 +70,6 @@ public class PeerRecommendation {
     @Column(length = 500)
     private String comment;
 
-    @Column
-    private Integer rating; // 1-5, facultatif
-
     @Column(name = "activity_context")
     private UUID activityContext;
 

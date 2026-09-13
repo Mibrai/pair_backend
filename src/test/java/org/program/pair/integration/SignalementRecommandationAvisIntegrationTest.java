@@ -208,9 +208,11 @@ class SignalementRecommandationAvisIntegrationTest extends AbstractIntegrationTe
             .expectStatus().isCreated()
             .expectBody().jsonPath("$.rating").doesNotExist();
 
+        // La colonne elle-même n'existe plus (V121) : aucune note ne peut être écrite.
         assertThat(jdbcTemplate.queryForObject(
-            "SELECT rating FROM peer_recommendations WHERE recommender_id = ? AND recommended_id = ?",
-            Integer.class, d.userA, d.userB)).isNull();
+            "SELECT count(*) FROM information_schema.columns "
+                + "WHERE table_name = 'peer_recommendations' AND column_name = 'rating'",
+            Long.class)).isZero();
 
         webTestClient.get()
             .uri("/api/recommendations/stats/{userId}", d.userB)
