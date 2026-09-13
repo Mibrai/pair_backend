@@ -13,6 +13,30 @@ import java.util.UUID;
 
 public interface AuthTokenRepository extends JpaRepository<AuthToken, UUID> {
 
+    /**
+     * Retrouve un jeton par l'<b>empreinte</b> de la valeur présentée.
+     *
+     * <p>C'est la seule recherche du chemin critique depuis P-BS-09 : la base ne
+     * garde plus de valeur comparable à ce que porte le lien, et une lecture de
+     * la table ne rend plus aucun lien utilisable.
+     *
+     * <p>L'appelant condense par {@link AuthToken#empreinte(String)}. Le
+     * rattrapage de V112 a calculé la même empreinte pour toutes les lignes
+     * existantes, y compris les jetons déjà envoyés : c'est ce qui fait qu'aucun
+     * lien en circulation ne cesse de fonctionner au déploiement.
+     */
+    Optional<AuthToken> findByTokenHashAndType(String tokenHash, AuthTokenType type);
+
+    /**
+     * La recherche par valeur en clair, <b>conservée jusqu'au Lot 4 et par aucun
+     * chemin de production</b>.
+     *
+     * <p>Elle ne sert plus qu'aux tests qui se donnent le jeton qu'ils viennent
+     * d'émettre. Aucun appelant applicatif ne doit la reprendre : la remettre
+     * dans un chemin de production rouvrirait exactement ce que P-BS-09 ferme —
+     * une valeur de la table suffirait à nouveau à prendre un compte. Elle
+     * disparaît avec la colonne, au Lot 4.
+     */
     Optional<AuthToken> findByTokenAndType(String token, AuthTokenType type);
 
     /**

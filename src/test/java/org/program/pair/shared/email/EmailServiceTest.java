@@ -9,6 +9,7 @@ import org.program.pair.domain.outbox.OutboxService;
 import org.program.pair.repository.UserRepository;
 import org.program.pair.shared.i18n.Messages;
 import org.springframework.context.support.ReloadableResourceBundleMessageSource;
+import org.springframework.mock.env.MockEnvironment;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.nio.charset.StandardCharsets;
@@ -50,12 +51,16 @@ class EmailServiceTest {
     private EmailService service() {
         GabaritEmail gabarit = new GabaritEmail();
         ReflectionTestUtils.setField(gabarit, "publicBaseUrl", "https://lien.meetdo.fun");
+        // Un environnement sans profil actif : la garde de démarrage
+        // (exigerUnFournisseurEnProduction) ne s'applique qu'aux profils de
+        // production, et ces tests ne portent que sur la composition des textes.
         return new EmailService(
             mock(ResendEmailService.class),
             mock(UserRepository.class),
             mock(OutboxService.class),
             messages(),
-            gabarit);
+            gabarit,
+            new MockEnvironment());
     }
 
     private static Map<String, Object> charge(String... changedFields) {
