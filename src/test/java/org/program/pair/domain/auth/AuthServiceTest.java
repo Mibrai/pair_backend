@@ -60,7 +60,7 @@ class AuthServiceTest {
         when(userRepository.existsByEmail(any())).thenReturn(false);
         when(passwordEncoder.encode("Password123!")).thenReturn("$2a$hashed");
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        when(tokenProvider.generateAccessToken(any(), any())).thenReturn("access");
+        when(tokenProvider.generateAccessToken(any())).thenReturn("access");
         when(tokenProvider.generateRefreshToken(any())).thenReturn("refresh");
 
         authService.register(new RegisterRequest(

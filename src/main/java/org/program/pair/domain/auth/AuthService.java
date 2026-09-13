@@ -197,7 +197,7 @@ public class AuthService {
      */
     private AuthResponse buildAuthResponse(User user) {
         return new AuthResponse(
-            tokenProvider.generateAccessToken(user.getId(), user.getEmail()),
+            tokenProvider.generateAccessToken(user.getId()),
             tokenProvider.generateRefreshToken(user.getId()),
             user.getId(),
             user.getDisplayName(),

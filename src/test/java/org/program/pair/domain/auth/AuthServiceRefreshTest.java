@@ -63,7 +63,7 @@ class AuthServiceRefreshTest {
         doReturn(true).when(tokenProvider).estJetonDeRafraichissement(presente);
         doReturn(user.getId()).when(tokenProvider).extractUserId(presente);
         doReturn(Optional.of(user)).when(userRepository).findById(user.getId());
-        doReturn("acces-neuf").when(tokenProvider).generateAccessToken(user.getId(), user.getEmail());
+        doReturn("acces-neuf").when(tokenProvider).generateAccessToken(user.getId());
         doReturn("rafraichissement-neuf").when(tokenProvider).generateRefreshToken(user.getId());
         doReturn(900L).when(tokenProvider).accessTokenExpirySeconds();
         doReturn(2_592_000L).when(tokenProvider).refreshTokenExpirySeconds();
@@ -98,7 +98,7 @@ class AuthServiceRefreshTest {
         // Aucun jeton n'est émis, et le compte n'est même pas chargé : le refus
         // tombe avant toute lecture de base.
         verify(userRepository, never()).findById(any());
-        verify(tokenProvider, never()).generateAccessToken(any(), any());
+        verify(tokenProvider, never()).generateAccessToken(any());
     }
 
     /** Signature fausse ou échéance passée : le refus qui existait déjà, tenu. */

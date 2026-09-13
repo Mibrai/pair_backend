@@ -45,7 +45,7 @@ class JwtTokenProviderTypeTest {
     void unJetonDAcces_nEstPasUnJetonDeRafraichissement() {
         JwtTokenProvider provider = provider(ACCES_MS, RAFRAICHISSEMENT_MS);
 
-        String acces = provider.generateAccessToken(UUID.randomUUID(), "a@b.c");
+        String acces = provider.generateAccessToken(UUID.randomUUID());
 
         assertThat(claims(acces).get("type")).isNull();
         assertThat(provider.estJetonDeRafraichissement(acces)).isFalse();
@@ -72,7 +72,7 @@ class JwtTokenProviderTypeTest {
     void unJetonPerime_estExpireEtNonInvalide() {
         JwtTokenProvider provider = provider(-1_000L, -1_000L);
 
-        String perime = provider.generateAccessToken(UUID.randomUUID(), "a@b.c");
+        String perime = provider.generateAccessToken(UUID.randomUUID());
 
         assertThat(provider.etatDe(perime)).isEqualTo(EtatJeton.EXPIRE);
         assertThat(provider.validateToken(perime)).isFalse();
