@@ -33,7 +33,7 @@ public class ProgramMedia {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "media_type", nullable = false, length = 10)
-    private MediaType mediaType;
+    private ProgramMediaType mediaType;
 
     @Column(name = "sort_order", nullable = false)
     @Builder.Default

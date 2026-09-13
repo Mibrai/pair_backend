@@ -78,6 +78,33 @@ class OpenApiContractIntegrationTest extends AbstractIntegrationTest {
             .path("201").toString()).contains("#/components/schemas/ReportDto");
     }
 
+    /**
+     * P-BA-17 — les deux visibilités ont chacune leur schéma, et le bon champ.
+     * Sous un même nom {@code VisibilityRequest}, la spec annonçait {@code visible}
+     * pour la carte-souvenir, qui lit {@code visibility}.
+     */
+    @Test
+    void apiDocs_laVisibiliteDUneCarteSouvenir_sePublieAvecLeChampVisibility() throws Exception {
+        JsonNode docs = fetchApiDocs();
+
+        assertThat(docs.path("paths").path("/api/slots/{scheduleId}/recap/visibility").path("patch")
+            .path("requestBody").toString()).contains("#/components/schemas/RecapVisibilityRequest");
+        assertThat(docs.path("components").path("schemas").path("RecapVisibilityRequest")
+            .path("properties").has("visibility")).isTrue();
+    }
+
+    @Test
+    void apiDocs_laVisibiliteDUneActivite_sePublieAvecLeChampVisible() throws Exception {
+        JsonNode docs = fetchApiDocs();
+
+        assertThat(docs.path("paths").path("/api/users/me/activities/{userActivityId}/visibility")
+            .path("patch").path("requestBody").toString())
+            .contains("#/components/schemas/ActivityVisibilityRequest");
+        assertThat(docs.path("components").path("schemas").path("ActivityVisibilityRequest")
+            .path("properties").has("visible")).isTrue();
+        assertThat(docs.path("components").path("schemas").has("VisibilityRequest")).isFalse();
+    }
+
     private JsonNode fetchApiDocs() throws Exception {
         byte[] raw = webTestClient.get()
             .uri("/v3/api-docs")

@@ -553,7 +553,7 @@ public class SemanticSearchService {
             String thumbnailUrl = p.getImageUrl() != null
                 ? p.getImageUrl()
                 : p.getMedia().stream()
-                    .filter(m -> m.getMediaType() == org.program.pair.domain.program.MediaType.IMAGE)
+                    .filter(m -> m.getMediaType() == org.program.pair.domain.program.ProgramMediaType.IMAGE)
                     .min(java.util.Comparator.comparingInt(
                         org.program.pair.domain.program.ProgramMedia::getSortOrder))
                     .map(org.program.pair.domain.program.ProgramMedia::getUrl)

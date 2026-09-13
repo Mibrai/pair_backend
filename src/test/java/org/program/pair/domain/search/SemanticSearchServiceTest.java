@@ -5,7 +5,7 @@ import org.program.pair.domain.activity.Activity;
 import org.program.pair.domain.activity.Category;
 import org.program.pair.domain.activity.UserActivity;
 import org.program.pair.domain.program.LocationType;
-import org.program.pair.domain.program.MediaType;
+import org.program.pair.domain.program.ProgramMediaType;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.ProgramMedia;
 import org.program.pair.domain.program.Schedule;
@@ -56,7 +56,7 @@ class SemanticSearchServiceTest {
     void thumbnailUrl_devraitPrivilegierImageUrl_memeAvecMediaPresent() {
         ProgramMedia media = ProgramMedia.builder()
             .url("https://example.com/gallery-0.png")
-            .mediaType(MediaType.IMAGE)
+            .mediaType(ProgramMediaType.IMAGE)
             .sortOrder(0)
             .build();
         Program program = programWithImageAndMedia("https://example.com/cover.png", List.of(media));
@@ -70,7 +70,7 @@ class SemanticSearchServiceTest {
     void thumbnailUrl_devraitReplierSurPremierMedia_quandPasDImageUrl() {
         ProgramMedia media = ProgramMedia.builder()
             .url("https://example.com/gallery-0.png")
-            .mediaType(MediaType.IMAGE)
+            .mediaType(ProgramMediaType.IMAGE)
             .sortOrder(0)
             .build();
         Program program = programWithImageAndMedia(null, List.of(media));

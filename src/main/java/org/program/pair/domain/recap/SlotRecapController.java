@@ -106,7 +106,7 @@ public class SlotRecapController {
     public SlotRecapDto visibility(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID scheduleId,
-            @Valid @RequestBody RecapRequests.VisibilityRequest request) {
+            @Valid @RequestBody RecapRequests.RecapVisibilityRequest request) {
         return recapService.setVisibility(principal.getId(), scheduleId, request.visibility());
     }
 }
