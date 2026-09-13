@@ -43,7 +43,10 @@ public class PeerRecommendationService {
 
         // Validation 1: No self-recommendation
         if (recommenderId.equals(recommendedId)) {
-            throw new BusinessException("Vous ne pouvez pas vous recommander vous-même");
+            // Code générique gardé : l'app publiée lit BUSINESS_RULE_VIOLATION sur
+            // cette route comme « pas encore le droit ». La clé traduit (P-BA-11).
+            throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION, "RECOMMENDATION_SELF",
+                "Vous ne pouvez pas vous recommander vous-même");
         }
 
         // Validation 2: Check if already recommended
@@ -59,7 +62,8 @@ public class PeerRecommendationService {
         } else if (attendanceRepository.existsSharedPresence(recommenderId, recommendedId)) {
             proofType = InteractionProofType.SHARED_ATTENDANCE;
         } else {
-            throw new BusinessException("Vous devez avoir échangé des messages ou partagé une présence confirmée avec cet utilisateur avant de pouvoir le recommander");
+            throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION, "RECOMMENDATION_NO_INTERACTION",
+                "Vous devez avoir échangé des messages ou partagé une présence confirmée avec cet utilisateur avant de pouvoir le recommander");
         }
 
         // Create recommendation

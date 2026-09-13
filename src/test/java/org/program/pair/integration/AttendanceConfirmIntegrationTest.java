@@ -93,6 +93,49 @@ class AttendanceConfirmIntegrationTest extends AbstractIntegrationTest {
         assertThat(refreshed.getDistinctPartnersCount()).isEqualTo(0);
     }
 
+    /**
+     * P-BA-11 — un refus garde le code que l'app publiée lit, et parle la langue du
+     * client : une présence déjà confirmée, en allemand puis en anglais.
+     */
+    @Test
+    void unRefusDePresenceDejaConfirmee_arriveDansLaLangueDuClient() {
+        String hostEmail = uniqueEmail("confirm-langue");
+        String token = registerAndLogin(hostEmail);
+        User host = userRepository.findByEmail(hostEmail).orElseThrow();
+        Activity yoga = activityRepository.findBySlug("yoga").orElseThrow();
+        UserActivity userActivity = userActivityRepository.save(
+            UserActivity.builder().user(host).activity(yoga).build());
+        Program program = programRepository.save(Program.builder()
+            .userActivity(userActivity).title("Présence traduite " + java.util.UUID.randomUUID())
+            .status(ProgramStatus.ACTIVE).isPublic(true).build());
+        Schedule schedule = scheduleRepository.save(Schedule.builder()
+            .program(program).placeName("Studio").placeType(PlaceType.PUBLIC)
+            .addressPublic("1 rue du Test")
+            .location(geometryFactory.createPoint(new Coordinate(2.35, 48.85)))
+            .startsAt(Instant.now().minus(3, ChronoUnit.HOURS))
+            .endsAt(Instant.now().minus(2, ChronoUnit.HOURS))
+            .status(SlotStatus.PAST).isOpenToPartners(true).build());
+
+        webTestClient.post().uri("/api/attendances/{id}/confirm", schedule.getId())
+            .headers(h -> h.setBearerAuth(token))
+            .contentType(MediaType.APPLICATION_JSON).bodyValue("{\"wasPresent\":true}")
+            .exchange().expectStatus().isOk();
+
+        for (String[] cas : new String[][] {{"de", "Teilnahme bereits bestätigt."},
+                                            {"en", "Attendance already confirmed."}}) {
+            webTestClient.post().uri("/api/attendances/{id}/confirm", schedule.getId())
+                .headers(h -> {
+                    h.setBearerAuth(token);
+                    h.set("Accept-Language", cas[0]);
+                })
+                .contentType(MediaType.APPLICATION_JSON).bodyValue("{\"wasPresent\":true}")
+                .exchange().expectStatus().is4xxClientError()
+                .expectBody()
+                .jsonPath("$.code").isEqualTo("BUSINESS_RULE_VIOLATION")
+                .jsonPath("$.message").isEqualTo(cas[1]);
+        }
+    }
+
     @Test
     void confirmerSaPresenceSansWasPresent_doitRendre400() {
         // P-BS-15 : @NotNull était posé sur le DTO mais inerte, faute de @Valid. Le
