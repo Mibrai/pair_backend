@@ -1,13 +1,23 @@
 package org.program.pair;
 
 import com.tngtech.archunit.base.DescribedPredicate;
+import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaConstructorCall;
+import com.tngtech.archunit.core.domain.JavaMethod;
+import com.tngtech.archunit.core.domain.JavaParameterizedType;
+import com.tngtech.archunit.core.domain.JavaType;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.junit.CacheMode;
+import com.tngtech.archunit.lang.ArchCondition;
 import com.tngtech.archunit.lang.ArchRule;
+import com.tngtech.archunit.lang.ConditionEvents;
+import com.tngtech.archunit.lang.SimpleConditionEvent;
+import jakarta.persistence.Entity;
+import org.springframework.web.bind.annotation.RestController;
 
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.methods;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 
 /**
@@ -140,4 +150,52 @@ class ArchitectureTest {
                 + "ConflictException (409), ValidationException (400) ou BusinessException (422) "
                 + "avec un ErrorCode nommé et sa clé error.* dans les trois bundles. Les quatre "
                 + "classes exemptées lèvent sur un état réellement interne, où 500 est juste");
+
+    /**
+     * Une entité JPA ne sert jamais de corps de réponse (P-BA-12).
+     *
+     * <p>{@code ReportController} rendait l'entité {@code Report} — directement,
+     * et dans une {@code Page} — alors qu'elle portait les notes internes de
+     * modération et l'identité du modérateur. Une entité rendue telle quelle
+     * publie tout champ ajouté à sa table, sans que personne l'ait décidé, et
+     * déclenche les chargements paresseux au moment de la sérialisation.
+     *
+     * <p>Le type de retour est parcouru avec ses paramètres génériques :
+     * {@code ResponseEntity<Page<Report>>} doit être vu comme {@code Report}.
+     */
+    @ArchTest
+    static final ArchRule unControleur_neDoitJamaisRendreUneEntite =
+        methods()
+            .that().areDeclaredInClassesThat().areAnnotatedWith(RestController.class)
+            .and().arePublic()
+            .should(new ArchCondition<JavaMethod>("ne pas rendre d'entité JPA") {
+                @Override
+                public void check(JavaMethod methode, ConditionEvents events) {
+                    JavaClass entite = entiteDans(methode.getReturnType());
+                    if (entite != null) {
+                        events.add(SimpleConditionEvent.violated(methode,
+                            methode.getFullName() + " rend l'entité " + entite.getSimpleName()));
+                    }
+                }
+            })
+            .because("une entité rendue telle quelle publie chaque champ de sa table — notes de "
+                + "modération comprises dans le cas de Report — et charge ses associations "
+                + "paresseuses à la sérialisation ; rendre un DTO dont la liste de champs est "
+                + "une décision");
+
+    /** La première entité trouvée dans un type, paramètres génériques compris. */
+    private static JavaClass entiteDans(JavaType type) {
+        if (type.toErasure().isAnnotatedWith(Entity.class)) {
+            return type.toErasure();
+        }
+        if (type instanceof JavaParameterizedType parametre) {
+            for (JavaType argument : parametre.getActualTypeArguments()) {
+                JavaClass trouvee = entiteDans(argument);
+                if (trouvee != null) {
+                    return trouvee;
+                }
+            }
+        }
+        return null;
+    }
 }

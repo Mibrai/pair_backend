@@ -140,6 +140,32 @@ class MesSignalementsFormeIntegrationTest extends AbstractIntegrationTest {
             .isEqualTo("DISMISSED");
     }
 
+    /**
+     * P-BA-12 — la création rendait l'entité {@code Report} elle-même. Sa forme
+     * est désormais fermée : les champs écrits par l'auteur, le statut posé par
+     * le serveur, et rien de la modération.
+     */
+    @Test
+    void creerUnSignalement_rendLaFormeFermee_sansNiNotesNiModerateur() {
+        Compte auteur = compte();
+
+        Map<?, ?> corps = webTestClient.post().uri("/api/reports")
+            .headers(h -> h.setBearerAuth(auteur.token()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of(
+                "reportedEntityType", "USER",
+                "reportedEntityId", compte().id().toString(),
+                "reason", "OTHER",
+                "description", "Description assez longue pour passer la validation."))
+            .exchange().expectStatus().isCreated()
+            .expectBody(Map.class).returnResult().getResponseBody();
+
+        assertThat(corps).isNotNull();
+        assertThat(corps.keySet().stream().map(String::valueOf).toList()).containsExactlyInAnyOrder(
+            "id", "reportedEntityType", "reportedEntityId", "reason", "status", "createdAt");
+        assertThat(corps.get("status")).isEqualTo("PENDING");
+    }
+
     /** L'état que la route sert après avoir placé ce signalement dans ce statut. */
     private String etatServiApres(Compte auteur, UUID signalementId, ReportStatus status) {
         Report signalement = reportRepository.findById(signalementId).orElseThrow();

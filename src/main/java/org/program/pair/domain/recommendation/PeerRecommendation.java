@@ -3,7 +3,9 @@ package org.program.pair.domain.recommendation;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
@@ -27,13 +29,16 @@ import java.util.UUID;
         @Index(name = "idx_peer_rec_from", columnList = "recommender_id")
     }
 )
-@Data
+@Getter
+@Setter
+@ToString(onlyExplicitlyIncluded = true)
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class PeerRecommendation {
 
     @Id
+    @ToString.Include
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
@@ -89,4 +94,19 @@ public class PeerRecommendation {
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt;
+
+    /**
+     * Identité seule, et stable avant comme après {@code persist} (P-BA-12).
+     * L'{@code equals} de {@code @Data} comparait tous les champs, associations
+     * paresseuses comprises : une comparaison pouvait charger la base, ou boucler.
+     */
+    @Override
+    public boolean equals(Object o) {
+        return this == o || (o instanceof PeerRecommendation autre && id != null && id.equals(autre.id));
+    }
+
+    @Override
+    public int hashCode() {
+        return PeerRecommendation.class.hashCode();
+    }
 }

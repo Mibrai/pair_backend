@@ -3,7 +3,9 @@ package org.program.pair.domain.review;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.CreationTimestamp;
 import org.program.pair.domain.program.Program;
@@ -21,13 +23,16 @@ import java.util.UUID;
         columnNames = {"program_id", "reviewer_id"}
     )
 )
-@Data
+@Getter
+@Setter
+@ToString(onlyExplicitlyIncluded = true)
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
 public class Review {
 
     @Id
+    @ToString.Include
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
@@ -63,4 +68,19 @@ public class Review {
     @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
+
+    /**
+     * Identité seule, et stable avant comme après {@code persist} (P-BA-12).
+     * L'{@code equals} de {@code @Data} comparait tous les champs, associations
+     * paresseuses comprises : une comparaison pouvait charger la base, ou boucler.
+     */
+    @Override
+    public boolean equals(Object o) {
+        return this == o || (o instanceof Review autre && id != null && id.equals(autre.id));
+    }
+
+    @Override
+    public int hashCode() {
+        return Review.class.hashCode();
+    }
 }
