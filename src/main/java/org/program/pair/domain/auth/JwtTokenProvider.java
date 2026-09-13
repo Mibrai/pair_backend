@@ -1,13 +1,18 @@
 package org.program.pair.domain.auth;
 
+import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.config.Profils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
@@ -15,6 +20,7 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.security.SecureRandom;
 import java.util.Date;
+import java.util.Set;
 import java.util.UUID;
 
 @Component
@@ -35,6 +41,14 @@ public class JwtTokenProvider {
     private static final String CLAIM_TYPE = "type";
     private static final String TYPE_RAFRAICHISSEMENT = "refresh";
 
+    /**
+     * Qui émet le jeton, et pour qui (P-BS-07). Sans eux, un jeton signé par
+     * la même clé pour un autre usage — un autre service, un outil interne —
+     * vaudrait jeton d'accès ici.
+     */
+    static final String EMETTEUR = "meetdo-api";
+    static final String AUDIENCE = "meetdo-mobile";
+
     @Value("${jwt.secret:}")
     private String jwtSecret;
 
@@ -44,13 +58,36 @@ public class JwtTokenProvider {
     @Value("${jwt.refresh-token-expiry-ms:2592000000}")
     private long refreshTokenExpiryMs;
 
+    /**
+     * Exiger l'émetteur et l'audience, ou seulement refuser ceux qui sont faux.
+     * Voir {@code pair.jwt.exiger-emetteur} dans {@code application.properties}
+     * pour la date de bascule et la preuve qui l'autorise.
+     */
+    @Value("${pair.jwt.exiger-emetteur:false}")
+    private boolean exigerEmetteur;
+
     private final Environment environment;
+
+    /**
+     * Les jetons encore acceptés sans émetteur. C'est la preuve de la bascule :
+     * tant qu'il monte, des jetons émis avant ce déploiement circulent encore.
+     */
+    private final Counter jetonsSansEmetteur;
 
     /** La clé de signature, résolue une fois au démarrage — voir {@link #resoudreCle()}. */
     private SecretKey signingKey;
 
-    public JwtTokenProvider(Environment environment) {
+    @Autowired
+    public JwtTokenProvider(Environment environment, MeterRegistry registre) {
         this.environment = environment;
+        this.jetonsSansEmetteur = Counter.builder("auth.jwt.sans_emetteur")
+            .description("Jetons acceptés sans émetteur ni audience, pendant la tolérance de P-BS-07")
+            .register(registre);
+    }
+
+    /** Hors Spring (tests unitaires) : un registre local, que personne ne lit. */
+    public JwtTokenProvider(Environment environment) {
+        this(environment, new SimpleMeterRegistry());
     }
 
     /**
@@ -101,10 +138,16 @@ public class JwtTokenProvider {
             + "Acceptable en développement, jamais en déploiement.");
     }
 
-    public String generateAccessToken(UUID userId, String email) {
+    /**
+     * Le jeton d'accès. <b>Plus d'adresse e-mail dedans</b> (P-BS-07) : personne
+     * ne la lisait, ni le serveur ni l'app, et une charge JWT se décode sans clé —
+     * l'adresse partait en clair dans chaque journal qui garde un en-tête.
+     */
+    public String generateAccessToken(UUID userId) {
         return Jwts.builder()
             .subject(userId.toString())
-            .claim("email", email)
+            .issuer(EMETTEUR)
+            .audience().add(AUDIENCE).and()
             .issuedAt(new Date())
             .expiration(new Date(System.currentTimeMillis() + accessTokenExpiryMs))
             .signWith(getSigningKey())
@@ -115,6 +158,8 @@ public class JwtTokenProvider {
         return Jwts.builder()
             .subject(userId.toString())
             .claim(CLAIM_TYPE, TYPE_RAFRAICHISSEMENT)
+            .issuer(EMETTEUR)
+            .audience().add(AUDIENCE).and()
             .issuedAt(new Date())
             .expiration(new Date(System.currentTimeMillis() + refreshTokenExpiryMs))
             .signWith(getSigningKey())
@@ -122,10 +167,37 @@ public class JwtTokenProvider {
     }
 
     public UUID extractUserId(String token) {
-        return UUID.fromString(
-            Jwts.parser().verifyWith(getSigningKey()).build()
-                .parseSignedClaims(token).getPayload().getSubject()
-        );
+        return UUID.fromString(lire(token).getSubject());
+    }
+
+    /**
+     * Signature, échéance, puis émetteur et audience — la seule lecture d'un jeton.
+     *
+     * <p><b>Tolérante tant que {@link #exigerEmetteur} est faux.</b> Un émetteur
+     * ou une audience <i>présents</i> doivent valoir les nôtres, sinon le jeton
+     * est refusé. <i>Absents</i>, ils sont acceptés et comptés : les jetons émis
+     * avant ce déploiement n'en portent pas — trente jours pour un jeton de
+     * rafraîchissement — et les refuser d'emblée déconnecterait tout le monde.
+     */
+    private Claims lire(String token) {
+        Claims claims = Jwts.parser().verifyWith(getSigningKey()).build()
+            .parseSignedClaims(token).getPayload();
+
+        String emetteur = claims.getIssuer();
+        Set<String> audience = claims.getAudience();
+        boolean emetteurAbsent = emetteur == null;
+        boolean audienceAbsente = audience == null || audience.isEmpty();
+
+        if (emetteurAbsent ? exigerEmetteur : !EMETTEUR.equals(emetteur)) {
+            throw new JwtException("Émetteur du jeton refusé.");
+        }
+        if (audienceAbsente ? exigerEmetteur : !audience.contains(AUDIENCE)) {
+            throw new JwtException("Audience du jeton refusée.");
+        }
+        if (emetteurAbsent || audienceAbsente) {
+            jetonsSansEmetteur.increment();
+        }
+        return claims;
     }
 
     /**
@@ -149,7 +221,7 @@ public class JwtTokenProvider {
      */
     public EtatJeton etatDe(String token) {
         try {
-            Jwts.parser().verifyWith(getSigningKey()).build().parseSignedClaims(token);
+            lire(token);
             return EtatJeton.VALIDE;
         } catch (ExpiredJwtException e) {
             return EtatJeton.EXPIRE;
@@ -196,8 +268,7 @@ public class JwtTokenProvider {
      */
     public boolean estJetonDeRafraichissement(String token) {
         try {
-            String type = Jwts.parser().verifyWith(getSigningKey()).build()
-                .parseSignedClaims(token).getPayload().get(CLAIM_TYPE, String.class);
+            String type = lire(token).get(CLAIM_TYPE, String.class);
             return TYPE_RAFRAICHISSEMENT.equals(type);
         } catch (JwtException | IllegalArgumentException e) {
             return false;

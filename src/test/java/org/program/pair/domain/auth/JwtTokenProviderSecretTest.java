@@ -52,7 +52,7 @@ class JwtTokenProviderSecretTest {
     void sansCleEnDeveloppement_uneCleEphemereEstTiree() {
         assertThatCode(() -> {
             JwtTokenProvider p = provider("", "dev");
-            String token = p.generateAccessToken(UUID.randomUUID(), "a@b.c");
+            String token = p.generateAccessToken(UUID.randomUUID());
             assertThat(p.validateToken(token)).isTrue();
         }).doesNotThrowAnyException();
     }
@@ -67,7 +67,7 @@ class JwtTokenProviderSecretTest {
         JwtTokenProvider premier = provider("", "dev");
         JwtTokenProvider second = provider("", "dev");
 
-        String token = premier.generateAccessToken(UUID.randomUUID(), "a@b.c");
+        String token = premier.generateAccessToken(UUID.randomUUID());
         assertThat(second.validateToken(token)).isFalse();
     }
 
@@ -99,7 +99,7 @@ class JwtTokenProviderSecretTest {
         JwtTokenProvider serveur = provider(CLE_FIXE, "prod");
         UUID userId = UUID.randomUUID();
 
-        String token = serveur.generateAccessToken(userId, "a@b.c");
+        String token = serveur.generateAccessToken(userId);
         assertThat(serveur.validateToken(token)).isTrue();
         assertThat(serveur.extractUserId(token)).isEqualTo(userId);
     }
