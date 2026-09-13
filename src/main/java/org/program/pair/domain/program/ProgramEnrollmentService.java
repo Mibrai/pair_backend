@@ -114,7 +114,7 @@ public class ProgramEnrollmentService {
             // doublon, et il répondait PROGRAM_SCHEDULE_FULL là où l'autre porte
             // répond SLOT_FULL pour le même refus. Voir assertHasRoom, appelée
             // juste après, à la place que la vérification occupait.
-            entryGuard.assertMayEnter(userId, schedule, Instant.now(), SlotEntryGuard.Door.PROGRAM);
+            entryGuard.assertMayEnter(userId, schedule, Instant.now());
             entryGuard.assertHasRoom(schedule);
         }
 

@@ -137,14 +137,12 @@ class SlotServiceTest {
 
         doThrow(new ValidationException(ErrorCode.SLOT_NOT_ACCEPTING_PARTICIPANTS,
                 "refus posé par le test, pas par la règle"))
-            .when(entryGuard).assertMayEnter(eq(joinerId), eq(slot), any(Instant.class),
-                eq(SlotEntryGuard.Door.SLOT));
+            .when(entryGuard).assertMayEnter(eq(joinerId), eq(slot), any(Instant.class));
 
         assertThatThrownBy(() -> slotService.joinSlot(joinerId, slot.getId(), new JoinSlotRequest(null)))
             .isInstanceOf(ValidationException.class);
 
-        verify(entryGuard).assertMayEnter(eq(joinerId), eq(slot), any(Instant.class),
-            eq(SlotEntryGuard.Door.SLOT));
+        verify(entryGuard).assertMayEnter(eq(joinerId), eq(slot), any(Instant.class));
         verifyNoInteractions(participationRepository, chatService, notificationService);
     }
 

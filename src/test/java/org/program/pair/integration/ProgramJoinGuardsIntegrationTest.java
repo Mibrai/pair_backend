@@ -129,22 +129,14 @@ class ProgramJoinGuardsIntegrationTest extends AbstractIntegrationTest {
             .isEqualTo(ErrorCode.SLOT_NOT_ACCEPTING_PARTICIPANTS);
     }
 
-    @Test
-    void uneSeanceFermeeAuxPartenaires_doitEtreRefusee_parLaPorteCreneau() {
-        // La seule différence assumée entre les deux portes, et elle attend une
-        // décision produit : isOpenToPartners=false sert peut-être à des
-        // inscriptions « programme » légitimes — un créneau réservé aux inscrits
-        // du programme. Tant que la question n'est pas tranchée, la porte
-        // programme reste comme elle était. Voir le TODO de SlotEntryGuard.
+    /** P-BL-09, décision produit du 13/09 : plus aucune différence entre les deux portes. */
+    @ParameterizedTest
+    @EnumSource(Porte.class)
+    void uneSeanceFermeeAuxPartenaires_doitEtreRefusee_parLesDeuxPortes(Porte porte) {
         Fixture f = creneau(SlotStatus.OPEN, Instant.now().plus(Duration.ofDays(2)), false);
 
-        assertThat(codeDuRefus(Porte.CRENEAU, f))
+        assertThat(codeDuRefus(porte, f))
             .isEqualTo(ErrorCode.SLOT_NOT_OPEN_TO_PARTNERS);
-
-        assertThat(enrollmentService.joinProgram(f.candidateId, f.programId, f.slotId))
-            .as("l'état actuel, documenté plutôt que figé : ce test change le jour "
-                + "où le produit répond")
-            .isNotNull();
     }
 
     // — fixtures —

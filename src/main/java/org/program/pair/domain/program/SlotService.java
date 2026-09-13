@@ -331,7 +331,7 @@ public class SlotService {
         // seule fois pour les deux portes d'entrée. Ce bloc vivait ici et nulle
         // part ailleurs, alors que POST /programs/{id}/join ouvre la même
         // séance : voir SlotEntryGuard.
-        entryGuard.assertMayEnter(userId, slot, Instant.now(), SlotEntryGuard.Door.SLOT);
+        entryGuard.assertMayEnter(userId, slot, Instant.now());
 
         // Sur l'ÉTAT de la participation, jamais sur l'existence de sa ligne.
         //

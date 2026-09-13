@@ -42,19 +42,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class SlotEntryGuard {
 
-    /**
-     * Par quelle porte on entre. Une seule chose en dépend aujourd'hui —
-     * {@code isOpenToPartners}, voir {@link #assertMayEnter} — et c'est
-     * précisément pour que cette différence soit nommée quelque part plutôt que
-     * de vivre dans l'absence d'un contrôle.
-     */
-    public enum Door {
-        /** {@code POST /api/slots/{id}/join}. */
-        SLOT,
-        /** {@code POST /api/programs/{id}/join} avec un {@code scheduleId}. */
-        PROGRAM
-    }
-
     private final BlockFilterService blockFilterService;
     private final ScheduleRepository scheduleRepository;
 
@@ -62,24 +49,20 @@ public class SlotEntryGuard {
      * Peut-on entrer sur ce créneau ? Lève le premier refus applicable.
      *
      * <p>Dans l'ordre : blocage (ses deux formes), son propre créneau,
-     * l'ouverture aux partenaires (porte créneau seulement, voir plus bas), le
-     * statut, la séance commencée. <b>La capacité n'en fait pas partie</b> :
+     * l'ouverture aux partenaires, le statut, la séance commencée. <b>La capacité n'en fait pas partie</b> :
      * elle est vérifiée par {@link #assertHasRoom}, plus tard, et la raison est
      * dans sa javadoc.
      *
-     * <p><b>{@code isOpenToPartners} n'est vérifié que sur la porte créneau, et
-     * c'est délibérément l'état actuel plutôt qu'une décision.</b> Le drapeau
-     * sert peut-être à des inscriptions « programme » légitimes — un créneau
-     * réservé aux inscrits du programme, fermé aux passants du fil. Durcir la
-     * porte programme fermerait alors un usage voulu, et le laisser ouvert
-     * laisse un contournement possible : les deux erreurs coûtent, et aucune ne
-     * se répare par la lecture du code. La question est posée au produit
-     * (P-BL-09) et le contrôle reste où il était en attendant.
+     * <p><b>{@code isOpenToPartners} vaut pour les deux portes</b> (P-BL-09,
+     * décision produit du 13/09). La porte programme ne l'appliquait pas, au cas
+     * où le drapeau aurait servi à réserver un créneau aux inscrits du
+     * programme : ce n'est pas son usage. Un créneau fermé aux partenaires ne
+     * s'ouvre donc plus par l'autre chemin.
      *
      * @param now l'instant de référence, passé plutôt que lu ici pour que la
      *            décision et la transaction qui l'entoure parlent du même moment
      */
-    public void assertMayEnter(UUID userId, Schedule slot, Instant now, Door door) {
+    public void assertMayEnter(UUID userId, Schedule slot, Instant now) {
         User host = slot.getProgram().getUserActivity().getUser();
 
         assertNotBlocked(userId, host.getId());
@@ -89,14 +72,7 @@ public class SlotEntryGuard {
                 "Vous ne pouvez pas rejoindre votre propre créneau.");
         }
 
-        // TODO P-BL-09 : isOpenToPartners=false sert-il, en pratique, à des
-        // inscriptions « programme » légitimes (créneau réservé aux inscrits du
-        // programme) ? Tant que le produit n'a pas répondu, la porte programme
-        // n'applique pas ce refus — elle ne l'appliquait pas davantage avant ce
-        // lot. Si la réponse est « non », retirer la condition sur la porte ;
-        // si elle est « oui », ce commentaire devient la règle et le TODO s'en
-        // va.
-        if (door == Door.SLOT && !Boolean.TRUE.equals(slot.getIsOpenToPartners())) {
+        if (!Boolean.TRUE.equals(slot.getIsOpenToPartners())) {
             throw new ValidationException(ErrorCode.SLOT_NOT_OPEN_TO_PARTNERS,
                 "Ce créneau n'est pas ouvert aux partenaires.");
         }
