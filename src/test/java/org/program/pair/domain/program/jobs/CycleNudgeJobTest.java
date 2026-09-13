@@ -54,6 +54,8 @@ class CycleNudgeJobTest {
     @Mock CycleNudgeRepository cycleNudgeRepository;
     @Mock NotificationService notificationService;
 
+    @Mock org.program.pair.shared.observabilite.ScheduledJobMetricsAspect metriques;
+
     @InjectMocks CycleNudgeJob job;
 
     // ------------------------------------------------------------------

@@ -1,5 +1,6 @@
 package org.program.pair.domain.attendance.jobs;
 
+import org.program.pair.shared.observabilite.ScheduledJobMetricsAspect;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.notification.NotificationPayload;
@@ -64,6 +65,7 @@ public class AttendancePromptJob {
     private static final int SCAN_DEPTH_DAYS = 30;
 
     private final ScheduleRepository scheduleRepository;
+    private final ScheduledJobMetricsAspect metriques;
     private final org.program.pair.repository.SlotParticipationRepository participationRepository;
     private final AttendanceRepository attendanceRepository;
     private final SlotAudience slotAudience;
@@ -129,6 +131,7 @@ public class AttendancePromptJob {
             log.info("Attendance prompt job completed: {} slots checked, {} already prompted, "
                 + "{} notifications sent", finished.size(), skipped, notified);
         } catch (Exception e) {
+            metriques.echecAvale(this, "promptAttendanceConfirmation");
             log.error("Attendance prompt job failed", e);
         }
     }
@@ -173,6 +176,7 @@ public class AttendancePromptJob {
 
             log.info("Attendance windows closed without answer: {}", unanswered.size());
         } catch (Exception e) {
+            metriques.echecAvale(this, "closeUnansweredAttendanceWindows");
             log.error("Close unanswered attendance windows job failed", e);
         }
     }
@@ -199,6 +203,7 @@ public class AttendancePromptJob {
             }
             log.info("Close elapsed slots job completed: {} slots marked PAST", closed);
         } catch (Exception e) {
+            metriques.echecAvale(this, "closeElapsedSlots");
             log.error("Close elapsed slots job failed", e);
         }
     }

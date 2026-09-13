@@ -89,4 +89,20 @@ class AsyncUncaughtExceptionHandlerTest {
         assertThat(journal).doesNotContain(destinataire.toString());
         assertThat(journal).doesNotContain(acteur.toString());
     }
+
+    /** P-BA-21 — une tâche asynchrone en échec se compte, pas seulement se journalise. */
+    @Test
+    void gestionnaire_doitCompterLEchec_pourQuUneAlertePuisseLeVoir() throws NoSuchMethodException {
+        io.micrometer.core.instrument.simple.SimpleMeterRegistry registre =
+            new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+        AsyncConfig config = new AsyncConfig();
+        org.springframework.test.util.ReflectionTestUtils.setField(config, "registre", registre);
+
+        config.getAsyncUncaughtExceptionHandler().handleUncaughtException(
+            new IllegalStateException("panne simulée"), methodeNotify(),
+            UUID.randomUUID(), UUID.randomUUID(), NotificationType.NEW_MESSAGE, Map.of());
+
+        assertThat(registre.counter("notification.async.error",
+            "classe", "NotificationService", "methode", "notify").count()).isEqualTo(1.0);
+    }
 }

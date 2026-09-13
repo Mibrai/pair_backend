@@ -1,5 +1,6 @@
 package org.program.pair.domain.program.jobs;
 
+import org.program.pair.shared.observabilite.ScheduledJobMetricsAspect;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.program.ParticipantCounter;
@@ -57,6 +58,7 @@ import java.util.List;
 public class RecurringSlotRolloverJob {
 
     private final ScheduleRepository scheduleRepository;
+    private final ScheduledJobMetricsAspect metriques;
     private final RecurrenceExpander recurrenceExpander;
     private final ParticipantCounter participantCounter;
 
@@ -176,6 +178,7 @@ public class RecurringSlotRolloverJob {
                     rolled, exhausted, inProgress, cancelled);
             }
         } catch (Exception e) {
+            metriques.echecAvale(this, "rollPastRecurringSchedulesForward");
             log.error("Recurring slot rollover job failed", e);
         }
     }

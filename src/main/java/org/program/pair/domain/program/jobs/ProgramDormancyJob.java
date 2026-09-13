@@ -1,5 +1,6 @@
 package org.program.pair.domain.program.jobs;
 
+import org.program.pair.shared.observabilite.ScheduledJobMetricsAspect;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.program.Program;
@@ -61,6 +62,7 @@ import java.util.UUID;
 public class ProgramDormancyJob {
 
     private final ProgramRepository programRepository;
+    private final ScheduledJobMetricsAspect metriques;
 
     /**
      * Délai avant sommeil, en jours. Zéro éteint le job.
@@ -121,6 +123,7 @@ public class ProgramDormancyJob {
             log.info("Program dormancy job completed: {} programs put to sleep after {}d",
                 programs.size(), dormancyDelayDays);
         } catch (Exception e) {
+            metriques.echecAvale(this, "putEmptyProgramsToSleep");
             // Même posture que les autres jobs : une exécution ratée ne doit pas
             // empêcher la suivante. Les programmes non endormis restent éligibles.
             log.error("Program dormancy job failed", e);

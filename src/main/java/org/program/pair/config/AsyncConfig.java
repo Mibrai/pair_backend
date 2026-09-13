@@ -1,7 +1,9 @@
 package org.program.pair.config;
 
+import io.micrometer.core.instrument.MeterRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.aop.interceptor.AsyncUncaughtExceptionHandler;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.AsyncConfigurer;
@@ -44,6 +46,14 @@ import java.util.concurrent.ThreadPoolExecutor;
 @EnableAsync
 @Slf4j
 public class AsyncConfig implements AsyncConfigurer {
+
+    /**
+     * Compteur {@code notification.async.error} (P-BA-21). Facultatif : le
+     * gestionnaire se construit aussi hors de Spring, et y reste muet côté
+     * métrique sans cesser de journaliser.
+     */
+    @Autowired(required = false)
+    private MeterRegistry registre;
 
     /**
      * L'exécuteur de tous les {@code @Async} sans qualificatif.
@@ -131,8 +141,18 @@ public class AsyncConfig implements AsyncConfigurer {
      */
     @Override
     public AsyncUncaughtExceptionHandler getAsyncUncaughtExceptionHandler() {
-        return (ex, method, params) -> log.error("Tâche asynchrone en échec : {}.{}",
-            method.getDeclaringClass().getSimpleName(), method.getName(), ex);
+        return (ex, method, params) -> {
+            log.error("Tâche asynchrone en échec : {}.{}",
+                method.getDeclaringClass().getSimpleName(), method.getName(), ex);
+            // Le journal sert au diagnostic, le compteur à l'alerte (P-BA-21) :
+            // une notification perdue dans un @Async ne se voyait nulle part
+            // ailleurs. Mêmes étiquettes que le journal, jamais les paramètres.
+            if (registre != null) {
+                registre.counter("notification.async.error",
+                    "classe", method.getDeclaringClass().getSimpleName(),
+                    "methode", method.getName()).increment();
+            }
+        };
     }
 
     @Bean(name = "indexationExecutor")
