@@ -1,0 +1,42 @@
+# Scan des vulnérabilités connues dans les dépendances — P-BS-20, étape 6.
+#
+# L'arbre COMPLET, et non le seul pom : OSV-Scanner ne sait pas résoudre les
+# versions héritées du parent Spring Boot, et un scan direct du pom en écartait
+# 26 sur 41. Le SBOM CycloneDX porte les 290 paquets réellement embarqués — c'est
+# ainsi que Tomcat 11.0.22 (CVSS 9,8), Netty et le pilote PostgreSQL ont été
+# trouvés le 13/09/2026, invisibles à la lecture du pom.
+#
+# Toutes les nuits, et à la demande. Pas sur chaque PR : une faille publiée un
+# mardi ne doit pas bloquer une PR sans rapport ; elle doit se voir le lendemain
+# matin. Dependabot (dependabot.yml) propose ensuite la montée.
+#
+# Seuil : toute vulnérabilité connue fait rougir le passage. OSV-Scanner n'offre
+# pas de seuil CVSS ; une faille moyenne sans correctif se déclare dans
+# osv-scanner.toml avec sa raison, plutôt que d'abaisser l'exigence pour toutes.
+name: securite-dependances
+
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch: {}
+
+jobs:
+  osv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: SBOM CycloneDX de l'arbre résolu
+        run: ./mvnw -B org.cyclonedx:cyclonedx-maven-plugin:2.9.1:makeBom -DoutputFormat=json -DincludeTestScope=false
+
+      - name: OSV-Scanner sur le SBOM
+        run: |
+          docker run --rm -v "$PWD:/src" ghcr.io/google/osv-scanner:v2.2.2 \
+            scan source -L /src/target/bom.json --format table
