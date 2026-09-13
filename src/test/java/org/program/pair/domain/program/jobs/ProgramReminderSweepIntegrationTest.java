@@ -150,6 +150,7 @@ class ProgramReminderSweepIntegrationTest extends AbstractIntegrationTest {
             .placeType(PlaceType.PUBLIC)
             .location(geometryFactory.createPoint(new Coordinate(4.84, 45.75)))
             .startsAt(startsAt)
+            .endsAt((startsAt).plus(java.time.Duration.ofHours(1)))
             .status(status)
             .build());
     }

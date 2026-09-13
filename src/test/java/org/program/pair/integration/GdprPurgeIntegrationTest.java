@@ -537,10 +537,11 @@ class GdprPurgeIntegrationTest extends AbstractIntegrationTest {
 
         UUID creneau = UUID.randomUUID();
         jdbcTemplate.update("""
-            INSERT INTO schedules (id, program_id, place_name, place_type, starts_at,
+            INSERT INTO schedules (id, program_id, place_name, place_type, starts_at, ends_at,
                                    is_publicly_shareable)
-            VALUES (?, ?, 'Salon jetable', 'ONLINE', ?, false)
-            """, creneau, programme, Timestamp.from(Instant.now().minus(60, ChronoUnit.DAYS)));
+            VALUES (?, ?, 'Salon jetable', 'ONLINE', ?, ?, false)
+            """, creneau, programme, Timestamp.from(Instant.now().minus(60, ChronoUnit.DAYS)),
+            Timestamp.from(Instant.now().minus(60, ChronoUnit.DAYS).plus(1, ChronoUnit.HOURS)));
 
         return creneau;
     }

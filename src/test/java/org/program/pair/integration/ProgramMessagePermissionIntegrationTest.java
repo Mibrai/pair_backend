@@ -192,6 +192,7 @@ class ProgramMessagePermissionIntegrationTest extends AbstractIntegrationTest {
             .addressPublic("1 rue du Test")
             .location(geometryFactory.createPoint(new Coordinate(2.35, 48.85)))
             .startsAt(Instant.now().plus(1, ChronoUnit.DAYS))
+            .endsAt((Instant.now().plus(1, ChronoUnit.DAYS)).plus(java.time.Duration.ofHours(1)))
             .isOpenToPartners(true)
             .build());
     }

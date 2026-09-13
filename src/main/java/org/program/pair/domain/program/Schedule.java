@@ -72,7 +72,8 @@ public class Schedule {
     @Column(name = "starts_at", nullable = false)
     private Instant startsAt;
 
-    @Column(name = "ends_at")
+    /** Obligatoire depuis V120 (P-BL-15) : une séance a toujours une fin. */
+    @Column(name = "ends_at", nullable = false)
     private Instant endsAt;
 
     @Column(name = "recurrence_rule", length = 200)

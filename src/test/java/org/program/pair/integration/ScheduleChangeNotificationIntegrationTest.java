@@ -259,6 +259,7 @@ class ScheduleChangeNotificationIntegrationTest extends AbstractIntegrationTest 
             .showExactAddress(adresseVisible)
             .location(geometryFactory.createPoint(new Coordinate(7.7521, 48.5734)))
             .startsAt(debut)
+            .endsAt(debut.plus(java.time.Duration.ofHours(6))) // large : les tests repoussent le début sans toucher la fin
             .maxParticipants(places)
             .isOpenToPartners(true)
             .build());

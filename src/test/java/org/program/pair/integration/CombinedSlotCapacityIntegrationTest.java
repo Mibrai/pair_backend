@@ -91,6 +91,7 @@ class CombinedSlotCapacityIntegrationTest extends AbstractIntegrationTest {
             .addressPublic("1 rue du Test")
             .location(geometryFactory.createPoint(new Coordinate(2.35, 48.85)))
             .startsAt(Instant.now().plus(1, ChronoUnit.DAYS))
+            .endsAt((Instant.now().plus(1, ChronoUnit.DAYS)).plus(java.time.Duration.ofHours(1)))
             .maxParticipants(1)
             .isOpenToPartners(true)
             .build());
@@ -227,7 +228,7 @@ class CombinedSlotCapacityIntegrationTest extends AbstractIntegrationTest {
         // Le début ne bouge pas : la correction passe, même à dix minutes du début.
         Schedule imminent = place(terrain.scheduleId());
         imminent.setStartsAt(Instant.now().plus(10, ChronoUnit.MINUTES));
-        imminent.setEndsAt(null);
+        imminent.setEndsAt(imminent.getStartsAt().plus(1, ChronoUnit.HOURS));
         scheduleRepository.saveAndFlush(imminent);
 
         programService.updateSchedule(terrain.hostId(), terrain.scheduleId(), nomDuLieu("Studio corrigé"));
@@ -262,6 +263,7 @@ class CombinedSlotCapacityIntegrationTest extends AbstractIntegrationTest {
             .addressPublic("1 rue du Test")
             .location(geometryFactory.createPoint(new Coordinate(2.35, 48.85)))
             .startsAt(Instant.now().plus(2, ChronoUnit.DAYS))
+            .endsAt((Instant.now().plus(2, ChronoUnit.DAYS)).plus(java.time.Duration.ofHours(1)))
             .maxParticipants(places)
             .isOpenToPartners(true)
             .build());
