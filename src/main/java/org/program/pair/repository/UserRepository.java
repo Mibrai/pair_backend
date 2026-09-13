@@ -110,11 +110,68 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     List<User> findOnlineUsers(@Param("ids") List<UUID> ids, @Param("since") Instant since);
 
     /**
-     * Find inactive accounts for GDPR purge (Article 17)
-     * Accounts that have been inactive for more than 30 days
+     * Les comptes dont la suppression a été demandée avant {@code cutoff}
+     * (RGPD article 17), et rien d'autre.
+     *
+     * <p><b>Ce qui remplace {@code findInactiveAccountsBefore}, et pourquoi.</b>
+     * L'ancienne requête lisait {@code lastActiveAt < :cutoff}. Cette colonne
+     * n'est écrite qu'à la connexion et à la mise à jour de position : un compte
+     * resté ouvert des mois par jetons de rafraîchissement y porte une date
+     * vieille de plusieurs mois. Depuis que la route de suppression de
+     * l'application désactive réellement le compte (P-BL-01), un tel compte
+     * aurait été anonymisé <b>la nuit suivant sa demande</b>, sans les trente
+     * jours de réversibilité que la décision D2 et l'écran de l'application
+     * promettent. Le délai se compte donc désormais depuis
+     * {@code deactivatedAt}, c'est-à-dire depuis la demande.
+     *
+     * <p><b>{@code deactivatedAt IS NOT NULL} est le garde-fou de déploiement,
+     * pas une précaution de style.</b> La colonne est nulle pour tout compte
+     * désactivé avant V111 — la migration ne remplit pas le passé, faute d'une
+     * donnée qui dise quand la demande a eu lieu. Ces comptes, dont les comptes
+     * de démonstration que l'exploitation va fermer, ne sont donc <b>jamais</b>
+     * purgés automatiquement. C'est le comportement sûr : leur effacement relève
+     * d'un runbook et d'un avis produit. Retirer cette clause ferait tomber cet
+     * arriéré dans la première nuit de purge, sans que personne l'ait relu.
+     *
+     * <p>Ne rend que les identifiants, et c'est ce qui permet à la purge de
+     * n'avoir aucune transaction ouverte pendant qu'elle boucle : chaque compte
+     * est effacé dans la sienne (voir {@code GdprAccountEraser}). Charger des
+     * entités ici les attacherait à un contexte de persistance que la boucle
+     * devrait ensuite garder vivant.
+     *
+     * <p>Servie par {@code idx_users_deactivated}, partiel sur
+     * {@code is_active = false} (V111) : le prédicat de l'index est exactement
+     * celui de ce {@code WHERE}.
      */
-    @Query("SELECT u FROM User u WHERE u.isActive = false AND u.lastActiveAt < :cutoff")
-    List<User> findInactiveAccountsBefore(@Param("cutoff") Instant cutoff);
+    @Query("""
+        SELECT u.id FROM User u
+         WHERE u.isActive = false
+           AND u.deactivatedAt IS NOT NULL
+           AND u.deactivatedAt < :cutoff
+         ORDER BY u.deactivatedAt
+        """)
+    List<UUID> findDeactivatedBefore(@Param("cutoff") Instant cutoff);
+
+    /**
+     * La plus ancienne demande de suppression qui n'a pas encore été exécutée,
+     * ou {@code null} s'il n'y en a aucune.
+     *
+     * <p>Sert la jauge {@code gdpr.purge.pending.oldest.days} : tant qu'aucune
+     * alerte n'existe, c'est la seule mesure qui distingue « la purge tourne et
+     * la file est vide » de « la purge ne tourne plus depuis trois semaines ».
+     * Un compteur d'échecs à zéro ne fait pas cette différence — un job éteint
+     * n'échoue jamais.
+     *
+     * <p>Les comptes sans date de demande sont hors de ce compte, comme ils sont
+     * hors de la purge : les y inclure ferait monter la jauge indéfiniment sur
+     * un arriéré que le job n'a pas vocation à traiter.
+     */
+    @Query("""
+        SELECT MIN(u.deactivatedAt) FROM User u
+         WHERE u.isActive = false
+           AND u.deactivatedAt IS NOT NULL
+        """)
+    Instant findPlusAncienneDemandeNonPurgee();
 
     /**
      * Le corps de la recherche de personnes — visibilité, correspondance,

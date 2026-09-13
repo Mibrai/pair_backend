@@ -206,4 +206,35 @@ public class User {
      */
     @Column(name = "pending_email", length = 255)
     private String pendingEmail;
+
+    /**
+     * Quand la suppression de ce compte a été demandée, ou {@code null} (V111).
+     *
+     * <p><b>Ce n'est pas « depuis quand le compte est inactif ».</b> C'est la
+     * date de la <i>demande</i>, et c'est la seule depuis laquelle le délai de
+     * trente jours de la décision D2 peut courir. La purge lisait auparavant
+     * {@code lastActiveAt}, qui n'est écrit qu'à la connexion et à la mise à jour
+     * de position : un compte resté ouvert des mois par jetons de rafraîchissement
+     * y porte une date périmée, et sa demande de suppression aurait été exécutée
+     * la nuit suivante — sans le délai de réversibilité que l'écran de
+     * l'application promet.
+     *
+     * <p><b>Nulle pour tout compte désactivé avant V111, et la purge les ignore.</b>
+     * La migration ne remplit pas le passé : aucune donnée existante ne dit quand
+     * la demande a eu lieu, et l'inventer aurait fait repartir le délai à
+     * l'instant du déploiement. Ces comptes relèvent d'un runbook, pas du job
+     * nocturne. Voir {@code UserRepository.findDeactivatedBefore}.
+     *
+     * <p>Posée par {@link UserService#deactivateAccount} au seul passage de
+     * actif à inactif, jamais réécrite : le second appel de la route de
+     * suppression est un no-op, et il ne doit pas remettre le compteur à zéro.
+     *
+     * <p><b>Ce que le code ne décide pas.</b> La longueur du délai, la
+     * réversibilité pendant ce délai, et le choix de {@code CASCADE} sur les
+     * présences restent suspendus à un avis juridique qui n'a pas été donné —
+     * voir la javadoc de {@code GdprAccountEraser}. Cette colonne rend ces
+     * questions décidables ; elle ne les décide pas.
+     */
+    @Column(name = "deactivated_at")
+    private Instant deactivatedAt;
 }

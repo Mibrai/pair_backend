@@ -11,6 +11,7 @@ import org.program.pair.repository.BadgeAwardRepository;
 import org.program.pair.repository.UserRepository;
 import org.program.pair.shared.sanitizer.HtmlSanitizer;
 
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -51,6 +52,15 @@ class UserServiceTest {
      */
     @Mock
     org.program.pair.repository.AfficheRepository afficheRepository;
+
+    /**
+     * {@code deactivateAccount} détache désormais les appareils du compte
+     * (P-BL-12, étape 5). Sans cette doublure, {@code @InjectMocks} injecte
+     * {@code null} et c'est la désactivation — la route de suppression de compte —
+     * qui casse, pas les tests des appareils.
+     */
+    @Mock
+    org.program.pair.domain.notification.DeviceTokenService deviceTokenService;
 
     @InjectMocks
     UserService userService;
@@ -99,6 +109,59 @@ class UserServiceTest {
         verify(userRepository).save(captor.capture());
         assertThat(captor.getValue().getIsActive()).isFalse();
         assertThat(captor.getValue().getLocationPublic()).isFalse();
+    }
+
+    /**
+     * La date de la demande est la seule depuis laquelle la purge compte ses
+     * trente jours ({@code UserRepository.findDeactivatedBefore}). Si elle n'est
+     * pas posée, le compte n'est jamais purgé et l'article 17 n'est pas tenu — un
+     * défaut entièrement silencieux, puisque la désactivation, elle, a marché.
+     */
+    @Test
+    void deactivateAccount_devraitPoserLaDateDeLaDemande_pourFaireCourirLeDelai() {
+        User user = buildUser();
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        userService.deactivateAccount(user.getId());
+
+        ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+        verify(userRepository).save(captor.capture());
+        assertThat(captor.getValue().getDeactivatedAt()).isNotNull();
+    }
+
+    /**
+     * Le second appel est un no-op, et il doit l'être <b>aussi</b> pour la date :
+     * l'application rejoue la suppression après une coupure réseau, et repousser
+     * l'échéance à chaque rejeu rendrait le délai de trente jours illimité.
+     */
+    @Test
+    void deactivateAccount_neDoitPasRepousserLEcheance_quandLeCompteEstDejaDesactive() {
+        User user = buildUser();
+        Instant demandeInitiale = Instant.now().minusSeconds(20 * 86_400L);
+        user.setIsActive(false);
+        user.setDeactivatedAt(demandeInitiale);
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+
+        userService.deactivateAccount(user.getId());
+
+        assertThat(user.getDeactivatedAt()).isEqualTo(demandeInitiale);
+        verify(userRepository, never()).save(any());
+    }
+
+    /**
+     * Un compte fermé ne doit plus recevoir de notification : c'est la seule chose
+     * que la fermeture promet immédiatement (P-BL-12, étape 5).
+     */
+    @Test
+    void deactivateAccount_devraitDetacherTousLesAppareils_duCompteFerme() {
+        User user = buildUser();
+        when(userRepository.findById(user.getId())).thenReturn(Optional.of(user));
+        when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+        userService.deactivateAccount(user.getId());
+
+        verify(deviceTokenService).unregisterAllUserTokens(user.getId());
     }
 
     private User buildUser() {
