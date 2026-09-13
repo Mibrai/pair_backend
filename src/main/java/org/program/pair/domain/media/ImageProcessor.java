@@ -24,6 +24,11 @@ public class ImageProcessor {
      * - Resize if too large
      * - Re-encode for security
      * - Compress to reduce file size
+     *
+     * <p><b>Ce réencodage est aussi la purge des métadonnées</b> (P-MS-02) : une
+     * photo de téléphone porte sa position GPS dans ses balises EXIF, et ImageIO
+     * ne les réécrit pas. Ne jamais stocker l'original, ni ajouter une étape qui
+     * recopie les métadonnées d'entrée — {@code ImageProcessorTest} le vérifie.
      */
     public InputStream processImage(MultipartFile file) throws IOException {
         ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
