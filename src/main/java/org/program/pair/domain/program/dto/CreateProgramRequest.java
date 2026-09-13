@@ -1,5 +1,6 @@
 package org.program.pair.domain.program.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.*;
 import org.program.pair.domain.program.LocationType;
 import org.program.pair.domain.program.PreferredTime;
@@ -22,5 +23,13 @@ public record CreateProgramRequest(
     ProgramPrivacy privacy,
     String goals,
     String prerequisites,
-    LocationType locationType
+    LocationType locationType,
+
+    @Schema(description = "Des frais sont à prévoir (location du terrain, entrée…). "
+        + "Absent : false. False ne veut pas dire gratuit, seulement que rien n'est annoncé.")
+    Boolean costToShare,
+
+    @Schema(description = "Précision libre sur les frais, 80 caractères au plus. Ignorée "
+        + "quand costToShare est false. Jamais un montant structuré.")
+    @Size(max = 80) String costNote
 ) {}

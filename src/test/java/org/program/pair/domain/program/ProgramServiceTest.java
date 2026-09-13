@@ -121,7 +121,7 @@ class ProgramServiceTest {
 
         CreateProgramRequest request = new CreateProgramRequest(
             ua.getId(), "Yoga du matin", "Description", true, null,
-            null, null, null, null, null, null, null, null, null, null
+            null, null, null, null, null, null, null, null, null, null, null, null
         );
 
         // When
@@ -336,7 +336,7 @@ class ProgramServiceTest {
             program.getUserActivity().getUser().getId(),
             program.getId(),
             new UpdateProgramRequest(null, null, ProgramStatus.ARCHIVED, null, null,
-                null, null, null, null, null, null, null, null, null, null)
+                null, null, null, null, null, null, null, null, null, null, null, null)
         );
 
         // Then

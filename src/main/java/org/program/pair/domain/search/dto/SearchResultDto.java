@@ -103,6 +103,15 @@ public record SearchResultDto(
         + "/activities/browse : un programme sans aucun créneau n'est JAMAIS expiré, et "
         + "expiré implique nextSessionAt nul, sans exception. Une séance en cours ne compte "
         + "pas comme passée — « terminé » se mesure sur la fin, jamais sur le début.")
-    boolean isExpired
+    boolean isExpired,
+
+    @Schema(description = "Le programme (ou le programme du créneau) annonce des frais à "
+        + "prévoir. False ne veut pas dire gratuit : seulement que rien n'a été annoncé. "
+        + "Ni tri ni filtre sur ce champ.")
+    boolean costToShare,
+
+    @Schema(description = "Précision libre sur les frais, ou null. Toujours null quand "
+        + "costToShare est false.")
+    String costNote
 ) {
 }

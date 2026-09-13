@@ -155,7 +155,7 @@ class TypoToleranceSearchIntegrationTest extends AbstractIntegrationTest {
     private UUID createActiveProgram(String token, UUID userActivityId, String title) {
         CreateProgramRequest createReq = new CreateProgramRequest(
             userActivityId, title, "Programme ouvert à tous.", true, null,
-            null, null, null, null, null, null, null, null, null, null);
+            null, null, null, null, null, null, null, null, null, null, null, null);
 
         ProgramDto created = webTestClient.post()
             .uri("/api/programs")
@@ -172,7 +172,7 @@ class TypoToleranceSearchIntegrationTest extends AbstractIntegrationTest {
 
         UpdateProgramRequest activateReq = new UpdateProgramRequest(
             null, null, ProgramStatus.ACTIVE, true, null,
-            null, null, null, null, null, null, null, null, null, null);
+            null, null, null, null, null, null, null, null, null, null, null, null);
 
         webTestClient.put()
             .uri("/api/programs/{id}", created.id())

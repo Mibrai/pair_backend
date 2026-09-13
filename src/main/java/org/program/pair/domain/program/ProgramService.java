@@ -110,6 +110,8 @@ public class ProgramService {
             request.sessionDurationMinutes(), request.preferredDays(), request.preferredTime(),
             request.maxParticipants(), request.privacy(), request.goals(),
             request.prerequisites(), request.locationType());
+        program.setCostToShare(Boolean.TRUE.equals(request.costToShare()));
+        program.setCostNote(program.getCostToShare() ? cleanCostNote(request.costNote()) : null);
 
         // Aucune annonce aux abonnés ici : le programme naît en brouillon et sans
         // créneau — CreateProgramRequest n'en porte pas — donc sans date, sans
@@ -171,7 +173,26 @@ public class ProgramService {
             request.maxParticipants(), request.privacy(), request.goals(),
             request.prerequisites(), request.locationType());
 
+        // Frais : la case d'abord, la précision ensuite, et jugée sur la case
+        // APRÈS application — une précision envoyée en même temps que la case
+        // décochée n'a rien à préciser.
+        if (request.costToShare() != null) program.setCostToShare(request.costToShare());
+        if (!Boolean.TRUE.equals(program.getCostToShare())) {
+            program.setCostNote(null);
+        } else if (request.costNote() != null) {
+            program.setCostNote(cleanCostNote(request.costNote()));
+        }
+
         return toDto(programRepository.save(program), userId);
+    }
+
+    /** Précision de frais nettoyée ; vide ou blanche, elle n'existe pas. */
+    private String cleanCostNote(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String clean = sanitizer.sanitize(raw).strip();
+        return clean.isEmpty() ? null : clean;
     }
 
     public void deleteProgram(UUID userId, UUID programId) {
@@ -243,6 +264,8 @@ public class ProgramService {
         copy.setPrivacy(original.getPrivacy());
         copy.setGoals(original.getGoals());
         copy.setPrerequisites(original.getPrerequisites());
+        copy.setCostToShare(original.getCostToShare());
+        copy.setCostNote(original.getCostNote());
         copy.setLocationType(original.getLocationType());
 
         Program saved = programRepository.save(copy);
@@ -1077,7 +1100,9 @@ public class ProgramService {
             p.getGoals(),
             p.getPrerequisites(),
             p.getLocationType() != null ? p.getLocationType().name() : null,
-            p.getCreatedVia() != null ? p.getCreatedVia().name() : ProgramCreatedVia.FULL.name()
+            p.getCreatedVia() != null ? p.getCreatedVia().name() : ProgramCreatedVia.FULL.name(),
+            Boolean.TRUE.equals(p.getCostToShare()),
+            Boolean.TRUE.equals(p.getCostToShare()) ? p.getCostNote() : null
         );
     }
 

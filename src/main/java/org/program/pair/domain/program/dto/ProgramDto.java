@@ -52,5 +52,13 @@ public record ProgramDto(
         + "formulaire complet, QUICK pour le chemin court. Un programme QUICK n'a ni "
         + "description ni objectifs parce qu'on ne les lui a jamais demandés, et non "
         + "parce que son auteur les a laissés vides. Tolérer une valeur inconnue.")
-    String createdVia
+    String createdVia,
+
+    @Schema(description = "L'organisateur annonce des frais à prévoir. **False ne veut pas "
+        + "dire gratuit** : seulement que rien n'a été annoncé. Ni tri ni filtre sur ce champ.")
+    boolean costToShare,
+
+    @Schema(description = "Précision libre sur les frais (« Location du terrain »), ou null. "
+        + "Toujours null quand costToShare est false.")
+    String costNote
 ) {}

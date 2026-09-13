@@ -811,7 +811,9 @@ public class SlotService {
             myParticipationStatus,
             myWaitlistPosition,
             slot.getPrimaryLanguage(),
-            slot.getAccessibilityTags().stream().map(Enum::name).sorted().toList()
+            slot.getAccessibilityTags().stream().map(Enum::name).sorted().toList(),
+            Boolean.TRUE.equals(program.getCostToShare()),
+            Boolean.TRUE.equals(program.getCostToShare()) ? program.getCostNote() : null
         );
     }
 

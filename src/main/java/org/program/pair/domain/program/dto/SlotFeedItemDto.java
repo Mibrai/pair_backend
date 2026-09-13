@@ -93,5 +93,13 @@ public record SlotFeedItemDto(
         + "annoncée accessible en fauteuil l'est réellement. L'interface doit les "
         + "présenter comme des annonces, pas comme des faits établis — le coût de "
         + "l'erreur retombe sur la personne qui s'est déplacée. Vide dans le cas normal.")
-    java.util.List<String> accessibilityTags
+    java.util.List<String> accessibilityTags,
+
+    @Schema(description = "Le programme du créneau annonce des frais à prévoir. False ne "
+        + "veut pas dire gratuit : seulement que rien n'a été annoncé.")
+    boolean costToShare,
+
+    @Schema(description = "Précision libre sur les frais, reprise du programme, ou null. "
+        + "Toujours null quand costToShare est false.")
+    String costNote
 ) {}

@@ -1,5 +1,6 @@
 package org.program.pair.domain.program.dto;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.*;
 import org.program.pair.domain.program.LocationType;
 import org.program.pair.domain.program.PreferredTime;
@@ -21,5 +22,14 @@ public record UpdateProgramRequest(
     ProgramPrivacy privacy,
     String goals,
     String prerequisites,
-    LocationType locationType
+    LocationType locationType,
+
+    @Schema(description = "Des frais sont à prévoir. Absent ou null : inchangé. Passer à "
+        + "false efface aussi costNote.")
+    Boolean costToShare,
+
+    @Schema(description = "Précision libre sur les frais, 80 caractères au plus. Absente ou "
+        + "null : inchangée. Chaîne vide : retirée. Ignorée tant que costToShare (après "
+        + "application de cette requête) vaut false.")
+    @Size(max = 80) String costNote
 ) {}
