@@ -75,6 +75,9 @@ public enum ErrorCode {
     SLOT_ALREADY_WAITLISTED,
     SLOT_FULL,
     SLOT_PARTICIPANTS_HOST_ONLY,
+    // Les autres inscrits d'un créneau ne se lisent qu'en y étant inscrit
+    // (CONFIRMED) : ni en attente, ni retiré, ni de l'extérieur.
+    SLOT_PARTICIPANTS_ENROLLED_ONLY,
     // Un créneau annulé ne se modifie plus : ni son heure, ni son lieu, ni sa
     // capacité. Nommé plutôt que rendu en 404 comme l'appartenance : celui qui
     // modifie est l'organisateur, il sait que son créneau existe — lui répondre

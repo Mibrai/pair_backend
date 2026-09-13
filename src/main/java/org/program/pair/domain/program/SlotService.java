@@ -11,6 +11,7 @@ import org.program.pair.domain.notification.NotificationPayload;
 import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.program.dto.JoinSlotRequest;
+import org.program.pair.domain.program.dto.SlotCoParticipantDto;
 import org.program.pair.domain.program.dto.ScheduleConflictDto;
 import org.program.pair.domain.program.dto.SlotBoundsRequest;
 import org.program.pair.domain.program.dto.SlotBoundsResponse;
@@ -666,11 +667,14 @@ public class SlotService {
         // ferait une requête par inscrit sur un écran qui les montre tous.
         Map<UUID, WatchService.ArrivalView> arrivees = watchService.arrivalsByUser(scheduleId);
 
-        // La file d'attente a son propre endpoint : sans ce filtre, les personnes
-        // en attente arriveraient ici mêlées aux inscrits, et l'hôte croirait son
-        // créneau plus rempli qu'il n'est.
+        // Les seuls CONFIRMED (demande mobile du 13/09) : la file d'attente a son
+        // propre endpoint, et une personne qui s'est retirée n'est plus inscrite —
+        // la montrer ferait croire à l'hôte son créneau plus rempli qu'il n'est.
+        // Le blocage vaut dans les deux sens (P-BL-05).
+        Set<UUID> invisible = blockFilterService.invisibleTo(userId);
         return participationRepository.findByScheduleId(scheduleId).stream()
-            .filter(p -> p.getStatus() != ParticipationStatus.WAITLISTED)
+            .filter(p -> p.getStatus() == ParticipationStatus.CONFIRMED)
+            .filter(p -> !invisible.contains(p.getUser().getId()))
             .map(p -> new SlotParticipantDto(
                 p.getId(),
                 userService.getPublicProfile(p.getUser().getId(), userId),
@@ -679,6 +683,43 @@ public class SlotService {
                 p.getCreatedAt(),
                 arrivee(arrivees.get(p.getUser().getId()))
             ))
+            .toList();
+    }
+
+    /**
+     * Les autres inscrits d'un créneau, vus par un inscrit (demande mobile du
+     * 13/09, P-MU-28 et P-BL-05).
+     *
+     * <p>Réservé aux inscrits {@code CONFIRMED} : un non-inscrit, une personne en
+     * attente ou retirée reçoit {@code 403 SLOT_PARTICIPANTS_ENROLLED_ONLY}. Un hôte
+     * bloqué avec l'appelant rend le créneau introuvable, comme sa fiche.
+     *
+     * <p>Seuls les {@code CONFIRMED}, l'appelant exclu, et personne qui soit
+     * bloqué avec lui dans un sens ou dans l'autre — la règle est symétrique, donc
+     * l'appelant disparaît aussi de la liste de qui il a bloqué. La réponse est
+     * {@link SlotCoParticipantDto} : prénom et avatar, rien d'autre.
+     */
+    @Transactional(readOnly = true)
+    public List<SlotCoParticipantDto> getCoParticipants(UUID userId, UUID scheduleId) {
+        Schedule slot = scheduleRepository.findById(scheduleId)
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
+        UUID hostId = slot.getProgram().getUserActivity().getUser().getId();
+        if (blockFilterService.blocked(userId, hostId)) {
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
+        }
+        if (!participationRepository.existsByScheduleIdAndUserIdAndStatus(
+                scheduleId, userId, ParticipationStatus.CONFIRMED)) {
+            throw new ForbiddenException(ErrorCode.SLOT_PARTICIPANTS_ENROLLED_ONLY,
+                "Seuls les inscrits de ce créneau voient les autres inscrits.");
+        }
+        Set<UUID> invisible = blockFilterService.invisibleTo(userId);
+        return participationRepository.findByScheduleId(scheduleId).stream()
+            .filter(p -> p.getStatus() == ParticipationStatus.CONFIRMED)
+            .map(SlotParticipation::getUser)
+            .filter(u -> !u.getId().equals(userId) && !invisible.contains(u.getId()))
+            .filter(u -> Boolean.TRUE.equals(u.getIsActive()))
+            .map(u -> new SlotCoParticipantDto(u.getId(),
+                org.program.pair.domain.user.GivenName.from(u.getDisplayName()), u.getAvatarUrl()))
             .toList();
     }
 

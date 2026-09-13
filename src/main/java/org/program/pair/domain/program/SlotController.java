@@ -186,11 +186,28 @@ public class SlotController {
         return slotService.getMySlots(principal.getId(), upcoming);
     }
 
+    @Operation(summary = "Les inscrits d'un créneau, pour son hôte",
+        description = "Réservé à l'hôte (403 SLOT_PARTICIPANTS_HOST_ONLY sinon). Seuls les inscrits "
+            + "CONFIRMED, sans personne bloquée avec l'hôte dans un sens ou dans l'autre. Un inscrit "
+            + "lit les autres inscrits par GET /api/slots/{scheduleId}/co-participants.")
     @GetMapping("/{scheduleId}/participants")
     public List<SlotParticipantDto> getParticipants(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID scheduleId) {
         return slotService.getParticipants(principal.getId(), scheduleId);
+    }
+
+    @Operation(summary = "Les autres inscrits d'un créneau, pour un inscrit",
+        description = "Réservé aux inscrits CONFIRMED (403 SLOT_PARTICIPANTS_ENROLLED_ONLY sinon, "
+            + "404 si l'hôte et l'appelant sont bloqués). Rend les autres CONFIRMED, l'appelant exclu "
+            + "et sans personne bloquée avec lui dans un sens ou dans l'autre : prénom et avatar "
+            + "seulement. Canal d'observation à déclarer dans « qui me voit » : les autres inscrits "
+            + "de tes créneaux voient ton prénom et ton avatar.")
+    @GetMapping("/{scheduleId}/co-participants")
+    public List<org.program.pair.domain.program.dto.SlotCoParticipantDto> getCoParticipants(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID scheduleId) {
+        return slotService.getCoParticipants(principal.getId(), scheduleId);
     }
 
     @PostMapping("/{scheduleId}/waitlist")
