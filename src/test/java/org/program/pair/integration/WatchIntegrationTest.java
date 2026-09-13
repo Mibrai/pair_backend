@@ -223,7 +223,7 @@ class WatchIntegrationTest extends AbstractIntegrationTest {
             .headers(h -> h.setBearerAuth(owner.token()))
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(new QuickSlotRequest(
-                activityId, startsAt, null,
+                activityId, startsAt, (startsAt).plus(java.time.Duration.ofHours(2)),
                 "Parc de l'Orangerie", PlaceType.PUBLIC, LAT, LNG,
                 "1 avenue de l'Europe", null, "Strasbourg", 5, null, null, null))
             .exchange().expectStatus().isCreated()

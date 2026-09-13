@@ -149,7 +149,7 @@ class SlotAccessibilityIntegrationTest extends AbstractIntegrationTest {
             .headers(h -> h.setBearerAuth(token))
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(new QuickSlotRequest(
-                activityId, Instant.now().plus(2, ChronoUnit.DAYS), null,
+                activityId, Instant.now().plus(2, ChronoUnit.DAYS), (Instant.now().plus(2, ChronoUnit.DAYS)).plus(java.time.Duration.ofHours(2)),
                 "Parc de l'Orangerie", PlaceType.PUBLIC, LAT, LNG,
                 "1 avenue de l'Europe", null, "Strasbourg", 5, null, null, null))
             .exchange().expectStatus().isCreated()

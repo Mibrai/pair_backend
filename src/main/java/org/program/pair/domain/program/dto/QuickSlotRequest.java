@@ -26,9 +26,9 @@ public record QuickSlotRequest(
 
     @NotNull Instant startsAt,
 
-    @Schema(description = "Fin de la séance. Absente, elle vaut le début plus deux "
-        + "heures — la même convention que partout ailleurs.")
-    Instant endsAt,
+    @Schema(description = "Fin de la séance, obligatoire depuis le 13/09 (P-BL-15) : un "
+        + "créneau sans fin est refusé (400). Le serveur n'invente plus de durée.")
+    @NotNull Instant endsAt,
 
     @NotBlank @Size(max = 200) String placeName,
 

@@ -320,7 +320,7 @@ class WatchWithoutGuardianIntegrationTest extends AbstractIntegrationTest {
             .headers(h -> h.setBearerAuth(owner.token()))
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(new QuickSlotRequest(
-                activityId, Instant.now().plus(2, ChronoUnit.HOURS), null,
+                activityId, Instant.now().plus(2, ChronoUnit.HOURS), (Instant.now().plus(2, ChronoUnit.HOURS)).plus(java.time.Duration.ofHours(2)),
                 "Studio Lumière", PlaceType.PUBLIC, LAT, LNG,
                 "1 avenue de l'Europe", null, "Strasbourg", 5, null, null, null))
             .exchange().expectStatus().isCreated()

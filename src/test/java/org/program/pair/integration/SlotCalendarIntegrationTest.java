@@ -233,7 +233,7 @@ class SlotCalendarIntegrationTest extends AbstractIntegrationTest {
             .headers(h -> h.setBearerAuth(token))
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(new QuickSlotRequest(
-                activityId, Instant.now().plus(inDays, ChronoUnit.DAYS), null,
+                activityId, Instant.now().plus(inDays, ChronoUnit.DAYS), (Instant.now().plus(inDays, ChronoUnit.DAYS)).plus(java.time.Duration.ofHours(2)),
                 "Parc de l'Orangerie", placeType, LAT, LNG,
                 ADDRESS, null, "Strasbourg", null, "Venez comme vous etes", null, null))
             .exchange().expectStatus().isCreated()

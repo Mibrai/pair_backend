@@ -265,6 +265,9 @@ public enum ErrorCode {
     // L'heure limite de retour demandée est déjà passée. Une veille dont
     // l'échéance est derrière soi lèverait une alerte à l'instant même.
     WATCH_DEADLINE_PAST,
+    // Aucune heure limite demandée, et le créneau n'a pas de fin déclarée : la
+    // veille ne s'arme pas sur une échéance déduite d'une durée inventée (P-BL-15).
+    WATCH_DEADLINE_REQUIRED,
     // La veille n'est plus au stade où on la désarme d'un geste : quelque chose
     // est déjà parti. On la referme par les sorties prévues (clôture, abandon,
     // interruption), pas par un désarmement d'avant-départ.

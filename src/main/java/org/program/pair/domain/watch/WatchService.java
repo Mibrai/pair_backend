@@ -182,10 +182,17 @@ public class WatchService {
                 "Une veille est déjà en cours pour ce créneau.");
         }
 
+        // Pas d'échéance devinée (P-BL-15) : sans heure limite demandée, il faut
+        // une fin déclarée. Deux heures inventées cadreraient une longue sortie
+        // sur une alerte qui partirait pendant qu'elle marche encore.
+        if (req.deadlineAt() == null && slot.getEndsAt() == null) {
+            throw new BusinessException(ErrorCode.WATCH_DEADLINE_REQUIRED,
+                "Indiquez votre heure limite de retour : ce créneau n'a pas d'heure de fin.");
+        }
         Instant now = Instant.now();
         Instant deadline = req.deadlineAt() != null
             ? req.deadlineAt()
-            : SlotTiming.endOf(slot).plus(MARGE_RETOUR);
+            : slot.getEndsAt().plus(MARGE_RETOUR);
         if (!deadline.isAfter(now)) {
             throw new BusinessException(ErrorCode.WATCH_DEADLINE_PAST,
                 "L'heure limite de retour est déjà passée.");

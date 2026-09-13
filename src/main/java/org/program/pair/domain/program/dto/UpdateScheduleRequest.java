@@ -18,6 +18,8 @@ public record UpdateScheduleRequest(
     @Size(max = 120) String city,
 
     Instant startsAt,
+    // Absente, la fin reste celle en place : une mise à jour ne peut pas la
+    // retirer (P-BL-15).
     Instant endsAt,
     String recurrenceRule,
     @Min(1) Integer maxParticipants,

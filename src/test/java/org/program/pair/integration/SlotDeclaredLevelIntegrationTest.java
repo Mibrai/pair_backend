@@ -265,7 +265,7 @@ class SlotDeclaredLevelIntegrationTest extends AbstractIntegrationTest {
             .headers(h -> h.setBearerAuth(token))
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(new QuickSlotRequest(
-                activityId, Instant.now().plus(3, ChronoUnit.DAYS), null,
+                activityId, Instant.now().plus(3, ChronoUnit.DAYS), (Instant.now().plus(3, ChronoUnit.DAYS)).plus(java.time.Duration.ofHours(2)),
                 "Vieux-Port", PlaceType.PUBLIC, LAT, LNG,
                 "Quai Duperré, La Rochelle", null, "La Rochelle", 5, null, level, null))
             .exchange().expectStatus().isCreated()

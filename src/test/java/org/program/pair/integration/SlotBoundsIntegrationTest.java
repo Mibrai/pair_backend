@@ -507,7 +507,7 @@ class SlotBoundsIntegrationTest extends AbstractIntegrationTest {
 
     private UUID publishSlot(String token, double lat, double lng, Instant startsAt) {
         return publish(token, new QuickSlotRequest(
-            activityRepository.findAll().get(0).getId(), startsAt, null,
+            activityRepository.findAll().get(0).getId(), startsAt, (startsAt).plus(java.time.Duration.ofHours(2)),
             "Un lieu public", PlaceType.PUBLIC, lat, lng,
             "1 rue de la Carte", null, "Ville", 5, null, null, null));
     }
@@ -516,7 +516,7 @@ class SlotBoundsIntegrationTest extends AbstractIntegrationTest {
     private UUID publishPrivateSlot(String token, double lat, double lng) {
         return publish(token, new QuickSlotRequest(
             activityRepository.findAll().get(0).getId(),
-            Instant.now().plus(2, ChronoUnit.DAYS), null,
+            Instant.now().plus(2, ChronoUnit.DAYS), (Instant.now().plus(2, ChronoUnit.DAYS)).plus(java.time.Duration.ofHours(2)),
             "Chez moi", PlaceType.PRIVATE, lat, lng,
             "3 rue Privée", false, "Ville", 5, null, null, null));
     }

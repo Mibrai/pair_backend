@@ -43,9 +43,21 @@ public final class SlotTiming {
         return endOf(slot.getStartsAt(), slot.getEndsAt());
     }
 
+    /**
+     * Le repli de deux heures reste un <b>filet</b>, et ne doit plus servir
+     * (P-BL-15) : toute écriture exige une fin depuis le 13/09 et V119 a
+     * renseigné les anciennes lignes. S'il sert, c'est une ligne écrite par un
+     * autre chemin — un avertissement le dit.
+     */
     private static Instant endOf(Instant startsAt, Instant endsAt) {
-        return endsAt != null ? endsAt : startsAt.plus(DEFAULT_DURATION);
+        if (endsAt != null) {
+            return endsAt;
+        }
+        LOG.warn("Créneau sans fin déclarée (début {}) : repli conventionnel de {}", startsAt, DEFAULT_DURATION);
+        return startsAt.plus(DEFAULT_DURATION);
     }
+
+    private static final org.slf4j.Logger LOG = org.slf4j.LoggerFactory.getLogger(SlotTiming.class);
 
     /**
      * L'occurrence que la ligne porte en ce moment : celle qui vient, ou celle

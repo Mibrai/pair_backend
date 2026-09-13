@@ -1134,6 +1134,8 @@ public class ProgramService {
             displayAddress,
             s.getStartsAt(),
             s.getEndsAt(),
+            SlotTiming.endOf(s),
+            s.getEndsAt() != null,
             s.getRecurrenceRule(),
             s.getMaxParticipants(),
             s.getIsOpenToPartners(),

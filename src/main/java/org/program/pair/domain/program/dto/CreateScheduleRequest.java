@@ -25,7 +25,11 @@ public record CreateScheduleRequest(
     @Size(max = 120) String city,
 
     @NotNull Instant startsAt,
-    Instant endsAt,
+    // Obligatoire (P-BL-15, décision du 13/09) : une séance a toujours une fin.
+    // Sans elle, le serveur inventait deux heures, et une longue sortie passait
+    // pour terminée — la veille comprise.
+    @Schema(description = "Fin de la séance, obligatoire : un créneau sans fin est refusé (400).")
+    @NotNull Instant endsAt,
     String recurrenceRule,
     @Min(1) Integer maxParticipants,
     Boolean isOpenToPartners,

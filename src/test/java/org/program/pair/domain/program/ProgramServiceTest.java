@@ -195,7 +195,7 @@ class ProgramServiceTest {
             false,
             null, // ville
             startsAt,
-            null,
+            (startsAt).plus(java.time.Duration.ofHours(2)),
             null,
             null,
             null,
@@ -218,7 +218,7 @@ class ProgramServiceTest {
             false,
             null, // ville
             Instant.now(),
-            null,
+            (Instant.now()).plus(java.time.Duration.ofHours(2)),
             null,
             null,
             null,
@@ -254,7 +254,7 @@ class ProgramServiceTest {
             false, // mais PAS de consentement explicite
             null, // ville
             Instant.now(),
-            null,
+            (Instant.now()).plus(java.time.Duration.ofHours(2)),
             null,
             null,
             null,
@@ -299,7 +299,7 @@ class ProgramServiceTest {
             true, // consentement explicite
             null, // ville
             Instant.now(),
-            null,
+            (Instant.now()).plus(java.time.Duration.ofHours(2)),
             null,
             null,
             null,

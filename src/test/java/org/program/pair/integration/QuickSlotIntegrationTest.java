@@ -98,7 +98,7 @@ class QuickSlotIntegrationTest extends AbstractIntegrationTest {
         String token = registerAndLogin();
 
         QuickSlotRequest request = new QuickSlotRequest(
-            anyActivityId(), Instant.now().plus(2, ChronoUnit.DAYS), null,
+            anyActivityId(), Instant.now().plus(2, ChronoUnit.DAYS), (Instant.now().plus(2, ChronoUnit.DAYS)).plus(java.time.Duration.ofHours(2)),
             "Parc de l'Orangerie", PlaceType.PUBLIC, LAT, LNG,
             null, null, null, null, null, null, null);
 
@@ -211,7 +211,7 @@ class QuickSlotIntegrationTest extends AbstractIntegrationTest {
         return new QuickSlotRequest(
             activityId,
             Instant.now().plus(inDays, ChronoUnit.DAYS),
-            null,
+            (Instant.now().plus(inDays, ChronoUnit.DAYS)).plus(java.time.Duration.ofHours(2)),
             placeType == PlaceType.ONLINE ? "Visioconférence" : "Parc de l'Orangerie",
             placeType,
             lat,

@@ -315,7 +315,7 @@ class CircleFindIntegrationTest extends AbstractIntegrationTest {
             .headers(h -> h.setBearerAuth(token))
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(new QuickSlotRequest(
-                activity.getId(), Instant.now().plus(2, ChronoUnit.DAYS), null,
+                activity.getId(), Instant.now().plus(2, ChronoUnit.DAYS), (Instant.now().plus(2, ChronoUnit.DAYS)).plus(java.time.Duration.ofHours(2)),
                 "Parc", PlaceType.PUBLIC, 48.5734, 7.7521,
                 "1 avenue de l'Europe", null, "Strasbourg", 5, null, null, null))
             .exchange().expectStatus().isCreated()

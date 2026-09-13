@@ -794,6 +794,8 @@ public class SlotService {
             distanceMeters,
             slot.getStartsAt(),
             slot.getEndsAt(),
+            SlotTiming.endOf(slot),
+            slot.getEndsAt() != null,
             slot.getRecurrenceRule(),
             sessionDurationMinutes(slot, program),
             slot.getCreatedAt(),

@@ -635,7 +635,7 @@ class UserBlockIntegrationTest extends AbstractIntegrationTest {
             .headers(h -> h.setBearerAuth(host.token))
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(new QuickSlotRequest(
-                activityId, Instant.now().plus(3, ChronoUnit.DAYS), null,
+                activityId, Instant.now().plus(3, ChronoUnit.DAYS), (Instant.now().plus(3, ChronoUnit.DAYS)).plus(java.time.Duration.ofHours(2)),
                 "Parc de l'Orangerie", PlaceType.PUBLIC, lat, lng,
                 "1 avenue de l'Europe", null, "Strasbourg", null, null, null, null))
             .exchange().expectStatus().isCreated()
@@ -651,7 +651,7 @@ class UserBlockIntegrationTest extends AbstractIntegrationTest {
             .headers(h -> h.setBearerAuth(host.token))
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(new QuickSlotRequest(
-                activityId, Instant.now().plus(3, ChronoUnit.DAYS), null,
+                activityId, Instant.now().plus(3, ChronoUnit.DAYS), (Instant.now().plus(3, ChronoUnit.DAYS)).plus(java.time.Duration.ofHours(2)),
                 "Parc de l'Orangerie", PlaceType.PUBLIC, LAT, LNG,
                 "1 avenue de l'Europe", null, "Strasbourg", maxParticipants,
                 null, null, null))

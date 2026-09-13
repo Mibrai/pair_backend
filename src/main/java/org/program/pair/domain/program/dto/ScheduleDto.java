@@ -12,6 +12,15 @@ public record ScheduleDto(
     String displayAddress,
     Instant startsAt,
     Instant endsAt,
+
+    @io.swagger.v3.oas.annotations.media.Schema(description = "Fin effective de la séance : "
+        + "endsAt quand il est déclaré, sinon startsAt + 2 h (P-BA-19). C'est la frontière à "
+        + "utiliser pour « terminé ». Toujours renseignée.")
+    Instant effectiveEndsAt,
+
+    @io.swagger.v3.oas.annotations.media.Schema(description = "Vrai quand endsAt a été déclaré. "
+        + "Faux seulement pour d'anciens créneaux : toute écriture exige désormais une fin.")
+    boolean endsAtDeclared,
     String recurrenceRule,
     Integer maxParticipants,
     Boolean isOpenToPartners,

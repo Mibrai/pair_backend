@@ -81,8 +81,8 @@ public class AttendancePromptJob {
             Instant to = now.minus(1, ChronoUnit.HOURS);
             // Pour les créneaux sans endsAt, la fin est conventionnellement startsAt + 2h
             // (voir AttendanceService.confirm) : on décale la fenêtre de recherche d'autant.
-            Instant fromStart = from.minus(2, ChronoUnit.HOURS);
-            Instant toStart = to.minus(2, ChronoUnit.HOURS);
+            Instant fromStart = from.minus(org.program.pair.domain.program.SlotTiming.DEFAULT_DURATION);
+            Instant toStart = to.minus(org.program.pair.domain.program.SlotTiming.DEFAULT_DURATION);
 
             List<Schedule> finished = scheduleRepository.findFinishedBetween(from, to, fromStart, toStart);
 

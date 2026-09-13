@@ -294,7 +294,7 @@ class RetourProduction20260902IntegrationTest extends AbstractIntegrationTest {
             .headers(h -> h.setBearerAuth(token))
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(new QuickSlotRequest(
-                activite, Instant.now().plus(4, ChronoUnit.DAYS), null,
+                activite, Instant.now().plus(4, ChronoUnit.DAYS), (Instant.now().plus(4, ChronoUnit.DAYS)).plus(java.time.Duration.ofHours(2)),
                 "Parc de l'Orangerie", PlaceType.PUBLIC, LAT, LNG,
                 "1 avenue de l'Europe", null, "Strasbourg", places, null, null, null))
             .exchange().expectStatus().isCreated()

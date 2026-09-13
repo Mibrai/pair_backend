@@ -36,6 +36,15 @@ public record SlotFeedItemDto(
     Instant startsAt,
     Instant endsAt,
 
+    @Schema(description = "Fin effective de la séance : endsAt quand il est déclaré, sinon "
+        + "startsAt + 2 h (P-BA-19). C'est la frontière à utiliser pour « terminé ». Toujours "
+        + "renseignée.")
+    Instant effectiveEndsAt,
+
+    @Schema(description = "Vrai quand endsAt a été déclaré. Faux seulement pour d'anciens "
+        + "créneaux : toute écriture exige désormais une fin.")
+    boolean endsAtDeclared,
+
     @Schema(description = "Règle de récurrence RFC 5545, sans le préfixe RRULE:, au même "
         + "format que ScheduleDto.recurrenceRule. Nulle pour une séance unique. "
         + "startsAt/endsAt ne décrivent que la *prochaine* occurrence : sans cette règle, "
