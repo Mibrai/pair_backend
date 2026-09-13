@@ -249,23 +249,20 @@ class ObservabiliteConfigurationTest {
     }
 
     /**
-     * Le contrôle de santé vise {@code /} et non {@code /actuator/health/readiness},
-     * et c'est la conséquence directe du port de gestion séparé : avec
-     * {@code management.server.port}, plus aucun {@code /actuator/*} ne répond sur
-     * le port public, qui est le seul que la plateforme sonde. Une sonde sur
-     * {@code /actuator/health/readiness} échouerait à chaque déploiement.
-     *
-     * <p>{@code /} porte la même information : Tomcat n'accepte de connexion
-     * qu'une fois le contexte rafraîchi, donc après Flyway et après le
-     * chargement du modèle d'embeddings — ce que les 300 secondes couvrent.
+     * Le contrôle de santé vise la sonde de disponibilité. Avec le port de
+     * gestion séparé, elle n'existe sur le port public — le seul que la
+     * plateforme sonde — que parce que {@code SantePubliqueController} la
+     * republie (décision §5.1 du 13/09) ; {@code SantePubliqueIntegrationTest}
+     * éprouve ce comportement. Les 300 secondes couvrent Flyway et le
+     * chargement du modèle d'embeddings.
      */
     @Test
     void leControleDeSante_doitViserUneRouteDuPortPublic() throws IOException {
         JsonNode deploiement = railwayJson().path("deploy");
 
         assertThat(deploiement.path("healthcheckPath").asText())
-            .as("le port public ne sert plus /actuator/* sous railway")
-            .isEqualTo("/");
+            .as("la sonde de disponibilité, republiée sur le port public")
+            .isEqualTo("/actuator/health/readiness");
         assertThat(deploiement.path("healthcheckTimeout").asInt())
             .as("Flyway et le chargement du modèle d'embeddings tiennent dans ce délai")
             .isEqualTo(300);

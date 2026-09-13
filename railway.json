@@ -1,7 +1,7 @@
 {
   "$schema": "https://railway.com/railway.schema.json",
   "deploy": {
-    "healthcheckPath": "/",
+    "healthcheckPath": "/actuator/health/readiness",
     "healthcheckTimeout": 300,
     "numReplicas": 1,
     "restartPolicyType": "ON_FAILURE"
