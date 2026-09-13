@@ -1,7 +1,6 @@
 package org.program.pair.shared.security;
 
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.user.User;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -12,10 +11,25 @@ import java.util.List;
 import java.util.UUID;
 
 @Getter
-@RequiredArgsConstructor
 public class UserPrincipal implements UserDetails {
 
     private final User user;
+
+    /**
+     * La session qui a émis le jeton d'accès de la requête (P-BS-03), ou
+     * {@code null} pour un jeton émis avant les sessions persistées. C'est elle
+     * qu'un changement de mot de passe épargne.
+     */
+    private final UUID sessionId;
+
+    public UserPrincipal(User user) {
+        this(user, null);
+    }
+
+    public UserPrincipal(User user, UUID sessionId) {
+        this.user = user;
+        this.sessionId = sessionId;
+    }
 
     public UUID getId() {
         return user.getId();

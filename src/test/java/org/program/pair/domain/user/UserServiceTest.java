@@ -62,6 +62,10 @@ class UserServiceTest {
     @Mock
     org.program.pair.domain.notification.DeviceTokenService deviceTokenService;
 
+    /** P-BS-03 : la désactivation et le changement de mot de passe révoquent les sessions. */
+    @Mock
+    org.program.pair.domain.auth.session.SessionService sessionService;
+
     @InjectMocks
     UserService userService;
 

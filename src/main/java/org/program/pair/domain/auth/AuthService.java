@@ -1,9 +1,11 @@
 package org.program.pair.domain.auth;
 
-import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.auth.dto.AuthResponse;
 import org.program.pair.domain.auth.dto.LoginRequest;
+import org.program.pair.domain.auth.dto.LogoutRequest;
+import org.program.pair.domain.auth.session.SessionService;
+import org.program.pair.domain.notification.DeviceTokenService;
 import org.program.pair.domain.auth.dto.RegisterRequest;
 import org.program.pair.domain.user.User;
 import org.program.pair.repository.UserRepository;
@@ -29,6 +31,8 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider tokenProvider;
     private final EmailVerificationService emailVerificationService;
+    private final SessionService sessionService;
+    private final DeviceTokenService deviceTokenService;
 
     public AuthResponse register(RegisterRequest request) {
         if (userRepository.existsByEmail(request.email().toLowerCase())) {
@@ -112,28 +116,24 @@ public class AuthService {
      * est ce qu'elle sait déjà lire ici. Les trois refus se confondent aussi
      * pour ne rien apprendre à qui présenterait un jeton qui n'est pas le sien.
      */
+    /**
+     * Échange un jeton de rafraîchissement (P-BS-03).
+     *
+     * <p>{@code noRollbackFor} ici aussi, et c'est lui qui compte : cette
+     * transaction englobe celle de {@link SessionService#echanger}. Un rejeu y
+     * révoque la session puis refuse ; sans cette ligne, le refus remontant
+     * jusqu'ici annulerait la révocation, et le voleur garderait la session.
+     */
+    @Transactional(noRollbackFor = InvalidTokenException.class)
     public AuthResponse refreshToken(String refreshToken) {
-        if (!tokenProvider.validateToken(refreshToken)
-            || !tokenProvider.estJetonDeRafraichissement(refreshToken)) {
-            throw new InvalidTokenException("Refresh token invalide ou expiré.");
-        }
-        UUID userId = tokenProvider.extractUserId(refreshToken);
-        User user = userRepository.findById(userId)
-            .filter(u -> Boolean.TRUE.equals(u.getIsActive()))
+        // Chaque jeton échangé est une ligne, et la rotation tolérante de P-BS/D4
+        // vit dans SessionService (P-BS-03).
+        SessionService.Jetons jetons = sessionService.echanger(refreshToken);
+        User user = userRepository.findById(tokenProvider.extractUserId(jetons.acces()))
             .orElseThrow(() -> new InvalidTokenException("Refresh token invalide ou expiré."));
-        return buildAuthResponse(user);
+        return buildAuthResponse(user, jetons);
     }
 
-    /**
-     * L'issue d'une vérification, rendue comme un état.
-     *
-     * <p>C'est la seule forme, depuis le 07/09 : la variante qui levait a été
-     * retirée. Une exception levée dans la transaction du service annulait ce que
-     * la vérification venait d'écrire — sans effet tant que les seuls refus
-     * n'écrivaient rien, mais faux dès qu'un changement d'adresse peut être
-     * abandonné en chemin. La traduction en refus HTTP vit désormais dans
-     * {@link ReponseVerificationEmail}, hors transaction.
-     */
     public ResultatVerification verifierEmailPourNavigateur(String token) {
         return emailVerificationService.verifier(token);
     }
@@ -172,33 +172,41 @@ public class AuthService {
         userRepository.save(user);
 
         emailVerificationService.consumePasswordResetToken(token);
-    }
 
-    public void logout(HttpServletRequest request) {
-        // For JWT-based authentication, logout is primarily handled client-side.
-        // This method can be extended to:
-        // - Log logout events for audit purposes
-        // - Implement token blacklisting if needed
-        // - Clear any server-side session data
-        // Currently a no-op, but provides an endpoint for future enhancements
+        // Une réinitialisation coupe TOUTES les sessions, et les jetons d'accès en
+        // cours avec (P-BS-03) : c'est le geste de quelqu'un qui croit son compte
+        // compromis.
+        sessionService.revoquerToutes(userId, null, SessionService.MOTIF_MDP_REINITIALISE);
     }
 
     /**
-     * Le seul endroit qui fabrique une session, et donc le seul à renseigner les
-     * durées : {@code /auth/login}, {@code /auth/register} et
-     * {@code /auth/refresh} passent tous les trois par ici, ce qui est ce que le
-     * client demandait — une réponse de rafraîchissement qui ne porterait pas
-     * les durées obligerait à les mémoriser depuis la connexion.
+     * Ferme la session du jeton de rafraîchissement présenté, et détache le jeton
+     * de notification de l'appareil (P-BS-03, P-BS-10, P-BL-12 étape 3).
      *
-     * <p>Les valeurs sont lues sur {@link JwtTokenProvider}, qui les tient de la
-     * configuration. Les recopier ici aurait posé un second endroit à corriger
-     * le jour d'un changement — c'est-à-dire exactement le défaut que ce champ
-     * vient réparer chez le client.
+     * <p>Ne lève jamais : un jeton inconnu, illisible ou déjà révoqué ne change
+     * rien à la réponse. Le jeton d'appareil n'est détaché que si le jeton de
+     * rafraîchissement a désigné son propriétaire — sans quoi n'importe qui
+     * détacherait l'appareil de n'importe qui en connaissant son jeton.
      */
+    public void logout(LogoutRequest request) {
+        if (request == null) {
+            return;
+        }
+        sessionService.fermer(request.refreshToken()).ifPresent(userId -> {
+            if (request.deviceToken() != null && !request.deviceToken().isBlank()) {
+                deviceTokenService.unregisterToken(userId, request.deviceToken());
+            }
+        });
+    }
+
     private AuthResponse buildAuthResponse(User user) {
+        return buildAuthResponse(user, sessionService.ouvrir(user));
+    }
+
+    private AuthResponse buildAuthResponse(User user, SessionService.Jetons jetons) {
         return new AuthResponse(
-            tokenProvider.generateAccessToken(user.getId()),
-            tokenProvider.generateRefreshToken(user.getId()),
+            jetons.acces(),
+            jetons.rafraichissement(),
             user.getId(),
             user.getDisplayName(),
             user.getVerificationStatus().name(),

@@ -53,6 +53,9 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/auth/register").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/refresh").permitAll()
+                // P-BS-03 : c'est le jeton de rafraîchissement du corps qui prouve,
+                // et un jeton d'accès expiré ne doit pas empêcher de se déconnecter.
+                .requestMatchers(HttpMethod.POST, "/api/auth/logout").permitAll()
                 .requestMatchers(HttpMethod.GET,  "/api/auth/verify-email").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/resend-verification").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/auth/forgot-password").permitAll()

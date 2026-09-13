@@ -20,6 +20,7 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import java.security.SecureRandom;
+import java.time.Instant;
 import java.util.Date;
 import java.util.Set;
 import java.util.UUID;
@@ -41,6 +42,12 @@ public class JwtTokenProvider {
      */
     private static final String CLAIM_TYPE = "type";
     private static final String TYPE_RAFRAICHISSEMENT = "refresh";
+
+    /** La session qui a émis le jeton (P-BS-03). Absente sur les jetons émis avant. */
+    private static final String CLAIM_SESSION = "sid";
+
+    /** La version des jetons du compte à l'émission (P-BS-03). Absente vaut 0. */
+    private static final String CLAIM_VERSION = "ver";
 
     /**
      * Qui émet le jeton, et pour qui (P-BS-07). Sans eux, un jeton signé par
@@ -153,16 +160,33 @@ public class JwtTokenProvider {
      * l'adresse partait en clair dans chaque journal qui garde un en-tête.
      */
     public String generateAccessToken(UUID userId) {
-        return Jwts.builder()
+        return generateAccessToken(userId, null, 0);
+    }
+
+    /**
+     * Le jeton d'accès d'une session (P-BS-03) : il porte la session qui l'a émis
+     * ({@code sid}) et la version des jetons du compte ({@code ver}). Le filtre
+     * refuse un jeton dont la version n'est plus celle du compte.
+     */
+    public String generateAccessToken(UUID userId, UUID sessionId, int version) {
+        var builder = Jwts.builder()
             .subject(userId.toString())
             .issuer(EMETTEUR)
             .audience().add(AUDIENCE).and()
+            .claim(CLAIM_VERSION, version)
             .issuedAt(new Date())
-            .expiration(new Date(System.currentTimeMillis() + accessTokenExpiryMs))
-            .signWith(getSigningKey())
-            .compact();
+            .expiration(new Date(System.currentTimeMillis() + accessTokenExpiryMs));
+        if (sessionId != null) {
+            builder.claim(CLAIM_SESSION, sessionId.toString());
+        }
+        return builder.signWith(getSigningKey()).compact();
     }
 
+    /**
+     * Un jeton de rafraîchissement hors session — ce qu'émettait le serveur avant
+     * P-BS-03. Il ne sert plus qu'aux tests du fournisseur ; {@code SessionService}
+     * émet toujours la forme persistée.
+     */
     public String generateRefreshToken(UUID userId) {
         return Jwts.builder()
             .subject(userId.toString())
@@ -173,6 +197,30 @@ public class JwtTokenProvider {
             .expiration(new Date(System.currentTimeMillis() + refreshTokenExpiryMs))
             .signWith(getSigningKey())
             .compact();
+    }
+
+    /**
+     * Le jeton de rafraîchissement d'une session persistée (P-BS-03) : son
+     * {@code jti} désigne la ligne {@code refresh_tokens} qui dit s'il a servi,
+     * s'il est révoqué, et de quel jeton il est né.
+     */
+    public String generateRefreshToken(UUID userId, UUID sessionId, UUID jti, Instant echeance) {
+        return Jwts.builder()
+            .id(jti.toString())
+            .subject(userId.toString())
+            .claim(CLAIM_TYPE, TYPE_RAFRAICHISSEMENT)
+            .claim(CLAIM_SESSION, sessionId.toString())
+            .issuer(EMETTEUR)
+            .audience().add(AUDIENCE).and()
+            .issuedAt(new Date())
+            .expiration(Date.from(echeance))
+            .signWith(getSigningKey())
+            .compact();
+    }
+
+    /** La durée de vie d'un jeton de rafraîchissement, pour qui calcule une échéance. */
+    public java.time.Duration refreshTokenTtl() {
+        return java.time.Duration.ofMillis(refreshTokenExpiryMs);
     }
 
     public UUID extractUserId(String token) {
@@ -250,8 +298,13 @@ public class JwtTokenProvider {
     public JetonLu lire(String token) {
         try {
             Claims claims = verifier(token);
+            String sid = claims.get(CLAIM_SESSION, String.class);
+            Integer version = claims.get(CLAIM_VERSION, Integer.class);
             return new JetonLu.Valide(UUID.fromString(claims.getSubject()),
-                TYPE_RAFRAICHISSEMENT.equals(claims.get(CLAIM_TYPE, String.class)));
+                TYPE_RAFRAICHISSEMENT.equals(claims.get(CLAIM_TYPE, String.class)),
+                sid == null ? null : UUID.fromString(sid),
+                claims.getId() == null ? null : UUID.fromString(claims.getId()),
+                version == null ? 0 : version);
         } catch (ExpiredJwtException e) {
             return new JetonLu.Expire();
         } catch (JwtException | IllegalArgumentException e) {
@@ -261,8 +314,18 @@ public class JwtTokenProvider {
 
     /** Ce qu'une lecture de jeton a établi — voir {@link #lire}. */
     public sealed interface JetonLu {
-        /** Signature, échéance, émetteur et audience reconnus. */
-        record Valide(UUID sujet, boolean rafraichissement) implements JetonLu {}
+        /**
+         * Signature, échéance, émetteur et audience reconnus. {@code session} et
+         * {@code jti} sont nuls sur un jeton émis avant P-BS-03 ; {@code version}
+         * y vaut 0.
+         */
+        record Valide(UUID sujet, boolean rafraichissement, UUID session, UUID jti, int version)
+            implements JetonLu {
+
+            public Valide(UUID sujet, boolean rafraichissement) {
+                this(sujet, rafraichissement, null, null, 0);
+            }
+        }
         /** Bien signé, mais échu : un rafraîchissement le répare. */
         record Expire() implements JetonLu {}
         /** Illisible, mal signé, d'un autre émetteur, ou vide. */

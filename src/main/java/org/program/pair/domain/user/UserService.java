@@ -81,6 +81,7 @@ public class UserService {
      * paquet, en cours de reprise pour les autres étapes de P-BL-12.
      */
     private final DeviceTokenService deviceTokenService;
+    private final org.program.pair.domain.auth.session.SessionService sessionService;
 
     private final GeometryFactory geometryFactory = new GeometryFactory(
         new PrecisionModel(), 4326);
@@ -293,9 +294,16 @@ public class UserService {
         userRepository.save(user);
 
         deviceTokenService.unregisterAllUserTokens(userId);
+        // Plus aucun appareil ne garde la session d'un compte désactivé (P-BS-03).
+        sessionService.revoquerToutes(userId, null, org.program.pair.domain.auth.session.SessionService.MOTIF_COMPTE_DESACTIVE);
     }
 
+    /** Sans session courante connue : toutes les sessions sont coupées. */
     public void changePassword(UUID userId, ChangePasswordRequest request) {
+        changePassword(userId, null, request);
+    }
+
+    public void changePassword(UUID userId, UUID sessionCourante, ChangePasswordRequest request) {
         User user = findActiveUser(userId);
 
         // Verify current password
@@ -312,8 +320,10 @@ public class UserService {
         user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
         userRepository.save(user);
 
-        // Note: Session invalidation would require additional implementation
-        // with a token blacklist or token versioning mechanism
+        // Les autres appareils sont déconnectés, celui qui a changé le mot de passe
+        // garde sa session (P-BS-03) : son jeton d'accès sera refusé une fois, et
+        // son rafraîchissement le réparera avec la nouvelle version.
+        sessionService.revoquerToutes(userId, sessionCourante, org.program.pair.domain.auth.session.SessionService.MOTIF_MDP_CHANGE);
     }
 
     @Transactional(readOnly = true)

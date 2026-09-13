@@ -39,6 +39,12 @@ class AuthServiceTest {
     @Mock
     EmailVerificationService emailVerificationService;
 
+    @Mock
+    org.program.pair.domain.auth.session.SessionService sessionService;
+
+    @Mock
+    org.program.pair.domain.notification.DeviceTokenService deviceTokenService;
+
     @InjectMocks
     AuthService authService;
 
@@ -60,8 +66,8 @@ class AuthServiceTest {
         when(userRepository.existsByEmail(any())).thenReturn(false);
         when(passwordEncoder.encode("Password123!")).thenReturn("$2a$hashed");
         when(userRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
-        when(tokenProvider.generateAccessToken(any())).thenReturn("access");
-        when(tokenProvider.generateRefreshToken(any())).thenReturn("refresh");
+        doReturn(new org.program.pair.domain.auth.session.SessionService.Jetons("access", "refresh", UUID.randomUUID()))
+            .when(sessionService).ouvrir(any());
 
         authService.register(new RegisterRequest(
             "test@pair.app", "Password123!", "Test"));
