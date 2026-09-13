@@ -37,8 +37,17 @@ public class AppLinksController {
     @Value("${meetdo.links.bundle-id:}")
     private String bundleId;
 
+    /**
+     * Empreintes SHA-256 des certificats qui signent l'app Android, séparées par
+     * des virgules (P-MS-17). Avec Play App Signing, <b>deux</b> clés signent :
+     * la clé d'app gérée par Google et la clé d'upload.
+     */
     @Value("${meetdo.links.android-sha256:}")
     private String androidSha256;
+
+    /** {@code AA:BB:…} — 32 octets en hexadécimal, séparés par des deux-points. */
+    private static final java.util.regex.Pattern EMPREINTE =
+        java.util.regex.Pattern.compile("(?:[0-9A-Fa-f]{2}:){31}[0-9A-Fa-f]{2}");
 
     /**
      * Servi en {@code application/json} et <b>sans redirection</b> : Apple
@@ -89,7 +98,8 @@ public class AppLinksController {
     @GetMapping(value = "/.well-known/assetlinks.json",
         produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<String> assetLinks() {
-        if (bundleId.isBlank() || androidSha256.isBlank()) {
+        java.util.List<String> empreintes = empreintesAndroid();
+        if (bundleId.isBlank() || empreintes.isEmpty()) {
             return ResponseEntity.notFound().build();
         }
         return ResponseEntity.ok("""
@@ -99,10 +109,30 @@ public class AppLinksController {
                 "target": {
                   "namespace": "android_app",
                   "package_name": "%s",
-                  "sha256_cert_fingerprints": ["%s"]
+                  "sha256_cert_fingerprints": [%s]
                 }
               }
             ]
-            """.formatted(bundleId, androidSha256));
+            """.formatted(bundleId, empreintes.stream()
+                .map(e -> "\"" + e.toUpperCase(java.util.Locale.ROOT) + "\"")
+                .collect(java.util.stream.Collectors.joining(", "))));
+    }
+
+    /**
+     * Les empreintes configurées, <b>toutes valides ou aucune</b>. Une valeur
+     * provisoire ou mal copiée — « EN ATTENTE », une empreinte SHA-1 — rend le
+     * fichier absent plutôt que faux : Google met la vérification en cache, et une
+     * empreinte fausse ferait échouer les installations existantes jusqu'à leur
+     * mise à jour suivante.
+     */
+    java.util.List<String> empreintesAndroid() {
+        java.util.List<String> valeurs = java.util.Arrays.stream(androidSha256.split(","))
+            .map(String::strip)
+            .filter(v -> !v.isEmpty())
+            .toList();
+        if (valeurs.isEmpty() || !valeurs.stream().allMatch(v -> EMPREINTE.matcher(v).matches())) {
+            return java.util.List.of();
+        }
+        return valeurs.stream().distinct().toList();
     }
 }
