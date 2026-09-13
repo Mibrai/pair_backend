@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.1.0</version>
+        <version>4.1.1</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>org.program</groupId>
@@ -32,6 +32,10 @@
         <excludedGroups>model-integration</excludedGroups>
         <!-- Rempli par jacoco:prepare-agent ; vide sinon. Voir surefire. -->
         <argLine></argLine>
+        <!-- P-BS-20 — Spring Boot 4.1.1 embarque Tomcat 11.0.24, encore touché par
+             GHSA-9xv2-5v5q-p794 (CVSS 9,8) et deux failles à 9,1, corrigées en 11.0.25.
+             À retirer dès qu'une version de Boot embarque 11.0.25 ou plus. -->
+        <tomcat.version>11.0.25</tomcat.version>
 
         <!--
           Identité du build, gravée dans build-info.properties et rendue par
@@ -218,7 +222,7 @@
         <dependency>
             <groupId>com.googlecode.owasp-java-html-sanitizer</groupId>
             <artifactId>owasp-java-html-sanitizer</artifactId>
-            <version>20220608.1</version>
+            <version>20260313.1</version>
         </dependency>
 
         <!-- Phase 2: Apache Tika for MIME validation -->
