@@ -10,6 +10,12 @@
 | **README_SQL_SEEDING.md** | Documentation complète SQL | Pour les détails |
 | seed-railway.sh | Script bash automatique | Alternative |
 | seed-railway.bat | Script Windows | Alternative |
+| **start-db.sh** | Démarre le conteneur PostGIS + pgvector local (ex-racine, P-BA-22) | `bash scripts/start-db.sh` |
+| run-map-visibility-tests.sh / .bat | Lance `MapVisibilityIntegrationTest` et dit quoi vérifier | `bash scripts/run-map-visibility-tests.sh` |
+| smoke/*.sh | Sondes manuelles contre un serveur local : inscription, messagerie, activités, carte, programmes, recherche | `bash scripts/smoke/quick-test.sh` |
+
+> Depuis P-BA-22, ces scripts ne vivent plus à la racine : lancez-les depuis la
+> racine du dépôt avec leur chemin `scripts/…`.
 
 ## 🚀 Démarrage rapide (3 étapes)
 

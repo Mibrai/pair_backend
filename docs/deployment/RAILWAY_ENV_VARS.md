@@ -67,7 +67,7 @@ FRONTEND_URL=https://your-frontend-domain.com
 - Verify your domain `meetdo.fun` in Resend for sending
 - Go to Domains > Add Domain
 - Add DNS records provided by Resend to Hostinger
-- See RESEND_SETUP.md for detailed guide
+- See ../guides/RESEND_SETUP.md for detailed guide
 
 ## Push notifications (Firebase Cloud Messaging)
 

@@ -46,12 +46,12 @@ docker ps
 
 **Windows**:
 ```cmd
-run-map-visibility-tests.bat
+scripts/run-map-visibility-tests.bat
 ```
 
 **Linux/macOS/Git Bash**:
 ```bash
-./run-map-visibility-tests.sh
+./scripts/run-map-visibility-tests.sh
 ```
 
 **Ou avec Maven direct**:

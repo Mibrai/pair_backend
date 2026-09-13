@@ -35,7 +35,7 @@ taskkill //F //PID 12345
 
 #### Option 3: Script automatique (recommandé)
 ```bash
-bash stop-app.sh
+lsof -ti:8090 | xargs kill
 ```
 
 #### Option 4: Tuer tous les processus Java
@@ -168,22 +168,22 @@ mvn install -DskipTests
 
 ```bash
 # Test complet activités
-bash test-activities-complete.sh
+bash scripts/smoke/test-activities-complete.sh
 
 # Test conversations/chat
-bash test-conversations.sh
+bash scripts/smoke/test-conversations.sh
 
 # Test carte
-bash test-map.sh
+bash scripts/smoke/test-map.sh
 
 # Test programmes
-bash test-programs.sh
+bash scripts/smoke/test-programs.sh
 
 # Test recherche
-bash test-search.sh
+bash scripts/smoke/test-search.sh
 
 # Test authentification rapide
-bash quick-test.sh
+bash scripts/smoke/quick-test.sh
 ```
 
 ---
@@ -534,7 +534,7 @@ curl http://localhost:8090/api/categories
 tail -f app.log
 
 # 5. Arrêter proprement
-bash stop-app.sh
+lsof -ti:8090 | xargs kill
 ```
 
 ---

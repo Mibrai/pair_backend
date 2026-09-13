@@ -13,8 +13,8 @@ Ces tests valident le **CŒUR du modèle de confiance** de l'application Pair :
 Pair/
 ├── src/test/java/org/program/pair/integration/
 │   └── MapVisibilityIntegrationTest.java        (229 lignes)
-├── run-map-visibility-tests.sh                  (Script Linux/macOS)
-├── run-map-visibility-tests.bat                 (Script Windows)
+├── scripts/run-map-visibility-tests.sh                  (Script Linux/macOS)
+├── scripts/run-map-visibility-tests.bat                 (Script Windows)
 └── TEST_VALIDATION_REPORT.md                    (Rapport détaillé)
 ```
 
@@ -24,12 +24,12 @@ Pair/
 
 #### Windows
 ```cmd
-run-map-visibility-tests.bat
+scripts/run-map-visibility-tests.bat
 ```
 
 #### Linux/macOS/Git Bash
 ```bash
-./run-map-visibility-tests.sh
+./scripts/run-map-visibility-tests.sh
 ```
 
 ### Option 2: Maven direct

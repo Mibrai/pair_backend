@@ -31,7 +31,7 @@ curl http://localhost:8090/api/categories
 cat FRONTEND_QUICKSTART.md
 
 # 2. Copier la config
-cp frontend-config.json src/config/
+cp docs/api/frontend-config.json src/config/
 
 # 3. Créer service API
 # Voir FRONTEND_QUICKSTART.md pour le code
@@ -47,11 +47,11 @@ cp frontend-config.json src/config/
 
 | Document | Description |
 |----------|-------------|
-| **`DOCUMENTATION_INDEX.md`** ⭐ | Index complet (commencer ici!) |
+| **`docs/DOCUMENTATION_INDEX.md`** ⭐ | Index complet (commencer ici!) |
 | **`RESEND_QUICKSTART.md`** ⭐ | Configuration email Resend (3 étapes) |
 | **`FRONTEND_QUICKSTART.md`** ⭐ | Frontend en 5 minutes |
 | **`COMMANDES_UTILES.md`** ⭐ | Toutes les commandes backend |
-| `frontend-config.json` | Configuration complète |
+| `docs/api/frontend-config.json` | Configuration complète |
 | `api-endpoints.md` | 52 endpoints documentés |
 
 ### Guides Complets
@@ -69,7 +69,7 @@ cp frontend-config.json src/config/
 - `FIREBASE_FIX.md` - Firebase optionnel (✅ Résolu)
 - `REDIS_FIX.md` - Redis optionnel (✅ Résolu)
 
-**Voir `DOCUMENTATION_INDEX.md` pour la liste complète.**
+**Voir `docs/DOCUMENTATION_INDEX.md` pour la liste complète.**
 
 ---
 
@@ -180,14 +180,14 @@ POST /api/search                    🔒 Recherche
 
 ```bash
 # Tests automatisés
-bash test-conversations.sh
-bash test-activities-complete.sh
-bash test-map.sh
-bash test-programs.sh
-bash test-search.sh
+bash scripts/smoke/test-conversations.sh
+bash scripts/smoke/test-activities-complete.sh
+bash scripts/smoke/test-map.sh
+bash scripts/smoke/test-programs.sh
+bash scripts/smoke/test-search.sh
 
 # Test rapide auth
-bash quick-test.sh
+bash scripts/smoke/quick-test.sh
 ```
 
 ---
@@ -318,9 +318,9 @@ Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
 
 ### En Cas de Problème
 
-1. Vérifier `DOCUMENTATION_INDEX.md`
+1. Vérifier `docs/DOCUMENTATION_INDEX.md`
 2. Chercher dans les guides troubleshooting
-3. Vérifier les logs: `tail -f app.log`
+3. Vérifier les logs: la sortie de la console (aucun journal n'est livré avec le dépôt)
 4. Tester avec les scripts: `bash test-*.sh`
 
 ### Erreurs Courantes
@@ -346,7 +346,7 @@ Développé avec ❤️ et Claude Sonnet 4.5
 
 ## 📞 Contact
 
-Pour toute question, consulter `DOCUMENTATION_INDEX.md` ou créer un issue avec les logs.
+Pour toute question, consulter `docs/DOCUMENTATION_INDEX.md` ou créer un issue avec les logs.
 
 ---
 

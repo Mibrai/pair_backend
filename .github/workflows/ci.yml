@@ -84,14 +84,9 @@ jobs:
       - name: mvnw verify
         run: ./mvnw -B verify
 
-      # Hygiène demandée par la fiche, mais qui appartient à P-BA-22 : neuf
-      # fichiers `.log` sont aujourd'hui suivis par git à la racine (app.log,
-      # app-debug.log, …). L'étape est donc écrite, visible, et tolérante :
-      # elle rougira en avertissement à chaque passage jusqu'à ce que P-BA-22
-      # les retire du suivi, et il suffira alors de supprimer la ligne
-      # `continue-on-error` pour qu'elle devienne bloquante.
+      # P-BA-22 : les neuf `.log` qui étaient suivis ont quitté l'index. L'étape
+      # est désormais bloquante — un journal ajouté par mégarde ne part plus.
       - name: aucun fichier .log suivi par git (P-BA-22)
-        continue-on-error: true
         run: test -z "$(git ls-files '*.log')"
 
       - name: rapports surefire

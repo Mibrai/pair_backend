@@ -33,8 +33,7 @@
 | **`RESEND_QUICKSTART.md`** ⭐ | Email Resend en 3 étapes | Guide |
 | `guides/EMAIL_CONFIGURATION.md` | Configuration email complète | Long |
 | `deployment/ENVIRONMENT_VARIABLES.md` | Variables d'environnement | Référence |
-| `frontend-config.json` | URLs + endpoints + paramètres | JSON |
-| `frontend-config.local.json` | Config réseau local | JSON |
+| `api/frontend-config.json` | URLs + endpoints + paramètres | JSON |
 | `.env.example` | Template variables environnement | ENV |
 
 ### 🐛 Résolution de Problèmes
@@ -63,13 +62,13 @@
 
 | Script | Description | Usage |
 |--------|-------------|-------|
-| `test-conversations.sh` | Test chat/conversations | `bash test-conversations.sh` |
-| `quick-test.sh` | Test auth rapide | `bash quick-test.sh` |
-| `test-activities-complete.sh` | Test activités | `bash test-activities-complete.sh` |
-| `test-map.sh` | Test carte | `bash test-map.sh` |
-| `test-programs.sh` | Test programmes | `bash test-programs.sh` |
-| `test-search.sh` | Test recherche | `bash test-search.sh` |
-| `stop-app.sh` | Arrêter l'application | `bash stop-app.sh` |
+| `scripts/smoke/test-conversations.sh` | Test chat/conversations | `bash scripts/smoke/test-conversations.sh` |
+| `scripts/smoke/quick-test.sh` | Test auth rapide | `bash scripts/smoke/quick-test.sh` |
+| `scripts/smoke/test-activities-complete.sh` | Test activités | `bash scripts/smoke/test-activities-complete.sh` |
+| `scripts/smoke/test-map.sh` | Test carte | `bash scripts/smoke/test-map.sh` |
+| `scripts/smoke/test-programs.sh` | Test programmes | `bash scripts/smoke/test-programs.sh` |
+| `scripts/smoke/test-search.sh` | Test recherche | `bash scripts/smoke/test-search.sh` |
+| — | Arrêter l'application | `lsof -ti:8090 \| xargs kill` |
 
 ### 📊 Statut & Résumés
 
