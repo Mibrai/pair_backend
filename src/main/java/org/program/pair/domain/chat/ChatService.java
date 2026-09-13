@@ -1007,9 +1007,14 @@ public class ChatService {
             ? broadcastMemberIds(conv.getProgramId())
             : conversationMemberRepository.findUserIdsByConversationId(conversationId);
 
+        // Une requête pour tous les membres, et non une par membre (P-BA-15) : un
+        // fil de diffusion en compte autant que le programme. L'ordre de
+        // memberIds est gardé.
+        Map<UUID, User> parId = userRepository.findAllById(memberIds).stream()
+            .collect(Collectors.toMap(User::getId, java.util.function.Function.identity()));
         List<UserPublicDto> members = memberIds.stream()
-            .map(id -> userRepository.findById(id).orElse(null))
-            .filter(user -> user != null)
+            .map(parId::get)
+            .filter(java.util.Objects::nonNull)
             .map(user -> UserPublicDto.identity(
                 user.getId(),
                 user.getDisplayName(),

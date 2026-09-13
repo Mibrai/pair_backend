@@ -201,7 +201,7 @@ public class AttendanceService {
         Set<UUID> hostedIds = hosted.stream().map(Schedule::getId).collect(Collectors.toSet());
 
         Instant now = Instant.now();
-        return java.util.stream.Stream.of(hosted, slotJoined, programJoined)
+        List<Pending> candidates = java.util.stream.Stream.of(hosted, slotJoined, programJoined)
             .flatMap(List::stream)
             .distinct()
             // Annulée : la question ne se pose pas, et la poser quand même
@@ -210,8 +210,20 @@ public class AttendanceService {
             .filter(s -> s.getStatus() != SlotStatus.CANCELLED)
             .map(s -> new Pending(s, SlotTiming.lastEndedOccurrence(s, now)))
             .filter(p -> p.occurrence() != null)
-            .filter(p -> !attendanceRepository.existsByScheduleIdAndUserIdAndAttendedAt(
-                p.slot().getId(), userId, p.occurrence().startsAt()))
+            .toList();
+        if (candidates.isEmpty()) {
+            return List.of();
+        }
+
+        // Les réponses déjà données, en une requête pour toutes les séances et
+        // non une par séance (P-BA-15). La clé reste l'occurrence : (créneau, début).
+        Set<AttendanceRepository.OccurrenceRepondue> repondues = new java.util.HashSet<>(
+            attendanceRepository.findOccurrencesRepondues(userId,
+                candidates.stream().map(p -> p.slot().getId()).toList()));
+
+        return candidates.stream()
+            .filter(p -> !repondues.contains(new AttendanceRepository.OccurrenceRepondue(
+                p.slot().getId(), p.occurrence().startsAt())))
             .map(p -> new PendingAttendanceDto(
                 p.slot().getId(),
                 p.slot().getProgram().getTitle(),
