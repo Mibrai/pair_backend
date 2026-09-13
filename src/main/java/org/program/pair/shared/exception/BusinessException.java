@@ -4,6 +4,7 @@ public class BusinessException extends RuntimeException implements HasErrorCode 
 
     private final ErrorCode errorCode;
     private String messageKey;
+    private Object[] messageArgs = new Object[0];
 
     public BusinessException(String message) {
         super(message);
@@ -29,6 +30,12 @@ public class BusinessException extends RuntimeException implements HasErrorCode 
         this.messageKey = messageKey;
     }
 
+    /** Comme le précédent, pour une clé qui porte des valeurs : {@code error.<messageKey>} avec {0}, {1}… */
+    public BusinessException(ErrorCode errorCode, String messageKey, String message, Object... messageArgs) {
+        this(errorCode, messageKey, message);
+        this.messageArgs = messageArgs;
+    }
+
     @Override
     public ErrorCode getErrorCode() {
         return errorCode;
@@ -37,5 +44,10 @@ public class BusinessException extends RuntimeException implements HasErrorCode 
     @Override
     public String getMessageKey() {
         return messageKey;
+    }
+
+    @Override
+    public Object[] getMessageArgs() {
+        return messageArgs;
     }
 }

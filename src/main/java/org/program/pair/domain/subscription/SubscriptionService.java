@@ -272,21 +272,21 @@ public class SubscriptionService {
                                                     UpdateSubscriptionRequest request) {
         return applyUpdate(subscriptionRepository
             .findBySubscriberIdAndTargetAuthorId(subscriberId, authorId)
-            .orElseThrow(() -> noSubscription("cet utilisateur")), request);
+            .orElseThrow(() -> noSubscription("UTILISATEUR", "cet utilisateur")), request);
     }
 
     public SubscriptionDto updateUserActivitySubscription(UUID subscriberId, UUID userActivityId,
                                                           UpdateSubscriptionRequest request) {
         return applyUpdate(subscriptionRepository
             .findBySubscriberIdAndTargetUserActivityId(subscriberId, userActivityId)
-            .orElseThrow(() -> noSubscription("cette activité")), request);
+            .orElseThrow(() -> noSubscription("ACTIVITE", "cette activité")), request);
     }
 
     public SubscriptionDto updateCategorySubscription(UUID subscriberId, UUID categoryId,
                                                       UpdateSubscriptionRequest request) {
         return applyUpdate(subscriptionRepository
             .findBySubscriberIdAndTargetCategoryId(subscriberId, categoryId)
-            .orElseThrow(() -> noSubscription("cette catégorie")), request);
+            .orElseThrow(() -> noSubscription("CATEGORIE", "cette catégorie")), request);
     }
 
     /**
@@ -724,8 +724,13 @@ public class SubscriptionService {
         return new ConflictException(ErrorCode.ALREADY_SUBSCRIBED, message);
     }
 
-    private ResourceNotFoundException noSubscription(String target) {
-        return new ResourceNotFoundException("Vous n'êtes pas abonné à " + target + ".");
+    /**
+     * Une clé par type de cible, et non un argument : « cet utilisateur » est un
+     * fragment de phrase française, qui ne se traduirait pas en argument (P-BA-11).
+     */
+    private ResourceNotFoundException noSubscription(String typeDeCible, String target) {
+        return new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_PAS_ABONNE_" + typeDeCible,
+            "Vous n'êtes pas abonné à " + target + ".");
     }
 
     /**

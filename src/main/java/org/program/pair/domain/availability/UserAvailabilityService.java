@@ -1,5 +1,6 @@
 package org.program.pair.domain.availability;
 
+import org.program.pair.shared.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.availability.dto.AvailabilitySlotDto;
 import org.program.pair.repository.UserAvailabilityRepository;
@@ -39,8 +40,8 @@ public class UserAvailabilityService {
 
     public List<AvailabilitySlotDto> replace(UUID userId, List<AvailabilitySlotDto> slots) {
         if (slots.size() > MAX_SLOTS) {
-            throw new ValidationException(
-                "La grille ne compte que " + MAX_SLOTS + " cases.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_GRILLE_TROP_LONGUE",
+                "La grille ne compte que " + MAX_SLOTS + " cases.", MAX_SLOTS);
         }
 
         // Déduplication avant écriture : cocher deux fois la même case n'est pas

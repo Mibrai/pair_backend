@@ -368,8 +368,9 @@ public class ProgramService {
 
         double effectiveRadiusKm = radiusKm != null ? radiusKm : DEFAULT_RADIUS_KM;
         if (effectiveRadiusKm < MIN_RADIUS_KM || effectiveRadiusKm > MAX_RADIUS_KM) {
-            throw new ValidationException(
-                "Le paramètre 'radius_km' doit être compris entre " + MIN_RADIUS_KM + " et " + MAX_RADIUS_KM + ".");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_RAYON_HORS_BORNES",
+                "Le paramètre 'radius_km' doit être compris entre " + MIN_RADIUS_KM + " et " + MAX_RADIUS_KM + ".",
+                MIN_RADIUS_KM, MAX_RADIUS_KM);
         }
 
         int radiusMeters = Math.max(1, (int) Math.round(effectiveRadiusKm * 1000));
@@ -1176,7 +1177,8 @@ public class ProgramService {
         try {
             return ActivityLevel.valueOf(raw.strip().toUpperCase(java.util.Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            throw new ValidationException("Niveau inconnu : " + raw.strip() + ".");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_NIVEAU_INCONNU",
+                "Niveau inconnu : " + raw.strip() + ".", raw.strip());
         }
     }
 }

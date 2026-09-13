@@ -4,6 +4,7 @@ public class ForbiddenException extends RuntimeException implements HasErrorCode
 
     private final ErrorCode errorCode;
     private String messageKey;
+    private Object[] messageArgs = new Object[0];
 
     public ForbiddenException(String message) {
         super(message);
@@ -24,6 +25,12 @@ public class ForbiddenException extends RuntimeException implements HasErrorCode
         this.messageKey = messageKey;
     }
 
+    /** Comme le précédent, pour une clé qui porte des valeurs : {@code error.<messageKey>} avec {0}, {1}… */
+    public ForbiddenException(ErrorCode errorCode, String messageKey, String message, Object... messageArgs) {
+        this(errorCode, messageKey, message);
+        this.messageArgs = messageArgs;
+    }
+
     @Override
     public ErrorCode getErrorCode() {
         return errorCode;
@@ -32,5 +39,10 @@ public class ForbiddenException extends RuntimeException implements HasErrorCode
     @Override
     public String getMessageKey() {
         return messageKey;
+    }
+
+    @Override
+    public Object[] getMessageArgs() {
+        return messageArgs;
     }
 }
