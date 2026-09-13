@@ -143,6 +143,16 @@ class OpenApiContractIntegrationTest extends AbstractIntegrationTest {
         assertThat(docs.path("paths").path("/api/auth/logout").path("post").path("responses").has("204")).isTrue();
     }
 
+    /**
+     * P-BS-20 — le contrat reste publié en OpenAPI 3.0. springdoc 3 passe par défaut
+     * à 3.1, dont la forme des types nullables diffère : les outils de l'app qui
+     * lisent la spec ne doivent pas changer de format par une montée de version.
+     */
+    @Test
+    void apiDocs_restentPubliesEnOpenApi30() throws Exception {
+        assertThat(fetchApiDocs().path("openapi").asText()).startsWith("3.0");
+    }
+
     private JsonNode fetchApiDocs() throws Exception {
         byte[] raw = webTestClient.get()
             .uri("/v3/api-docs")
