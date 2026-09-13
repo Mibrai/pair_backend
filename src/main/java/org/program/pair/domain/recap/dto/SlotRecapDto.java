@@ -56,6 +56,13 @@ public record SlotRecapDto(
         + "choisie. Le plafond est appliqué ici, pas seulement à l'écran.")
     List<VibeCountDto> topVibes,
 
+    @Schema(description = "Les mêmes ambiances que topVibes, de la plus choisie à la moins "
+        + "choisie, sans leur décompte (P-BL-17, décision du 13/09) : l'ordre suffit, un "
+        + "nombre de votes ne se publie pas. topVibes sera servi vide puis retiré une fois "
+        + "cette liste lue par l'app (P-MU-25).",
+        example = "[\"CHALEUREUSE\", \"SPORTIVE\"]")
+    List<String> vibes,
+
     @Schema(description = "Trois photos au maximum, uniquement celles que leur auteur a "
         + "explicitement rendues publiques.")
     List<String> photoUrls,

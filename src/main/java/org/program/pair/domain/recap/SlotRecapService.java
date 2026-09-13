@@ -603,6 +603,7 @@ public class SlotRecapService {
             slot.getCity(),
             recap.getAttendeeCount() != null ? recap.getAttendeeCount() : 0,
             context.topVibes(recap),
+            context.topVibes(recap).stream().map(VibeCountDto::vibe).toList(),
             publicPhotos(presences),
             recap.getHostNote(),
             host != null ? context.profile(host.getId()) : null,

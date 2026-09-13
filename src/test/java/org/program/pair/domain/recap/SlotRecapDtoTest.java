@@ -134,6 +134,20 @@ class SlotRecapDtoTest extends RecapTestFixtures {
         assertThat(dto.topVibes()).extracting(VibeCountDto::count).containsExactly(7, 5, 2);
     }
 
+    /** P-BL-17 étape 3a : les ambiances dans l'ordre, sans le décompte. */
+    @Test
+    void vibes_donneLesAmbiancesDansLOrdre_sansDecompte() {
+        Schedule slot = publicRecapOn(endedSlot(2));
+        when(vibeVoteRepository.countByVibeForRecaps(any())).thenReturn(List.of(
+            new Object[]{carte.getId(), SlotVibe.RELAXED, 9L},
+            new Object[]{carte.getId(), SlotVibe.FRIENDLY, 4L}
+        ));
+
+        SlotRecapDto dto = service.get(slot.getId(), UUID.randomUUID());
+
+        assertThat(dto.vibes()).containsExactly("RELAXED", "FRIENDLY");
+    }
+
     @Test
     void photoUrls_estLimiteATrois() {
         Schedule slot = publicRecapOn(endedSlot(2));
