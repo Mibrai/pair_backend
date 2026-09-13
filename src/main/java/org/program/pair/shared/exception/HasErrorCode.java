@@ -26,4 +26,12 @@ public interface HasErrorCode {
     default String getMessageKey() {
         return null;
     }
+
+    /**
+     * Arguments de la clé {@link #getMessageKey()}, pour un message qui porte une
+     * valeur (« au plus {0} langues »). Vide par défaut.
+     */
+    default Object[] getMessageArgs() {
+        return new Object[0];
+    }
 }

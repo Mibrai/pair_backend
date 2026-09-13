@@ -4,6 +4,7 @@ public class ValidationException extends RuntimeException implements HasErrorCod
 
     private final ErrorCode errorCode;
     private String messageKey;
+    private Object[] messageArgs = new Object[0];
 
     public ValidationException(String message) {
         super(message);
@@ -24,6 +25,12 @@ public class ValidationException extends RuntimeException implements HasErrorCod
         this.messageKey = messageKey;
     }
 
+    /** Comme le précédent, pour une clé qui porte des valeurs : {@code error.<messageKey>} avec {0}, {1}… */
+    public ValidationException(ErrorCode errorCode, String messageKey, String message, Object... messageArgs) {
+        this(errorCode, messageKey, message);
+        this.messageArgs = messageArgs;
+    }
+
     @Override
     public ErrorCode getErrorCode() {
         return errorCode;
@@ -32,5 +39,10 @@ public class ValidationException extends RuntimeException implements HasErrorCod
     @Override
     public String getMessageKey() {
         return messageKey;
+    }
+
+    @Override
+    public Object[] getMessageArgs() {
+        return messageArgs;
     }
 }

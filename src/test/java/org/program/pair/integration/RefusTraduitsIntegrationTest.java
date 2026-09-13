@@ -38,6 +38,27 @@ class RefusTraduitsIntegrationTest extends AbstractIntegrationTest {
         }
     }
 
+    /** Une clé qui porte une valeur : le plafond de langues arrive rempli, en allemand. */
+    @Test
+    void unRefusQuiPorteUneValeur_laRemplitDansLaLangueDuClient() {
+        String token = compte();
+        java.util.List<java.util.Map<String, String>> onze = java.util.stream.IntStream.range(0, 11)
+            .mapToObj(i -> java.util.Map.of("language", "l" + (char) ('a' + i), "proficiency", "BASIC"))
+            .toList();
+
+        webTestClient.put().uri("/api/users/me/languages")
+            .headers(h -> {
+                h.setBearerAuth(token);
+                h.set("Accept-Language", "de");
+            })
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(onze)
+            .exchange().expectStatus().isBadRequest()
+            .expectBody()
+            .jsonPath("$.code").isEqualTo("VALIDATION_ERROR")
+            .jsonPath("$.message").isEqualTo("Es können höchstens 10 Sprachen angegeben werden.");
+    }
+
     private String compte() {
         String email = uniqueEmail("refus-traduits");
         webTestClient.post().uri("/api/auth/register")

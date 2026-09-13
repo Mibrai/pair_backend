@@ -447,7 +447,8 @@ public class SlotRecapService {
         try {
             return RecapVisibility.valueOf(raw.strip().toUpperCase(java.util.Locale.ROOT));
         } catch (IllegalArgumentException e) {
-            throw new ValidationException("Visibilité inconnue : " + raw);
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_VISIBILITE_INCONNUE",
+                "Visibilité inconnue : " + raw, raw);
         }
     }
 

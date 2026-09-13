@@ -61,7 +61,7 @@ public class GlobalExceptionHandler {
         // La clé propre au refus d'abord (P-BA-11) : un refus qui doit garder son
         // code générique, parce que l'app publiée le lit, reste traduisible.
         if (ex instanceof HasErrorCode holder && holder.getMessageKey() != null) {
-            String propre = messages.getOrNull("error." + holder.getMessageKey());
+            String propre = messages.getOrNull("error." + holder.getMessageKey(), holder.getMessageArgs());
             if (propre != null) {
                 return propre;
             }

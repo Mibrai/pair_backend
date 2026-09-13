@@ -1,5 +1,6 @@
 package org.program.pair.domain.language;
 
+import org.program.pair.shared.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.language.dto.UserLanguageDto;
 import org.program.pair.repository.UserLanguageRepository;
@@ -40,8 +41,8 @@ public class UserLanguageService {
 
     public List<UserLanguageDto> replace(UUID userId, List<UserLanguageDto> languages) {
         if (languages.size() > MAX_LANGUAGES) {
-            throw new ValidationException(
-                "Au plus " + MAX_LANGUAGES + " langues peuvent être déclarées.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_TROP_DE_LANGUES",
+                "Au plus " + MAX_LANGUAGES + " langues peuvent être déclarées.", MAX_LANGUAGES);
         }
 
         // Déduplication sur l'étiquette normalisée : « FR » et « fr » sont la

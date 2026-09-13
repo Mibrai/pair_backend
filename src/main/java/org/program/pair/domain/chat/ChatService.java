@@ -494,9 +494,9 @@ public class ChatService {
             ? MAX_LOCATION_SHARE_MINUTES
             : request.expiresInMinutes();
         if (minutes > MAX_LOCATION_SHARE_MINUTES) {
-            throw new ValidationException(
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_PARTAGE_POSITION_TROP_LONG",
                 "Un partage de position ne peut pas dépasser "
-                    + MAX_LOCATION_SHARE_MINUTES + " minutes.");
+                    + MAX_LOCATION_SHARE_MINUTES + " minutes.", MAX_LOCATION_SHARE_MINUTES);
         }
 
         // Le mot joint passe par le même assainissement que n'importe quel

@@ -47,8 +47,8 @@ public class UserPreferenceService {
     public String write(UUID userId, String key, String value) {
         exigerCleValide(key);
         if (value == null || value.length() > VALEUR_MAX) {
-            throw new ValidationException(
-                "Une préférence ne peut pas dépasser " + VALEUR_MAX + " caractères.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_PREFERENCE_TROP_LONGUE",
+                "Une préférence ne peut pas dépasser " + VALEUR_MAX + " caractères.", VALEUR_MAX);
         }
         UserPreference pref = repository.findByUserIdAndKey(userId, key)
             .orElseGet(() -> new UserPreference(userId, key, value, Instant.now()));
