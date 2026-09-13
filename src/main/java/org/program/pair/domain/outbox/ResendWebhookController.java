@@ -1,5 +1,6 @@
 package org.program.pair.domain.outbox;
 
+import org.program.pair.config.Profils;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -11,7 +12,6 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Set;
 
 /**
  * L'accusé de remise des e-mails d'alerte, reçu de Resend.
@@ -33,7 +33,6 @@ import java.util.Set;
 @Slf4j
 public class ResendWebhookController {
 
-    private static final Set<String> PROFILS_DE_DEPLOIEMENT = Set.of("prod", "railway", "staging");
 
     private final ResendWebhookVerifier verifier;
     private final OutboxService outboxService;
@@ -75,11 +74,8 @@ public class ResendWebhookController {
     }
 
     private boolean sousDeploiement() {
-        for (String profil : environment.getActiveProfiles()) {
-            if (PROFILS_DE_DEPLOIEMENT.contains(profil)) {
-                return true;
-            }
-        }
-        return false;
+        // La liste unique de config/Profils (P-BA-07) : ce fichier en portait sa
+        // propre copie, qui aurait divergé au premier profil ajouté ailleurs.
+        return Profils.actif(environment, Profils.DEPLOIEMENT);
     }
 }
