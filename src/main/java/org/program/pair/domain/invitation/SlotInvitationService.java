@@ -1,5 +1,6 @@
 package org.program.pair.domain.invitation;
 
+import org.program.pair.shared.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.badge.BadgeService;
 import org.program.pair.domain.invitation.dto.InvitationDto;
@@ -62,14 +63,14 @@ public class SlotInvitationService {
      */
     public InvitationLinkDto invite(UUID inviterId, UUID scheduleId) {
         Schedule slot = scheduleRepository.findById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
         if (!slotAudience.participantIds(slot).contains(inviterId)) {
-            throw new ResourceNotFoundException("Créneau introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
         }
 
         User inviter = userRepository.findById(inviterId)
-            .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_UTILISATEUR_INTROUVABLE", "Utilisateur introuvable."));
 
         SlotInvitation invitation = invitationRepository.save(SlotInvitation.builder()
             .inviter(inviter)
@@ -112,24 +113,24 @@ public class SlotInvitationService {
      */
     public SlotFeedItemDto accept(UUID inviteeId, String inviteCode) {
         SlotInvitation invitation = invitationRepository.findByInviteCode(inviteCode)
-            .orElseThrow(() -> new ResourceNotFoundException("Invitation introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_INVITATION_INTROUVABLE", "Invitation introuvable."));
 
         if (invitation.getSchedule() == null) {
             // Le créneau a été supprimé ; la ligne survit pour la trace, mais il
             // n'y a plus rien à rejoindre.
-            throw new ResourceNotFoundException("Ce créneau n'existe plus.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_DISPARU", "Ce créneau n'existe plus.");
         }
 
         if (invitation.getInviter().getId().equals(inviteeId)) {
-            throw new ValidationException("On ne peut pas accepter sa propre invitation.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_INVITATION_PROPRE", "On ne peut pas accepter sa propre invitation.");
         }
 
         if (invitation.getConvertedAt() != null) {
-            throw new ValidationException("Cette invitation a déjà été utilisée.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_INVITATION_UTILISEE", "Cette invitation a déjà été utilisée.");
         }
 
         User invitee = userRepository.findById(inviteeId)
-            .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_UTILISATEUR_INTROUVABLE", "Utilisateur introuvable."));
 
         // Rejoindre d'abord : si le créneau refuse, rien n'est enregistré.
         SlotFeedItemDto slot = slotService.joinSlot(

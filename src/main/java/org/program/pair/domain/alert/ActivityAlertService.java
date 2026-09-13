@@ -1,5 +1,6 @@
 package org.program.pair.domain.alert;
 
+import org.program.pair.shared.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.GeometryFactory;
@@ -52,10 +53,10 @@ public class ActivityAlertService {
 
     public ActivityAlertDto createAlert(UUID userId, CreateActivityAlertRequest request) {
         Activity activity = activityRepository.findById(request.activityId())
-            .orElseThrow(() -> new ResourceNotFoundException("Activité introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_ACTIVITE_INTROUVABLE", "Activité introuvable."));
 
         if (alertRepository.existsByUserIdAndActivityId(userId, request.activityId())) {
-            throw new BusinessException("Vous avez déjà une alerte pour cette activité.");
+            throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION, "REFUS_ALERTE_EXISTANTE", "Vous avez déjà une alerte pour cette activité.");
         }
 
         ActivityAlert alert = ActivityAlert.builder()
@@ -71,10 +72,10 @@ public class ActivityAlertService {
 
     public ActivityAlertDto updateAlert(UUID userId, UUID alertId, UpdateActivityAlertRequest request) {
         ActivityAlert alert = alertRepository.findById(alertId)
-            .orElseThrow(() -> new ResourceNotFoundException("Alerte introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_ALERTE_INTROUVABLE", "Alerte introuvable."));
 
         if (!alert.getUser().getId().equals(userId)) {
-            throw new ForbiddenException("Vous ne pouvez pas modifier cette alerte.");
+            throw new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_MODIFIER_ALERTE", "Vous ne pouvez pas modifier cette alerte.");
         }
 
         if (request.isActive() != null) {
@@ -86,10 +87,10 @@ public class ActivityAlertService {
 
     public void deleteAlert(UUID userId, UUID alertId) {
         ActivityAlert alert = alertRepository.findById(alertId)
-            .orElseThrow(() -> new ResourceNotFoundException("Alerte introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_ALERTE_INTROUVABLE", "Alerte introuvable."));
 
         if (!alert.getUser().getId().equals(userId)) {
-            throw new ForbiddenException("Vous ne pouvez pas supprimer cette alerte.");
+            throw new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_SUPPRIMER_ALERTE", "Vous ne pouvez pas supprimer cette alerte.");
         }
 
         alertRepository.delete(alert);

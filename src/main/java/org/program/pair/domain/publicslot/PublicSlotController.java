@@ -1,5 +1,6 @@
 package org.program.pair.domain.publicslot;
 
+import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.logging.Masque;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -134,7 +135,7 @@ public class PublicSlotController {
             .map(SlotInvitation::getSchedule)
             .map(Schedule::getPublicShareToken)
             .filter(t -> t != null && !t.isBlank())
-            .orElseThrow(() -> new ResourceNotFoundException("Invitation introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_INVITATION_INTROUVABLE", "Invitation introuvable."));
 
         // L'ouverture se compte comme celle de /s/ : c'est la même page, et une
         // invitation ouverte est très exactement ce qu'on cherche à mesurer.
@@ -208,7 +209,7 @@ public class PublicSlotController {
         Schedule slot = publicSlotService.resolve(token, Instant.now());
         String imageUrl = publicSlotService.imageOf(slot);
         if (imageUrl == null) {
-            throw new ResourceNotFoundException("Image introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_IMAGE_INTROUVABLE", "Image introuvable.");
         }
 
         String filename = imageUrl.replaceFirst("^.*/api/media/files/", "");
@@ -220,7 +221,7 @@ public class PublicSlotController {
                 .body(new InputStreamResource(stream));
         } catch (IOException e) {
             log.warn("Image de partage illisible pour le jeton {} : {}", Masque.jeton(token), e.getMessage());
-            throw new ResourceNotFoundException("Image introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_IMAGE_INTROUVABLE", "Image introuvable.");
         }
     }
 
@@ -309,7 +310,7 @@ public class PublicSlotController {
                     slot.categoryColorRamp(), slot.programTitle(), subtitle));
         } catch (IOException e) {
             log.warn("Vignette illisible pour le jeton {} : {}", Masque.jeton(token), e.getMessage());
-            throw new ResourceNotFoundException("Image introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_IMAGE_INTROUVABLE", "Image introuvable.");
         }
     }
 

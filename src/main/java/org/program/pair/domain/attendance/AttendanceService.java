@@ -79,7 +79,7 @@ public class AttendanceService {
      */
     public AttendanceDto confirm(UUID userId, UUID scheduleId, boolean wasPresent) {
         Schedule slot = scheduleRepository.findById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
         if (slot.getStatus() == SlotStatus.CANCELLED) {
             throw new BusinessException(ErrorCode.SLOT_CANCELLED_NO_ATTENDANCE,
@@ -89,7 +89,7 @@ public class AttendanceService {
         SlotOccurrence occurrence = SlotTiming.lastEndedOccurrence(slot, Instant.now());
 
         if (occurrence == null) {
-            throw new ValidationException("Ce créneau n'est pas encore terminé.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_CRENEAU_PAS_TERMINE", "Ce créneau n'est pas encore terminé.");
         }
 
         boolean isHost = slot.getProgram().getUserActivity().getUser().getId().equals(userId);
@@ -100,7 +100,7 @@ public class AttendanceService {
             .anyMatch(up -> up.getSchedule() != null && up.getSchedule().getId().equals(scheduleId));
 
         if (!isHost && !isSlotParticipant && !isProgramParticipant) {
-            throw new ForbiddenException("Vous n'étiez pas inscrit à ce créneau.");
+            throw new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_PAS_INSCRIT_CRENEAU", "Vous n'étiez pas inscrit à ce créneau.");
         }
         // Déjà confirmée POUR CETTE SÉANCE : sur une série hebdomadaire, la
         // vérification au grain de la ligne refusait la deuxième semaine au

@@ -24,10 +24,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RefusSansCodeTest {
 
     /**
-     * Relevé le 13/09/2026 après les trois premières conversions, message sur la
-     * même ligne ou la suivante compris. Ne jamais remonter.
+     * Relevé le 13/09/2026 : 193 refus sans code, puis 185 convertis en une passe
+     * (code générique gardé, messageKey traduite). Les 8 qui restent composent leur
+     * message avec une valeur — ils demandent une clé à argument. Ne jamais remonter.
      */
-    static final int PLAFOND = 193;
+    static final int PLAFOND = 8;
 
     private static final Pattern REFUS_SANS_CODE = Pattern.compile(
         "new (BusinessException|ValidationException|ConflictException|ForbiddenException"

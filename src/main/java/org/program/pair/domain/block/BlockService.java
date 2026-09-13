@@ -1,5 +1,6 @@
 package org.program.pair.domain.block;
 
+import org.program.pair.shared.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.block.dto.BlockedUserDto;
 import org.program.pair.domain.user.User;
@@ -68,7 +69,7 @@ public class BlockService {
      */
     public void block(UUID blockerId, UUID blockedId, String reason) {
         if (blockerId.equals(blockedId)) {
-            throw new ValidationException("On ne peut pas se bloquer soi-même.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_BLOCAGE_SOI_MEME", "On ne peut pas se bloquer soi-même.");
         }
 
         // Un compte inexistant ou désactivé rend 404, comme partout ailleurs.

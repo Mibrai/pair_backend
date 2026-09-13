@@ -357,7 +357,7 @@ public class SlotRecapService {
 
     private Schedule loadSlot(UUID scheduleId) {
         return scheduleRepository.findById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
     }
 
     /**
@@ -373,7 +373,7 @@ public class SlotRecapService {
         if (occurrence == null) {
             // Même refus, et même formulation, que la confirmation de présence :
             // il n'y a rien à raconter d'une séance qui n'a pas eu lieu.
-            throw new ValidationException("Ce créneau n'est pas encore terminé.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_CRENEAU_PAS_TERMINE", "Ce créneau n'est pas encore terminé.");
         }
         return occurrence;
     }
@@ -442,7 +442,7 @@ public class SlotRecapService {
 
     private RecapVisibility parseVisibility(String raw) {
         if (raw == null) {
-            throw new ValidationException("La visibilité est obligatoire.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_VISIBILITE_OBLIGATOIRE", "La visibilité est obligatoire.");
         }
         try {
             return RecapVisibility.valueOf(raw.strip().toUpperCase(java.util.Locale.ROOT));
@@ -491,7 +491,7 @@ public class SlotRecapService {
     }
 
     private static ResourceNotFoundException noSuchRecap() {
-        return new ResourceNotFoundException("Carte-souvenir introuvable.");
+        return new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CARTE_SOUVENIR_INTROUVABLE", "Carte-souvenir introuvable.");
     }
 
     // ————————————————————————— visibilité —————————————————————————

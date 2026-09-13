@@ -1,5 +1,6 @@
 package org.program.pair.domain.user;
 
+import org.program.pair.shared.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.locationtech.jts.geom.Coordinate;
@@ -313,7 +314,7 @@ public class UserService {
 
         // Validate new password is different from current
         if (passwordEncoder.matches(request.newPassword(), user.getPasswordHash())) {
-            throw new ValidationException("Le nouveau mot de passe doit être différent de l'ancien.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_MOT_DE_PASSE_IDENTIQUE", "Le nouveau mot de passe doit être différent de l'ancien.");
         }
 
         // Hash and update password

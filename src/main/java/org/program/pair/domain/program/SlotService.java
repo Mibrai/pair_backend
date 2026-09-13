@@ -304,11 +304,11 @@ public class SlotService {
     @Transactional(readOnly = true)
     public SlotFeedItemDto getSlot(UUID scheduleId, UUID requesterId) {
         Schedule slot = scheduleRepository.findById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
         UUID hostId = slot.getProgram().getUserActivity().getUser().getId();
         if (blockFilterService.blocked(requesterId, hostId)) {
-            throw new ResourceNotFoundException("Créneau introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
         }
 
         return toFeedItem(slot, null, null, requesterId);
@@ -322,7 +322,7 @@ public class SlotService {
         // Verrou pessimiste : même ligne que ProgramEnrollmentService.joinProgram
         // pour empêcher un dépassement de maxParticipants par les deux chemins à la fois.
         Schedule slot = scheduleRepository.lockById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
         User host = slot.getProgram().getUserActivity().getUser();
 
@@ -461,11 +461,11 @@ public class SlotService {
         // désistements simultanés pouvaient lire la même file et promouvoir deux
         // fois la même personne.
         Schedule slot = scheduleRepository.lockById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
         SlotParticipation participation = participationRepository
             .findByScheduleIdAndUserId(scheduleId, userId)
-            .orElseThrow(() -> new ResourceNotFoundException("Participation introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_PARTICIPATION_INTROUVABLE", "Participation introuvable."));
 
         boolean wasConfirmed = participation.getStatus() == ParticipationStatus.CONFIRMED;
 
@@ -496,7 +496,7 @@ public class SlotService {
      */
     public SlotFeedItemDto joinWaitlist(UUID userId, UUID scheduleId) {
         Schedule slot = scheduleRepository.lockById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
         // La même chaîne que joinSlot, aux deux différences que la file
         // implique : un créneau FULL est accepté, un créneau annulé rend
@@ -539,12 +539,12 @@ public class SlotService {
     /** Quitter la file. Les rangs suivants remontent d'un cran. */
     public void leaveWaitlist(UUID userId, UUID scheduleId) {
         Schedule slot = scheduleRepository.lockById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
         SlotParticipation participation = participationRepository
             .findByScheduleIdAndUserId(scheduleId, userId)
             .filter(p -> p.getStatus() == ParticipationStatus.WAITLISTED)
-            .orElseThrow(() -> new ResourceNotFoundException("Vous n'êtes pas en liste d'attente."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_PAS_EN_LISTE_ATTENTE", "Vous n'êtes pas en liste d'attente."));
 
         participation.setStatus(ParticipationStatus.WITHDRAWN);
         participation.setWithdrawnAt(Instant.now());
@@ -564,10 +564,10 @@ public class SlotService {
     @Transactional(readOnly = true)
     public List<SlotParticipantDto> getWaitlist(UUID userId, UUID scheduleId) {
         Schedule slot = scheduleRepository.findById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
         if (!slot.getProgram().getUserActivity().getUser().getId().equals(userId)) {
-            throw new ResourceNotFoundException("Créneau introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
         }
 
         return participationRepository.findWaitlist(scheduleId).stream()
@@ -655,7 +655,7 @@ public class SlotService {
     @Transactional(readOnly = true)
     public List<SlotParticipantDto> getParticipants(UUID userId, UUID scheduleId) {
         Schedule slot = scheduleRepository.findById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
         UUID hostId = slot.getProgram().getUserActivity().getUser().getId();
         if (!hostId.equals(userId)) {

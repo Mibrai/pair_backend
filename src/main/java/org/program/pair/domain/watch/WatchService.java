@@ -117,13 +117,13 @@ public class WatchService {
 
     public WatchDto arm(UUID userId, CreateWatchRequest req) {
         Schedule slot = scheduleRepository.findById(req.scheduleId())
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
         // Un créneau auquel on n'est pas inscrit est introuvable, pas interdit —
         // même règle que le partage de sécurité : ne pas révéler son existence à
         // qui essaie des identifiants.
         if (!slotAudience.participantIds(slot).contains(userId)) {
-            throw new ResourceNotFoundException("Créneau introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
         }
 
         // Une veille ne s'arme pas sur une séance qui n'aura pas lieu, ou qui a
@@ -137,7 +137,7 @@ public class WatchService {
         // annulé comme un créneau qui n'est plus là, et un code nommé n'apporterait
         // rien qu'il ne sache déjà par le statut du créneau.
         if (slot.getStatus() == SlotStatus.CANCELLED) {
-            throw new ResourceNotFoundException("Créneau introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
         }
         // Passée et non récurrente : il n'y a pas d'occurrence suivante à veiller.
         // Un créneau récurrent marqué PAST, lui, porte encore la séance à venir —
@@ -259,7 +259,7 @@ public class WatchService {
     @Transactional(readOnly = true)
     public WatchDetailDto detail(UUID userId, UUID watchId) {
         Watch watch = watchRepository.findByIdAndUserId(watchId, userId)
-            .orElseThrow(() -> new ResourceNotFoundException("Veille introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_VEILLE_INTROUVABLE", "Veille introuvable."));
         List<WatchEventDto> timeline = eventRepository.findByWatchIdOrderByOccurredAtAsc(watchId)
             .stream().map(WatchEventDto::from).toList();
         // Un seul calcul de remise, partagé entre l'objet watch et le champ de tête
@@ -396,11 +396,11 @@ public class WatchService {
      */
     public void seenByHost(UUID hostId, UUID watchId) {
         Watch watch = watchRepository.findById(watchId)
-            .orElseThrow(() -> new ResourceNotFoundException("Veille introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_VEILLE_INTROUVABLE", "Veille introuvable."));
         Schedule slot = scheduleRepository.findById(watch.getScheduleId())
-            .orElseThrow(() -> new ResourceNotFoundException("Veille introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_VEILLE_INTROUVABLE", "Veille introuvable."));
         if (!hostId.equals(organisateurDe(slot))) {
-            throw new ResourceNotFoundException("Veille introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_VEILLE_INTROUVABLE", "Veille introuvable.");
         }
         if (watch.getState() != WatchState.ARMED && watch.getState() != WatchState.EN_ROUTE) {
             throw new ConflictException(ErrorCode.WATCH_NOT_OUTBOUND,
@@ -424,9 +424,9 @@ public class WatchService {
     @Transactional(readOnly = true)
     public List<org.program.pair.domain.watch.dto.PendingArrivalDto> pendingArrivals(UUID hostId, UUID scheduleId) {
         Schedule slot = scheduleRepository.findById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
         if (!hostId.equals(organisateurDe(slot))) {
-            throw new ResourceNotFoundException("Créneau introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
         }
         return watchRepository.findByScheduleIdAndStateIn(scheduleId,
                 List.of(WatchState.ARMED, WatchState.EN_ROUTE)).stream()
@@ -559,7 +559,7 @@ public class WatchService {
 
     private Watch exigerVeille(UUID userId, UUID watchId) {
         return watchRepository.findByIdAndUserId(watchId, userId)
-            .orElseThrow(() -> new ResourceNotFoundException("Veille introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_VEILLE_INTROUVABLE", "Veille introuvable."));
     }
 
     private void exigerTrajetAller(Watch watch) {
@@ -579,7 +579,7 @@ public class WatchService {
      */
     public void disarm(UUID userId, UUID watchId) {
         Watch watch = watchRepository.findByIdAndUserId(watchId, userId)
-            .orElseThrow(() -> new ResourceNotFoundException("Veille introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_VEILLE_INTROUVABLE", "Veille introuvable."));
 
         if (watch.getState() != WatchState.ARMED) {
             throw new ConflictException(ErrorCode.WATCH_NOT_DISARMABLE,
@@ -604,7 +604,7 @@ public class WatchService {
      */
     public ArrivalResponse arrival(UUID userId, UUID watchId, ArrivalRequest req) {
         Watch watch = watchRepository.findByIdAndUserId(watchId, userId)
-            .orElseThrow(() -> new ResourceNotFoundException("Veille introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_VEILLE_INTROUVABLE", "Veille introuvable."));
 
         if (watch.getState() != WatchState.ARMED && watch.getState() != WatchState.EN_ROUTE) {
             throw new BusinessException(ErrorCode.WATCH_ARRIVAL_NOT_EXPECTED,
@@ -693,14 +693,14 @@ public class WatchService {
      */
     public void confirmArrival(UUID hostId, UUID scheduleId, UUID participationId) {
         Schedule slot = scheduleRepository.findById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
         if (!hostId.equals(organisateurDe(slot))) {
-            throw new ResourceNotFoundException("Créneau introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
         }
 
         SlotParticipation participation = participationRepository.findById(participationId)
             .filter(p -> p.getSchedule() != null && scheduleId.equals(p.getSchedule().getId()))
-            .orElseThrow(() -> new ResourceNotFoundException("Inscrit introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_INSCRIT_INTROUVABLE", "Inscrit introuvable."));
 
         watchRepository.findByScheduleIdAndStateIn(scheduleId,
                 List.of(WatchState.ARMED, WatchState.EN_ROUTE)).stream()
@@ -911,7 +911,7 @@ public class WatchService {
      */
     public CloseOutcome close(UUID userId, UUID watchId, CloseRequest req) {
         Watch watch = watchRepository.findByIdAndUserId(watchId, userId)
-            .orElseThrow(() -> new ResourceNotFoundException("Veille introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_VEILLE_INTROUVABLE", "Veille introuvable."));
 
         ReturnCode rc = returnCodeRepository.findByWatchId(watchId)
             .orElseThrow(() -> new BusinessException(ErrorCode.WATCH_NO_CODE_TO_CLOSE,
@@ -1085,7 +1085,7 @@ public class WatchService {
                 "Aucun code à renvoyer : l'arrivée n'a pas été validée."));
 
         User user = userRepository.findById(userId)
-            .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_UTILISATEUR_INTROUVABLE", "Utilisateur introuvable."));
         if (!passwordEncoder.matches(req.password(), user.getPasswordHash())) {
             throw new BusinessException(ErrorCode.WATCH_PASSWORD_REQUIRED,
                 "Mot de passe incorrect.");

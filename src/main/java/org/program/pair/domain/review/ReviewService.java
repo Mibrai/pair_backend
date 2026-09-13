@@ -1,5 +1,6 @@
 package org.program.pair.domain.review;
 
+import org.program.pair.shared.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.review.dto.CreateReviewRequest;
@@ -36,22 +37,22 @@ public class ReviewService {
         UUID programId = request.getProgramId();
 
         var program = programRepository.findById(programId)
-            .orElseThrow(() -> new ResourceNotFoundException("Programme non trouvé"));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_PROGRAMME_INTROUVABLE", "Programme non trouvé"));
 
         UUID creatorId = program.getUserActivity() != null && program.getUserActivity().getUser() != null
             ? program.getUserActivity().getUser().getId()
             : null;
 
         if (creatorId == null) {
-            throw new BusinessException("Programme sans créateur identifié");
+            throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION, "REFUS_PROGRAMME_SANS_CREATEUR", "Programme sans créateur identifié");
         }
 
         if (reviewerId.equals(creatorId)) {
-            throw new BusinessException("Vous ne pouvez pas évaluer votre propre programme");
+            throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION, "REFUS_AVIS_PROPRE_PROGRAMME", "Vous ne pouvez pas évaluer votre propre programme");
         }
 
         if (reviewRepository.findByReviewerIdAndProgramId(reviewerId, programId).isPresent()) {
-            throw new BusinessException("Vous avez déjà évalué ce programme");
+            throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION, "REFUS_AVIS_DEJA_DONNE", "Vous avez déjà évalué ce programme");
         }
 
         // Preuve d'interaction requise : conversation directe avec l'organisateur,
@@ -66,7 +67,7 @@ public class ReviewService {
         } else if (attendanceRepository.existsSharedPresence(reviewerId, creatorId)) {
             proofType = InteractionProofType.SHARED_ATTENDANCE;
         } else {
-            throw new BusinessException(
+            throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION, "REFUS_AVIS_SANS_INTERACTION",
                 "Vous devez avoir échangé des messages ou partagé une présence confirmée avec l'organisateur avant de pouvoir évaluer ce programme");
         }
 

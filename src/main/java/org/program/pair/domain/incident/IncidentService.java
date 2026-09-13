@@ -108,7 +108,7 @@ public class IncidentService {
      */
     public void delete(UUID userId, UUID incidentId) {
         Incident incident = incidentRepository.findByIdAndUserId(incidentId, userId)
-            .orElseThrow(() -> new ResourceNotFoundException("Incident introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_INCIDENT_INTROUVABLE", "Incident introuvable."));
         incidentRepository.delete(incident);
     }
 }

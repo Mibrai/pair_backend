@@ -1,5 +1,6 @@
 package org.program.pair.domain.preference;
 
+import org.program.pair.shared.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.repository.UserPreferenceRepository;
 import org.program.pair.shared.exception.ResourceNotFoundException;
@@ -40,7 +41,7 @@ public class UserPreferenceService {
         exigerCleValide(key);
         return repository.findByUserIdAndKey(userId, key)
             .map(UserPreference::getValue)
-            .orElseThrow(() -> new ResourceNotFoundException("Ce réglage n'existe pas."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_REGLAGE_INEXISTANT", "Ce réglage n'existe pas."));
     }
 
     public String write(UUID userId, String key, String value) {
@@ -65,7 +66,7 @@ public class UserPreferenceService {
 
     private static void exigerCleValide(String key) {
         if (key == null || !CLE.matcher(key).matches()) {
-            throw new ValidationException(
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_CLE_REGLAGE_INVALIDE",
                 "Une clé de réglage ne peut contenir que lettres, chiffres, point, tiret "
                     + "et souligné, et faire 64 caractères au plus.");
         }

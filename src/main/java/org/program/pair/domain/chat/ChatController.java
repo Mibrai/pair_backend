@@ -1,5 +1,6 @@
 package org.program.pair.domain.chat;
 
+import org.program.pair.shared.exception.ErrorCode;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -85,7 +86,7 @@ public class ChatController {
             @PathVariable UUID conversationId,
             @Valid @RequestBody SendMessageRequest request) {
         if (!conversationId.equals(request.conversationId())) {
-            throw new ValidationException(
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_CONVERSATION_INCOHERENTE",
                 "La conversation du corps ne correspond pas à celle de l'URL.");
         }
         return chatService.sendMessage(principal.getId(), request);

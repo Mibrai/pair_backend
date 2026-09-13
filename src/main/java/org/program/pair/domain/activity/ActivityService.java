@@ -66,7 +66,7 @@ public class ActivityService {
         String name = request.name().strip();
 
         Category category = categoryRepository.findById(request.categoryId())
-            .orElseThrow(() -> new ResourceNotFoundException("Catégorie introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CATEGORIE_INTROUVABLE", "Catégorie introuvable."));
 
         if (activityRepository.existsByCategoryIdAndNameIgnoreCase(category.getId(), name)) {
             // Un ConflictException nommé, et non une IllegalStateException : le
@@ -172,7 +172,7 @@ public class ActivityService {
     @Transactional(readOnly = true)
     public List<UserActivityDto> getPublicUserActivities(UUID userId) {
         if (!userRepository.existsById(userId)) {
-            throw new ResourceNotFoundException("Utilisateur introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_UTILISATEUR_INTROUVABLE", "Utilisateur introuvable.");
         }
         return userActivityRepository.findVisibleByUserId(userId).stream()
             .map(this::toUserActivityDto)
@@ -181,7 +181,7 @@ public class ActivityService {
 
     public UserActivityDto addActivityToProfile(UUID userId, UpsertUserActivityRequest request) {
         Activity activity = activityRepository.findById(request.activityId())
-            .orElseThrow(() -> new ResourceNotFoundException("Activité introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_ACTIVITE_INTROUVABLE", "Activité introuvable."));
 
         if (userActivityRepository.existsByUserIdAndActivityId(userId, request.activityId())) {
             // État et non refus de droit : le client stabilise l'affichage sur
@@ -191,7 +191,7 @@ public class ActivityService {
         }
 
         User user = userRepository.findById(userId)
-            .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_UTILISATEUR_INTROUVABLE", "Utilisateur introuvable."));
 
         UserActivity userActivity = new UserActivity();
         userActivity.setUser(user);
@@ -211,7 +211,7 @@ public class ActivityService {
                                              UpsertUserActivityRequest request) {
         UserActivity userActivity = userActivityRepository
             .findByIdAndUserId(userActivityId, userId)
-            .orElseThrow(() -> new ForbiddenException("Activité introuvable sur votre profil."));
+            .orElseThrow(() -> new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_ACTIVITE_PROFIL_INTROUVABLE", "Activité introuvable sur votre profil."));
 
         if (request.visibleOnMap() != null) {
             userActivity.setVisibleOnMap(request.visibleOnMap());
@@ -234,7 +234,7 @@ public class ActivityService {
     public void removeActivityFromProfile(UUID userId, UUID userActivityId) {
         UserActivity userActivity = userActivityRepository
             .findByIdAndUserId(userActivityId, userId)
-            .orElseThrow(() -> new ForbiddenException("Activité introuvable sur votre profil."));
+            .orElseThrow(() -> new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_ACTIVITE_PROFIL_INTROUVABLE", "Activité introuvable sur votre profil."));
 
         userActivityRepository.delete(userActivity);
     }
@@ -242,7 +242,7 @@ public class ActivityService {
     public UserActivityDto toggleMapVisibility(UUID userId, UUID userActivityId, Boolean visible) {
         UserActivity userActivity = userActivityRepository
             .findByIdAndUserId(userActivityId, userId)
-            .orElseThrow(() -> new ForbiddenException("Activité introuvable sur votre profil."));
+            .orElseThrow(() -> new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_ACTIVITE_PROFIL_INTROUVABLE", "Activité introuvable sur votre profil."));
 
         userActivity.setVisibleOnMap(visible != null ? visible : !userActivity.getVisibleOnMap());
         userActivity = userActivityRepository.save(userActivity);
@@ -285,7 +285,7 @@ public class ActivityService {
 
     public IconChange updateActivityIcon(UUID activityId, String icon) {
         Activity activity = activityRepository.findById(activityId)
-            .orElseThrow(() -> new ResourceNotFoundException("Activité introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_ACTIVITE_INTROUVABLE", "Activité introuvable."));
         String previousIcon = activity.getIcon();
         activity.setIcon(icon);
         return new IconChange(previousIcon, toActivityDto(activityRepository.save(activity)));
@@ -295,7 +295,7 @@ public class ActivityService {
 
     public IconChange removeActivityIcon(UUID activityId) {
         Activity activity = activityRepository.findById(activityId)
-            .orElseThrow(() -> new ResourceNotFoundException("Activité introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_ACTIVITE_INTROUVABLE", "Activité introuvable."));
         String previousIcon = activity.getIcon();
         activity.setIcon(DEFAULT_ACTIVITY_ICON);
         ActivityDto dto = toActivityDto(activityRepository.save(activity));

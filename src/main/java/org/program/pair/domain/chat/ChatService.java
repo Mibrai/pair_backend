@@ -70,7 +70,7 @@ public class ChatService {
                                                       UUID derivedScheduleId) {
         // 1. Check if target accepts messages
         User target = userRepository.findById(request.targetUserId())
-            .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_UTILISATEUR_INTROUVABLE", "Utilisateur introuvable."));
 
         // Avant tout le reste : les refus qui suivent sont bavards, et l'un
         // d'eux appris par une personne bloquée lui dirait que le compte visé
@@ -82,11 +82,11 @@ public class ChatService {
         if (blockFilterService.blocked(initiatorId, request.targetUserId())) {
             // L'autre sens : rien ne doit distinguer ce refus de celui d'un
             // compte qui n'existe pas.
-            throw new ResourceNotFoundException("Utilisateur introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_UTILISATEUR_INTROUVABLE", "Utilisateur introuvable.");
         }
 
         if (!Boolean.TRUE.equals(target.getReceiveMessages())) {
-            throw new ForbiddenException("Cet utilisateur n'accepte pas les messages.");
+            throw new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_MESSAGES_NON_ACCEPTES", "Cet utilisateur n'accepte pas les messages.");
         }
 
         UUID programId = derivedProgramId != null ? derivedProgramId : request.programId();
@@ -140,7 +140,7 @@ public class ChatService {
      */
     private Conversation loadConversation(UUID conversationId) {
         return conversationRepository.findById(conversationId)
-            .orElseThrow(() -> new ResourceNotFoundException("Conversation introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CONVERSATION_INTROUVABLE", "Conversation introuvable."));
     }
 
     private Optional<ProgramMessagingPolicy> messagingPolicyOf(UUID programId) {
@@ -161,12 +161,12 @@ public class ChatService {
         if (conv.getType() == ConversationType.PROGRAM_BROADCAST) {
             if (conv.getProgramId() == null
                     || !broadcastMemberIds(conv.getProgramId()).contains(userId)) {
-                throw new ForbiddenException("Accès conversation refusé.");
+                throw new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_ACCES_CONVERSATION", "Accès conversation refusé.");
             }
             return;
         }
         if (!conversationMemberRepository.existsByConversationIdAndUserId(conv.getId(), userId)) {
-            throw new ForbiddenException("Accès conversation refusé.");
+            throw new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_ACCES_CONVERSATION", "Accès conversation refusé.");
         }
     }
 
@@ -207,7 +207,7 @@ public class ChatService {
                 "Vous avez bloqué cette personne.");
         }
         if (blockFilterService.blocked(senderId, other)) {
-            throw new ForbiddenException("Accès conversation refusé.");
+            throw new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_ACCES_CONVERSATION", "Accès conversation refusé.");
         }
     }
 
@@ -250,7 +250,7 @@ public class ChatService {
      */
     public MessageDto broadcastToProgram(UUID authorId, UUID programId, String content) {
         ProgramMessagingPolicy policy = messagingPolicyOf(programId)
-            .orElseThrow(() -> new ResourceNotFoundException("Programme introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_PROGRAMME_INTROUVABLE", "Programme introuvable."));
 
         if (!authorId.equals(policy.authorId())) {
             throw new ForbiddenException(ErrorCode.PROGRAM_BROADCAST_READ_ONLY,
@@ -322,7 +322,7 @@ public class ChatService {
                               UUID programId, UUID scheduleId) {
         if (activityContextId != null) {
             conv.setActivityContext(activityRepository.findById(activityContextId)
-                .orElseThrow(() -> new ResourceNotFoundException("Activité introuvable.")));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_ACTIVITE_INTROUVABLE", "Activité introuvable.")));
         }
         if (programId != null) {
             conv.setProgramId(programId);
@@ -335,7 +335,7 @@ public class ChatService {
     public MessageDto sendMessage(UUID senderId, SendMessageRequest request) {
         // 1. Verify sender is member of conversation
         Conversation conv = conversationRepository.findById(request.conversationId())
-            .orElseThrow(() -> new ForbiddenException("Accès conversation refusé."));
+            .orElseThrow(() -> new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_ACCES_CONVERSATION", "Accès conversation refusé."));
         assertMayRead(conv, senderId);
 
         // 1 bis. Le blocage, avant tous les autres refus d'écriture : ceux qui
@@ -360,7 +360,7 @@ public class ChatService {
         // 2. Sanitize content (anti-XSS required)
         String cleanContent = sanitizer.sanitize(request.content());
         if (!StringUtils.hasText(cleanContent)) {
-            throw new ValidationException("Message vide après sanitisation.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_MESSAGE_VIDE", "Message vide après sanitisation.");
         }
 
         // 3 à 5 : écriture, diffusion, push.
@@ -383,7 +383,7 @@ public class ChatService {
     private MessageDto persistAndDeliver(UUID senderId, Conversation conv, String content,
                                          Double lat, Double lng, Instant locationExpiresAt) {
         User sender = userRepository.findById(senderId)
-            .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_UTILISATEUR_INTROUVABLE", "Utilisateur introuvable."));
 
         Message message = new Message();
         message.setConversation(conv);
@@ -530,7 +530,7 @@ public class ChatService {
 
         ConversationMember member = conversationMemberRepository
             .findByConversationIdAndUserId(conversationId, userId)
-            .orElseThrow(() -> new ForbiddenException("Membre introuvable."));
+            .orElseThrow(() -> new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_MEMBRE_INTROUVABLE", "Membre introuvable."));
 
         // La date n'est réécrite que sur un vrai changement d'état : réappliquer
         // « en sourdine » à un fil déjà en sourdine ne doit pas faire croire que
@@ -775,7 +775,7 @@ public class ChatService {
 
         ConversationMember member = conversationMemberRepository
             .findByConversationIdAndUserId(conversationId, userId)
-            .orElseThrow(() -> new ForbiddenException("Membre introuvable."));
+            .orElseThrow(() -> new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_MEMBRE_INTROUVABLE", "Membre introuvable."));
 
         member.setLastReadAt(Instant.now());
         conversationMemberRepository.save(member);
@@ -787,9 +787,9 @@ public class ChatService {
 
     private void addMember(UUID conversationId, UUID userId) {
         Conversation conversation = conversationRepository.findById(conversationId)
-            .orElseThrow(() -> new ResourceNotFoundException("Conversation introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CONVERSATION_INTROUVABLE", "Conversation introuvable."));
         User user = userRepository.findById(userId)
-            .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_UTILISATEUR_INTROUVABLE", "Utilisateur introuvable."));
 
         ConversationMember.ConversationMemberId id = new ConversationMember.ConversationMemberId();
         id.setConversationId(conversationId);
@@ -1053,14 +1053,14 @@ public class ChatService {
         // programme, pas le fil — le dire franchement vaut mieux qu'un masquage
         // qui ne tient pas.
         if (loadConversation(conversationId).getType() == ConversationType.PROGRAM_BROADCAST) {
-            throw new ValidationException(
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_QUITTER_FIL_DIFFUSION",
                 "Un fil de diffusion se quitte en quittant le programme.");
         }
 
         // Verify user is member
         ConversationMember member = conversationMemberRepository
             .findByConversationIdAndUserId(conversationId, userId)
-            .orElseThrow(() -> new ForbiddenException("Accès conversation refusé."));
+            .orElseThrow(() -> new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_ACCES_CONVERSATION", "Accès conversation refusé."));
 
         // Soft delete: just remove the member
         conversationMemberRepository.delete(member);
@@ -1072,14 +1072,14 @@ public class ChatService {
     public MessageDto editMessage(UUID userId, UUID messageId, EditMessageRequest request) {
         // 1. Find message and verify sender
         Message message = messageRepository.findById(messageId)
-            .orElseThrow(() -> new ResourceNotFoundException("Message introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_MESSAGE_INTROUVABLE", "Message introuvable."));
 
         if (!message.getSender().getId().equals(userId)) {
-            throw new ForbiddenException("Vous ne pouvez modifier que vos propres messages.");
+            throw new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_MODIFIER_MESSAGE_AUTRUI", "Vous ne pouvez modifier que vos propres messages.");
         }
 
         if (message.getDeletedAt() != null) {
-            throw new ValidationException("Impossible de modifier un message supprimé.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_MODIFIER_MESSAGE_SUPPRIME", "Impossible de modifier un message supprimé.");
         }
 
         // 1 bis. Modifier est écrire.
@@ -1096,7 +1096,7 @@ public class ChatService {
         // 2. Sanitize new content
         String cleanContent = sanitizer.sanitize(request.content());
         if (!StringUtils.hasText(cleanContent)) {
-            throw new ValidationException("Message vide après sanitisation.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_MESSAGE_VIDE", "Message vide après sanitisation.");
         }
 
         // 3. Save edit history
@@ -1138,14 +1138,14 @@ public class ChatService {
     public void deleteMessage(UUID userId, UUID messageId) {
         // 1. Find message and verify sender
         Message message = messageRepository.findById(messageId)
-            .orElseThrow(() -> new ResourceNotFoundException("Message introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_MESSAGE_INTROUVABLE", "Message introuvable."));
 
         if (!message.getSender().getId().equals(userId)) {
-            throw new ForbiddenException("Vous ne pouvez supprimer que vos propres messages.");
+            throw new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_SUPPRIMER_MESSAGE_AUTRUI", "Vous ne pouvez supprimer que vos propres messages.");
         }
 
         if (message.getDeletedAt() != null) {
-            throw new ValidationException("Message déjà supprimé.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_MESSAGE_DEJA_SUPPRIME", "Message déjà supprimé.");
         }
 
         // 2. Soft delete
@@ -1172,7 +1172,7 @@ public class ChatService {
 
         ConversationMember member = conversationMemberRepository
             .findByConversationIdAndUserId(conversationId, userId)
-            .orElseThrow(() -> new ForbiddenException("Membre introuvable."));
+            .orElseThrow(() -> new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_MEMBRE_INTROUVABLE", "Membre introuvable."));
 
         member.setLastReadAt(Instant.now());
         conversationMemberRepository.save(member);

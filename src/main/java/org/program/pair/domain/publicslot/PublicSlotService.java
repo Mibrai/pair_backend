@@ -1,5 +1,6 @@
 package org.program.pair.domain.publicslot;
 
+import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.logging.Masque;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -73,10 +74,10 @@ public class PublicSlotService {
     @Transactional
     public PublicShareLinkDto shareLink(UUID userId, UUID scheduleId) {
         Schedule slot = scheduleRepository.findById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
         if (!slotAudience.participantIds(slot).contains(userId)) {
-            throw new ResourceNotFoundException("Créneau introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
         }
 
         if (slot.getPublicShareToken() == null) {
@@ -111,10 +112,10 @@ public class PublicSlotService {
     @Transactional
     public PublicShareLinkDto setShareable(UUID userId, UUID scheduleId, boolean shareable) {
         Schedule slot = scheduleRepository.findById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
         if (!userId.equals(hostIdOf(slot))) {
-            throw new ResourceNotFoundException("Créneau introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
         }
 
         slot.setIsPubliclyShareable(shareable);
@@ -150,7 +151,7 @@ public class PublicSlotService {
     public PublicSlotView view(String token, Instant now) {
         Schedule slot = scheduleRepository.findByPublicShareToken(token)
             .filter(s -> publiclyVisible(s, now))
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
         return toView(slot);
     }
@@ -188,7 +189,7 @@ public class PublicSlotService {
     public Schedule resolve(String token, Instant now) {
         return scheduleRepository.findByPublicShareToken(token)
             .filter(s -> publiclyVisible(s, now))
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
     }
 
     /**

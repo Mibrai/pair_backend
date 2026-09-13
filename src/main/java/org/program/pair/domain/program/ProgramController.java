@@ -1,5 +1,6 @@
 package org.program.pair.domain.program;
 
+import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.media.ProcessedMultipartFile;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -72,7 +73,7 @@ public class ProgramController {
     @GetMapping("/new")
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public void getNewProgram() {
-        throw new ValidationException("Utilisez POST /api/programs pour créer un programme.");
+        throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_CREER_PROGRAMME_AILLEURS", "Utilisez POST /api/programs pour créer un programme.");
     }
 
     @GetMapping("/{programId}")

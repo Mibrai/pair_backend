@@ -1,5 +1,6 @@
 package org.program.pair.domain.program;
 
+import org.program.pair.shared.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.activity.Activity;
 import org.program.pair.domain.activity.ActivityFormat;
@@ -70,10 +71,10 @@ public class QuickSlotService {
 
     public SlotFeedItemDto create(UUID userId, QuickSlotRequest request) {
         User user = userRepository.findById(userId)
-            .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_UTILISATEUR_INTROUVABLE", "Utilisateur introuvable."));
 
         Activity activity = activityRepository.findById(request.activityId())
-            .orElseThrow(() -> new ResourceNotFoundException("Activité introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_ACTIVITE_INTROUVABLE", "Activité introuvable."));
 
         UserActivity userActivity = findOrDeclare(user, activity, request);
         Program program = programService.createQuickProgram(userActivity, titleFor(activity, request));
