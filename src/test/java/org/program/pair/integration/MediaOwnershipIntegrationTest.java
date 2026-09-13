@@ -60,6 +60,8 @@ class MediaOwnershipIntegrationTest extends AbstractIntegrationTest {
     @Autowired CategoryRepository categoryRepository;
     @Autowired UserActivityRepository userActivityRepository;
     @Autowired UserRepository userRepository;
+    @Autowired org.program.pair.repository.ConversationRepository conversationRepository;
+    @Autowired org.program.pair.repository.ConversationMemberRepository conversationMemberRepository;
 
     /**
      * Le dépôt écrit qui a déposé. C'est la brique dont tout le reste découle.
@@ -297,6 +299,61 @@ class MediaOwnershipIntegrationTest extends AbstractIntegrationTest {
         assertThat(reponse).isNotNull();
         assertThat(reponse.url()).startsWith(MediaFileService.URL_PREFIX);
         return reponse.url();
+    }
+
+    /**
+     * P-MS-01, étape 4 — l'image d'une conversation doit être un fichier du
+     * service, déposé par l'appelant. La route renvoyait telle quelle
+     * n'importe quelle URL reçue.
+     */
+    @Test
+    void uneImageDeConversation_nePeutPasPointerHorsDeNosMedias() throws IOException {
+        Compte moi = compte("chat-image");
+        UUID conversation = conversationDe(moi.id());
+
+        webTestClient.post()
+            .uri(b -> b.path("/api/conversations/{id}/images")
+                .queryParam("image", "https://pistage.example/pixel.png").build(conversation))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + moi.token())
+            .exchange()
+            .expectStatus().isBadRequest()
+            .expectBody().jsonPath("$.code").isEqualTo("MEDIA_URL_INVALID");
+
+        String url = deposerImage(moi.token());
+        String rendue = webTestClient.post()
+            .uri(b -> b.path("/api/conversations/{id}/images").queryParam("image", url).build(conversation))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + moi.token())
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody(String.class).returnResult().getResponseBody();
+        assertThat(rendue).isEqualTo(url);
+    }
+
+    @Test
+    void uneImageDeConversation_deposeeParUnAutre_estRefusee() throws IOException {
+        Compte auteur = compte("chat-image-auteur");
+        Compte autre = compte("chat-image-autre");
+        String url = deposerImage(auteur.token());
+
+        webTestClient.post()
+            .uri(b -> b.path("/api/conversations/{id}/images")
+                .queryParam("image", url).build(conversationDe(autre.id())))
+            .header(HttpHeaders.AUTHORIZATION, "Bearer " + autre.token())
+            .exchange()
+            .expectStatus().isBadRequest();
+    }
+
+    private UUID conversationDe(UUID membre) {
+        org.program.pair.domain.chat.Conversation conversation = conversationRepository.save(
+            org.program.pair.domain.chat.Conversation.builder()
+                .type(org.program.pair.domain.chat.ConversationType.GROUP).build());
+        org.program.pair.domain.chat.ConversationMember ligne = new org.program.pair.domain.chat.ConversationMember();
+        ligne.getId().setConversationId(conversation.getId());
+        ligne.getId().setUserId(membre);
+        ligne.setConversation(conversation);
+        ligne.setUser(userRepository.findById(membre).orElseThrow());
+        conversationMemberRepository.save(ligne);
+        return conversation.getId();
     }
 
     private String deposerIcone(String token, UUID activiteId) throws IOException {

@@ -45,6 +45,7 @@ public class ChatService {
     private final HtmlSanitizer sanitizer;
     private final BlockFilterService blockFilterService;
     private final ApplicationEventPublisher eventPublisher;
+    private final org.program.pair.domain.media.MediaFileService mediaFileService;
 
     /** Longueur de l'aperçu de message porté par la push. */
     private static final int PREVIEW_MAX_LENGTH = 120;
@@ -1179,13 +1180,21 @@ public class ChatService {
         eventPublisher.publishEvent(new UnreadChangedEvent(userId));
     }
 
+    /**
+     * Rattache une image déjà téléversée à une conversation, et rend son URL.
+     *
+     * <p><b>L'URL passe par {@code MediaFileService.attacher}</b> (P-MS-01,
+     * étape 4). Cette route renvoyait telle quelle la chaîne reçue : une URL
+     * étrangère — un pixel de pistage, ou un chemin forgé pour que l'app y
+     * envoie son jeton — ressortait avec la caution du serveur. Elle doit
+     * désormais désigner un fichier du service de fichiers, déposé par
+     * l'appelant ; sinon {@code 400 MEDIA_URL_INVALID}, comme pour une pièce
+     * jointe d'incident ou une photo de souvenir. L'app publiée n'appelle pas
+     * cette route.
+     */
     public String uploadImage(UUID userId, UUID conversationId, String imageUrl) {
         assertMayRead(loadConversation(conversationId), userId);
-
-        // This method expects the image to be already uploaded to storage
-        // and returns the URL. The actual file upload logic would be in the controller
-        // using a file storage service (S3, local, etc.)
-        return imageUrl;
+        return mediaFileService.attacher(imageUrl, userId, null);
     }
 
     private MessageDto toMessageDto(Message msg) {
