@@ -295,14 +295,21 @@ class WatchSlotLifecycleIntegrationTest extends AbstractIntegrationTest {
 
     private static final Duration DEUX_HEURES = Duration.ofHours(2);
 
-    /** L'organisateur repousse sa séance. Le créneau est le sien : 200 attendu. */
+    /**
+     * L'organisateur repousse sa séance, début et fin ensemble. Le créneau est le
+     * sien : 200 attendu. Depuis que toute séance a une fin déclarée (P-BL-15),
+     * déplacer le seul début ne déplacerait plus la fin.
+     */
     private void deplacer(Compte organisateur, Creneau creneau, Instant nouveauDebut) {
+        org.program.pair.domain.program.Schedule actuel = creneau(creneau.scheduleId());
+        Duration decalage = Duration.between(actuel.getStartsAt(), nouveauDebut);
         webTestClient.put()
             .uri("/api/programs/{programId}/schedules/{scheduleId}",
                 creneau.programId(), creneau.scheduleId())
             .headers(h -> h.setBearerAuth(organisateur.token()))
             .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(Map.of("startsAt", nouveauDebut.toString()))
+            .bodyValue(Map.of("startsAt", nouveauDebut.toString(),
+                "endsAt", actuel.getEndsAt().plus(decalage).toString()))
             .exchange().expectStatus().isOk();
     }
 
