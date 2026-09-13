@@ -51,7 +51,7 @@ public class ReportService {
         // observés.
         if (request.getReportedEntityType() == ReportEntityType.USER
                 && reporterId.equals(request.getReportedEntityId())) {
-            throw new BusinessException("Vous ne pouvez pas vous signaler vous-même");
+            throw new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION, "REFUS_SIGNALEMENT_SOI_MEME", "Vous ne pouvez pas vous signaler vous-même");
         }
 
         // La cible d'abord : signaler du vide n'est pas un incident, c'est une
@@ -59,7 +59,7 @@ public class ReportService {
         // plus joignable » plutôt qu'une panne. Avant, aucun de ces quatre types
         // n'était résolu et un identifiant inexistant allait jusqu'à l'insertion.
         if (!cibleExiste(request.getReportedEntityType(), request.getReportedEntityId())) {
-            throw new ResourceNotFoundException(
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_ELEMENT_SIGNALE_INTROUVABLE",
                 "L'élément signalé n'existe pas ou n'est plus disponible.");
         }
 
@@ -147,7 +147,7 @@ public class ReportService {
 
     public Report reviewReport(UUID reportId, UUID moderatorId, ReportStatus newStatus, String notes) {
         Report report = reportRepository.findById(reportId)
-            .orElseThrow(() -> new BusinessException("Signalement non trouvé"));
+            .orElseThrow(() -> new BusinessException(ErrorCode.BUSINESS_RULE_VIOLATION, "REFUS_SIGNALEMENT_INTROUVABLE", "Signalement non trouvé"));
 
         report.setStatus(newStatus);
         report.setReviewedBy(moderatorId);

@@ -67,9 +67,9 @@ public class SubscriptionService {
         }
 
         User subscriber = userRepository.findById(subscriberId)
-            .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_UTILISATEUR_INTROUVABLE", "Utilisateur introuvable."));
         User author = userRepository.findById(authorId)
-            .orElseThrow(() -> new ResourceNotFoundException("Auteur introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_AUTEUR_INTROUVABLE", "Auteur introuvable."));
 
         requireNotBlocked(subscriberId, author.getId());
         requireOpenToSubscriptions(author);
@@ -112,9 +112,9 @@ public class SubscriptionService {
         }
 
         User subscriber = userRepository.findById(subscriberId)
-            .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_UTILISATEUR_INTROUVABLE", "Utilisateur introuvable."));
         UserActivity userActivity = userActivityRepository.findById(userActivityId)
-            .orElseThrow(() -> new ResourceNotFoundException("Activité introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_ACTIVITE_INTROUVABLE", "Activité introuvable."));
 
         User author = userActivity.getUser();
         if (author != null) {
@@ -153,9 +153,9 @@ public class SubscriptionService {
         }
 
         User subscriber = userRepository.findById(subscriberId)
-            .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_UTILISATEUR_INTROUVABLE", "Utilisateur introuvable."));
         Category category = categoryRepository.findById(categoryId)
-            .orElseThrow(() -> new ResourceNotFoundException("Catégorie introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CATEGORIE_INTROUVABLE", "Catégorie introuvable."));
 
         Subscription.SubscriptionBuilder builder = Subscription.builder()
             .subscriber(subscriber)
@@ -234,7 +234,7 @@ public class SubscriptionService {
      */
     private void requireListableType(SubscriptionType type) {
         if (type == SubscriptionType.CATEGORY) {
-            throw new ForbiddenException(
+            throw new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_ABONNES_CATEGORIE",
                 "Les abonnés d'une catégorie ne sont listables par personne : "
                     + "une catégorie n'appartient à aucun utilisateur.");
         }
@@ -245,9 +245,9 @@ public class SubscriptionService {
             return;
         }
         UserActivity target = userActivityRepository.findById(targetId)
-            .orElseThrow(() -> new ResourceNotFoundException("Activité introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_ACTIVITE_INTROUVABLE", "Activité introuvable."));
         if (target.getUser() == null || !ownerId.equals(target.getUser().getId())) {
-            throw new ForbiddenException(
+            throw new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_ABONNES_ACTIVITE_AUTRUI",
                 "Vous ne pouvez lister que les abonnés de vos propres activités.");
         }
     }
@@ -302,7 +302,7 @@ public class SubscriptionService {
      */
     private SubscriptionDto applyUpdate(Subscription subscription, UpdateSubscriptionRequest request) {
         if (request.clearsScope() && request.mentionsScope()) {
-            throw new ValidationException(
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_PORTEE_CONTRADICTOIRE",
                 "clearScope et lat/lng/radiusMeters ne peuvent pas être demandés ensemble.");
         }
 
@@ -317,7 +317,7 @@ public class SubscriptionService {
         } else if (request.mentionsScope()) {
             requireCategoryScope(subscription);
             if (!request.setsScope()) {
-                throw new ValidationException(
+                throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_PORTEE_INCOMPLETE_OU_RETRAIT",
                     "lat, lng et radiusMeters vont ensemble : les trois sont requis pour "
                         + "poser une portée, ou clearScope pour la retirer.");
             }
@@ -739,7 +739,7 @@ public class SubscriptionService {
      */
     private void requireNotSelf(UUID subscriberId, UUID authorId) {
         if (subscriberId.equals(authorId)) {
-            throw new ForbiddenException("Vous ne pouvez pas vous abonner à vous-même.");
+            throw new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_ABONNEMENT_SOI_MEME", "Vous ne pouvez pas vous abonner à vous-même.");
         }
     }
 
@@ -772,7 +772,7 @@ public class SubscriptionService {
                 "Vous avez bloqué cette personne.");
         }
         if (blockFilterService.blocked(subscriberId, authorId)) {
-            throw new ResourceNotFoundException("Auteur introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_AUTEUR_INTROUVABLE", "Auteur introuvable.");
         }
     }
 
@@ -786,14 +786,14 @@ public class SubscriptionService {
 
     private void requireCompleteScope(SubscriptionScopeRequest scope) {
         if (!scope.isComplete()) {
-            throw new ValidationException(
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_PORTEE_INCOMPLETE",
                 "lat, lng et radiusMeters vont ensemble : les trois sont requis, ou aucun.");
         }
     }
 
     private void requireCategoryScope(Subscription subscription) {
         if (subscription.getType() != SubscriptionType.CATEGORY) {
-            throw new ValidationException(
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_PORTEE_HORS_CATEGORIE",
                 "Une portée géographique ne s'applique qu'aux abonnements de type CATEGORY.");
         }
     }

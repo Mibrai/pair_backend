@@ -1,5 +1,6 @@
 package org.program.pair.domain.program;
 
+import org.program.pair.shared.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.notification.NotificationPayload;
 import org.program.pair.domain.notification.NotificationService;
@@ -72,16 +73,16 @@ public class SlotCancellationService {
 
     public void cancel(UUID userId, UUID scheduleId, CancelSlotRequest request) {
         Schedule slot = scheduleRepository.findById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
         // 404 et non 403 : la suppression historique rend un 403, mais confirmer
         // l'existence d'un créneau qu'on n'organise pas n'a aucune raison d'être.
         if (!slot.getProgram().getUserActivity().getUser().getId().equals(userId)) {
-            throw new ResourceNotFoundException("Créneau introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
         }
 
         if (slot.getStatus() == SlotStatus.CANCELLED) {
-            throw new ValidationException("Ce créneau est déjà annulé.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_CRENEAU_DEJA_ANNULE", "Ce créneau est déjà annulé.");
         }
 
         String reason = request == null || request.reason() == null

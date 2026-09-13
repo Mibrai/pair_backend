@@ -244,7 +244,7 @@ public class AfficheService {
 
     private Schedule loadSlot(UUID scheduleId) {
         return scheduleRepository.findById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
     }
 
     /**

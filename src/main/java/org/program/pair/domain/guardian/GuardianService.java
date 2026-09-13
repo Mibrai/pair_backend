@@ -95,7 +95,7 @@ public class GuardianService {
                     "Vous ne pouvez pas vous désigner vous-même comme contact d'urgence.");
             }
             if (!userRepository.existsById(req.memberId())) {
-                throw new ResourceNotFoundException("Ce membre est introuvable.");
+                throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_MEMBRE_INTROUVABLE", "Ce membre est introuvable.");
             }
             if (guardianRepository.existsByOwnerIdAndMemberId(ownerId, req.memberId())) {
                 throw new ConflictException(ErrorCode.GUARDIAN_ALREADY_DESIGNATED,
@@ -126,7 +126,7 @@ public class GuardianService {
             return null;
         }
         String e164 = PhoneNumber.toE164(phoneBrut).orElseThrow(() ->
-            new ValidationException("Ce numéro de téléphone n'est pas reconnu comme un mobile valide."));
+            new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_MOBILE_INVALIDE", "Ce numéro de téléphone n'est pas reconnu comme un mobile valide."));
         if (refusedContacts.estRefuse(e164)) {
             // Le message ne dit pas « cette personne a refusé » : le savoir
             // reviendrait à confirmer, à qui essaie des numéros, l'existence d'un
@@ -142,7 +142,7 @@ public class GuardianService {
 
     public void delete(UUID ownerId, UUID guardianId) {
         Guardian guardian = guardianRepository.findByIdAndOwnerId(guardianId, ownerId)
-            .orElseThrow(() -> new ResourceNotFoundException("Contact introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CONTACT_INTROUVABLE", "Contact introuvable."));
         guardianRepository.delete(guardian);
     }
 
@@ -154,7 +154,7 @@ public class GuardianService {
      */
     public GuardianDto invite(UUID ownerId, UUID guardianId) {
         Guardian guardian = guardianRepository.findByIdAndOwnerId(guardianId, ownerId)
-            .orElseThrow(() -> new ResourceNotFoundException("Contact introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CONTACT_INTROUVABLE", "Contact introuvable."));
 
         if (guardian.getRespondedAt() != null) {
             throw new BusinessException(ErrorCode.GUARDIAN_ALREADY_RESPONDED,
@@ -260,7 +260,7 @@ public class GuardianService {
      */
     public GuardianDto setRole(UUID ownerId, UUID guardianId, GuardianRole demande) {
         Guardian guardian = guardianRepository.findByIdAndOwnerId(guardianId, ownerId)
-            .orElseThrow(() -> new ResourceNotFoundException("Contact introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CONTACT_INTROUVABLE", "Contact introuvable."));
 
         GuardianRole cible = demande == null ? GuardianRole.NONE : demande;
 
@@ -286,7 +286,7 @@ public class GuardianService {
 
     private Guardian parJeton(String token) {
         return guardianRepository.findByConsentToken(token)
-            .orElseThrow(() -> new ResourceNotFoundException("Demande introuvable ou expirée."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_DEMANDE_INTROUVABLE", "Demande introuvable ou expirée."));
     }
 
     // ------------------------------------------------------------------ outils

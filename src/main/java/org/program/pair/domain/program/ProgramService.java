@@ -93,7 +93,7 @@ public class ProgramService {
     public ProgramDto createProgram(UUID userId, CreateProgramRequest request) {
         UserActivity ua = userActivityRepository
             .findByIdAndUserId(request.userActivityId(), userId)
-            .orElseThrow(() -> new ForbiddenException("Activité introuvable."));
+            .orElseThrow(() -> new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_ACTIVITE_INTROUVABLE", "Activité introuvable."));
 
         Program program = new Program();
         program.setUserActivity(ua);
@@ -328,11 +328,11 @@ public class ProgramService {
     @Transactional(readOnly = true)
     public ProgramDto getProgram(UUID programId, UUID requesterId) {
         Program program = programRepository.findById(programId)
-            .orElseThrow(() -> new ResourceNotFoundException("Programme introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_PROGRAMME_INTROUVABLE", "Programme introuvable."));
 
         boolean isOwner = program.getUserActivity().getUser().getId().equals(requesterId);
         if (!program.getIsPublic() && !isOwner) {
-            throw new ForbiddenException("Ce programme est privé.");
+            throw new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_PROGRAMME_PRIVE", "Ce programme est privé.");
         }
 
         return toDto(program, requesterId);
@@ -357,13 +357,13 @@ public class ProgramService {
     @Transactional(readOnly = true)
     public List<ProgramDto> getNearbyPrograms(UUID requesterId, Double lat, Double lng, Double radiusKm) {
         if (lat == null || lng == null) {
-            throw new ValidationException("Les paramètres 'lat' et 'lng' doivent être fournis ensemble.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_LAT_LNG_ENSEMBLE", "Les paramètres 'lat' et 'lng' doivent être fournis ensemble.");
         }
         if (lat < -90 || lat > 90) {
-            throw new ValidationException("Le paramètre 'lat' doit être compris entre -90 et 90.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_LAT_HORS_BORNES", "Le paramètre 'lat' doit être compris entre -90 et 90.");
         }
         if (lng < -180 || lng > 180) {
-            throw new ValidationException("Le paramètre 'lng' doit être compris entre -180 et 180.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_LNG_HORS_BORNES", "Le paramètre 'lng' doit être compris entre -180 et 180.");
         }
 
         double effectiveRadiusKm = radiusKm != null ? radiusKm : DEFAULT_RADIUS_KM;
@@ -416,7 +416,7 @@ public class ProgramService {
         Program program = findProgramOwnedBy(programId, userId);
 
         if (request.placeType() == PlaceType.PUBLIC && request.addressPublic() == null) {
-            throw new ValidationException("L'adresse est obligatoire pour un lieu public.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_ADRESSE_LIEU_PUBLIC", "L'adresse est obligatoire pour un lieu public.");
         }
 
         // Un lieu physique sans coordonnées n'apparaîtrait sur aucune carte et
@@ -426,7 +426,7 @@ public class ProgramService {
         // impossible à créer autrement qu'en inventant des coordonnées.
         if (request.placeType() != PlaceType.ONLINE
                 && (request.lat() == null || request.lng() == null)) {
-            throw new ValidationException(
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_COORDONNEES_LIEU_PHYSIQUE",
                 "Les coordonnées sont obligatoires pour un lieu physique.");
         }
 
@@ -550,11 +550,11 @@ public class ProgramService {
         // hausse de capacité promeut la même personne deux fois, ou dépasse
         // ensemble le plafond qu'on vient de poser.
         Schedule schedule = scheduleRepository.lockById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
         UUID ownerId = schedule.getProgram().getUserActivity().getUser().getId();
         if (!ownerId.equals(userId)) {
-            throw new ForbiddenException("Vous ne pouvez pas modifier ce créneau.");
+            throw new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_MODIFIER_CRENEAU", "Vous ne pouvez pas modifier ce créneau.");
         }
 
         Instant now = Instant.now();
@@ -576,7 +576,7 @@ public class ProgramService {
         // erreur, elles produisent une séance qu'on peut modifier sans pouvoir y
         // confirmer sa présence.
         if (schedule.getRecurrenceRule() == null && SlotTiming.hasEndedBy(schedule, now)) {
-            throw new ValidationException(
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_SEANCE_TERMINEE",
                 "Cette séance est terminée : elle ne se modifie plus.");
         }
 
@@ -620,7 +620,7 @@ public class ProgramService {
             // Chemin inverse : repasser en présentiel sans donner de coordonnées.
             // Sans ce refus, c'est la contrainte de base (V61) qui trancherait,
             // et un refus métier lisible vaut mieux qu'une violation d'intégrité.
-            throw new ValidationException(
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_COORDONNEES_LIEU_PHYSIQUE",
                 "Les coordonnées sont obligatoires pour un lieu physique.");
         }
 
@@ -655,7 +655,7 @@ public class ProgramService {
         // l'inverse en laisserait passer une absurde.
         if (schedule.getEndsAt() != null
                 && !schedule.getStartsAt().isBefore(schedule.getEndsAt())) {
-            throw new ValidationException(
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_FIN_AVANT_DEBUT",
                 "La fin du créneau doit être après son début.");
         }
 
@@ -664,7 +664,7 @@ public class ProgramService {
         // impossible — exactement le moment où on en a le plus besoin.
         if (!Objects.equals(oldStart, schedule.getStartsAt())
                 && !schedule.getStartsAt().isAfter(now)) {
-            throw new ValidationException(
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_DEBUT_DANS_LE_PASSE",
                 "Le début d'un créneau ne peut pas être déplacé dans le passé.");
         }
 
@@ -836,7 +836,7 @@ public class ProgramService {
 
         UUID ownerId = schedule.getProgram().getUserActivity().getUser().getId();
         if (!ownerId.equals(userId)) {
-            throw new ForbiddenException("Vous ne pouvez pas supprimer ce créneau.");
+            throw new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_SUPPRIMER_CRENEAU", "Vous ne pouvez pas supprimer ce créneau.");
         }
 
         Program prog = schedule.getProgram();
@@ -926,11 +926,11 @@ public class ProgramService {
 
     private Program findProgramOwnedBy(UUID programId, UUID userId) {
         Program program = programRepository.findById(programId)
-            .orElseThrow(() -> new ResourceNotFoundException("Programme introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_PROGRAMME_INTROUVABLE", "Programme introuvable."));
 
         UUID ownerId = program.getUserActivity().getUser().getId();
         if (!ownerId.equals(userId)) {
-            throw new ForbiddenException("Vous n'êtes pas propriétaire de ce programme.");
+            throw new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_PAS_PROPRIETAIRE_PROGRAMME", "Vous n'êtes pas propriétaire de ce programme.");
         }
 
         return program;

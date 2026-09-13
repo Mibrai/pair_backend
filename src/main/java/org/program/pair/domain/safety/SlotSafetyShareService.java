@@ -1,5 +1,6 @@
 package org.program.pair.domain.safety;
 
+import org.program.pair.shared.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotAudience;
@@ -57,14 +58,14 @@ public class SlotSafetyShareService {
 
     public SafetyShareLinkDto create(UUID userId, UUID scheduleId) {
         Schedule slot = scheduleRepository.findById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
         if (!slotAudience.participantIds(slot).contains(userId)) {
-            throw new ResourceNotFoundException("Créneau introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
         }
 
         User user = userRepository.findById(userId)
-            .orElseThrow(() -> new ResourceNotFoundException("Utilisateur introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_UTILISATEUR_INTROUVABLE", "Utilisateur introuvable."));
 
         // La séance partagée et l'échéance sont figées maintenant. Les relire plus
         // tard depuis le créneau ferait mentir la page sur un créneau récurrent,
@@ -97,7 +98,7 @@ public class SlotSafetyShareService {
     public SafetyShareView view(String token, Instant now) {
         SlotSafetyShare share = shareRepository.findByShareToken(token)
             .filter(s -> s.getExpiresAt().isAfter(now))
-            .orElseThrow(() -> new ResourceNotFoundException("Lien introuvable ou expiré."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_LIEN_INTROUVABLE", "Lien introuvable ou expiré."));
 
         if (share.getViewedAt() == null) {
             share.setViewedAt(now);

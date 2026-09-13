@@ -1,5 +1,6 @@
 package org.program.pair.domain.gdpr;
 
+import org.program.pair.shared.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.audit.AuditActionType;
@@ -59,7 +60,7 @@ public class GdprService {
         log.info("Exporting GDPR data for user {}", userId);
 
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_UTILISATEUR_INTROUVABLE", "User not found"));
 
         // Log the export action
         auditLogService.log(userId, AuditActionType.GDPR_EXPORT, "USER", userId);

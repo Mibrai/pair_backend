@@ -1,5 +1,6 @@
 package org.program.pair.domain.notification;
 
+import org.program.pair.shared.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.notification.dto.QuietHoursDto;
 import org.program.pair.domain.user.User;
@@ -45,12 +46,12 @@ public class QuietHoursService {
      */
     public QuietHoursDto update(UUID userId, Integer start, Integer end) {
         if ((start == null) != (end == null)) {
-            throw new ValidationException(
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_HEURES_SILENCE_INCOMPLETES",
                 "Les heures de silence vont par deux : fournissez le début et la fin, "
                     + "ou aucun des deux pour retirer le silence.");
         }
         if (start != null && start.equals(end)) {
-            throw new ValidationException(
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_HEURES_SILENCE_IDENTIQUES",
                 "Le début et la fin des heures de silence ne peuvent pas être identiques.");
         }
 

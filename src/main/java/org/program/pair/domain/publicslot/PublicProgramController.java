@@ -1,5 +1,6 @@
 package org.program.pair.domain.publicslot;
 
+import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.logging.Masque;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -119,7 +120,7 @@ public class PublicProgramController {
         Program program = publicProgramService.resolve(token, Instant.now());
         String imageUrl = program.getImageUrl();
         if (imageUrl == null || imageUrl.isBlank()) {
-            throw new ResourceNotFoundException("Image introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_IMAGE_INTROUVABLE", "Image introuvable.");
         }
 
         String filename = imageUrl.replaceFirst("^.*/api/media/files/", "");
@@ -131,7 +132,7 @@ public class PublicProgramController {
                 .body(new InputStreamResource(stream));
         } catch (IOException e) {
             log.warn("Image de partage illisible pour le programme {} : {}", Masque.jeton(token), e.getMessage());
-            throw new ResourceNotFoundException("Image introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_IMAGE_INTROUVABLE", "Image introuvable.");
         }
     }
 
@@ -153,7 +154,7 @@ public class PublicProgramController {
                     program.categoryColorRamp(), program.title(), subtitle));
         } catch (IOException e) {
             log.warn("Vignette illisible pour le programme {} : {}", Masque.jeton(token), e.getMessage());
-            throw new ResourceNotFoundException("Image introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_IMAGE_INTROUVABLE", "Image introuvable.");
         }
     }
 

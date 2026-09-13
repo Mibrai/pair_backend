@@ -59,11 +59,11 @@ public class ProgramEnrollmentService {
 
         // Validate user exists
         User user = userRepository.findById(userId)
-            .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_UTILISATEUR_INTROUVABLE", "User not found"));
 
         // Validate program exists and is active
         Program program = programRepository.findById(programId)
-            .orElseThrow(() -> new ResourceNotFoundException("Program not found"));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_PROGRAMME_INTROUVABLE", "Program not found"));
 
         // Le blocage, en tête et avant tout le reste — y compris avant « le
         // programme est-il actif » et « êtes-vous déjà inscrit ». Un refus
@@ -98,7 +98,7 @@ public class ProgramEnrollmentService {
             // (rejoindre un créneau via /api/slots), donc les deux chemins doivent
             // se synchroniser sur la même ligne pour éviter un sur-booking.
             schedule = scheduleRepository.lockById(scheduleId)
-                .orElseThrow(() -> new ResourceNotFoundException("Schedule not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Schedule not found"));
 
             if (!schedule.getProgram().getId().equals(programId)) {
                 throw new ValidationException(ErrorCode.PROGRAM_SCHEDULE_MISMATCH, "Schedule does not belong to this program");
@@ -175,7 +175,7 @@ public class ProgramEnrollmentService {
         log.info("User {} attempting to leave user program {}", userId, userProgramId);
 
         UserProgram userProgram = userProgramRepository.findById(userProgramId)
-            .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found"));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_INSCRIPTION_INTROUVABLE", "Enrollment not found"));
 
         // Validate ownership
         if (!userProgram.getUser().getId().equals(userId)) {
@@ -195,7 +195,7 @@ public class ProgramEnrollmentService {
         // sont que des lectures.
         Schedule schedule = userProgram.getSchedule() == null ? null
             : scheduleRepository.lockById(userProgram.getSchedule().getId())
-                .orElseThrow(() -> new ResourceNotFoundException("Schedule not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Schedule not found"));
 
         // Update status
         userProgram.setStatus(UserProgramStatus.LEFT);
@@ -265,7 +265,7 @@ public class ProgramEnrollmentService {
         }
 
         UserProgram userProgram = userProgramRepository.findById(userProgramId)
-            .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found"));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_INSCRIPTION_INTROUVABLE", "Enrollment not found"));
 
         // Validate ownership
         if (!userProgram.getUser().getId().equals(userId)) {
@@ -422,7 +422,7 @@ public class ProgramEnrollmentService {
 
     private UserProgram validateUserProgramOwnership(UUID userId, UUID userProgramId) {
         UserProgram userProgram = userProgramRepository.findById(userProgramId)
-            .orElseThrow(() -> new ResourceNotFoundException("Enrollment not found"));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_INSCRIPTION_INTROUVABLE", "Enrollment not found"));
 
         if (!userProgram.getUser().getId().equals(userId)) {
             throw new ForbiddenException(ErrorCode.ENROLLMENT_NOT_OWNED, "You can only modify your own enrollments");

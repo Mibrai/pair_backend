@@ -148,7 +148,7 @@ public class SlotEntryGuard {
         }
 
         if (slot.getStatus() == SlotStatus.CANCELLED) {
-            throw new ResourceNotFoundException("Créneau introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
         }
 
         assertNotStarted(slot, now);
@@ -173,7 +173,7 @@ public class SlotEntryGuard {
                 "Vous avez bloqué l'organisateur de ce créneau.");
         }
         if (blockFilterService.blocked(userId, hostId)) {
-            throw new ResourceNotFoundException("Créneau introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
         }
     }
 

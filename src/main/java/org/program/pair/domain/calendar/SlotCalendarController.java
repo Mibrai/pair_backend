@@ -1,5 +1,6 @@
 package org.program.pair.domain.calendar;
 
+import org.program.pair.shared.exception.ErrorCode;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.program.ParticipationStatus;
@@ -69,10 +70,10 @@ public class SlotCalendarController {
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID scheduleId) {
         Schedule slot = scheduleRepository.findById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
         if (!slotAudience.participantIds(slot).contains(principal.getId())) {
-            throw new ResourceNotFoundException("Créneau introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
         }
 
         return ics("creneau.ics", List.of(entryFor(slot, principal.getId())));

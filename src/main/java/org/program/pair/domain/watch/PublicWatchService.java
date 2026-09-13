@@ -1,5 +1,6 @@
 package org.program.pair.domain.watch;
 
+import org.program.pair.shared.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.program.Schedule;
 import org.program.pair.domain.program.SlotTiming;
@@ -104,13 +105,13 @@ public class PublicWatchService {
 
     private Watch ouvrable(String token, Instant now) {
         Watch watch = watchRepository.findByPublicToken(token)
-            .orElseThrow(() -> new ResourceNotFoundException("Lien introuvable ou expiré."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_LIEN_INTROUVABLE", "Lien introuvable ou expiré."));
 
         if (watch.getPublicTokenRevokedAt() != null) {
-            throw new ResourceNotFoundException("Lien introuvable ou expiré.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_LIEN_INTROUVABLE", "Lien introuvable ou expiré.");
         }
         if (watch.getClosedAt() != null && now.isAfter(watch.getClosedAt().plus(APRES_CLOTURE))) {
-            throw new ResourceNotFoundException("Lien introuvable ou expiré.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_LIEN_INTROUVABLE", "Lien introuvable ou expiré.");
         }
         return watch;
     }

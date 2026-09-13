@@ -1,5 +1,6 @@
 package org.program.pair.domain.auth;
 
+import org.program.pair.shared.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.auth.dto.AuthResponse;
 import org.program.pair.domain.auth.dto.LoginRequest;
@@ -159,7 +160,7 @@ public class AuthService {
 
     public void resetPassword(String token, String newPassword) {
         if (newPassword == null || newPassword.length() < 8) {
-            throw new ValidationException("Le mot de passe doit contenir au moins 8 caractères.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_MOT_DE_PASSE_TROP_COURT", "Le mot de passe doit contenir au moins 8 caractères.");
         }
 
         UUID userId = emailVerificationService.validatePasswordResetToken(token)

@@ -1,5 +1,6 @@
 package org.program.pair.domain.user;
 
+import org.program.pair.shared.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.auth.EmailVerificationService;
 import org.program.pair.repository.UserRepository;
@@ -63,10 +64,10 @@ public class EmailChangeService {
 
         String adresse = nouvelleAdresse == null ? "" : nouvelleAdresse.strip().toLowerCase();
         if (adresse.isBlank()) {
-            throw new ValidationException("L'adresse e-mail est obligatoire.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_EMAIL_OBLIGATOIRE", "L'adresse e-mail est obligatoire.");
         }
         if (adresse.equals(user.getEmail())) {
-            throw new ValidationException("Cette adresse est déjà celle de votre compte.");
+            throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_EMAIL_DEJA_ACTUELLE", "Cette adresse est déjà celle de votre compte.");
         }
         if (userRepository.existsByEmail(adresse)) {
             throw new EmailAlreadyExistsException("Cet email est déjà utilisé.");

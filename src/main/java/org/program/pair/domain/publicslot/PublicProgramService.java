@@ -1,5 +1,6 @@
 package org.program.pair.domain.publicslot;
 
+import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.logging.Masque;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -69,10 +70,10 @@ public class PublicProgramService {
     @Transactional
     public PublicShareLinkDto shareLink(UUID userId, UUID programId) {
         Program program = programRepository.findById(programId)
-            .orElseThrow(() -> new ResourceNotFoundException("Programme introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_PROGRAMME_INTROUVABLE", "Programme introuvable."));
 
         if (!userId.equals(hostIdOf(program))) {
-            throw new ResourceNotFoundException("Programme introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_PROGRAMME_INTROUVABLE", "Programme introuvable.");
         }
 
         if (program.getPublicShareToken() == null) {
@@ -95,10 +96,10 @@ public class PublicProgramService {
     @Transactional
     public PublicShareLinkDto setShareable(UUID userId, UUID programId, boolean shareable) {
         Program program = programRepository.findById(programId)
-            .orElseThrow(() -> new ResourceNotFoundException("Programme introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_PROGRAMME_INTROUVABLE", "Programme introuvable."));
 
         if (!userId.equals(hostIdOf(program))) {
-            throw new ResourceNotFoundException("Programme introuvable.");
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_PROGRAMME_INTROUVABLE", "Programme introuvable.");
         }
 
         program.setIsPubliclyShareable(shareable);
@@ -116,7 +117,7 @@ public class PublicProgramService {
     public Program resolve(String token, Instant now) {
         return programRepository.findByPublicShareToken(token)
             .filter(this::publiclyVisible)
-            .orElseThrow(() -> new ResourceNotFoundException("Programme introuvable."));
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_PROGRAMME_INTROUVABLE", "Programme introuvable."));
     }
 
     /**
