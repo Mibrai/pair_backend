@@ -24,6 +24,7 @@ import java.util.UUID;
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final JwtTokenProvider tokenProvider;
+    private final CorsProperties corsProperties;
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry registry) {
@@ -35,22 +36,19 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
+        // Origines : la liste de pair.cors.allowed-origins (P-BS-18), vide hors
+        // dev. Liste vide = même origine seulement ; un client natif, qui
+        // n'envoie pas d'en-tête Origin, reste accepté.
+        String[] origines = corsProperties.allowedOrigins().toArray(new String[0]);
+
         // Main WebSocket endpoint for chat with SockJS fallback
         registry.addEndpoint("/ws/chat")
-            .setAllowedOrigins(
-                "https://pair-frontend-omega.vercel.app",
-                "http://localhost:5173",
-                "http://localhost:3000"
-            )
+            .setAllowedOrigins(origines)
             .withSockJS();
 
         // Alternative endpoint without SockJS for native WebSocket clients
         registry.addEndpoint("/ws/chat")
-            .setAllowedOrigins(
-                "https://pair-frontend-omega.vercel.app",
-                "http://localhost:5173",
-                "http://localhost:3000"
-            );
+            .setAllowedOrigins(origines);
     }
 
     /**

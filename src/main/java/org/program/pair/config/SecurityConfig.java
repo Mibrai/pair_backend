@@ -22,6 +22,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -36,9 +37,11 @@ import java.util.List;
 @EnableWebSecurity
 @EnableMethodSecurity
 @RequiredArgsConstructor
+@EnableConfigurationProperties(CorsProperties.class)
 public class SecurityConfig {
 
     private final JwtAuthFilter jwtAuthFilter;
+    private final CorsProperties corsProperties;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -283,16 +286,11 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        // Origines autorisées (frontend)
-        configuration.setAllowedOrigins(Arrays.asList(
-            // Production Vercel
-            "https://pair-frontend-omega.vercel.app",
-            // Développement local
-            "http://localhost:5173",
-            "http://localhost:3000",
-            "http://127.0.0.1:5173",
-            "http://127.0.0.1:3000"
-        ));
+        // Origines autorisées : pair.cors.allowed-origins (P-BS-18). Vide hors
+        // dev — aucune origine web en production, ni localhost ni l'ancien front
+        // Vercel, décision du 13/09. Une requête d'une autre origine est alors
+        // refusée ; l'app native, qui n'envoie pas d'Origin, n'est pas concernée.
+        configuration.setAllowedOrigins(corsProperties.allowedOrigins());
 
         // Méthodes HTTP autorisées
         configuration.setAllowedMethods(Arrays.asList(
@@ -322,8 +320,9 @@ public class SecurityConfig {
             "X-Request-Id"
         ));
 
-        // Autoriser les credentials (cookies, Authorization header)
-        configuration.setAllowCredentials(true);
+        // Pas de credentials (P-BS-18) : l'authentification passe par l'en-tête
+        // Authorization, jamais par un cookie.
+        configuration.setAllowCredentials(false);
 
         // Durée de cache de la config CORS (1 heure)
         configuration.setMaxAge(3600L);
