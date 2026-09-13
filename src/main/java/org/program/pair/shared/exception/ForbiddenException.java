@@ -6,6 +6,13 @@ public class ForbiddenException extends RuntimeException implements HasErrorCode
     private String messageKey;
     private Object[] messageArgs = new Object[0];
 
+    /**
+     * @deprecated un refus sans code retombe sur le code générique et sur ce message
+     * brut, en français, quelle que soit la langue du client (P-BA-11). Utiliser
+     * {@link #ForbiddenException(ErrorCode, String)}, ou le constructeur à {@code messageKey}
+     * quand l'app lit le code générique. {@code RefusSansCodeTest} en refuse tout usage.
+     */
+    @Deprecated
     public ForbiddenException(String message) {
         super(message);
         this.errorCode = null;
