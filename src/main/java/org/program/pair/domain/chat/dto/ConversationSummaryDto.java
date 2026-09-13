@@ -41,5 +41,11 @@ public record ConversationSummaryDto(
     // égale au total renvoyé par le serveur. Sans eux, les deux calculs
     // divergeraient sans que rien ne dise pourquoi.
     boolean muted,
-    boolean archived
+    boolean archived,
+
+    // Pourquoi ce fil ne s'écrit plus, ou null s'il s'écrit. Nouveau champ,
+    // additif : un client qui l'ignore se comporte comme avant — il propose le
+    // composeur et reçoit un 403 à l'envoi. Voir ConversationReadOnlyReason,
+    // dont la javadoc porte la règle de neutralité pour le cas du blocage.
+    ConversationReadOnlyReason readOnlyReason
 ) {}

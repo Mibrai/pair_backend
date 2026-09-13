@@ -9,10 +9,13 @@ import org.program.pair.domain.program.PlaceType;
 import org.program.pair.domain.program.dto.QuickSlotRequest;
 import org.program.pair.domain.map.dto.MapActivitiesResponse;
 import org.program.pair.domain.map.dto.MapActivityMarkerDto;
+import org.program.pair.domain.notification.NotificationService;
+import org.program.pair.domain.notification.NotificationType;
 import org.program.pair.domain.program.dto.SlotFeedItemDto;
 import org.program.pair.repository.ActivityRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -53,6 +56,8 @@ class UserBlockIntegrationTest extends AbstractIntegrationTest {
     private static final double LNG = 5.0415;
 
     @Autowired ActivityRepository activityRepository;
+    @Autowired NotificationService notificationService;
+    @Autowired JdbcTemplate jdbcTemplate;
 
     // — poser et lever —
 
@@ -343,6 +348,212 @@ class UserBlockIntegrationTest extends AbstractIntegrationTest {
             .expectStatus().isNotFound();
     }
 
+    // — inscriptions croisées : ce que le blocage retire (P-BL-05) —
+    //
+    // Le blocage fermait la porte d'entrée et laissait entrer ceux qui étaient
+    // déjà dedans : les deux personnes restaient inscrites l'une chez l'autre, et
+    // se retrouvaient sur le trottoir devant la salle.
+
+    @Test
+    void bloquerLOrganisateur_doitRetirerMonInscriptionASesCreneauxAVenir() {
+        Account host = account();
+        Account inscrit = account();
+        Account enAttente = account();
+
+        UUID slotId = publishSlotWithCapacity(host, 1);
+        join(inscrit, slotId);
+        joinWaitlist(enAttente, slotId);
+
+        assertThat(mySlotIds(inscrit)).contains(slotId);
+
+        block(inscrit, host);
+
+        assertThat(mySlotIds(inscrit))
+            .as("le créneau quitte « mes créneaux » : c'est le changement de "
+                + "réponse le plus lourd de ce lot pour l'application publiée")
+            .doesNotContain(slotId);
+
+        // Et la place rendue profite à qui l'attendait : un retrait qui ne ferait
+        // pas remonter la file laisserait une place libre derrière quelqu'un.
+        assertThat(slotSeenBy(enAttente, slotId).myParticipationStatus())
+            .isEqualTo("CONFIRMED");
+    }
+
+    @Test
+    void bloquerUnInscrit_doitRetirerSonInscriptionAMonCreneau() {
+        // L'autre sens, et c'est la même règle : peu importe qui bloque. Un
+        // retrait qui dépendrait du sens laisserait les deux personnes face à
+        // face une fois sur deux.
+        Account host = account();
+        Account inscrit = account();
+
+        UUID slotId = publishSlot(host);
+        join(inscrit, slotId);
+
+        block(host, inscrit);
+
+        assertThat(mySlotIds(inscrit)).doesNotContain(slotId);
+        assertThat(slotSeenBy(host, slotId).participantCount())
+            .as("le compteur de places suit le retrait")
+            .isZero();
+    }
+
+    @Test
+    void bloquerLOrganisateur_doitAussiRetirerMaPlaceEnFileDAttente() {
+        // Attendre une place, c'est avoir organisé sa journée autour de cette
+        // séance : la file compte parmi les trois statuts que le retrait touche.
+        Account host = account();
+        Account occupant = account();
+        Account enAttente = account();
+
+        UUID slotId = publishSlotWithCapacity(host, 1);
+        join(occupant, slotId);
+        joinWaitlist(enAttente, slotId);
+
+        assertThat(mySlotIds(enAttente)).contains(slotId);
+
+        block(enAttente, host);
+
+        assertThat(mySlotIds(enAttente)).doesNotContain(slotId);
+        // L'occupant n'a rien perdu : le retrait ne concerne que les deux
+        // personnes du blocage.
+        assertThat(mySlotIds(occupant)).contains(slotId);
+    }
+
+    @Test
+    void uneInscriptionAToutUnProgramme_doitSurvivreAuBlocage() {
+        // La frontière du retrait : sans créneau désigné, une inscription n'est
+        // pas une rencontre prévue — il n'y a ni heure ni lieu où se croiser. La
+        // porte d'entrée s'occupe de la suite.
+        Account host = account();
+        Account inscrit = account();
+
+        UUID slotId = publishSlot(host);
+        UUID programId = slotSeenBy(inscrit, slotId).programId();
+        joinProgram(inscrit, programId);
+
+        block(inscrit, host);
+
+        assertThat(myActiveProgramCount(inscrit)).isEqualTo(1);
+    }
+
+    /**
+     * La fiche se referme pour la personne bloquée — <b>et l'organisateur garde
+     * la sienne</b>.
+     *
+     * <p><b>La seconde moitié est la correction d'une assertion fausse</b>, et il
+     * faut dire laquelle pour que personne ne la réécrive. Elle demandait un 404 à
+     * l'organisateur aussi, « comme la fiche de profil ». Or ici l'organisateur du
+     * créneau <i>est</i> celui qui a bloqué : le refus porte sur le couple
+     * (appelant, organisateur), et ce couple vaut deux fois la même personne.
+     * {@code BlockFilterService.blocked} rend faux quand les deux identifiants
+     * sont égaux — on ne se bloque pas soi-même, et la base l'interdit.
+     *
+     * <p>Le parallèle avec la fiche de profil ne tenait donc pas : là-bas, les
+     * deux côtés sont deux personnes. Ici, exiger le 404 aurait voulu dire « un
+     * organisateur perd la fiche de son propre créneau dès qu'il bloque
+     * quelqu'un » — ce qui ferait échouer la publication elle-même,
+     * {@code QuickSlotService.create} rendant son résultat par
+     * {@code getSlot(scheduleId, auteur)}, et fermerait à l'organisateur tous ses
+     * écrans de séance. C'est l'assertion qui avait tort, pas le filtre.
+     *
+     * <p>La symétrie qui compte — celle où celui qui bloque n'est pas
+     * l'organisateur — est vérifiée juste après, par
+     * {@link #bloquerLOrganisateur_doitAussiFermerLaFicheDeSonCreneau}.
+     */
+    @Test
+    void unePersonneBloquee_doitRecevoir404SurLaFicheDuCreneau() {
+        Account host = account();
+        Account viewer = account();
+        UUID slotId = publishSlot(host);
+
+        // Inscrite d'abord : la fiche doit se refermer même pour quelqu'un qui y
+        // était, et pas seulement pour un passant.
+        join(viewer, slotId);
+        block(host, viewer);
+
+        expectCreneauIntrouvable(viewer, slotId);
+
+        // L'organisateur, lui, garde son propre créneau : le blocage ne se
+        // retourne pas contre celui qui l'a posé.
+        assertThat(slotSeenBy(host, slotId).scheduleId()).isEqualTo(slotId);
+    }
+
+    @Test
+    void bloquerLOrganisateur_doitAussiFermerLaFicheDeSonCreneau() {
+        // L'autre sens du blocage sur la même lecture : c'est l'inscrite qui
+        // bloque, et la fiche se referme pour elle aussi. Elle reçoit le même
+        // refus muet, bien qu'elle sache pourquoi : une lecture n'a rien à
+        // expliquer, et la forme nommée (USER_BLOCKED) est réservée aux gestes —
+        // s'inscrire, écrire —, où elle explique un échec qu'on vient de
+        // provoquer.
+        Account host = account();
+        Account viewer = account();
+        UUID slotId = publishSlot(host);
+
+        join(viewer, slotId);
+        block(viewer, host);
+
+        expectCreneauIntrouvable(viewer, slotId);
+    }
+
+    // — fil de diffusion : le masquage ne doit pas tomber sur l'écran qui y mène —
+
+    @Test
+    void unFilDeDiffusion_neDoitPlusRemettreLesMessagesDeLAuteurBloque() {
+        Account host = account();
+        Account participant = account();
+
+        UUID slotId = publishSlot(host);
+        UUID programId = slotSeenBy(participant, slotId).programId();
+        joinProgram(participant, programId);
+
+        broadcast(host, programId, "Rendez-vous devant l'entrée principale.");
+
+        UUID threadId = broadcastThreadId(participant);
+        assertThat(messageContents(participant, threadId))
+            .contains("Rendez-vous devant l'entrée principale.");
+
+        block(participant, host);
+
+        assertThat(messageContents(participant, threadId))
+            .as("un fil de groupe ne se ferme pas, il cesse de porter ce que "
+                + "quelqu'un de masqué y écrit")
+            .isEmpty();
+
+        // Et l'aperçu de la liste ne doit pas rendre par la fenêtre ce que le fil
+        // vient de retirer par la porte.
+        assertThat(broadcastThreadPreview(participant)).isNull();
+    }
+
+    // — notifications : ce que le blocage ne doit pas supprimer —
+
+    @Test
+    void uneAnnulation_doitAtteindreSonDestinataire_malgreLeBlocage() {
+        // Le filtre supprimait tout, annulations comprises : quelqu'un traversait
+        // la ville pour une séance qui n'avait pas lieu, parce que le message qui
+        // l'en prévenait avait été supprimé au nom de sa protection. Une critique
+        // ne « fait voir » personne — elle dit qu'un engagement n'a plus lieu.
+        Account alice = account();
+        Account bob = account();
+        block(alice, bob);
+
+        // L'ordinaire d'abord, la critique ensuite : au moment où la seconde est
+        // écrite, la première a eu tout le temps de l'être si elle devait l'être.
+        notificationService.notify(alice.id, bob.id, NotificationType.NEW_FOLLOWER,
+            Map.of("followerName", "Bob"));
+        notificationService.notify(alice.id, bob.id, NotificationType.SLOT_CANCELLED,
+            Map.of("programTitle", "Séance annulée"));
+
+        assertThat(pollNotificationCount(alice.id, "SLOT_CANCELLED"))
+            .as("une notification critique passe malgré le blocage")
+            .isEqualTo(1);
+
+        assertThat(notificationCount(alice.id, "NEW_FOLLOWER"))
+            .as("une notification ordinaire reste supprimée")
+            .isZero();
+    }
+
     // — helpers —
 
     private List<UUID> mapOrganizerIds(Account viewer) {
@@ -431,6 +642,175 @@ class UserBlockIntegrationTest extends AbstractIntegrationTest {
             .expectBody(SlotFeedItemDto.class).returnResult().getResponseBody();
         assertThat(slot).isNotNull();
         return slot.scheduleId();
+    }
+
+    /** Un créneau à une seule place : de quoi faire vivre une file d'attente. */
+    private UUID publishSlotWithCapacity(Account host, int maxParticipants) {
+        UUID activityId = activityRepository.findAll().get(0).getId();
+        SlotFeedItemDto slot = webTestClient.post().uri("/api/quick-slots")
+            .headers(h -> h.setBearerAuth(host.token))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(new QuickSlotRequest(
+                activityId, Instant.now().plus(3, ChronoUnit.DAYS), null,
+                "Parc de l'Orangerie", PlaceType.PUBLIC, LAT, LNG,
+                "1 avenue de l'Europe", null, "Strasbourg", maxParticipants,
+                null, null, null))
+            .exchange().expectStatus().isCreated()
+            .expectBody(SlotFeedItemDto.class).returnResult().getResponseBody();
+        assertThat(slot).isNotNull();
+        return slot.scheduleId();
+    }
+
+    private void join(Account account, UUID slotId) {
+        webTestClient.post().uri("/api/slots/{id}/join", slotId)
+            .headers(h -> h.setBearerAuth(account.token))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of())
+            .exchange().expectStatus().is2xxSuccessful();
+    }
+
+    private void joinWaitlist(Account account, UUID slotId) {
+        webTestClient.post().uri("/api/slots/{id}/waitlist", slotId)
+            .headers(h -> h.setBearerAuth(account.token))
+            .exchange().expectStatus().is2xxSuccessful();
+    }
+
+    /**
+     * Inscription au <b>programme entier</b>, sans créneau désigné.
+     *
+     * <p>Corps vide explicite plutôt qu'absent : {@code scheduleId} est nul dans
+     * les deux cas, mais un POST sans type de contenu dépend du gestionnaire
+     * d'arguments, là où {@code {}} en JSON ne dépend de rien.
+     */
+    private void joinProgram(Account account, UUID programId) {
+        webTestClient.post().uri("/api/programs/{id}/join", programId)
+            .headers(h -> h.setBearerAuth(account.token))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of())
+            .exchange().expectStatus().isCreated();
+    }
+
+    private int myActiveProgramCount(Account account) {
+        List<Map> programs = webTestClient.get()
+            .uri(b -> b.path("/api/users/me/programs").queryParam("status", "ACTIVE").build())
+            .headers(h -> h.setBearerAuth(account.token))
+            .exchange().expectStatus().isOk()
+            .expectBodyList(Map.class).returnResult().getResponseBody();
+        return programs == null ? 0 : programs.size();
+    }
+
+    private List<UUID> mySlotIds(Account account) {
+        List<SlotFeedItemDto> mine = webTestClient.get()
+            .uri("/api/slots/mine")
+            .headers(h -> h.setBearerAuth(account.token))
+            .exchange().expectStatus().isOk()
+            .expectBodyList(SlotFeedItemDto.class).returnResult().getResponseBody();
+        return mine == null ? List.of() : mine.stream().map(SlotFeedItemDto::scheduleId).toList();
+    }
+
+    /**
+     * Le refus doit être <b>indistinguable</b> de celui d'un créneau qui n'existe
+     * pas : même statut, même code, même message.
+     *
+     * <p>C'est ce qui empêche de déduire du refus que le créneau existe — donc
+     * qu'un blocage est en jeu. La comparaison se fait avec un identifiant tiré
+     * au hasard, et pour le <b>même appelant</b> : deux réponses lues par la même
+     * personne, dont une seule concerne un créneau réel.
+     */
+    private void expectCreneauIntrouvable(Account caller, UUID slotId) {
+        assertThat(refusDeFiche(caller, slotId))
+            .isEqualTo(refusDeFiche(caller, UUID.randomUUID()));
+    }
+
+    /** Le couple (code, message) d'un 404 sur la fiche d'un créneau. */
+    private String refusDeFiche(Account caller, UUID slotId) {
+        Map<?, ?> body = webTestClient.get().uri("/api/slots/{id}", slotId)
+            .headers(h -> h.setBearerAuth(caller.token))
+            .exchange().expectStatus().isNotFound()
+            .expectBody(Map.class).returnResult().getResponseBody();
+        assertThat(body).isNotNull();
+        // L'horodatage est écarté : il diffère d'une réponse à l'autre sans rien
+        // apprendre de la ressource.
+        return body.get("code") + " / " + body.get("message");
+    }
+
+    private SlotFeedItemDto slotSeenBy(Account account, UUID slotId) {
+        SlotFeedItemDto slot = webTestClient.get().uri("/api/slots/{id}", slotId)
+            .headers(h -> h.setBearerAuth(account.token))
+            .exchange().expectStatus().isOk()
+            .expectBody(SlotFeedItemDto.class).returnResult().getResponseBody();
+        assertThat(slot).isNotNull();
+        return slot;
+    }
+
+    private void broadcast(Account author, UUID programId, String content) {
+        webTestClient.post().uri("/api/programs/{id}/broadcasts", programId)
+            .headers(h -> h.setBearerAuth(author.token))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("content", content))
+            .exchange().expectStatus().isCreated();
+    }
+
+    private Map<?, ?> broadcastThread(Account account) {
+        List<Map> threads = webTestClient.get().uri("/api/conversations")
+            .headers(h -> h.setBearerAuth(account.token))
+            .exchange().expectStatus().isOk()
+            .expectBodyList(Map.class).returnResult().getResponseBody();
+        assertThat(threads).isNotNull();
+        return threads.stream()
+            .filter(t -> "PROGRAM_BROADCAST".equals(t.get("type")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("aucun fil de diffusion pour ce compte"));
+    }
+
+    private UUID broadcastThreadId(Account account) {
+        return UUID.fromString(String.valueOf(broadcastThread(account).get("id")));
+    }
+
+    private Object broadcastThreadPreview(Account account) {
+        return broadcastThread(account).get("lastMessageContent");
+    }
+
+    private List<String> messageContents(Account account, UUID conversationId) {
+        List<Map> messages = webTestClient.get()
+            .uri(b -> b.path("/api/conversations/{id}/messages")
+                .queryParam("limit", 50).build(conversationId))
+            .headers(h -> h.setBearerAuth(account.token))
+            .exchange().expectStatus().isOk()
+            .expectBodyList(Map.class).returnResult().getResponseBody();
+        return messages == null
+            ? List.of()
+            : messages.stream().map(m -> String.valueOf(m.get("content"))).toList();
+    }
+
+    /**
+     * Attente bornée de l'écriture d'une notification.
+     *
+     * <p>{@code notify} est {@code @Async} : la ligne n'existe pas au retour de
+     * l'appel. La colonne de date de cette table est {@code sent_at}, et non
+     * {@code created_at}.
+     */
+    private long pollNotificationCount(UUID userId, String type) {
+        long count = 0;
+        for (int attempt = 0; attempt < 50 && count == 0; attempt++) {
+            count = notificationCount(userId, type);
+            if (count == 0) {
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+        }
+        return count;
+    }
+
+    private long notificationCount(UUID userId, String type) {
+        Long count = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND type = ?",
+            Long.class, userId, type);
+        return count == null ? 0 : count;
     }
 
     private List<UUID> feedIds(Account viewer) {

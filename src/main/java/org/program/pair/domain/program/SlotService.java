@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.activity.Activity;
 import org.program.pair.domain.activity.Category;
 import org.program.pair.domain.activity.UserActivity;
+import org.program.pair.domain.block.BlockFilterService;
 import org.program.pair.domain.chat.ChatService;
 import org.program.pair.domain.chat.dto.CreateConversationRequest;
 import org.program.pair.domain.notification.NotificationPayload;
@@ -77,12 +78,25 @@ public class SlotService {
     private final NotificationService notificationService;
     private final ScheduleConflictDetector conflictDetector;
     /**
-     * La liste ordonnée des refus d'entrée, partagée avec
+     * La liste ordonnée des refus d'<b>entrée</b>, partagée avec
      * {@code ProgramEnrollmentService} : voir {@link SlotEntryGuard}. Le blocage
-     * en fait partie, si bien que ce service ne consulte plus lui-même
-     * {@code BlockFilterService} — la règle et son ordre vivent d'un seul côté.
+     * en fait partie, si bien que ce service ne décide plus lui-même de qui peut
+     * s'inscrire — la règle et son ordre vivent d'un seul côté.
      */
     private final SlotEntryGuard entryGuard;
+    /**
+     * Le blocage pour les <b>lectures</b>, que la garde d'entrée ne couvre pas.
+     *
+     * <p>La distinction est celle qu'{@link SlotEntryGuard} porte dans son nom :
+     * elle répond à « peut-on entrer ? », sur un créneau qu'on a déjà trouvé.
+     * Restent deux questions de visibilité qui n'ont pas de porte —
+     * {@link #getSlot} et {@link #getMySlots} — et dont la mauvaise réponse était
+     * le défaut le plus visible de ce module : le fil et la carte masquaient bien
+     * les créneaux d'une personne bloquée (voir {@code BlockSql}), mais leur fiche
+     * répondait encore à qui en connaissait l'identifiant, et « mes créneaux »
+     * continuait de les lister.
+     */
+    private final BlockFilterService blockFilterService;
     private final HtmlSanitizer sanitizer;
     private final ParticipantCounter participantCounter;
     private final WaitlistPromoter waitlistPromoter;
@@ -264,10 +278,39 @@ public class SlotService {
             items, total > (long) request.offset() + items.size(), (int) total);
     }
 
+    /**
+     * La fiche d'un créneau, par son identifiant.
+     *
+     * <p><b>Introuvable quand un blocage sépare l'appelant de l'organisateur</b>,
+     * dans un sens comme dans l'autre. Sans ce refus, le blocage ne masquait le
+     * créneau que là où il se découvre — le fil, la carte, la recherche — et la
+     * fiche restait ouverte à qui en avait l'identifiant : une notification reçue
+     * la veille, un lien partagé, un écran resté ouvert. Elle porte le nom de
+     * l'organisateur, l'heure, le lieu et, pour un inscrit, l'adresse exacte
+     * ({@link SlotAddressVisibility}).
+     *
+     * <p><b>404 des deux côtés, y compris pour celle qui a bloqué</b> — c'est la
+     * réponse que rend déjà la fiche de profil d'une personne bloquée, et une
+     * lecture n'a pas de raison d'être plus bavarde ici que là-bas. La forme
+     * nommée du refus ({@code USER_BLOCKED}) est réservée aux <i>gestes</i> —
+     * s'inscrire, écrire —, où elle explique un échec que la personne vient de
+     * provoquer.
+     *
+     * <p>Un participant encore inscrit reçoit le même 404 : le blocage retire ses
+     * inscriptions croisées ({@code SlotBlockEffects}), et un reste d'inscription
+     * — une donnée antérieure à cette règle, un retrait qui a échoué — ne doit pas
+     * rouvrir la fiche.
+     */
     @Transactional(readOnly = true)
     public SlotFeedItemDto getSlot(UUID scheduleId, UUID requesterId) {
         Schedule slot = scheduleRepository.findById(scheduleId)
             .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+
+        UUID hostId = slot.getProgram().getUserActivity().getUser().getId();
+        if (blockFilterService.blocked(requesterId, hostId)) {
+            throw new ResourceNotFoundException("Créneau introuvable.");
+        }
+
         return toFeedItem(slot, null, null, requesterId);
     }
 
@@ -580,9 +623,24 @@ public class SlotService {
         // La convention de fin est celle de SlotTiming, comme partout ailleurs :
         // fin déclarée, sinon deux heures. Un créneau ne quitte donc cette liste
         // qu'une fois réellement terminé.
+
+        // Ce que masque le fil, cette liste-ci le masque aussi.
+        //
+        // Le blocage retire les inscriptions croisées à venir (SlotBlockEffects),
+        // si bien qu'en régime normal aucun créneau d'une personne bloquée
+        // n'arrive jusqu'ici. Ce filtre couvre ce qui reste : les blocages posés
+        // avant cette règle et dont les inscriptions n'ont pas encore été
+        // reprises, et les séances passées, que le retrait ne touche pas. Sans
+        // lui, la liste annoncerait un créneau dont la fiche rend 404 —
+        // l'application ouvrirait une erreur brute sur un simple tap.
+        //
+        // Un seul appel pour toute la liste, jamais un par créneau.
+        Set<UUID> invisible = blockFilterService.invisibleTo(userId);
+
         Instant now = Instant.now();
         List<Schedule> slots = java.util.stream.Stream.concat(hosted.stream(), joined.stream())
             .distinct()
+            .filter(s -> !invisible.contains(s.getProgram().getUserActivity().getUser().getId()))
             .filter(s -> !upcomingOnly || SlotTiming.endOf(s).isAfter(now))
             .sorted(java.util.Comparator.comparing(Schedule::getStartsAt))
             .toList();

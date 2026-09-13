@@ -22,5 +22,12 @@ public record ConversationDetailDto(
     // pas un interlocuteur.
     String title,
     Integer memberCount,
-    Instant createdAt
+    Instant createdAt,
+
+    // Pourquoi ce fil ne s'écrit plus, ou null s'il s'écrit. C'est l'écran de
+    // conversation qui en a le plus besoin : c'est lui qui porte le composeur, et
+    // c'est par lui qu'on ouvre un fil dont la liste ne parle plus (une
+    // conversation avec quelqu'un de bloqué quitte la liste des deux côtés, sans
+    // que son historique cesse d'être lisible — D6, preuve pour un signalement).
+    ConversationReadOnlyReason readOnlyReason
 ) {}

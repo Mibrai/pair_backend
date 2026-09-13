@@ -51,12 +51,28 @@ public class NotificationService {
      * portent un ({@code authorId}, {@code senderId}), d'autres non. Un filtre
      * qui s'appuierait dessus serait un filtre à trous.
      *
+     * <p><b>Les notifications critiques passent malgré le blocage</b>, et c'est
+     * la seule exception. Le filtre supprimait tout, annulations comprises :
+     * quelqu'un qui avait bloqué un organisateur — ou qu'un organisateur avait
+     * bloqué — traversait la ville pour une séance annulée, parce que le message
+     * qui l'en prévenait avait été supprimé au nom de sa protection. Or une
+     * critique ne « fait voir » personne : elle dit qu'un engagement déjà pris
+     * n'a plus lieu, et le coût de ne pas l'apprendre est un déplacement pour
+     * rien. Le critère est celui de {@link NotificationType#isCritical()}, sans
+     * liste parallèle à tenir.
+     *
+     * <p>Le cas résiduel est étroit depuis que le blocage retire les inscriptions
+     * croisées ({@code SlotBlockEffects}) : il ne reste guère que les inscrits à
+     * un programme non rattachés au créneau concerné. C'est assumé — le jour où
+     * une critique doit partir entre deux personnes qui se sont bloquées, elle
+     * part.
+     *
      * @param actorId qui déclenche — nul pour une notification que personne
      *                n'a provoquée, un rappel d'agenda par exemple
      */
     @Async
     public void notify(UUID userId, UUID actorId, NotificationType type, Map<String, Object> payload) {
-        if (blockFilterService.blocked(userId, actorId)) {
+        if (!type.isCritical() && blockFilterService.blocked(userId, actorId)) {
             log.debug("Notification {} supprimée : blocage entre {} et {}", type, userId, actorId);
             return;
         }

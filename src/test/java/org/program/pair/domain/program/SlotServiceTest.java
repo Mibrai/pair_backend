@@ -8,6 +8,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.program.pair.domain.activity.Activity;
 import org.program.pair.domain.activity.Category;
 import org.program.pair.domain.activity.UserActivity;
+import org.program.pair.domain.block.BlockFilterService;
 import org.program.pair.domain.chat.ChatService;
 import org.program.pair.domain.notification.NotificationService;
 import org.program.pair.domain.program.dto.JoinSlotRequest;
@@ -95,10 +96,17 @@ class SlotServiceTest {
     // prouvent ailleurs (voir la javadoc de la classe).
     @Mock SlotEntryGuard entryGuard;
 
-    // BlockFilterService a disparu des collaborateurs de SlotService avec P-BL-09 :
-    // le blocage est en tête de SlotEntryGuard, qui le porte pour les deux portes.
-    // Le mock a été retiré plutôt que laissé inerte — un @Mock qui ne s'injecte
-    // nulle part annonce une dépendance qui n'existe plus.
+    // BlockFilterService avait disparu des collaborateurs de SlotService avec
+    // P-BL-09 : le blocage à l'ENTRÉE est en tête de SlotEntryGuard, qui le porte
+    // pour les deux portes. Il est revenu avec P-BL-05, pour les deux LECTURES que
+    // la garde d'entrée ne couvre pas — la fiche d'un créneau (404 quand un
+    // blocage sépare l'appelant de l'organisateur) et « mes créneaux ».
+    //
+    // Déclaré bien qu'aucun test de cette classe ne le sollicite, pour la raison
+    // que les commentaires ci-dessus décrivent deux fois : sans déclaration,
+    // @InjectMocks laisse le champ à null, et le premier test de lecture écrit ici
+    // tomberait sur un NullPointerException qui ne dit rien de ce qu'il vérifie.
+    @Mock BlockFilterService blockFilterService;
 
     @InjectMocks
     SlotService slotService;
