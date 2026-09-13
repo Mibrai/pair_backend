@@ -133,6 +133,16 @@ class OpenApiContractIntegrationTest extends AbstractIntegrationTest {
         assertThat(sansMaximum).as("paramètres size sans maximum").isEmpty();
     }
 
+    /** P-BS-03 — la déconnexion publie son corps : le jeton de rafraîchissement et celui de l'appareil. */
+    @Test
+    void apiDocs_laDeconnexion_publieLogoutRequest() throws Exception {
+        JsonNode docs = fetchApiDocs();
+
+        assertThat(docs.path("components").path("schemas").path("LogoutRequest").path("properties")
+            .has("refreshToken")).isTrue();
+        assertThat(docs.path("paths").path("/api/auth/logout").path("post").path("responses").has("204")).isTrue();
+    }
+
     private JsonNode fetchApiDocs() throws Exception {
         byte[] raw = webTestClient.get()
             .uri("/v3/api-docs")

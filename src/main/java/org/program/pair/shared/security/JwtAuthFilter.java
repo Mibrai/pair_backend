@@ -106,17 +106,32 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (valide.rafraichissement()) {
             return MotifRefusJwt.JETON_DE_RAFRAICHISSEMENT;
         }
-        authentifier(request, valide.sujet());
-        return null;
+        return authentifier(request, valide);
     }
 
-    private void authentifier(HttpServletRequest request, UUID userId) {
-        UserDetails userDetails = userDetailsService.loadUserById(userId);
+    /**
+     * Charge le compte et vérifie la version du jeton (P-BS-03) : un mot de passe
+     * changé ou réinitialisé incrémente la version du compte, et un jeton d'accès
+     * émis avant cesse de valoir. Refusé en {@code TOKEN_EXPIRED} — c'est le
+     * rafraîchissement qui tranche : il répare si la session vit encore, et rend
+     * {@code INVALID_TOKEN} sinon.
+     */
+    private MotifRefusJwt authentifier(HttpServletRequest request, JetonLu.Valide jeton) {
+        UserDetails charge = userDetailsService.loadUserById(jeton.sujet());
+        UserDetails userDetails = charge;
+        if (charge instanceof UserPrincipal principal) {
+            Integer version = principal.getUser().getTokenVersion();
+            if ((version == null ? 0 : version) != jeton.version()) {
+                return MotifRefusJwt.EXPIRE;
+            }
+            userDetails = new UserPrincipal(principal.getUser(), jeton.session());
+        }
         UsernamePasswordAuthenticationToken auth =
             new UsernamePasswordAuthenticationToken(
                 userDetails, null, userDetails.getAuthorities());
         auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
         SecurityContextHolder.getContext().setAuthentication(auth);
+        return null;
     }
 
     private String extractToken(HttpServletRequest request) {

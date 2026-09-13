@@ -67,6 +67,37 @@ class JwtAuthFilterMesureTest {
         assertThat(registre.timer("auth.filter", "issue", "refuse").count()).isEqualTo(1);
     }
 
+    /**
+     * P-BS-03 — un jeton d'accès émis avant un changement de mot de passe porte
+     * l'ancienne version : refusé en TOKEN_EXPIRED, pour que le rafraîchissement
+     * tranche. Un jeton sans version (0) reste accepté tant que le compte est à 0.
+     */
+    @Test
+    void unJetonDUneAncienneVersion_estRefuse_etUnJetonSansVersionResteAccepte() throws Exception {
+        UUID userId = UUID.randomUUID();
+        org.program.pair.domain.user.User compte = new org.program.pair.domain.user.User();
+        compte.setId(userId);
+        compte.setIsActive(true);
+        compte.setTokenVersion(1);
+        doReturn(new UserPrincipal(compte)).when(comptes).loadUserById(userId);
+        JwtAuthFilter filtre = new JwtAuthFilter(provider, comptes, registre);
+
+        doReturn(new JetonLu.Valide(userId, false, UUID.randomUUID(), null, 0)).when(provider).lire("ancien");
+        MockHttpServletRequest ancienne = requeteAvec("ancien");
+        filtre.doFilter(ancienne, new MockHttpServletResponse(), new MockFilterChain());
+        assertThat(ancienne.getAttribute(MotifRefusJwt.ATTRIBUT)).isEqualTo(MotifRefusJwt.EXPIRE);
+        assertThat(SecurityContextHolder.getContext().getAuthentication()).isNull();
+
+        UUID session = UUID.randomUUID();
+        doReturn(new JetonLu.Valide(userId, false, session, null, 1)).when(provider).lire("neuf");
+        MockHttpServletRequest neuve = requeteAvec("neuf");
+        filtre.doFilter(neuve, new MockHttpServletResponse(), new MockFilterChain());
+        assertThat(neuve.getAttribute(MotifRefusJwt.ATTRIBUT)).isNull();
+        assertThat(((UserPrincipal) SecurityContextHolder.getContext().getAuthentication().getPrincipal())
+            .getSessionId()).isEqualTo(session);
+        SecurityContextHolder.clearContext();
+    }
+
     private static MockHttpServletRequest requeteAvec(String jeton) {
         MockHttpServletRequest requete = new MockHttpServletRequest("GET", "/api/users/me");
         requete.addHeader("Authorization", "Bearer " + jeton);

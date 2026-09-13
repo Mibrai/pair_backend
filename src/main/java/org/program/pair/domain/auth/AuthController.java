@@ -7,6 +7,7 @@ import org.program.pair.domain.auth.dto.ResendVerificationRequest;
 import org.program.pair.domain.auth.dto.AuthResponse;
 import org.program.pair.domain.auth.dto.ForgotPasswordRequest;
 import org.program.pair.domain.auth.dto.LoginRequest;
+import org.program.pair.domain.auth.dto.LogoutRequest;
 import org.program.pair.domain.auth.dto.RefreshRequest;
 import org.program.pair.domain.auth.dto.RegisterRequest;
 import org.program.pair.domain.auth.dto.ResetPasswordRequest;
@@ -153,15 +154,19 @@ public class AuthController {
         return ResponseEntity.ok().build();
     }
 
+    /**
+     * Se déconnecter (P-BS-03) : la session du jeton de rafraîchissement présenté
+     * est révoquée, et le jeton de notification de l'appareil détaché.
+     *
+     * <p>Ouverte sans session dans {@code SecurityConfig} : c'est le jeton de
+     * rafraîchissement qui prouve, et un jeton d'accès expiré ne doit pas empêcher
+     * de se déconnecter. Toujours {@code 204}, corps absent ou jeton inconnu
+     * compris.
+     */
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(HttpServletRequest httpRequest) {
-        // For JWT-based authentication, logout is primarily handled client-side
-        // by removing the token. This endpoint can be used for:
-        // - Logging logout events
-        // - Token blacklisting (if implemented)
-        // - Session cleanup (if needed)
-        authService.logout(httpRequest);
-        return ResponseEntity.ok().build();
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void logout(@Valid @RequestBody(required = false) LogoutRequest request) {
+        authService.logout(request);
     }
 
     /**

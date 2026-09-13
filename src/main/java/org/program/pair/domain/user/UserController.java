@@ -245,7 +245,7 @@ public class UserController {
     public ResponseEntity<Void> changePassword(
             @AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody ChangePasswordRequest request) {
-        userService.changePassword(principal.getId(), request);
+        userService.changePassword(principal.getId(), principal.getSessionId(), request);
         return ResponseEntity.ok().build();
     }
 

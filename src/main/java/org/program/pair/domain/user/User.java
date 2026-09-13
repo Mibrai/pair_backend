@@ -237,4 +237,17 @@ public class User {
      */
     @Column(name = "deactivated_at")
     private Instant deactivatedAt;
+
+    /**
+     * Version des jetons de ce compte (V115, P-BS-03).
+     *
+     * <p>Chaque jeton d'accès porte la version en vigueur à son émission ; le
+     * filtre refuse celui dont la version n'est plus celle du compte. Changer ou
+     * réinitialiser son mot de passe l'incrémente : les jetons d'accès émis avant
+     * cessent de valoir dès la requête suivante, sans attendre leur quart d'heure.
+     * Zéro par défaut, la valeur des jetons émis avant qu'elle existe.
+     */
+    @Column(name = "token_version", nullable = false)
+    @Builder.Default
+    private Integer tokenVersion = 0;
 }
