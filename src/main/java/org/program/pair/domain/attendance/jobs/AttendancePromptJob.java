@@ -221,9 +221,15 @@ public class AttendancePromptJob {
      * même question.
      */
     private List<UUID> unconfirmedParticipantIds(Schedule slot, SlotOccurrence occurrence) {
-        return slotAudience.participantIds(slot).stream()
-            .filter(userId -> !attendanceRepository.existsByScheduleIdAndUserIdAndAttendedAt(
-                slot.getId(), userId, occurrence.startsAt()))
+        List<UUID> inscrits = slotAudience.participantIds(slot);
+        if (inscrits.isEmpty()) {
+            return inscrits;
+        }
+        // Une requête pour tout le créneau, et non une par inscrit (P-BA-15).
+        java.util.Set<UUID> ontRepondu = attendanceRepository.findUserIdsAyantRepondu(
+            slot.getId(), occurrence.startsAt(), inscrits);
+        return inscrits.stream()
+            .filter(userId -> !ontRepondu.contains(userId))
             .toList();
     }
 

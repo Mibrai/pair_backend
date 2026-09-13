@@ -39,6 +39,31 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
 
     boolean existsByScheduleIdAndUserIdAndAttendedAt(UUID scheduleId, UUID userId, Instant occurrenceStart);
 
+    /**
+     * Parmi {@code userIds}, ceux qui ont déjà répondu pour cette occurrence — en
+     * une requête (P-BA-15). La relance posait la question inscrit par inscrit :
+     * trente inscrits, trente requêtes, chaque heure.
+     */
+    @Query("SELECT a.user.id FROM Attendance a WHERE a.schedule.id = :scheduleId "
+        + "AND a.attendedAt = :occurrenceStart AND a.user.id IN :userIds")
+    java.util.Set<UUID> findUserIdsAyantRepondu(@Param("scheduleId") UUID scheduleId,
+                                                @Param("occurrenceStart") Instant occurrenceStart,
+                                                @Param("userIds") java.util.Collection<UUID> userIds);
+
+    /**
+     * Les occurrences — (créneau, début) — auxquelles une personne a déjà répondu,
+     * parmi les créneaux donnés, en une requête (P-BA-15). La liste des présences
+     * à confirmer posait une question par créneau.
+     */
+    @Query("SELECT new org.program.pair.repository.AttendanceRepository$OccurrenceRepondue("
+        + "a.schedule.id, a.attendedAt) FROM Attendance a "
+        + "WHERE a.user.id = :userId AND a.schedule.id IN :scheduleIds")
+    java.util.List<OccurrenceRepondue> findOccurrencesRepondues(@Param("userId") UUID userId,
+                                                               @Param("scheduleIds") java.util.Collection<UUID> scheduleIds);
+
+    /** Une réponse de présence, réduite à sa clé d'occurrence. */
+    record OccurrenceRepondue(UUID scheduleId, Instant attendedAt) {}
+
     boolean existsByScheduleIdAndUserIdAndAttendedAtAndWasPresentTrue(
         UUID scheduleId, UUID userId, Instant occurrenceStart);
 
