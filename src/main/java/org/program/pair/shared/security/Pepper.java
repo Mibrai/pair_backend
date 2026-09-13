@@ -1,5 +1,6 @@
 package org.program.pair.shared.security;
 
+import org.program.pair.config.Profils;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -66,9 +67,6 @@ import java.util.Set;
 @Slf4j
 public class Pepper {
 
-    /** Profils sous lesquels l'absence de clé est une erreur de démarrage. */
-    private static final Set<String> PROFILS_DE_DEPLOIEMENT =
-        Set.of("prod", "railway", "staging");
 
     /** Longueur du sel tiré par ligne. 128 bits : deux sels n'entrent jamais en collision. */
     private static final int TAILLE_SEL_OCTETS = 16;
@@ -234,12 +232,9 @@ public class Pepper {
     }
 
     private boolean sousDeploiement() {
-        for (String profil : environment.getActiveProfiles()) {
-            if (PROFILS_DE_DEPLOIEMENT.contains(profil)) {
-                return true;
-            }
-        }
-        return false;
+        // La liste unique de config/Profils (P-BA-07) : ce fichier en portait sa
+        // propre copie, qui aurait divergé au premier profil ajouté ailleurs.
+        return Profils.actif(environment, Profils.DEPLOIEMENT);
     }
 
     private static Map<Integer, byte[]> parser(String brut) {
