@@ -33,6 +33,33 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Tout l'historique : gitleaks lit les commits de la plage poussée.
+          fetch-depth: 0
+
+      # P-BS-06, étape 5 — aucun nouveau secret ne part dans ce dépôt public.
+      #
+      # Seuls les commits NOUVEAUX sont lus : ce qui a déjà été publié est réputé
+      # brûlé et tourné (P-BS/D6 option C), et le rescanner rougirait à chaque
+      # passage sans rien protéger. La configuration (.gitleaks.toml) ajoute aux
+      # règles par défaut celle des empreintes bcrypt, qu'elles ignorent. Image
+      # épinglée : une règle qui change d'elle-même ferait rougir la CI sans commit.
+      - name: gitleaks sur les commits nouveaux (P-BS-06)
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT" = "pull_request" ]; then
+            RANGE="$BASE..$SHA"
+          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            RANGE="$SHA~1..$SHA"
+          else
+            RANGE="$BEFORE..$SHA"
+          fi
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.21.2 \
+            git /repo --config /repo/.gitleaks.toml --log-opts="$RANGE" --redact --no-banner
 
       # Temurin 21, la version de la JRE d'exécution (Dockerfile:14). Le pom
       # fixe encore `<java.version>17</java.version>` : compiler en cible 17
