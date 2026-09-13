@@ -88,7 +88,7 @@ spring.datasource.url=jdbc:postgresql://localhost:5432/pair_db
 spring.datasource.username=postgres
 spring.datasource.password=<your-password>
 
-jwt.secret=YXByaWNvZGV2YXBwbGljYXRpb25wYWlyYXV0aGVudGljYXRpb25zZWNyZXRrZXk=
+jwt.secret=<openssl rand -base64 48>
 llm.api-key=<your-anthropic-api-key>
 ```
 
