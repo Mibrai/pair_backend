@@ -7,7 +7,7 @@ import org.program.pair.domain.activity.UserActivity;
 import org.program.pair.domain.auth.dto.AuthResponse;
 import org.program.pair.domain.auth.dto.LoginRequest;
 import org.program.pair.domain.auth.dto.RegisterRequest;
-import org.program.pair.domain.program.MediaType;
+import org.program.pair.domain.program.ProgramMediaType;
 import org.program.pair.domain.program.Program;
 import org.program.pair.domain.program.ProgramMedia;
 import org.program.pair.domain.program.ProgramStatus;
@@ -135,7 +135,7 @@ class ProgramSearchThumbnailIntegrationTest extends AbstractIntegrationTest {
             programMediaRepository.save(ProgramMedia.builder()
                 .program(program)
                 .url("https://example.com/gallery-0.png")
-                .mediaType(MediaType.IMAGE)
+                .mediaType(ProgramMediaType.IMAGE)
                 .sortOrder(0)
                 .build());
         }

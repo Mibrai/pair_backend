@@ -41,8 +41,13 @@ public final class RecapRequests {
         @Size(max = 400) String note
     ) {}
 
-    /** Portée de la carte : {@code PRIVATE}, {@code PARTICIPANTS} ou {@code PUBLIC}. */
-    public record VisibilityRequest(
+    /**
+     * Portée de la carte : {@code PRIVATE}, {@code PARTICIPANTS} ou {@code PUBLIC}.
+     * Nommé {@code RecapVisibilityRequest} (P-BA-17) : sous son ancien nom, il
+     * partageait le schéma OpenAPI de la visibilité d'une activité, et la spec
+     * annonçait {@code visible} là où cette route lit {@code visibility}.
+     */
+    public record RecapVisibilityRequest(
         String visibility
     ) {}
 

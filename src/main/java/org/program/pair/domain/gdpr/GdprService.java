@@ -217,7 +217,7 @@ public class GdprService {
                                 ? p.getUserActivity().getActivity().getName() : null)
                         .status(p.getStatus().name())
                         .schedules(p.getSchedules().stream()
-                                .map(s -> GdprExportDto.ScheduleDto.builder()
+                                .map(s -> GdprExportDto.GdprScheduleDto.builder()
                                         .id(s.getId().toString())
                                         .jourSemaine(s.getRecurrenceRule()) // Using recurrence rule instead of day of week
                                         .heureDebut(s.getStartsAt() != null ? s.getStartsAt().toString() : null)

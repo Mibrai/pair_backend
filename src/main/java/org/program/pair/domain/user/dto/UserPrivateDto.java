@@ -21,7 +21,7 @@ public record UserPrivateDto(
     Boolean receiveMessages,
     String verificationStatus,
     Instant createdAt,
-    List<UserActivityDto> activities,
+    List<UserProfileActivityDto> activities,
 
     @Schema(description = "Nombre d'abonnés de type AUTHOR — le chiffre qu'un auteur veut "
         + "voir sur son propre profil. Pas de `subscribed` ici : la contrainte "

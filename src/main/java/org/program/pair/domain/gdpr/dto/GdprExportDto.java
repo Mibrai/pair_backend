@@ -75,13 +75,15 @@ public class GdprExportDto {
         private String description;
         private String activityName;
         private String status;
-        private List<ScheduleDto> schedules;
+        private List<GdprScheduleDto> schedules;
         private Instant createdAt;
     }
 
+    // GdprScheduleDto et non ScheduleDto (P-BA-17) : springdoc ne publie qu'un
+    // schéma par nom simple, et celui des créneaux porte déjà ce nom.
     @Data
     @Builder
-    public static class ScheduleDto {
+    public static class GdprScheduleDto {
         private String id;
         private String jourSemaine;
         private String heureDebut;

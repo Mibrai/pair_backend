@@ -1,5 +1,6 @@
 package org.program.pair.domain.activity;
 
+import org.program.pair.shared.media.ProcessedMultipartFile;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -179,7 +180,7 @@ public class ActivityController {
     public UserActivityDto toggleVisibility(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID userActivityId,
-            @Valid @RequestBody VisibilityRequest request) {
+            @Valid @RequestBody ActivityVisibilityRequest request) {
         return activityService.toggleMapVisibility(
             principal.getId(), userActivityId, request.visible());
     }
@@ -261,22 +262,4 @@ public class ActivityController {
         mediaFileService.supprimerUrlSiAuteur(ancienne, principal.getId());
     }
 
-    private static class ProcessedMultipartFile implements MultipartFile {
-        private final String originalFilename;
-        private final InputStream inputStream;
-
-        ProcessedMultipartFile(String originalFilename, InputStream inputStream) {
-            this.originalFilename = originalFilename;
-            this.inputStream = inputStream;
-        }
-
-        @Override public String getName() { return "file"; }
-        @Override public String getOriginalFilename() { return originalFilename; }
-        @Override public String getContentType() { return "image/jpeg"; }
-        @Override public boolean isEmpty() { return false; }
-        @Override public long getSize() { return 0; }
-        @Override public byte[] getBytes() throws IOException { return inputStream.readAllBytes(); }
-        @Override public InputStream getInputStream() { return inputStream; }
-        @Override public void transferTo(java.io.File dest) throws IOException { throw new UnsupportedOperationException(); }
-    }
 }

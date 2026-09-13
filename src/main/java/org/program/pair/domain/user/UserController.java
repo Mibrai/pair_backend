@@ -1,5 +1,6 @@
 package org.program.pair.domain.user;
 
+import org.program.pair.shared.media.ProcessedMultipartFile;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -306,54 +307,4 @@ public class UserController {
         return userService.updatePrivacySettings(principal.getId(), request);
     }
 
-    // Helper class for processed files
-    private static class ProcessedMultipartFile implements MultipartFile {
-        private final String originalFilename;
-        private final InputStream inputStream;
-
-        ProcessedMultipartFile(String originalFilename, InputStream inputStream) {
-            this.originalFilename = originalFilename;
-            this.inputStream = inputStream;
-        }
-
-        @Override
-        public String getName() {
-            return "file";
-        }
-
-        @Override
-        public String getOriginalFilename() {
-            return originalFilename;
-        }
-
-        @Override
-        public String getContentType() {
-            return "image/jpeg";
-        }
-
-        @Override
-        public boolean isEmpty() {
-            return false;
-        }
-
-        @Override
-        public long getSize() {
-            return 0;
-        }
-
-        @Override
-        public byte[] getBytes() throws IOException {
-            return inputStream.readAllBytes();
-        }
-
-        @Override
-        public InputStream getInputStream() {
-            return inputStream;
-        }
-
-        @Override
-        public void transferTo(java.io.File dest) throws IOException, IllegalStateException {
-            throw new UnsupportedOperationException();
-        }
-    }
 }
