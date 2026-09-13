@@ -62,7 +62,7 @@ class ScheduleConflictIntegrationTest extends AbstractIntegrationTest {
         Schedule yoga = openSlot(host, "Yoga du soir",
             mondayNext, mondayNext.plus(75, ChronoUnit.MINUTES), "FREQ=WEEKLY;BYDAY=MO");
         Schedule escalade = openSlot(host, "Escalade",
-            mondayNext.plus(30, ChronoUnit.MINUTES), null, "FREQ=WEEKLY;BYDAY=MO");
+            mondayNext.plus(30, ChronoUnit.MINUTES), mondayNext.plus(150, ChronoUnit.MINUTES), "FREQ=WEEKLY;BYDAY=MO");
 
         String token = login(joinerEmail);
 

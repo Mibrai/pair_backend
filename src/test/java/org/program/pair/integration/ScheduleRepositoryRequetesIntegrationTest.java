@@ -45,12 +45,14 @@ class ScheduleRepositoryRequetesIntegrationTest extends AbstractIntegrationTest 
     private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
 
     @Test
-    void lesCreneauxTerminesEntreDeuxInstants_sontRetrouves_avecOuSansFinDeclaree() {
+    void lesCreneauxTerminesEntreDeuxInstants_sontRetrouves() {
         Program programme = programme();
         Instant maintenant = Instant.now();
         Schedule avecFin = creneau(programme, maintenant.minus(3, ChronoUnit.HOURS),
             maintenant.minus(2, ChronoUnit.HOURS), SlotStatus.OPEN, null);
-        Schedule sansFin = creneau(programme, maintenant.minus(4, ChronoUnit.HOURS), null, SlotStatus.OPEN, null);
+        // Toute séance a une fin depuis V120 : celle-ci finit dans la fenêtre des débuts décalés.
+        Schedule sansFin = creneau(programme, maintenant.minus(4, ChronoUnit.HOURS),
+            maintenant.minus(150, ChronoUnit.MINUTES), SlotStatus.OPEN, null);
         Schedule horsFenetre = creneau(programme, maintenant.minus(30, ChronoUnit.HOURS),
             maintenant.minus(29, ChronoUnit.HOURS), SlotStatus.OPEN, null);
 

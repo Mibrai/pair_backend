@@ -53,16 +53,6 @@ class MySlotsBoundaryIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void unCreneauEnCoursSansFinDeclaree_resteAussi() {
-        // endsAt est facultative à la création : la convention de deux heures
-        // prend le relais.
-        User host = host();
-        UUID enCours = slot(host, Instant.now().minus(Duration.ofMinutes(45)), null);
-
-        assertThat(ids(host, true)).contains(enCours);
-    }
-
-    @Test
     void unCreneauTermineEnSort() {
         // La correction ne doit pas transformer « mes créneaux » en historique :
         // une fois la séance finie, le créneau en sort comme avant.

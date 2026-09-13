@@ -159,23 +159,6 @@ class SearchExpiredProgramIntegrationTest extends AbstractIntegrationTest {
     }
 
     /**
-     * Sans fin déclarée, la convention du dépôt s'applique : deux heures, lues
-     * sur {@code SlotTiming} et interpolées dans le SQL depuis là. Un créneau
-     * commencé il y a trois heures est donc fini, même si {@code ends_at} est nul
-     * en base — c'est le cas le plus courant en production.
-     */
-    @Test
-    void sansFinDeclaree_laConventionDeDeuxHeuresSApplique() {
-        String encoreEnCours = createProgram(
-            Instant.now().minus(1, ChronoUnit.HOURS), null, SlotStatus.OPEN);
-        String termine = createProgram(
-            Instant.now().minus(3, ChronoUnit.HOURS), null, SlotStatus.PAST);
-
-        assertThat(findByTitle(encoreEnCours).isExpired()).isFalse();
-        assertThat(findByTitle(termine).isExpired()).isTrue();
-    }
-
-    /**
      * Le bonus de la demande 1 : {@code includeExpired}.
      *
      * <p><b>Son défaut vaut {@code true}</b>, contrairement à celui de

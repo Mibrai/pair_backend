@@ -62,18 +62,6 @@ class NextSessionAtIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void pendantUneSeanceSansFinDeclaree_nextSessionAtResteLaSeanceEnCours() {
-        // endsAt est facultative à la création : la convention de SlotTiming
-        // (deux heures) prend le relais, et une séance commencée il y a 20
-        // minutes n'est pas finie.
-        Program program = program();
-        Instant debut = Instant.now().minus(Duration.ofMinutes(20));
-        schedule(program, debut, null, SlotStatus.OPEN);
-
-        assertThat(read(program).nextSessionAt()).isNotNull();
-    }
-
-    @Test
     void apresLaSeance_nextSessionAtRedevientNul() {
         // La correction ne doit pas rendre les programmes éternellement vivants :
         // une fois la séance finie, le champ retombe à null comme avant.
