@@ -303,13 +303,13 @@ class SlotCancellationIntegrationTest extends AbstractIntegrationTest {
 
     private record Creneau(UUID scheduleId, UUID programId) {}
 
-    /** {@code DELETE} rend toujours 204 sans corps : dire ce qu'il a fait est P-BA-16. */
+    /** {@code DELETE} rend 200 et dit ce qu'il a fait (P-BA-16) ; ces tests-ci ne lisent que ses effets. */
     private void supprimer(String token, Creneau creneau) {
         webTestClient.delete()
             .uri("/api/programs/{programId}/schedules/{scheduleId}",
                 creneau.programId(), creneau.scheduleId())
             .headers(h -> h.setBearerAuth(token))
-            .exchange().expectStatus().isNoContent();
+            .exchange().expectStatus().isOk();
     }
 
     private Creneau publishSlotComplet(String token, int maxParticipants) {

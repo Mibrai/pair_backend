@@ -143,7 +143,7 @@ class WatchSlotLifecycleIntegrationTest extends AbstractIntegrationTest {
             .uri("/api/programs/{programId}/schedules/{scheduleId}",
                 creneau.programId(), creneau.scheduleId())
             .headers(h -> h.setBearerAuth(hote.token()))
-            .exchange().expectStatus().isNoContent();
+            .exchange().expectStatus().isOk();
 
         // Le créneau est annulé et non supprimé (il a un inscrit), et la veille
         // de l'inscrit est refermée avec lui.
