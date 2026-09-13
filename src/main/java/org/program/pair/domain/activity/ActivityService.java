@@ -5,6 +5,8 @@ import org.program.pair.domain.activity.dto.*;
 import org.program.pair.domain.subscription.SubscriptionService;
 import org.program.pair.domain.user.User;
 import org.program.pair.repository.*;
+import org.program.pair.shared.exception.ConflictException;
+import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.exception.ForbiddenException;
 import org.program.pair.shared.exception.ResourceNotFoundException;
 import org.program.pair.shared.sanitizer.HtmlSanitizer;
@@ -67,8 +69,13 @@ public class ActivityService {
             .orElseThrow(() -> new ResourceNotFoundException("Catégorie introuvable."));
 
         if (activityRepository.existsByCategoryIdAndNameIgnoreCase(category.getId(), name)) {
-            throw new IllegalStateException(
-                "L'activité \"" + name + "\" existe déjà dans cette catégorie.");
+            // Un ConflictException nommé, et non une IllegalStateException : le
+            // statut ne change pas (409), mais le client reçoit désormais un code
+            // sur lequel brancher quelque chose, et un message traduit. Le nom
+            // saisi ne repart pas dans la réponse — celui qui vient de l'écrire
+            // l'a sous les yeux, et le message technique partait tel quel.
+            throw new ConflictException(ErrorCode.ACTIVITY_ALREADY_EXISTS,
+                "Cette activité existe déjà dans cette catégorie.");
         }
 
         String slug = generateUniqueSlug(name);
@@ -108,7 +115,8 @@ public class ActivityService {
     public CategoryDto createCategory(CreateCategoryRequest request) {
         String name = request.name().strip();
         if (categoryRepository.existsByNameIgnoreCase(name)) {
-            throw new IllegalStateException("La catégorie \"" + name + "\" existe déjà.");
+            throw new ConflictException(ErrorCode.CATEGORY_ALREADY_EXISTS,
+                "Cette catégorie existe déjà.");
         }
         String colorRamp = DEFAULT_COLOR_RAMPS[Math.floorMod(name.hashCode(), DEFAULT_COLOR_RAMPS.length)];
         Category category = Category.builder().name(name).colorRamp(colorRamp).build();
@@ -176,7 +184,10 @@ public class ActivityService {
             .orElseThrow(() -> new ResourceNotFoundException("Activité introuvable."));
 
         if (userActivityRepository.existsByUserIdAndActivityId(userId, request.activityId())) {
-            throw new IllegalStateException("Vous avez déjà ajouté cette activité.");
+            // État et non refus de droit : le client stabilise l'affichage sur
+            // « ajoutée » sans bandeau d'erreur, comme pour ALREADY_SUBSCRIBED.
+            throw new ConflictException(ErrorCode.USER_ACTIVITY_ALREADY_ADDED,
+                "Vous avez déjà ajouté cette activité.");
         }
 
         User user = userRepository.findById(userId)

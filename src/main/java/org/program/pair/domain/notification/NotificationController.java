@@ -1,6 +1,7 @@
 package org.program.pair.domain.notification;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -213,11 +214,34 @@ public class NotificationController {
         return resolved != null ? resolved.toLanguageTag() : null;
     }
 
+    /**
+     * Détacher un appareil du compte appelant.
+     *
+     * <p><b>Rend {@code 204} dans tous les cas</b>, et c'est ce qui a changé avec
+     * le contrôle de propriété (P-BL-12). Cette route ne vérifiait rien : elle
+     * supprimait le jeton porté par le chemin, quel qu'en soit le propriétaire.
+     * Un jeton n'est pas un secret bien gardé — il traverse l'URL, donc les
+     * journaux d'accès et les mandataires —, et quiconque en tenait un pouvait
+     * faire taire les notifications du compte auquel il appartenait, y compris
+     * les alertes d'une veille retour.
+     *
+     * <p>Le refus est silencieux à dessein : un {@code 404} sur le jeton d'un
+     * autre compte transformerait cette route en oracle d'existence, et un
+     * {@code 403} dirait « celui-là est à quelqu'un ». Le client, lui, n'a rien à
+     * distinguer — il vient d'oublier cet appareil, et l'état voulu est atteint
+     * dans les deux cas.
+     */
     @DeleteMapping("/devices/{token}")
-    @Operation(summary = "Supprimer device token")
-    public ResponseEntity<Void> unregisterDevice(@PathVariable String token) {
-        deviceTokenService.unregisterToken(token);
-        return ResponseEntity.ok().build();
+    @Operation(summary = "Supprimer device token",
+        description = "Détache l'appareil du compte appelant. Rend 204 même si le jeton "
+            + "est inconnu ou appartient à un autre compte : la route ne renseigne pas "
+            + "sur l'existence d'un jeton.")
+    @ApiResponse(responseCode = "204", description = "L'appareil n'est plus rattaché à ce compte.")
+    public ResponseEntity<Void> unregisterDevice(
+            @AuthenticationPrincipal UserPrincipal currentUser,
+            @PathVariable String token) {
+        deviceTokenService.unregisterToken(currentUser.getId(), token);
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping("/devices")

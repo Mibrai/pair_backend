@@ -6,6 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.program.pair.shared.dto.ErrorResponse;
 import org.program.pair.shared.dto.ScheduleConflictResponse;
 import org.program.pair.shared.i18n.Messages;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -64,6 +65,29 @@ public class GlobalExceptionHandler {
     private ErrorResponse errorFor(Throwable ex, ErrorCode fallback) {
         String code = codeOf(ex, fallback);
         return new ErrorResponse(code, messageOf(ex, code), Instant.now());
+    }
+
+    /**
+     * Le texte des refus qui n'ont rien à dire au client : le {@code 500}
+     * générique et le filet {@code 409} d'une contrainte violée.
+     *
+     * <p>Ces deux-là ne peuvent pas passer par {@code messageOf} : l'un n'a pas
+     * d'exception dont le message soit montrable, l'autre porte le code
+     * générique {@code CONFLICT}, qui n'a volontairement aucune clé
+     * {@code error.CONFLICT} — lui en donner une écraserait le message propre de
+     * la soixantaine de refus qui s'appuient encore sur ce repli (P-BA-11 étape
+     * 4). D'où la lecture directe d'une clé, et le littéral de repli : un
+     * gestionnaire d'exceptions qui lève sur une clé absente ferait perdre la
+     * réponse entière, et avec elle le 500 qu'il était en train de composer.
+     */
+    private String interne() {
+        String translated = messages.getOrNull("error.INTERNAL_ERROR");
+        return translated != null ? translated : "Une erreur est survenue.";
+    }
+
+    private String conflitGenerique() {
+        String translated = messages.getOrNull("error.CONFLICT.generic");
+        return translated != null ? translated : "Cette action n'est pas possible dans l'état actuel.";
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
@@ -143,12 +167,6 @@ public class GlobalExceptionHandler {
         return errorFor(ex, ErrorCode.NOT_FOUND);
     }
 
-    @ExceptionHandler(IllegalStateException.class)
-    @ResponseStatus(HttpStatus.CONFLICT)
-    public ErrorResponse handleIllegalState(IllegalStateException ex) {
-        return new ErrorResponse(ErrorCode.CONFLICT.name(), ex.getMessage(), Instant.now());
-    }
-
     @ExceptionHandler(ValidationException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ErrorResponse handleValidation(ValidationException ex) {
@@ -188,12 +206,59 @@ public class GlobalExceptionHandler {
         return errorFor(ex, ErrorCode.CONFLICT);
     }
 
+    /**
+     * Le filet d'une contrainte de base violée : {@code 409}, sans un mot de la
+     * base (P-BL-12 étape 2).
+     *
+     * <p>Ces exceptions tombaient sur {@code @ExceptionHandler(Exception.class)},
+     * donc en {@code 500}. Le cas qui a motivé ce gestionnaire est
+     * l'enregistrement d'un jeton d'appareil déjà attaché à un autre compte :
+     * {@code device_tokens.token} est {@code UNIQUE}, l'insertion cassait, et
+     * l'appelant recevait {@code 500} là où il y avait un conflit d'état
+     * parfaitement nommable. Ce chemin-là est désormais corrigé à la source — le
+     * jeton est réattribué —, mais la course de deux enregistrements simultanés
+     * reste possible, et toute autre contrainte d'unicité de la base peut sortir
+     * ici demain.
+     *
+     * <p><b>Le message ne vient jamais de l'exception.</b> Celui de Spring cite
+     * le nom de la contrainte, celui de la table et parfois la valeur refusée :
+     * de quoi cartographier le schéma depuis l'extérieur. Il part au journal, où
+     * il est indispensable, et nulle part ailleurs.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public ErrorResponse handleDataIntegrityViolation(DataIntegrityViolationException ex,
+                                                      HttpServletRequest request) {
+        log.warn("Contrainte de base violée sur {} : {}", request.getRequestURI(),
+            ex.getMostSpecificCause().getMessage());
+        return new ErrorResponse(ErrorCode.CONFLICT.name(), conflitGenerique(), Instant.now());
+    }
+
+    /**
+     * Un paramètre du bon nom et du mauvais type : {@code 400}, le nom du
+     * paramètre, <b>et rien de la valeur reçue</b>.
+     *
+     * <p>Elle y était : « valeur 'abc' n'est pas du type attendu ». Renvoyer à
+     * l'appelant ce qu'il a envoyé est sans danger quand c'est lui qui l'a écrit,
+     * et ne l'est plus dès qu'un tiers a fabriqué le lien sur lequel il a cliqué
+     * — une valeur reflétée telle quelle dans un corps d'erreur est le matériau
+     * d'une injection chez qui l'affiche (P-BA-10 étape 5). La valeur reste au
+     * journal, du côté où elle sert à diagnostiquer.
+     *
+     * <p>Le nom, lui, est utile et sans risque : il vient de notre signature de
+     * méthode, pas de la requête. D'où la clé dédiée
+     * {@code error.INVALID_PARAMETER.named} — {@code messageOf} ne peut pas la
+     * servir, puisqu'il appelle la variante sans argument et rendrait
+     * {@code ''{0}''} en clair.
+     */
     @ExceptionHandler(MethodArgumentTypeMismatchException.class)
     @ResponseStatus(HttpStatus.BAD_REQUEST)
     public ErrorResponse handleTypeMismatch(MethodArgumentTypeMismatchException ex) {
-        String message = String.format("Paramètre '%s' invalide : valeur '%s' n'est pas du type attendu.",
-            ex.getName(), ex.getValue());
-        log.warn("Type mismatch: {}", message);
+        log.warn("Type mismatch sur le paramètre '{}' : valeur reçue '{}'", ex.getName(), ex.getValue());
+        String message = messages.getOrNull("error.INVALID_PARAMETER.named", ex.getName());
+        if (message == null) {
+            message = "Paramètre '" + ex.getName() + "' invalide.";
+        }
         return new ErrorResponse(ErrorCode.INVALID_PARAMETER.name(), message, Instant.now());
     }
 
@@ -264,6 +329,6 @@ public class GlobalExceptionHandler {
         } else {
             log.error("Erreur non gérée", ex);
         }
-        return new ErrorResponse(ErrorCode.INTERNAL_ERROR.name(), "Une erreur est survenue.", Instant.now());
+        return new ErrorResponse(ErrorCode.INTERNAL_ERROR.name(), interne(), Instant.now());
     }
 }
