@@ -17,5 +17,9 @@ public record ScheduleDto(
     Boolean isOpenToPartners,
     String status,
     Integer participantCount,
-    String welcomeNote
+    String welcomeNote,
+
+    @io.swagger.v3.oas.annotations.media.Schema(description = "Niveau attendu déclaré "
+        + "par l'organisateur pour cette séance, ou null quand il n'est pas précisé.")
+    String level
 ) {}

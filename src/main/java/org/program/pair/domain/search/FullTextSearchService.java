@@ -44,7 +44,6 @@ public class FullTextSearchService {
             p.updated_at,
             p.user_activity_id,
             ua.id   AS ua_id,
-            ua.level,
             ua.format,
             u.id    AS user_id,
             u.display_name,
@@ -477,7 +476,8 @@ public class FullTextSearchService {
             distanceMeters,
             rank,
             (String) row.get("activity_name"),
-            (String) row.get("level"),
+            // Aucun niveau sur un programme : voir SemanticSearchService (P-MU-07).
+            null,
             (String) row.get("format"),
             isOnline,
             (String) row.get("verification_status"),

@@ -43,6 +43,10 @@ public record SearchResultDto(
     Double distanceMeters,
     Float relevanceScore,
     String activityName,
+    @Schema(description = "Niveau attendu, tel que l'organisateur l'a déclaré. Pour "
+        + "resultType=\"slot\", celui du créneau, null s'il n'est pas précisé. Toujours null "
+        + "pour resultType=\"program\" : un programme ne déclare pas de niveau, et le niveau "
+        + "personnel de l'organisateur n'en est pas un.")
     String level,
     String format,
 

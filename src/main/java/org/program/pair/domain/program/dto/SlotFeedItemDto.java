@@ -22,6 +22,9 @@ public record SlotFeedItemDto(
     UUID categoryId,
     String categoryColorRamp,
 
+    @Schema(description = "Niveau attendu, tel que l'organisateur l'a déclaré sur ce "
+        + "créneau. Null quand il ne l'a pas précisé — dont tous les créneaux publiés avant "
+        + "que ce champ existe. Jamais le niveau personnel de l'hôte.")
     String level,
     String format,
     UserPublicDto host,

@@ -177,6 +177,18 @@ public class Schedule {
     @Column(name = "primary_language", length = 5)
     private String primaryLanguage;
 
+    /**
+     * Niveau attendu pour la séance, tel que l'organisateur l'a dit (V113).
+     *
+     * <p>Nul veut dire « non précisé », et c'est le cas normal. <b>Jamais
+     * recopié du niveau personnel de l'hôte</b> ({@code UserActivity.level}) :
+     * celui-là décrit la personne, pas la séance, et c'est précisément parce
+     * que le fil l'affichait comme une exigence que cette colonne existe.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "level", length = 20)
+    private org.program.pair.domain.activity.ActivityLevel level;
+
     // Annulation (V68).
 
     /** Motif donné par l'organisateur, montré aux participants. */
