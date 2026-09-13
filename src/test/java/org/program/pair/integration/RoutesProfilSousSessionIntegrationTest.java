@@ -5,10 +5,16 @@ import org.program.pair.AbstractIntegrationTest;
 import org.program.pair.domain.auth.dto.AuthResponse;
 import org.program.pair.domain.auth.dto.LoginRequest;
 import org.program.pair.domain.auth.dto.RegisterRequest;
+import org.program.pair.domain.program.PlaceType;
+import org.program.pair.domain.program.dto.QuickSlotRequest;
+import org.program.pair.repository.ActivityRepository;
 import org.program.pair.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,6 +30,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RoutesProfilSousSessionIntegrationTest extends AbstractIntegrationTest {
 
     @Autowired UserRepository userRepository;
+    @Autowired ActivityRepository activityRepository;
 
     @Test
     void lesRecommandationsDUnUtilisateur_neSeLisentPlusSansSession() {
@@ -60,6 +67,32 @@ class RoutesProfilSousSessionIntegrationTest extends AbstractIntegrationTest {
         webTestClient.get().uri("/api/badges/users/{id}", bloquee.id())
             .headers(h -> h.setBearerAuth(moi.token()))
             .exchange().expectStatus().isNotFound();
+    }
+
+    /** Étape 3 : les avis d'un programme dont l'auteur m'a bloqué sont introuvables. */
+    @Test
+    void lesAvisDUnProgrammeDontLAuteurMABloque_sontIntrouvables() {
+        Compte moi = compte("avis-bloque");
+        Compte auteur = compte("avis-auteur");
+        UUID programId = publierProgramme(auteur);
+
+        webTestClient.get().uri("/api/reviews/programs/{id}", programId)
+            .headers(h -> h.setBearerAuth(moi.token()))
+            .exchange().expectStatus().isOk();
+
+        bloquer(auteur, moi);
+
+        webTestClient.get().uri("/api/reviews/programs/{id}", programId)
+            .headers(h -> h.setBearerAuth(moi.token()))
+            .exchange().expectStatus().isNotFound()
+            .expectBody().jsonPath("$.code").isEqualTo("NOT_FOUND");
+        webTestClient.get().uri("/api/reviews/programs/{id}/summary", programId)
+            .headers(h -> h.setBearerAuth(moi.token()))
+            .exchange().expectStatus().isNotFound();
+        // L'auteur, qui a bloqué, ne perd pas les avis de son propre programme.
+        webTestClient.get().uri("/api/reviews/programs/{id}", programId)
+            .headers(h -> h.setBearerAuth(auteur.token()))
+            .exchange().expectStatus().isOk();
     }
 
     @Test
@@ -106,6 +139,21 @@ class RoutesProfilSousSessionIntegrationTest extends AbstractIntegrationTest {
             .headers(h -> h.setBearerAuth(moi.token()))
             .exchange().expectStatus().isBadRequest()
             .expectBody().jsonPath("$.code").isEqualTo("INVALID_PARAMETER");
+    }
+
+    private UUID publierProgramme(Compte auteur) {
+        UUID activityId = activityRepository.findAll().get(0).getId();
+        Map<?, ?> corps = webTestClient.post().uri("/api/quick-slots")
+            .headers(h -> h.setBearerAuth(auteur.token()))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(new QuickSlotRequest(
+                activityId, Instant.now().plus(3, ChronoUnit.DAYS), Instant.now().plus(3, ChronoUnit.DAYS).plus(1, ChronoUnit.HOURS),
+                "Parc de la Tête d'Or", PlaceType.PUBLIC, 45.7772, 4.8554,
+                "Boulevard des Belges, Lyon", null, "Lyon", 5, null, null, null))
+            .exchange().expectStatus().isCreated()
+            .expectBody(Map.class).returnResult().getResponseBody();
+        assertThat(corps).isNotNull();
+        return UUID.fromString(String.valueOf(corps.get("programId")));
     }
 
     private void bloquer(Compte qui, Compte cible) {

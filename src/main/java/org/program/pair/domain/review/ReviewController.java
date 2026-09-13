@@ -47,19 +47,22 @@ public class ReviewController {
 
     @GetMapping("/programs/{programId}/summary")
     @Operation(summary = "Résumé des avis d'un programme", description = "Note moyenne, nombre total et moyennes par critère")
-    public ResponseEntity<ReviewSummaryDto> getProgramReviewSummary(@PathVariable UUID programId) {
-        return ResponseEntity.ok(reviewService.getProgramReviewSummary(programId));
+    public ResponseEntity<ReviewSummaryDto> getProgramReviewSummary(
+            @AuthenticationPrincipal UserPrincipal currentUser,
+            @PathVariable UUID programId) {
+        return ResponseEntity.ok(reviewService.getProgramReviewSummary(currentUser.getId(), programId));
     }
 
     @GetMapping("/programs/{programId}")
     @Operation(summary = "Avis d'un programme", description = "Liste des avis d'un programme, paginés")
     public ResponseEntity<Page<ReviewDto>> getProgramReviews(
+            @AuthenticationPrincipal UserPrincipal currentUser,
             @PathVariable UUID programId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") @Parameter(schema = @Schema(maximum = "50", defaultValue = "20")) int size) {
 
         Pageable pageable = Pages.borne(page, size);
-        Page<ReviewDto> reviews = reviewService.getProgramReviews(programId, pageable)
+        Page<ReviewDto> reviews = reviewService.getProgramReviews(currentUser.getId(), programId, pageable)
             .map(ReviewDto::fromEntity);
         return ResponseEntity.ok(reviews);
     }

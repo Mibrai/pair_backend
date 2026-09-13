@@ -3,6 +3,7 @@ package org.program.pair.domain.review;
 import org.program.pair.shared.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.program.pair.domain.block.BlockFilterService;
 import org.program.pair.domain.review.dto.CreateReviewRequest;
 import org.program.pair.domain.review.dto.ReviewDto;
 import org.program.pair.domain.review.dto.ReviewSummaryDto;
@@ -32,6 +33,7 @@ public class ReviewService {
     private final ConversationRepository conversationRepository;
     private final AttendanceRepository attendanceRepository;
     private final ProgramRepository programRepository;
+    private final BlockFilterService blockFilterService;
 
     public Review createReview(UUID reviewerId, CreateReviewRequest request) {
         UUID programId = request.getProgramId();
@@ -92,7 +94,8 @@ public class ReviewService {
     }
 
     @Transactional(readOnly = true)
-    public Page<Review> getProgramReviews(UUID programId, Pageable pageable) {
+    public Page<Review> getProgramReviews(UUID appelantId, UUID programId, Pageable pageable) {
+        introuvableSiAuteurBloque(appelantId, programId);
         return reviewRepository.findByProgramIdOrderByCreatedAtDesc(programId, pageable);
     }
 
@@ -119,7 +122,8 @@ public class ReviewService {
     }
 
     @Transactional(readOnly = true)
-    public ReviewSummaryDto getProgramReviewSummary(UUID programId) {
+    public ReviewSummaryDto getProgramReviewSummary(UUID appelantId, UUID programId) {
+        introuvableSiAuteurBloque(appelantId, programId);
         long total = reviewRepository.countByProgramId(programId);
         Double avg = reviewRepository.findAverageRatingByProgramId(programId);
 
@@ -130,5 +134,21 @@ public class ReviewService {
             .toList();
 
         return new ReviewSummaryDto(programId, avg, total, recent);
+    }
+
+    /**
+     * Les avis d'un programme dont l'auteur et l'appelant sont bloqués, dans un
+     * sens ou dans l'autre, sont introuvables (P-BS-14 étape 3, décision du
+     * 13/09) : le même 404 qu'un programme inexistant, comme le profil et les
+     * recommandations. Un programme inconnu garde sa page vide.
+     */
+    private void introuvableSiAuteurBloque(UUID appelantId, UUID programId) {
+        programRepository.findById(programId)
+            .filter(p -> p.getUserActivity() != null && p.getUserActivity().getUser() != null)
+            .map(p -> p.getUserActivity().getUser().getId())
+            .filter(auteurId -> blockFilterService.blocked(appelantId, auteurId))
+            .ifPresent(auteurId -> {
+                throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_PROGRAMME_INTROUVABLE", "Programme introuvable.");
+            });
     }
 }
