@@ -82,7 +82,7 @@ DB_USER=pair_user
 DB_PASSWORD=Pair2026!
 
 # JWT Secret (générer un nouveau secret en production!)
-JWT_SECRET=YXByaWNvZGV2YXBwbGljYXRpb25wYWlyYXV0aGVudGljYXRpb25zZWNyZXRrZXk=
+JWT_SECRET=<openssl rand -base64 48>
 
 # LLM API (optionnel)
 ANTHROPIC_API_KEY=sk-ant-api-key-here
