@@ -58,6 +58,8 @@ uploads/
 # frontend-config.local.json pointait l'IP privée d'une machine (192.168.x.x).
 # `local/` est l'emplacement prévu pour un magasin de clés de développement.
 frontend-config.local.json
+# Magasins de clés : aucun ne se versionne (P-BS-12). Celui de dev vit dans local/.
+*.p12
 /local/
 
 ### Secrets d'environnement ###
