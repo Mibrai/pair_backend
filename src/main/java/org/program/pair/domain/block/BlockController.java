@@ -1,6 +1,7 @@
 package org.program.pair.domain.block;
 
 import io.swagger.v3.oas.annotations.Operation;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.block.dto.BlockRequest;
 import org.program.pair.domain.block.dto.BlockedUserDto;
@@ -40,7 +41,7 @@ public class BlockController {
     public void block(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID userId,
-            @RequestBody(required = false) BlockRequest request) {
+            @Valid @RequestBody(required = false) BlockRequest request) {
         blockService.block(principal.getId(), userId,
             request == null ? null : request.reason());
     }

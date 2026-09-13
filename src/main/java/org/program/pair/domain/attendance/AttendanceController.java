@@ -1,6 +1,7 @@
 package org.program.pair.domain.attendance;
 
 import io.swagger.v3.oas.annotations.Operation;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import lombok.RequiredArgsConstructor;
 import org.program.pair.domain.attendance.dto.AttendanceDto;
@@ -27,7 +28,7 @@ public class AttendanceController {
     public AttendanceDto confirm(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID scheduleId,
-            @RequestBody ConfirmAttendanceRequest request) {
+            @Valid @RequestBody ConfirmAttendanceRequest request) {
         return attendanceService.confirm(principal.getId(), scheduleId, request.wasPresent());
     }
 
