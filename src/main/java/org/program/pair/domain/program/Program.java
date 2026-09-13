@@ -175,6 +175,21 @@ public class Program {
     @Builder.Default
     private ProgramCreatedVia createdVia = ProgramCreatedVia.FULL;
 
+    /**
+     * « Des frais sont à prévoir » (V114), coché par l'organisateur lui-même.
+     *
+     * <p><b>Faux ne veut pas dire gratuit</b> : cela veut dire que rien n'a été
+     * annoncé. Jamais un prix, et ni tri ni filtre sur ce champ — la doctrine
+     * refuse les classements, et un montant en deviendrait un.
+     */
+    @Column(name = "cost_to_share", nullable = false)
+    @Builder.Default
+    private Boolean costToShare = false;
+
+    /** Précision libre (« Location du terrain »). Nulle dès que {@link #costToShare} est faux. */
+    @Column(name = "cost_note", length = 80)
+    private String costNote;
+
     @OneToMany(mappedBy = "program", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("startsAt ASC")
     @Builder.Default

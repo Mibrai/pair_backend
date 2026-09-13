@@ -205,7 +205,7 @@ class ProgramDormancyJobIntegrationTest extends AbstractIntegrationTest {
 
         programService.updateProgram(authorId, program.getId(), new UpdateProgramRequest(
             null, null, ProgramStatus.ACTIVE, null, null, null, null, null,
-            null, null, null, null, null, null, null));
+            null, null, null, null, null, null, null, null, null));
 
         assertThat(statusOf(program)).isEqualTo(ProgramStatus.ACTIVE);
     }

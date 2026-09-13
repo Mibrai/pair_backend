@@ -402,7 +402,9 @@ public class SemanticSearchService {
             // de les câbler est ce qui les empêchera de mentir le jour où la
             // fenêtre changera.
             stillAhead ? schedule.getStartsAt() : null,
-            !stillAhead
+            !stillAhead,
+            Boolean.TRUE.equals(program.getCostToShare()),
+            Boolean.TRUE.equals(program.getCostToShare()) ? program.getCostNote() : null
         );
     }
 
@@ -595,7 +597,9 @@ public class SemanticSearchService {
                 p.getUpdatedAt(),
                 null, null, null, // startsAt/endsAt/maxParticipants : spécifiques aux résultats "slot"
                 timeliness.nextSessionAt(),
-                timeliness.isExpired()
+                timeliness.isExpired(),
+                Boolean.TRUE.equals(p.getCostToShare()),
+                Boolean.TRUE.equals(p.getCostToShare()) ? p.getCostNote() : null
             );
         }).toList();
     }

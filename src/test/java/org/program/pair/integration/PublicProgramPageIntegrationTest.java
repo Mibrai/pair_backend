@@ -298,7 +298,7 @@ class PublicProgramPageIntegrationTest extends AbstractIntegrationTest {
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(new CreateProgramRequest(
                 userActivity.id(), title, "Programme ouvert à tous.", true, null,
-                null, null, null, null, null, null, null, null, null, null))
+                null, null, null, null, null, null, null, null, null, null, null, null))
             .exchange().expectStatus().isCreated()
             .expectBody(ProgramDto.class).returnResult().getResponseBody();
 
@@ -307,7 +307,7 @@ class PublicProgramPageIntegrationTest extends AbstractIntegrationTest {
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(new UpdateProgramRequest(
                 null, null, ProgramStatus.ACTIVE, true, null,
-                null, null, null, null, null, null, null, null, null, null))
+                null, null, null, null, null, null, null, null, null, null, null, null))
             .exchange().expectStatus().isOk();
 
         return created.id();

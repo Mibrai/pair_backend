@@ -42,6 +42,8 @@ public class FullTextSearchService {
             p.location_type,
             p.created_at,
             p.updated_at,
+            p.cost_to_share,
+            p.cost_note,
             p.user_activity_id,
             ua.id   AS ua_id,
             ua.format,
@@ -499,7 +501,9 @@ public class FullTextSearchService {
             updatedAt,
             null, null, null, // startsAt/endsAt/maxParticipants : spécifiques aux résultats "slot"
             timeliness.nextSessionAt(),
-            timeliness.isExpired()
+            timeliness.isExpired(),
+            Boolean.TRUE.equals(row.get("cost_to_share")),
+            Boolean.TRUE.equals(row.get("cost_to_share")) ? (String) row.get("cost_note") : null
         );
     }
 

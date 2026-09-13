@@ -73,7 +73,7 @@ class ProgramMessagePermissionIntegrationTest extends AbstractIntegrationTest {
 
         ProgramDto created = programService.createProgram(author.getId(),
             new CreateProgramRequest(yoga.getId(), "Yoga ouvert", "Description", true, null,
-                null, null, null, null, null, null, null, null, null, null));
+                null, null, null, null, null, null, null, null, null, null, null, null));
 
         assertThat(created.allowParticipantMessages()).isTrue();
     }
@@ -130,7 +130,7 @@ class ProgramMessagePermissionIntegrationTest extends AbstractIntegrationTest {
 
         programService.updateProgram(author.getId(), program.getId(),
             new UpdateProgramRequest(null, null, null, null, false,
-                null, null, null, null, null, null, null, null, null, null));
+                null, null, null, null, null, null, null, null, null, null, null, null));
 
         assertThatThrownBy(() -> chatService.sendMessage(participant.getId(),
             new SendMessageRequest(conversationId, "Après fermeture")))
