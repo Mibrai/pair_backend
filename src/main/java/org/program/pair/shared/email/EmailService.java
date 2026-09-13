@@ -45,6 +45,9 @@ public class EmailService {
      */
     private final java.util.function.Function<UUID, String> recipientEmail;
 
+    /** La langue dans laquelle écrire à une personne. Voir le constructeur. */
+    private final java.util.function.Function<UUID, java.util.Locale> recipientLocale;
+
 
     /**
      * Racine publique de l'API, sur laquelle sont bâtis les liens envoyés par
@@ -109,7 +112,8 @@ public class EmailService {
                         OutboxService outbox,
                         Messages messages,
                         GabaritEmail gabarit,
-                        Environment environment) {
+                        Environment environment,
+                        org.program.pair.repository.DeviceTokenRepository deviceTokenRepository) {
         this.resendEmailService = resendEmailService;
         this.outbox = outbox;
         this.messages = messages;
@@ -118,6 +122,15 @@ public class EmailService {
         this.recipientEmail = userId -> userRepository.findById(userId)
             .map(User::getEmail)
             .orElse(null);
+        // La langue du destinataire (P-BL-20) : celle de son appareil le plus
+        // récemment utilisé, comme les push ; le français à défaut. Un envoi
+        // asynchrone n'a ni requête ni Accept-Language à lire.
+        this.recipientLocale = userId -> deviceTokenRepository.findByUserId(userId).stream()
+            .filter(device -> device.getLocale() != null && !device.getLocale().isBlank())
+            .max(java.util.Comparator.comparing(org.program.pair.domain.notification.DeviceToken::getLastUsedAt,
+                java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())))
+            .map(device -> org.program.pair.config.LocaleConfig.closestSupported(device.getLocale()))
+            .orElse(org.program.pair.config.LocaleConfig.FRENCH);
     }
 
     /**
@@ -330,8 +343,10 @@ public class EmailService {
             return;
         }
 
-        String subject = String.valueOf(payload.getOrDefault("programTitle", "Votre créneau meetDo"));
-        String text = notificationText(type, payload);
+        java.util.Locale langue = recipientLocale.apply(userId);
+        String subject = String.valueOf(payload.getOrDefault("programTitle",
+            texte(langue, "email.notification.defaultSubject", "Votre créneau meetDo")));
+        String text = notificationText(langue, type, payload);
 
         if (!resendEmailService.isEnabled()) {
             // Même repli que la vérification d'adresse : en développement, le
@@ -343,8 +358,8 @@ public class EmailService {
         // Enveloppe posée ici, en corail : une annulation n'est pas un courrier
         // de compte. Le filet de la porte de sortie la laissera passer telle
         // quelle — envelopper est idempotent.
-        boolean sent = resendEmailService.sendEmail(email, subjectFor(type, subject), text,
-            gabarit.envelopper(htmlFor(type, subject, text), GabaritEmail.Accent.CORAL));
+        boolean sent = resendEmailService.sendEmail(email, subjectFor(langue, type, subject), text,
+            gabarit.envelopper(htmlFor(langue, type, subject, text), GabaritEmail.Accent.CORAL));
         if (!sent) {
             // Un e-mail perdu ne doit pas emporter l'annulation elle-même : le
             // push et la notification in-app sont déjà partis.
@@ -362,12 +377,16 @@ public class EmailService {
      * qu'on n'ouvre pas est un déplacement pour rien.
      */
     String subjectFor(NotificationType type, String programTitle) {
+        return subjectFor(org.program.pair.config.LocaleConfig.FRENCH, type, programTitle);
+    }
+
+    String subjectFor(java.util.Locale langue, NotificationType type, String programTitle) {
         return switch (type) {
-            case SLOT_CANCELLED -> texte("email.SLOT_CANCELLED.subject",
+            case SLOT_CANCELLED -> texte(langue, "email.SLOT_CANCELLED.subject",
                 "Séance annulée : " + programTitle, programTitle);
-            case PROGRAM_CANCELLED -> texte("email.PROGRAM_CANCELLED.subject",
+            case PROGRAM_CANCELLED -> texte(langue, "email.PROGRAM_CANCELLED.subject",
                 "Programme annulé : " + programTitle, programTitle);
-            case SCHEDULE_CHANGED -> texte("email.SCHEDULE_CHANGED.subject",
+            case SCHEDULE_CHANGED -> texte(langue, "email.SCHEDULE_CHANGED.subject",
                 "Séance modifiée : " + programTitle, programTitle);
             default -> "meetDo — " + programTitle;
         };
@@ -395,15 +414,20 @@ public class EmailService {
      * ni {@code LocaleContextHolder}, ni l'appareil. L'e-mail dit ce qui a changé
      * et renvoie à la fiche, qui porte l'heure exacte ; la phrase complète
      * « avancée à 18 h, au lieu de 19 h » est composée par le client, qui a les
-     * deux. À revoir avec la localisation de l'e-mail (P-BL-20).
+     * deux. La langue, elle, est celle du destinataire depuis P-BL-20.
      */
     String notificationText(NotificationType type, Map<String, Object> payload) {
-        Object titre = payload.getOrDefault("programTitle", "votre créneau");
+        return notificationText(org.program.pair.config.LocaleConfig.FRENCH, type, payload);
+    }
+
+    String notificationText(java.util.Locale langue, NotificationType type, Map<String, Object> payload) {
+        Object titre = payload.getOrDefault("programTitle",
+            texte(langue, "email.notification.defaultTitle", "votre créneau"));
         return switch (type) {
-            case SCHEDULE_CHANGED -> scheduleChangedText(payload, titre);
-            case PROGRAM_CANCELLED -> texte("email.PROGRAM_CANCELLED.body",
+            case SCHEDULE_CHANGED -> scheduleChangedText(langue, payload, titre);
+            case PROGRAM_CANCELLED -> texte(langue, "email.PROGRAM_CANCELLED.body",
                 "Le programme « " + titre + " » est annulé.", titre);
-            default -> cancellationText(payload, titre);
+            default -> cancellationText(langue, payload, titre);
         };
     }
 
@@ -421,62 +445,66 @@ public class EmailService {
      * {@code jsonb}, et deux façons de la lire divergeraient. Ce qui est demandé
      * est une présence, pas un ordre.
      */
-    private String scheduleChangedText(Map<String, Object> payload, Object titre) {
+    private String scheduleChangedText(java.util.Locale langue, Map<String, Object> payload, Object titre) {
         String champs = String.valueOf(payload.getOrDefault("changedFields", ""));
         boolean heure = champs.contains("TIME");
         boolean lieu = champs.contains("PLACE");
 
         if (heure && lieu) {
-            return texte("email.SCHEDULE_CHANGED.body.both",
+            return texte(langue, "email.SCHEDULE_CHANGED.body.both",
                 "L'horaire et le lieu de la séance « " + titre + " » ont changé."
                     + " Retrouvez les nouveaux détails dans l'application.", titre);
         }
         if (lieu) {
-            return texte("email.SCHEDULE_CHANGED.body.place",
+            return texte(langue, "email.SCHEDULE_CHANGED.body.place",
                 "Le lieu de la séance « " + titre + " » a changé."
                     + " Retrouvez le nouveau lieu dans l'application.", titre);
         }
-        return texte("email.SCHEDULE_CHANGED.body.time",
+        return texte(langue, "email.SCHEDULE_CHANGED.body.time",
             "L'horaire de la séance « " + titre + " » a changé."
                 + " Retrouvez le nouvel horaire dans l'application.", titre);
     }
 
     /** Le texte d'annulation, inchangé — motif et repli compris. */
-    private String cancellationText(Map<String, Object> payload, Object titre) {
+    private String cancellationText(java.util.Locale langue, Map<String, Object> payload, Object titre) {
         StringBuilder text = new StringBuilder();
-        text.append(texte("email.SLOT_CANCELLED.body",
+        text.append(texte(langue, "email.SLOT_CANCELLED.body",
             "La séance « " + titre + " » est annulée.", titre));
 
         Object reason = payload.get("cancellationReason");
         if (reason != null && !String.valueOf(reason).isBlank()) {
-            text.append("\n\nMotif indiqué par l'organisateur : ").append(reason);
+            text.append("\n\n").append(texte(langue, "email.SLOT_CANCELLED.reason",
+                "Motif indiqué par l'organisateur : " + reason, String.valueOf(reason)));
         }
 
         Object alternatives = payload.get("alternativesCount");
         if (alternatives instanceof Number count && count.intValue() > 0) {
-            text.append("\n\n").append(count.intValue())
-                .append(count.intValue() > 1
-                    ? " autres créneaux de la même activité ont lieu près de chez vous."
-                    : " autre créneau de la même activité a lieu près de chez vous.");
+            // Le nombre passe en texte : MessageFormat écrirait « 1 000 » selon la langue.
+            String nombre = String.valueOf(count.intValue());
+            text.append("\n\n").append(count.intValue() > 1
+                ? texte(langue, "email.SLOT_CANCELLED.alternatives.many",
+                    nombre + " autres créneaux de la même activité ont lieu près de chez vous.", nombre)
+                : texte(langue, "email.SLOT_CANCELLED.alternatives.one",
+                    nombre + " autre créneau de la même activité a lieu près de chez vous.", nombre));
         }
 
         return text.toString();
     }
 
     /**
-     * Le texte traduit de la clé, ou le français écrit ici à défaut.
+     * Le texte traduit de la clé dans la langue du destinataire, ou le français
+     * écrit ici à défaut.
      *
-     * <p><b>Pourquoi un repli et non un appel direct.</b> La localisation de
-     * l'e-mail est P-BL-20 et les clés {@code email.*} appartiennent au bundle,
-     * que ce lot ne touche pas ; {@code getOrNull} rend {@code null} sur une clé
-     * absente là où {@code get} lèverait, et le léverait <b>dans un envoi
-     * asynchrone</b> — l'e-mail d'une annulation serait perdu par une clé
-     * manquante. Le même patron que {@code GlobalExceptionHandler.messageOf}, pour
-     * la même raison. Les trois langues arrivent d'elles-mêmes le jour où les
-     * clés sont posées, sans retoucher cette classe.
+     * <p><b>Pourquoi un repli et non un appel direct.</b> {@code getOrNullIn}
+     * rend {@code null} sur une clé absente là où {@code getIn} lèverait, et le
+     * lèverait <b>dans un envoi asynchrone</b> — l'e-mail d'une annulation serait
+     * perdu par une clé manquante. Le même patron que
+     * {@code GlobalExceptionHandler.messageOf}, pour la même raison. Les clés
+     * {@code email.*} des notifications sont posées dans les trois bundles depuis
+     * P-BL-20.
      */
-    private String texte(String cle, String repliFrancais, Object... args) {
-        String traduit = messages.getOrNull(cle, args);
+    private String texte(java.util.Locale langue, String cle, String repliFrancais, Object... args) {
+        String traduit = messages.getOrNullIn(langue, cle, args);
         return traduit != null ? traduit : repliFrancais;
     }
 
@@ -485,8 +513,8 @@ public class EmailService {
      * l'organisateur — titre du programme, motif d'annulation — et le HTML est
      * assemblé par concaténation, ce qui n'échappe rien tout seul.
      */
-    private String htmlFor(NotificationType type, String programTitle, String text) {
-        return GabaritEmail.titre(escape(subjectFor(type, programTitle)))
+    private String htmlFor(java.util.Locale langue, NotificationType type, String programTitle, String text) {
+        return GabaritEmail.titre(escape(subjectFor(langue, type, programTitle)))
             + "<p style=\"white-space:pre-line;\">" + escape(text) + "</p>";
     }
 

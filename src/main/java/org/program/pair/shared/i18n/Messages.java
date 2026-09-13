@@ -39,6 +39,11 @@ public class Messages {
         return messageSource.getMessage(key, args, locale);
     }
 
+    /** Texte de la clé dans une langue imposée, ou {@code null} si elle n'existe pas. */
+    public String getOrNullIn(Locale locale, String key, Object... args) {
+        return messageSource.getMessage(key, args, null, locale);
+    }
+
     /** Texte de la clé, ou {@code null} si elle n'existe pas. */
     public String getOrNull(String key, Object... args) {
         return messageSource.getMessage(key, args, null, LocaleContextHolder.getLocale());

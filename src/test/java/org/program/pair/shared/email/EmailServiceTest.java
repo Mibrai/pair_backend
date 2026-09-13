@@ -60,7 +60,8 @@ class EmailServiceTest {
             mock(OutboxService.class),
             messages(),
             gabarit,
-            new MockEnvironment());
+            new MockEnvironment(),
+            mock(org.program.pair.repository.DeviceTokenRepository.class));
     }
 
     private static Map<String, Object> charge(String... changedFields) {
@@ -179,5 +180,47 @@ class EmailServiceTest {
     void unTypeSansEmail_doitGarderLObjetGenerique() {
         assertThat(service().subjectFor(NotificationType.NEW_MESSAGE, "Yoga du soir"))
             .isEqualTo("meetDo — Yoga du soir");
+    }
+
+    /**
+     * P-BL-20 — l'annulation part dans la langue de l'appareil le plus récent de
+     * la personne, et en français quand aucun appareil ne dit rien.
+     */
+    @Test
+    void unUtilisateurAllemand_doitRecevoirLAnnulationEnAllemand() {
+        java.util.UUID userId = java.util.UUID.randomUUID();
+        ResendEmailService resend = mock(ResendEmailService.class);
+        org.mockito.Mockito.when(resend.isEnabled()).thenReturn(true);
+        org.mockito.Mockito.when(resend.sendEmail(
+            org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.anyString())).thenReturn(true);
+        UserRepository users = mock(UserRepository.class);
+        org.program.pair.domain.user.User lena = new org.program.pair.domain.user.User();
+        lena.setEmail("lena@example.test");
+        org.mockito.Mockito.when(users.findById(userId)).thenReturn(java.util.Optional.of(lena));
+        org.program.pair.repository.DeviceTokenRepository appareils =
+            mock(org.program.pair.repository.DeviceTokenRepository.class);
+        org.mockito.Mockito.when(appareils.findByUserId(userId)).thenReturn(List.of(
+            org.program.pair.domain.notification.DeviceToken.builder()
+                .token("ancien").locale("fr-FR").lastUsedAt(java.time.Instant.now().minusSeconds(86_400)).build(),
+            org.program.pair.domain.notification.DeviceToken.builder()
+                .token("recent").locale("de-DE").lastUsedAt(java.time.Instant.now()).build()));
+        GabaritEmail gabarit = new GabaritEmail();
+        ReflectionTestUtils.setField(gabarit, "publicBaseUrl", "https://lien.meetdo.fun");
+        EmailService service = new EmailService(resend, users, mock(OutboxService.class), messages(),
+            gabarit, new MockEnvironment(), appareils);
+
+        Map<String, Object> payload = charge();
+        payload.put("cancellationReason", "Halle geschlossen");
+        payload.put("alternativesCount", 2);
+        service.sendNotificationEmail(userId, NotificationType.SLOT_CANCELLED, payload);
+
+        org.mockito.ArgumentCaptor<String> objet = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.ArgumentCaptor<String> texte = org.mockito.ArgumentCaptor.forClass(String.class);
+        org.mockito.Mockito.verify(resend).sendEmail(org.mockito.ArgumentMatchers.eq("lena@example.test"),
+            objet.capture(), texte.capture(), org.mockito.ArgumentMatchers.anyString());
+        assertThat(objet.getValue()).isEqualTo("Termin abgesagt: Yoga du soir");
+        assertThat(texte.getValue()).contains("ist abgesagt").contains("Halle geschlossen")
+            .contains("2 weitere Termine").doesNotContain("annulée");
     }
 }

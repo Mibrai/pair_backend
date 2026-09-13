@@ -250,7 +250,8 @@ class EmailServiceDemarrageTest {
         given(users.findById(any())).willReturn(Optional.of(porteur));
 
         EmailService service = new EmailService(
-            resend, users, mock(OutboxService.class), messages(), gabarit, environnement);
+            resend, users, mock(OutboxService.class), messages(), gabarit, environnement,
+            mock(org.program.pair.repository.DeviceTokenRepository.class));
         ReflectionTestUtils.setField(service, "baseUrl", "http://localhost:9999");
         return service;
     }

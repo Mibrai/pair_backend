@@ -38,7 +38,8 @@ class EmailServiceJournauxTest {
         GabaritEmail gabarit = new GabaritEmail();
         ReflectionTestUtils.setField(gabarit, "publicBaseUrl", "https://lien.meetdo.fun");
         return new EmailService(resend, mock(UserRepository.class), mock(OutboxService.class),
-            new Messages(new StaticMessageSource()), gabarit, new MockEnvironment());
+            new Messages(new StaticMessageSource()), gabarit, new MockEnvironment(),
+            mock(org.program.pair.repository.DeviceTokenRepository.class));
     }
 
     @Test
