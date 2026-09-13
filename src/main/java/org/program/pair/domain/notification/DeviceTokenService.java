@@ -23,6 +23,31 @@ public class DeviceTokenService {
     /**
      * Enregistrer ou mettre à jour un device token.
      *
+     * <p><b>Un appareil appartient toujours au dernier compte qui s'y est
+     * connecté</b> (P-BL-12). La colonne {@code token} est {@code UNIQUE}
+     * (V11) et FCM n'émet qu'un jeton par installation : deux comptes ne
+     * peuvent pas légitimement se partager le même. La méthode cherchait
+     * pourtant {@code existsByUserIdAndToken(userId, token)} — donc le couple —
+     * et repartait sur une insertion dès que le propriétaire différait, ce qui
+     * violait la contrainte d'unicité : aucun gestionnaire ne couvrait
+     * {@code DataIntegrityViolationException}, l'appel rendait {@code 500}, et
+     * le jeton restait au compte précédent. Cela voulait dire deux choses, dont
+     * la seconde est la plus grave : le nouveau compte ne recevait aucune push,
+     * et l'<b>ancien</b> continuait de recevoir les siennes sur cet appareil —
+     * une alerte de veille pouvait donc arriver sur le téléphone de quelqu'un
+     * d'autre. On réattribue.
+     *
+     * <p><b>La course de deux enregistrements simultanés du même jeton</b> reste
+     * possible : la lecture ci-dessous ne verrouille rien — il n'y a pas encore
+     * de ligne à verrouiller dans le cas de l'insertion. La perdante casse alors
+     * sur l'index unique, et c'est le gestionnaire
+     * {@code DataIntegrityViolationException} de {@code GlobalExceptionHandler}
+     * qui la rend en {@code 409} sans message technique. Le cas est bénin : le
+     * client ré-enregistre son jeton à chaque démarrage, et le second appel
+     * trouvera la ligne. Un {@code INSERT … ON CONFLICT (token) DO UPDATE} le
+     * fermerait tout à fait, au prix d'une requête native qui doublerait la mise
+     * à jour des champs ci-dessous.
+     *
      * @param locale   langue des textes push pour cet appareil, déjà normalisée par
      *                 l'appelant ({@code "fr"}, {@code "en"}, {@code "de"}), ou
      *                 {@code null} pour ne pas y toucher — un ré-enregistrement
@@ -35,10 +60,24 @@ public class DeviceTokenService {
      */
     public DeviceToken registerToken(UUID userId, String token, DevicePlatform platform,
                                      String deviceName, String locale, String timezone) {
-        // Vérifier si le token existe déjà
-        if (deviceTokenRepository.existsByUserIdAndToken(userId, token)) {
-            DeviceToken existing = deviceTokenRepository.findByToken(token)
-                .orElseThrow(() -> new IllegalStateException("Token should exist"));
+        // Le jeton, et non le couple (compte, jeton) : c'est lui qui porte la
+        // contrainte d'unicité, donc lui qui décide s'il y a une ligne à mettre
+        // à jour ou une ligne à créer.
+        DeviceToken existing = deviceTokenRepository.findByToken(token).orElse(null);
+
+        if (existing != null) {
+            // getId() sur un proxy paresseux ne déclenche pas son chargement :
+            // l'identifiant est déjà connu du proxy.
+            UUID proprietaireActuel = existing.getUser().getId();
+            if (!proprietaireActuel.equals(userId)) {
+                existing.setUser(userRepository.getReferenceById(userId));
+                // Jamais le jeton entier au journal : il suffit à adresser une
+                // push à cet appareil (P-BS-19). Une empreinte suffit à relier
+                // deux lignes de journal entre elles.
+                log.info("Device token {} reassigned from user {} to user {}",
+                    empreinte(token), proprietaireActuel, userId);
+            }
+
             existing.setLastUsedAt(Instant.now());
             if (deviceName != null) {
                 existing.setDeviceName(deviceName);
@@ -75,11 +114,24 @@ public class DeviceTokenService {
     }
 
     /**
-     * Supprimer un device token
+     * Détacher un jeton, <b>à condition qu'il soit celui de l'appelant</b>.
+     *
+     * <p>La signature portait le seul jeton et supprimait sans rien vérifier : le
+     * jeton voyage en clair dans le chemin de {@code DELETE
+     * /notifications/devices/{token}}, donc quiconque en connaissait un pouvait
+     * faire taire les notifications de son propriétaire (P-BL-12, apport de
+     * P-BS-10). Un jeton d'un autre compte, ou inconnu, ne fait rien ici et
+     * l'appelant reçoit tout de même un {@code 204} : lui répondre {@code 404}
+     * lui apprendrait quels jetons existent.
      */
-    public void unregisterToken(String token) {
+    public void unregisterToken(UUID userId, String token) {
+        if (!deviceTokenRepository.existsByUserIdAndToken(userId, token)) {
+            log.debug("Device token {} not unregistered: not owned by user {}",
+                empreinte(token), userId);
+            return;
+        }
         deviceTokenRepository.deleteByToken(token);
-        log.info("Device token unregistered: {}", token.substring(0, Math.min(10, token.length())) + "...");
+        log.info("Device token unregistered: {}", empreinte(token));
     }
 
     /**
@@ -91,11 +143,20 @@ public class DeviceTokenService {
     }
 
     /**
-     * Supprimer tous les tokens d'un utilisateur
+     * Supprimer tous les tokens d'un utilisateur.
+     *
+     * <p>Sans appelant à ce jour : la désactivation de compte doit l'appeler
+     * (P-BL-01 / P-BL-12 étape 5), ce qui appartient au propriétaire de
+     * {@code UserService}.
      */
     public void unregisterAllUserTokens(UUID userId) {
         List<DeviceToken> tokens = deviceTokenRepository.findByUserId(userId);
         deviceTokenRepository.deleteAll(tokens);
         log.info("All device tokens unregistered for user {}", userId);
+    }
+
+    /** De quoi reconnaître un jeton dans un journal sans pouvoir s'en servir. */
+    private static String empreinte(String token) {
+        return token.substring(0, Math.min(10, token.length())) + "...";
     }
 }
