@@ -74,7 +74,7 @@ class MigrationsSansSecretTest {
         // Contre-épreuve : un test de garde qui ne sait rien détecter passe toujours.
         String sql = "UPDATE users SET password_hash = '$2a$12$" + "a".repeat(53) + "'"
             + " WHERE email = 'quelqu.un@gmx.de';"
-            + " -- demo@meetdo.test et admin@example.com restent permis";
+            + " -- demo@meetdo.test, admin@example.com et le motif LIKE 'demo%@gmx.de' restent permis";
 
         List<String> fautes = fautesDans("V999__exemple.sql", sql);
 
@@ -95,6 +95,11 @@ class MigrationsSansSecretTest {
         }
         Matcher adresse = ADRESSE.matcher(contenu);
         while (adresse.find()) {
+            // Un motif LIKE (« demo%@… ») ne désigne personne : c'est un filtre, pas
+            // une adresse publiée. V116 en a besoin pour fermer les comptes de démo.
+            if (adresse.group().substring(0, adresse.group().indexOf('@')).contains("%")) {
+                continue;
+            }
             String domaine = adresse.group(1).toLowerCase(Locale.ROOT);
             if (!estReserve(domaine)) {
                 fautes.add(nom + " : adresse sur un domaine réel (" + domaine + ")");

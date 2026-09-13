@@ -1,6 +1,6 @@
 -- P-BS-02 étape 5 (P-BS/D2 option A) — les vingt comptes de démonstration ferment.
 --
--- demo1@pair.app … demo20@pair.app ont été créés en production avec un mot de
+-- Les vingt comptes demo1 à demo20 du domaine pair.app ont été créés en production avec un mot de
 -- passe commun publié dans le dépôt. Le relevé en lecture seule et le
 -- déploiement du drapeau éteint (étapes 1 et 2 du runbook des comptes démo)
 -- sont faits : l'ordre « drapeau éteint d'abord, désactivation ensuite » est
