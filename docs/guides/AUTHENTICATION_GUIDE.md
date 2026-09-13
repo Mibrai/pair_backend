@@ -101,7 +101,7 @@ curl -X POST http://localhost:8090/api/conversations \
 **Utiliser le script de test**:
 
 ```bash
-bash test-conversations.sh
+bash scripts/smoke/test-conversations.sh
 ```
 
 Ce script:
