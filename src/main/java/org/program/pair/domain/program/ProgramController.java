@@ -23,7 +23,6 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -169,17 +168,23 @@ public class ProgramController {
     }
 
     @DeleteMapping("/{programId}/schedules/{scheduleId}")
-    @ResponseStatus(HttpStatus.NO_CONTENT)
-    public void deleteSchedule(
+    @io.swagger.v3.oas.annotations.Operation(
+        summary = "Supprimer un créneau — ou l'annuler s'il concerne quelqu'un.",
+        description = "Supprime le créneau s'il ne concerne personne (outcome DELETED). "
+            + "Sinon, l'annule par le même chemin que POST /api/slots/{id}/cancel et "
+            + "prévient une fois chaque personne concernée (outcome CANCELLED). "
+            + "Un scheduleId qui n'appartient pas à programId rend 404 sans rien modifier.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200")
+    public ScheduleDeletionResult deleteSchedule(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID programId,
             @PathVariable UUID scheduleId) {
-        programService.deleteSchedule(principal.getId(), scheduleId);
+        return programService.deleteSchedule(principal.getId(), programId, scheduleId);
     }
 
     @PostMapping("/{programId}/report")
     @ResponseStatus(HttpStatus.CREATED)
-    public Map<String, String> reportProgram(
+    public ProgramReportResult reportProgram(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID programId,
             @Valid @RequestBody ProgramReportRequest request) {
@@ -190,7 +195,7 @@ public class ProgramController {
             .description(request.description())
             .build();
         reportService.createReport(principal.getId(), reportRequest);
-        return Map.of("message", "Programme signalé");
+        return new ProgramReportResult("Programme signalé");
     }
 
     /**

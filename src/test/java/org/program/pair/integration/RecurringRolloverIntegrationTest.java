@@ -434,7 +434,7 @@ class RecurringRolloverIntegrationTest extends AbstractIntegrationTest {
             .uri("/api/programs/{programId}/schedules/{scheduleId}",
                 slot.programId(), slot.scheduleId())
             .headers(h -> h.setBearerAuth(slot.ownerToken()))
-            .exchange().expectStatus().isNoContent();
+            .exchange().expectStatus().isOk();
     }
 
     private void join(String token, UUID scheduleId) {

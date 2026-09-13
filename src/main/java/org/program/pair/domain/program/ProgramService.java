@@ -816,14 +816,23 @@ public class ProgramService {
      * fait a été annoncé, et une suppression définitive emporterait en cascade
      * les participations qui portent encore la trace de qui devait venir.
      *
-     * <p><b>La réponse ne change pas</b> : {@code 204} sans corps dans les deux
-     * cas, comme aujourd'hui. Dire ce qui a été fait — {@code 200 {outcome,
-     * schedule}} de la décision D3 — appartient à P-BA-16 ; l'appliquer ici
-     * casserait l'application publiée, qui attend un 204 vide.
+     * <p><b>La réponse dit ce qui a été fait</b> (P-BA-16, décision D3 option B) :
+     * {@code 200 {outcome, schedule}}. L'app publiée appelle cette route par
+     * {@code _dio.delete<void>}, qui ignore le corps et accepte tout 2xx.
+     *
+     * <p><b>Le programme de l'adresse est vérifié.</b> Il était reçu puis
+     * ignoré : {@code DELETE /programs/A/schedules/<créneau de B>} agissait sur
+     * B. Un créneau qui n'appartient pas au programme nommé rend le même 404
+     * qu'un créneau inexistant, avant tout contrôle de propriété.
+     *
+     * <p>Le 403 du non-propriétaire reste (étape 2 de la fiche, à valider par la
+     * sécurité : aligner sur le 404 de {@code /cancel} ne confirmerait plus
+     * l'existence du créneau).
      */
-    public void deleteSchedule(UUID userId, UUID scheduleId) {
+    public ScheduleDeletionResult deleteSchedule(UUID userId, UUID programId, UUID scheduleId) {
         Schedule schedule = scheduleRepository.findById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException("Créneau introuvable."));
+            .filter(s -> s.getProgram().getId().equals(programId))
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "Créneau introuvable."));
 
         UUID ownerId = schedule.getProgram().getUserActivity().getUser().getId();
         if (!ownerId.equals(userId)) {
@@ -837,16 +846,21 @@ public class ProgramService {
             // comme avant. Vaut aussi pour un créneau annulé que plus personne
             // ne regarde.
             scheduleRepository.delete(schedule);
-        } else if (schedule.getStatus() != SlotStatus.CANCELLED) {
+            refreshNextSessionAt(prog);
+            return ScheduleDeletionResult.deleted();
+        }
+        if (schedule.getStatus() != SlotStatus.CANCELLED) {
             // Des personnes comptent sur ce créneau : c'est une annulation, et
             // elle se fait à un seul endroit — motif (aucun ici, le geste n'en
             // demande pas), date, auteur, veilles refermées, un seul message.
             slotCancellationService.cancel(userId, scheduleId, null);
         }
         // Sinon : déjà annulé et encore regardé. La ligne reste, et personne n'est
-        // prévenu deux fois du même fait.
+        // prévenu deux fois du même fait — l'issue reste CANCELLED.
 
         refreshNextSessionAt(prog);
+        Schedule annule = scheduleRepository.findById(scheduleId).orElse(schedule);
+        return ScheduleDeletionResult.cancelled(toScheduleDto(annule, userId));
     }
 
     private void applyOptionalFields(Program program,
