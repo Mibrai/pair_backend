@@ -89,12 +89,13 @@ public class OpenApiConfig {
                     avait déduit — raisonnablement, c'est ce qu'un contrat est censé être —
                     que `POST /api/auth/refresh` pouvait rendre un 429 et couper les sessions.
 
-                    **Quatre routes sont plafonnées, et elles seules :** `POST /api/auth/login`,
-                    `/api/auth/register`, `/api/auth/resend-verification` et
-                    `/api/auth/forgot-password` — ainsi que le changement d'adresse, qui
-                    déclenche le même envoi d'e-mail. **`/api/auth/refresh` n'est pas limité :**
-                    qui l'appelle présente déjà un secret valide, et l'y soumettre casserait la
-                    seule mécanique qui maintient les gens connectés.
+                    **Cinq routes sont plafonnées, et elles seules :** `POST /api/auth/login`,
+                    `/api/auth/register`, `/api/auth/resend-verification`,
+                    `/api/auth/forgot-password` et `/api/auth/reset-password` — ainsi que le
+                    changement d'adresse, qui déclenche le même envoi d'e-mail.
+                    **`/api/auth/refresh` n'est pas limité :** qui l'appelle présente déjà un
+                    secret valide, et l'y soumettre casserait la seule mécanique qui maintient
+                    les gens connectés.
 
                     Chaque route porte **deux** budgets sur une fenêtre glissante : un budget
                     serré sur la cible — le compte visé, ou l'adresse destinataire de l'e-mail —
@@ -104,20 +105,45 @@ public class OpenApiConfig {
 
                     | Route | Par compte / adresse visée | Par IP | Fenêtre |
                     |---|---|---|---|
-                    | `/auth/login` | 10 **échecs** | 50 **échecs** | 15 min |
+                    | `/auth/login` | 10 **échecs** par couple (compte, IP) ; 100 **échecs** par compte, toutes IP confondues | 50 **échecs** | 15 min |
                     | `/auth/register` | 5 | 30 | 1 h |
                     | `/auth/resend-verification` | 3 | 20 | 1 h |
                     | `/auth/forgot-password` | 3 | 20 | 1 h |
+                    | `/auth/reset-password` | — (le compte n'est pas connaissable : l'appelant présente un jeton) | 20 | 1 h |
+
+                    **Sur la connexion, le budget serré porte sur le couple (compte, IP)** depuis
+                    le 12/09, et non sur le compte seul. Il portait sur le compte seul, si bien
+                    que dix mots de passe faux fermaient la porte au propriétaire du compte, même
+                    avec le bon mot de passe et depuis un autre appareil : n'importe qui pouvait
+                    verrouiller le compte d'autrui. Ce que cela change pour un client : dix échecs
+                    ferment la porte **de cet appareil-là**, et le plafond de 100 échecs par
+                    compte n'est atteint que par une attaque menée depuis au moins dix adresses.
+
+                    `/auth/reset-password` est plafonnée depuis le 12/09, à 20 par heure et par
+                    adresse IP. Le jeton fait 122 bits, donc rien n'est devinable ; ce qui est
+                    borné, c'est le coût de l'appel. Vingt essais laissent la place à qui
+                    recommence parce que son nouveau mot de passe est refusé par les règles de
+                    forme.
 
                     Sur la connexion, **seuls les échecs comptent**, et une connexion réussie
-                    remet le compteur du compte à zéro : se connecter cent fois avec le bon mot
-                    de passe ne consomme rien. Un refus ne consomme rien non plus — réessayer
-                    pour voir si l'attente a suffi ne rallonge pas l'attente.
+                    remet à zéro le couple et le compteur du compte : se connecter cent fois avec
+                    le bon mot de passe ne consomme rien. Un refus ne consomme rien non plus —
+                    réessayer pour voir si l'attente a suffi ne rallonge pas l'attente.
 
                     Tout `429` porte un en-tête `Retry-After`, en secondes, qui dit quand la
                     fenêtre rouvre réellement. Fiez-vous à lui plutôt qu'au message : les
                     fenêtres vont jusqu'à une heure, et « réessayez dans quelques minutes » ne
                     suffit pas à savoir quand.
+
+                    **Contrat de `Retry-After`.** Toujours un nombre entier de secondes, jamais
+                    une date HTTP — nous nous engageons à ne pas servir l'autre forme. Toujours
+                    au moins `1` : un `0` inviterait à réessayer sur-le-champ. Arrondi vers le
+                    haut, si bien qu'attendre exactement ce qu'il annonce suffit : le client n'a
+                    pas de marge à ajouter. Et, la fenêtre étant glissante, **la valeur peut être
+                    petite** — de l'ordre de la seconde — même sur une fenêtre d'une heure : elle
+                    vaut ce qui reste à la plus ancienne tentative retenue, et non la fenêtre
+                    entière. Un client qui traiterait un `Retry-After` court comme impossible se
+                    tromperait.
 
                     ## Support
                     - Documentation: https://github.com/pair/docs

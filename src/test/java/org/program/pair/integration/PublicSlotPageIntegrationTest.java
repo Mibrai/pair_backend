@@ -96,6 +96,65 @@ class PublicSlotPageIntegrationTest extends AbstractIntegrationTest {
         assertThat(html).contains("https://lien.meetdo.fun/s/" + token);
     }
 
+    /**
+     * Le test que la fiche d'audit P-BS-08 appelle <b>obligatoire</b>, et la
+     * raison pour laquelle il l'appelle ainsi.
+     *
+     * <p>Cette fiche fait changer le réglage des en-têtes de proxy
+     * ({@code server.forward-headers-strategy}, pour que l'adresse vue par le
+     * limiteur de débit soit celle qu'établit un proxy de confiance — voir
+     * {@code config/ProxyDeConfiance}). Or ce même réglage décide de ce que le
+     * serveur croit du protocole de la requête, et une page de partage servie en
+     * clair est un défaut visible par tout le monde : iOS refuse d'ouvrir
+     * l'application depuis un lien en {@code http}, et le lien universel ne mène
+     * alors plus nulle part.
+     *
+     * <p><b>Ce que le code dit, et qui n'est pas ce que la fiche supposait.</b>
+     * Les liens de partage ne sont pas composés sur la requête : {@code og:url},
+     * {@code shortUrl} et {@code pageUrl} sont bâtis sur
+     * {@code pair.public.base-url}, une constante de configuration absolue et en
+     * https. Aucune URL absolue de ce dépôt ne vient d'un
+     * {@code ServletUriComponentsBuilder} ni d'un {@code getRequestURL()} — la
+     * vérification a été faite pour cette fiche. Le réglage de proxy ne peut donc
+     * pas faire basculer ces liens en clair.
+     *
+     * <p>Ce test ne prouve donc pas un correctif : il <b>verrouille</b>
+     * l'indépendance qui rend le changement de réglage sans danger, et il
+     * échouerait le jour où quelqu'un composerait un de ces liens sur la requête.
+     * Les en-têtes envoyés ici sont ceux qui feraient basculer un lien composé sur
+     * la requête : protocole annoncé en clair, hôte annoncé faux.
+     */
+    @Test
+    void lesLiensDePartage_doiventResterEnHttps_quoiQuAnnonceLaRequete() {
+        String host = registerAndLogin();
+        UUID slotId = publishSlot(host);
+        String token = shareLink(host, slotId).token();
+
+        String html = webTestClient.get().uri("/s/" + token)
+            .header("X-Forwarded-Proto", "http")
+            .header("X-Forwarded-Host", "ailleurs.example.com")
+            .header("X-Forwarded-For", "203.0.113.9")
+            .exchange().expectStatus().isOk()
+            .expectBody(String.class).returnResult().getResponseBody();
+
+        assertThat(html).contains("https://lien.meetdo.fun/s/" + token);
+        assertThat(html).doesNotContain("http://lien.meetdo.fun");
+        assertThat(html).doesNotContain("ailleurs.example.com");
+
+        // Le lien rendu à l'application, par la même occasion : c'est celui qui
+        // part dans une conversation, et il est composé au même endroit.
+        PublicShareLinkDto lien = webTestClient.get().uri("/api/slots/{id}/share-link", slotId)
+            .headers(h -> h.setBearerAuth(host))
+            .header("X-Forwarded-Proto", "http")
+            .header("X-Forwarded-Host", "ailleurs.example.com")
+            .exchange().expectStatus().isOk()
+            .expectBody(PublicShareLinkDto.class).returnResult().getResponseBody();
+
+        assertThat(lien).isNotNull();
+        assertThat(lien.shortUrl()).startsWith("https://lien.meetdo.fun/");
+        assertThat(lien.pageUrl()).startsWith("https://lien.meetdo.fun/");
+    }
+
     @Test
     void laPage_neDoitPorterAucunIdentifiantInterne_niAdressePrivee() {
         String host = registerAndLogin();
