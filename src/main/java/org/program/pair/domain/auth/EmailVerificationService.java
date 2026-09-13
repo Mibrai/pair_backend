@@ -68,8 +68,7 @@ public class EmailVerificationService {
      */
     @Transactional
     public ResultatVerification verifier(String token) {
-        Optional<AuthToken> trouve =
-            authTokenRepository.findByTokenAndType(token, AuthTokenType.EMAIL_VERIFICATION);
+        Optional<AuthToken> trouve = retrouver(token, AuthTokenType.EMAIL_VERIFICATION);
         if (trouve.isPresent()) {
             return verifierAdresse(trouve.get());
         }
@@ -78,8 +77,7 @@ public class EmailVerificationService {
         // même page. Le distinguer par l'URL aurait demandé un second chemin
         // dans le fichier d'association Apple, donc une seconde occasion de
         // diverger, pour un lien que l'utilisateur ne lit pas.
-        Optional<AuthToken> changement =
-            authTokenRepository.findByTokenAndType(token, AuthTokenType.EMAIL_CHANGE);
+        Optional<AuthToken> changement = retrouver(token, AuthTokenType.EMAIL_CHANGE);
         if (changement.isPresent()) {
             return appliquerChangement(changement.get());
         }
@@ -167,7 +165,7 @@ public class EmailVerificationService {
 
     @Transactional(readOnly = true)
     public Optional<UUID> validatePasswordResetToken(String token) {
-        return authTokenRepository.findByTokenAndType(token, AuthTokenType.PASSWORD_RESET)
+        return retrouver(token, AuthTokenType.PASSWORD_RESET)
             .filter(jeton -> !jeton.estConsomme())
             .filter(jeton -> !jeton.estExpire())
             .map(jeton -> jeton.getUser().getId());
@@ -175,7 +173,7 @@ public class EmailVerificationService {
 
     @Transactional
     public void consumePasswordResetToken(String token) {
-        authTokenRepository.findByTokenAndType(token, AuthTokenType.PASSWORD_RESET)
+        retrouver(token, AuthTokenType.PASSWORD_RESET)
             .filter(jeton -> !jeton.estConsomme())
             .ifPresent(jeton -> {
                 jeton.setConsumedAt(Instant.now());
@@ -189,6 +187,16 @@ public class EmailVerificationService {
      * <p>Fermer les précédents évite qu'un renvoi laisse plusieurs liens actifs
      * pour la même adresse : l'utilisateur, qui a deux e-mails sous les yeux,
      * n'a aucun moyen de savoir lequel porte le bon.
+     *
+     * <p><b>Deux formes du même jeton, et pour combien de temps (P-BS-09).</b>
+     * La ligne porte l'empreinte — la seule par laquelle {@link #retrouver} sait
+     * chercher — <b>et</b> encore la valeur en clair. Cette seconde écriture n'a
+     * qu'une raison : tant qu'elle a lieu, revenir à la version précédente du
+     * code reste sûr, puisque cette version ne cherche que par la valeur. Sans
+     * elle, un retour arrière laisserait sans recours tous les liens émis depuis
+     * le déploiement. Elle cesse au Lot 4, au moins sept jours plus tard — bien
+     * au-delà des 24 h de validité maximale, donc sans qu'aucun lien vivant n'en
+     * dépende encore —, et la colonne est supprimée par une migration derrière.
      */
     private String emettre(User user, AuthTokenType type, Duration validite) {
         authTokenRepository.consommerJetonsOuverts(user.getId(), type, Instant.now());
@@ -196,10 +204,32 @@ public class EmailVerificationService {
         String token = UUID.randomUUID().toString();
         authTokenRepository.save(AuthToken.builder()
             .token(token)
+            .tokenHash(AuthToken.empreinte(token))
             .user(user)
             .type(type)
             .expiresAt(Instant.now().plus(validite))
             .build());
         return token;
+    }
+
+    /**
+     * Retrouve un jeton présenté par un lien, par son empreinte et jamais par sa
+     * valeur.
+     *
+     * <p>Un seul endroit pour les quatre recherches : c'est ce qui garantit
+     * qu'aucune ne puisse retomber sur la colonne en clair par distraction, et
+     * c'est le seul endroit à retoucher le jour où l'empreinte change de forme.
+     *
+     * <p>Une valeur vide ou absente ne se condense pas et ne désigne rien : elle
+     * rend « introuvable », comme le faisait la recherche par valeur avant. La
+     * route {@code /v/{token}} peut être appelée sans jeton utile — un robot
+     * d'aperçu de lien suffit — et cela ne doit pas lever.
+     */
+    private Optional<AuthToken> retrouver(String jetonPresente, AuthTokenType type) {
+        if (jetonPresente == null || jetonPresente.isBlank()) {
+            return Optional.empty();
+        }
+        return authTokenRepository.findByTokenHashAndType(
+            AuthToken.empreinte(jetonPresente), type);
     }
 }

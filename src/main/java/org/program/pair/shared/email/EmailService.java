@@ -1,6 +1,8 @@
 package org.program.pair.shared.email;
 
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
+import org.program.pair.config.Profils;
 import org.program.pair.domain.email.GabaritEmail;
 import org.program.pair.domain.email.ResendEmailService;
 import org.program.pair.domain.notification.NotificationType;
@@ -8,6 +10,7 @@ import org.program.pair.domain.outbox.OutboxService;
 import org.program.pair.domain.user.User;
 import org.program.pair.shared.i18n.Messages;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
@@ -16,6 +19,21 @@ import java.util.UUID;
 @Service
 @Slf4j
 public class EmailService {
+
+    /**
+     * Le refus de démarrage, écrit pour être lu une seule fois et dans
+     * l'urgence : il nomme le profil, l'état des deux réglages, et le geste.
+     */
+    private static final String MESSAGE_SANS_FOURNISSEUR = """
+        L'envoi d'e-mails n'est pas configuré sous un profil de production (%s) : \
+        resend.enabled=%s, resend.api-key %s.
+
+        Le serveur refuse de démarrer plutôt que de se rabattre sur son repli de \
+        développement, qui écrit les liens de vérification et de réinitialisation \
+        de mot de passe dans les journaux — et un lien de réinitialisation lu dans \
+        un journal donne le compte.
+
+        Posez RESEND_ENABLED=true et RESEND_API_KEY.""";
 
     private final ResendEmailService resendEmailService;
 
@@ -41,6 +59,36 @@ public class EmailService {
     @Value("${email.base-url:http://localhost:3000}")
     private String baseUrl;
 
+    /**
+     * Le seul drapeau qui autorise un lien d'e-mail à passer par les journaux.
+     *
+     * <p><b>Ce qu'il ferme (P-BS-09).</b> Sans fournisseur configuré, les cinq
+     * replis de cette classe écrivaient le lien entier en {@code log.info} —
+     * jeton compris pour la réinitialisation de mot de passe. Un journal de
+     * plateforme se lit sans les droits de la base et se conserve : quiconque y
+     * a accès prenait le compte, sans mot de passe et sans laisser de trace dans
+     * l'application. Le repli reste utile là où il n'y a pas de boîte aux
+     * lettres, et nulle part ailleurs.
+     *
+     * <p>Il vaut {@code true} dans {@code application-dev.properties} et
+     * {@code false} dans {@code application.properties}, donc partout ailleurs
+     * par héritage ; {@code ObservabiliteConfigurationTest} échoue si un profil
+     * de déploiement le rallume. Le défaut écrit ici est {@code false} lui aussi :
+     * un drapeau de journalisation absent doit se lire « ne journalise pas ».
+     */
+    @Value("${pair.email.journaliser-liens:false}")
+    private boolean journaliserLiens;
+
+    /**
+     * Les profils réellement actifs, pour le seul refus de démarrage de
+     * {@link #exigerUnFournisseurEnProduction()}.
+     *
+     * <p>{@code Environment} et non {@code spring.profiles.active} : voir
+     * {@link Profils} — un profil activé par variable d'environnement ou par
+     * {@code include} n'apparaît pas dans cette propriété.
+     */
+    private final Environment environment;
+
     private final OutboxService outbox;
     private final Messages messages;
 
@@ -59,14 +107,63 @@ public class EmailService {
                         org.program.pair.repository.UserRepository userRepository,
                         OutboxService outbox,
                         Messages messages,
-                        GabaritEmail gabarit) {
+                        GabaritEmail gabarit,
+                        Environment environment) {
         this.resendEmailService = resendEmailService;
         this.outbox = outbox;
         this.messages = messages;
         this.gabarit = gabarit;
+        this.environment = environment;
         this.recipientEmail = userId -> userRepository.findById(userId)
             .map(User::getEmail)
             .orElse(null);
+    }
+
+    /**
+     * En production, pas de fournisseur d'e-mail signifie pas de démarrage.
+     *
+     * <p><b>Pourquoi un refus, et non un avertissement.</b> Le repli sans
+     * fournisseur n'est pas « ne rien envoyer » : c'est <b>envoyer dans les
+     * journaux</b>. Une variable d'environnement oubliée ne dégradait donc pas le
+     * service, elle déplaçait les liens de vérification et de réinitialisation
+     * vers un endroit lisible par quiconque a accès aux journaux de la
+     * plateforme — et où ils restent. Le drapeau
+     * {@code pair.email.journaliser-liens} empêche l'écriture ; ce contrôle
+     * empêche l'état qui la rendait tentante, et surtout il empêche que plus
+     * aucun e-mail ne parte sans que personne s'en aperçoive : aujourd'hui,
+     * Resend éteint sous {@code railway} ne produit aucune erreur, aucune ligne
+     * rouge, et aucun e-mail.
+     *
+     * <p><b>{@link Profils#PRODUCTION} et non {@link Profils#DEPLOIEMENT}</b> — la
+     * différence avec {@code JwtTokenProvider} est voulue. Une clé de signature
+     * absente est contournable partout, staging compris ; un fournisseur d'e-mail
+     * absent n'expose que là où de vraies adresses reçoivent de vrais liens.
+     * Staging n'a pas nécessairement de domaine vérifié chez Resend, et l'y
+     * exiger interdirait de monter un environnement d'essai pour fermer un risque
+     * qui n'y existe pas.
+     *
+     * <p>La clé est lue par l'{@code Environment} plutôt que par un second
+     * {@code @Value} : ce contrôle est le seul endroit du code qui s'y intéresse,
+     * et {@link ResendEmailService} ne l'expose pas. {@code resend.enabled=true}
+     * sans clé est le pire des trois états — l'application croit envoyer, et
+     * chaque appel échoue côté fournisseur.
+     */
+    @PostConstruct
+    void exigerUnFournisseurEnProduction() {
+        if (!Profils.actif(environment, Profils.PRODUCTION)) {
+            return;
+        }
+
+        String cle = environment.getProperty("resend.api-key", "");
+        boolean cleAbsente = cle == null || cle.isBlank();
+        if (resendEmailService.isEnabled() && !cleAbsente) {
+            return;
+        }
+
+        throw new IllegalStateException(MESSAGE_SANS_FOURNISSEUR.formatted(
+            Profils.premierProfilActif(environment, Profils.PRODUCTION),
+            resendEmailService.isEnabled(),
+            cleAbsente ? "absente" : "présente"));
     }
 
     /**
@@ -96,7 +193,7 @@ public class EmailService {
     public void sendVerificationEmail(User user, String token) {
         String verifyUrl = lienVerification(token);
         if (!resendEmailService.isEnabled()) {
-            log.info("[DEV] Verification link for {}: {}", user.getEmail(), verifyUrl);
+            nonEnvoye("vérification d'adresse", "lien " + verifyUrl + " pour " + user.getEmail());
             return;
         }
         outbox.enqueueVerificationEmail(user, user.getEmail(),
@@ -117,7 +214,7 @@ public class EmailService {
     public void sendEmailChangeEmail(User user, String nouvelleAdresse, String token) {
         String verifyUrl = lienVerification(token);
         if (!resendEmailService.isEnabled()) {
-            log.info("[DEV] Email change link for {}: {}", nouvelleAdresse, verifyUrl);
+            nonEnvoye("changement d'adresse", "lien " + verifyUrl + " pour " + nouvelleAdresse);
             return;
         }
         outbox.enqueueVerificationEmail(user, nouvelleAdresse,
@@ -170,8 +267,11 @@ public class EmailService {
     }
 
     public void sendPasswordResetEmail(String email, String token) {
+        // Construite avant le repli, et non après : c'est le lien qui porte le
+        // jeton, donc le seul détail que le repli de développement ait à écrire.
+        String resetUrl = baseUrl + "/reset-password?token=" + token;
         if (!resendEmailService.isEnabled()) {
-            log.info("[DEV] Password reset link for {}: {}/reset-password?token={}", email, baseUrl, token);
+            nonEnvoye("réinitialisation de mot de passe", "lien " + resetUrl + " pour " + email);
             return;
         }
         // NOTE : ce chemin, lui, n'a toujours pas de page. Le rendre utilisable
@@ -179,7 +279,6 @@ public class EmailService {
         // POST), pas une simple bascule HTML comme la vérification. Hors du
         // ticket du 25 août, qui ne portait que sur la vérification d'adresse —
         // signalé plutôt que corrigé à moitié.
-        String resetUrl = baseUrl + "/reset-password?token=" + token;
         String html = GabaritEmail.titre("Réinitialisation de votre mot de passe")
             + "<p>Cliquez sur le bouton ci-dessous pour définir un nouveau mot de passe.</p>"
             + GabaritEmail.bouton(resetUrl, "Réinitialiser mon mot de passe")
@@ -236,7 +335,7 @@ public class EmailService {
         if (!resendEmailService.isEnabled()) {
             // Même repli que la vérification d'adresse : en développement, le
             // contenu part dans les journaux plutôt que nulle part.
-            log.info("[DEV] E-mail {} pour {} : {}", type, email, text);
+            nonEnvoye("notification " + type, "texte « " + text + " » pour " + email);
             return;
         }
 
@@ -409,7 +508,8 @@ public class EmailService {
     public void sendGuardianConsentEmail(String email, String ownerName, String pageUrl) {
         String qui = (ownerName == null || ownerName.isBlank()) ? "Une personne" : escape(ownerName);
         if (!resendEmailService.isEnabled()) {
-            log.info("[DEV] Guardian consent link for {} (parrain: {}): {}", email, qui, pageUrl);
+            nonEnvoye("consentement de contact de confiance",
+                "lien " + pageUrl + " pour " + email);
             return;
         }
         // Menthe, comme la page qu'il ouvre et comme « Prévenir un proche » dans
@@ -432,6 +532,41 @@ public class EmailService {
         if (!sent) {
             log.error("Failed to send guardian consent email to {}", email);
         }
+    }
+
+    /**
+     * Le repli quand aucun fournisseur n'est configuré — <b>la seule porte</b>
+     * par laquelle un lien d'e-mail peut atteindre les journaux, et elle est
+     * fermée partout sauf en développement.
+     *
+     * <p><b>Pourquoi une seule méthode pour cinq appels.</b> Les cinq replis
+     * écrivaient chacun sa ligne, et il a suffi que la fiche d'audit en relise
+     * une pour découvrir les quatre autres. Une porte unique se referme d'un
+     * seul geste, et un sixième repli écrit demain passera par elle sans que son
+     * auteur ait à connaître le drapeau.
+     *
+     * <p><b>Ce que la branche fermée n'écrit pas : rien du destinataire.</b> Ni
+     * le lien, ni le jeton, ni l'adresse — pas même masquée. Le masque
+     * {@code Masque.email} appartient à P-BS-19, qui n'est pas livrée ; l'écrire
+     * ici pour l'occasion aurait produit un second masqueur à retirer plus tard,
+     * et surtout une adresse partiellement lisible là où P-BS-19 veut n'en voir
+     * aucune. L'absence de fournisseur est une panne de configuration globale, la
+     * même pour tout le monde : nommer un destinataire n'aide personne à la
+     * diagnostiquer, et le savoir coûte une donnée personnelle par e-mail
+     * tenté.
+     *
+     * @param quoi   ce qui n'est pas parti, en libellé fixe — jamais une adresse,
+     *               jamais un lien, jamais un jeton
+     * @param detail le lien et son destinataire, écrits <b>seulement</b> si
+     *               {@code pair.email.journaliser-liens} est allumé, c'est-à-dire
+     *               en développement et nulle part ailleurs
+     */
+    private void nonEnvoye(String quoi, String detail) {
+        if (journaliserLiens) {
+            log.info("[DEV] {} : {}", quoi, detail);
+            return;
+        }
+        log.info("E-mail non envoyé, aucun fournisseur d'e-mail configuré : {}", quoi);
     }
 
     private static String escape(String value) {
