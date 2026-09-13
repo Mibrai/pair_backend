@@ -127,12 +127,12 @@ public class SecurityConfig {
                 // /api/map/activities a quitté cette liste le 2026-08-19 : aucun
                 // écran hors session ne l'appelait, et sans identité d'appelant
                 // elle rendait les organisateurs bloqués comme les autres.
-                // Public Phase 3 endpoints
+                // Le catalogue des badges, sans donnée personnelle. Les badges,
+                // recommandations et avis D'UNE PERSONNE ou d'un programme ont
+                // quitté cette liste (P-BS-14) : sans session, le blocage ne
+                // pouvait pas s'y appliquer, et l'app les appelle toujours
+                // connectée.
                 .requestMatchers(HttpMethod.GET, "/api/badges").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/badges/users/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/recommendations/users/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/recommendations/stats/**").permitAll()
-                .requestMatchers(HttpMethod.GET, "/api/reviews/programs/**").permitAll()
                 // Pages publiques, lisibles sans compte. Le lien de sécurité en
                 // est la première : son destinataire est un proche qui n'a pas
                 // de compte meetDo, et lui en demander un viderait la

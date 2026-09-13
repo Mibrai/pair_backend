@@ -1,5 +1,8 @@
 package org.program.pair.domain.report;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.Parameter;
+import org.program.pair.shared.web.Pages;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -71,9 +74,9 @@ public class ReportController {
     public ResponseEntity<Page<ReportSummaryDto>> getMyReports(
             @AuthenticationPrincipal UserPrincipal currentUser,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") @Parameter(schema = @Schema(maximum = "50", defaultValue = "20")) int size) {
 
-        return ResponseEntity.ok(reportService.getMyReports(currentUser.getId(), PageRequest.of(page, size)));
+        return ResponseEntity.ok(reportService.getMyReports(currentUser.getId(), Pages.borne(page, size)));
     }
 
     @GetMapping("/pending")
@@ -81,9 +84,9 @@ public class ReportController {
     @Operation(summary = "Signalements en attente (Modérateurs)", description = "Liste des signalements à traiter")
     public ResponseEntity<Page<ReportModerationDto>> getPendingReports(
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "50") int size) {
+            @RequestParam(defaultValue = "50") @Parameter(schema = @Schema(maximum = "50", defaultValue = "50")) int size) {
 
-        return ResponseEntity.ok(reportService.getPendingReports(PageRequest.of(page, size))
+        return ResponseEntity.ok(reportService.getPendingReports(Pages.borne(page, size))
             .map(ReportModerationDto::from));
     }
 

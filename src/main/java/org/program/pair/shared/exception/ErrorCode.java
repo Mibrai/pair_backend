@@ -60,6 +60,8 @@ public enum ErrorCode {
     EMAIL_EXISTS,
     RATE_LIMITED,
     INVALID_PARAMETER,
+    /** Taille de page au-delà du plafond, sur une route qui refuse au lieu de ramener (P-BA-14). */
+    PAGE_SIZE_TOO_LARGE,
     INVALID_JSON,
     METHOD_NOT_ALLOWED,
     INTERNAL_ERROR,

@@ -1,5 +1,8 @@
 package org.program.pair.domain.review;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.Parameter;
+import org.program.pair.shared.web.Pages;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -53,9 +56,9 @@ public class ReviewController {
     public ResponseEntity<Page<ReviewDto>> getProgramReviews(
             @PathVariable UUID programId,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") @Parameter(schema = @Schema(maximum = "50", defaultValue = "20")) int size) {
 
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = Pages.borne(page, size);
         Page<ReviewDto> reviews = reviewService.getProgramReviews(programId, pageable)
             .map(ReviewDto::fromEntity);
         return ResponseEntity.ok(reviews);
@@ -66,9 +69,9 @@ public class ReviewController {
     public ResponseEntity<Page<ReviewDto>> getMyReviews(
             @AuthenticationPrincipal UserPrincipal currentUser,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") @Parameter(schema = @Schema(maximum = "50", defaultValue = "20")) int size) {
 
-        Pageable pageable = PageRequest.of(page, size);
+        Pageable pageable = Pages.borne(page, size);
         Page<ReviewDto> reviews = reviewService.getUserReviews(currentUser.getId(), pageable)
             .map(ReviewDto::fromEntity);
         return ResponseEntity.ok(reviews);

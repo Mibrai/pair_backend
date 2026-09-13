@@ -1,5 +1,8 @@
 package org.program.pair.domain.activity;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.Parameter;
+import org.program.pair.shared.web.Pages;
 import org.program.pair.shared.media.ProcessedMultipartFile;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
@@ -136,9 +139,9 @@ public class ActivityController {
             @RequestParam(required = false) UUID categoryId,
             @RequestParam(required = false) String search,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") @Parameter(schema = @Schema(maximum = "50", defaultValue = "20")) int size) {
         return activityService.searchActivities(categoryId, search,
-            PageRequest.of(page, Math.min(size, 50)));
+            Pages.borne(page, size));
     }
 
     @GetMapping("/users/me/activities")

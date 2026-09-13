@@ -1,5 +1,8 @@
 package org.program.pair.domain.user;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.Parameter;
+import org.program.pair.shared.web.Pages;
 import org.program.pair.shared.media.ProcessedMultipartFile;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -57,7 +60,7 @@ public class UserController {
             @RequestParam(required = false) Double latitude,
             @RequestParam(required = false) Double longitude,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(defaultValue = "20") @Parameter(schema = @Schema(maximum = "50", defaultValue = "20")) int size,
             @AuthenticationPrincipal UserPrincipal principal) {
 
         // If no query provided, return empty result
@@ -65,12 +68,15 @@ public class UserController {
             return Page.empty();
         }
 
+        // Borné comme toute route paginée (P-BA-14) : le service fait son OFFSET
+        // lui-même, et recevait la taille demandée telle quelle.
+        org.springframework.data.domain.Pageable borne = Pages.borne(page, size);
         return userService.searchUsers(
             query.trim(),
             latitude,
             longitude,
-            page,
-            size,
+            borne.getPageNumber(),
+            borne.getPageSize(),
             principal.getId()
         );
     }

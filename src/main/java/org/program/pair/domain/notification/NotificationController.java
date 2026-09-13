@@ -1,5 +1,8 @@
 package org.program.pair.domain.notification;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.Parameter;
+import org.program.pair.shared.web.Pages;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -47,10 +50,10 @@ public class NotificationController {
     public Page<NotificationDto> getNotifications(
             @AuthenticationPrincipal UserPrincipal currentUser,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") @Parameter(schema = @Schema(maximum = "50", defaultValue = "20")) int size) {
 
         return notificationService
-            .getNotifications(currentUser.getId(), PageRequest.of(page, Math.min(size, 50)))
+            .getNotifications(currentUser.getId(), Pages.borne(page, size))
             .map(NotificationDto::fromEntity);
     }
 

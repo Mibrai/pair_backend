@@ -1,5 +1,8 @@
 package org.program.pair.domain.block;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.Parameter;
+import org.program.pair.shared.web.Pages;
 import io.swagger.v3.oas.annotations.Operation;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -27,8 +30,6 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class BlockController {
 
-    /** Même plafond que /notifications et /subscriptions. */
-    private static final int MAX_PAGE_SIZE = 50;
 
     private final BlockService blockService;
 
@@ -62,8 +63,8 @@ public class BlockController {
     public Page<BlockedUserDto> listBlocked(
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") @Parameter(schema = @Schema(maximum = "50", defaultValue = "20")) int size) {
         return blockService.listBlocked(principal.getId(),
-            PageRequest.of(page, Math.min(size, MAX_PAGE_SIZE)));
+            Pages.borne(page, size));
     }
 }
