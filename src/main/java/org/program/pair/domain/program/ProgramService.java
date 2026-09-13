@@ -826,19 +826,15 @@ public class ProgramService {
      * B. Un créneau qui n'appartient pas au programme nommé rend le même 404
      * qu'un créneau inexistant, avant tout contrôle de propriété.
      *
-     * <p>Le 403 du non-propriétaire reste (étape 2 de la fiche, à valider par la
-     * sécurité : aligner sur le 404 de {@code /cancel} ne confirmerait plus
-     * l'existence du créneau).
+     * <p><b>Un non-propriétaire reçoit le même 404</b> (P-BA-16 étape 2, décision
+     * du 13/09), comme sur {@code /cancel} : un 403 confirmait qu'un créneau
+     * existait à cet identifiant.
      */
     public ScheduleDeletionResult deleteSchedule(UUID userId, UUID programId, UUID scheduleId) {
         Schedule schedule = scheduleRepository.findById(scheduleId)
             .filter(s -> s.getProgram().getId().equals(programId))
+            .filter(s -> s.getProgram().getUserActivity().getUser().getId().equals(userId))
             .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "Créneau introuvable."));
-
-        UUID ownerId = schedule.getProgram().getUserActivity().getUser().getId();
-        if (!ownerId.equals(userId)) {
-            throw new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_SUPPRIMER_CRENEAU", "Vous ne pouvez pas supprimer ce créneau.");
-        }
 
         Program prog = schedule.getProgram();
 

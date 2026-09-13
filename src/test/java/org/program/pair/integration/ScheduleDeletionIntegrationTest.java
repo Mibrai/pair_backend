@@ -47,6 +47,20 @@ class ScheduleDeletionIntegrationTest extends AbstractIntegrationTest {
         assertThat(statut(cible.scheduleId())).isEqualTo("OPEN");
     }
 
+    /** Étape 2 : le même 404 qu'un créneau inexistant, rien ne dit qu'il existe. */
+    @Test
+    void unNonProprietaire_recoitLeMeme404_etNeToucheARien() {
+        Creneau creneau = publier(compte());
+
+        webTestClient.delete()
+            .uri("/api/programs/{programId}/schedules/{scheduleId}", creneau.programId(), creneau.scheduleId())
+            .headers(h -> h.setBearerAuth(compte()))
+            .exchange().expectStatus().isNotFound()
+            .expectBody().jsonPath("$.code").isEqualTo("NOT_FOUND");
+
+        assertThat(statut(creneau.scheduleId())).isEqualTo("OPEN");
+    }
+
     @Test
     void supprimerUnCreneauSansInscrit_leRetire_etRepondDeleted() {
         String hote = compte();
