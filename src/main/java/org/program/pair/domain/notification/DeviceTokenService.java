@@ -1,5 +1,6 @@
 package org.program.pair.domain.notification;
 
+import org.program.pair.shared.logging.Masque;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.repository.DeviceTokenRepository;
@@ -155,8 +156,11 @@ public class DeviceTokenService {
         log.info("All device tokens unregistered for user {}", userId);
     }
 
-    /** De quoi reconnaître un jeton dans un journal sans pouvoir s'en servir. */
+    /**
+     * De quoi reconnaître un jeton dans un journal sans pouvoir s'en servir : une
+     * empreinte, et non plus un préfixe du jeton lui-même (P-BS-19).
+     */
     private static String empreinte(String token) {
-        return token.substring(0, Math.min(10, token.length())) + "...";
+        return Masque.jeton(token);
     }
 }

@@ -1,5 +1,6 @@
 package org.program.pair.domain.email;
 
+import org.program.pair.shared.logging.Masque;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -76,7 +77,7 @@ public class ResendEmailService {
      */
     public String sendHtmlEmailReturningId(String to, String subject, String htmlContent) {
         if (!enabled) {
-            log.debug("Resend is disabled. Email would be sent to: {} with subject: {}", to, subject);
+            log.debug("Resend is disabled. Email would be sent to: {} with subject: {}", Masque.email(to), subject);
             return null;
         }
 
@@ -94,7 +95,7 @@ public class ResendEmailService {
      */
     public boolean sendTextEmail(String to, String subject, String textContent) {
         if (!enabled) {
-            log.debug("Resend is disabled. Email would be sent to: {} with subject: {}", to, subject);
+            log.debug("Resend is disabled. Email would be sent to: {} with subject: {}", Masque.email(to), subject);
             return false;
         }
 
@@ -112,7 +113,7 @@ public class ResendEmailService {
      */
     public boolean sendEmail(String to, String subject, String textContent, String htmlContent) {
         if (!enabled) {
-            log.debug("Resend is disabled. Email would be sent to: {} with subject: {}", to, subject);
+            log.debug("Resend is disabled. Email would be sent to: {} with subject: {}", Masque.email(to), subject);
             return false;
         }
 
@@ -144,8 +145,8 @@ public class ResendEmailService {
                         status -> status.is4xxClientError() || status.is5xxServerError(),
                         clientResponse -> clientResponse.bodyToMono(String.class)
                             .flatMap(errorBody -> {
-                                log.error("Resend API error: {} - {}", clientResponse.statusCode(), errorBody);
-                                return Mono.error(new RuntimeException("Resend API error: " + errorBody));
+                                log.error("Resend API error: {} - {}", clientResponse.statusCode(), Masque.emailsDans(errorBody));
+                                return Mono.error(new RuntimeException("Resend API error: " + Masque.emailsDans(errorBody)));
                             })
                     )
                     .bodyToMono(Map.class)
@@ -153,14 +154,14 @@ public class ResendEmailService {
 
             if (response != null && response.get("id") != null) {
                 String id = String.valueOf(response.get("id"));
-                log.info("Email sent successfully via Resend to: {} (ID: {})", to, id);
+                log.info("Email sent successfully via Resend to: {} (ID: {})", Masque.email(to), id);
                 return id;
             } else {
-                log.error("Unexpected response from Resend API: {}", response);
+                log.error("Unexpected response from Resend API: {}", Masque.emailsDans(String.valueOf(response)));
                 return null;
             }
         } catch (Exception e) {
-            log.error("Failed to send email to: {} with subject: {}", to, subject, e);
+            log.error("Failed to send email to: {} with subject: {}", Masque.email(to), subject, e);
             return null;
         }
     }

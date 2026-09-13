@@ -1,5 +1,6 @@
 package org.program.pair.domain.publicslot;
 
+import org.program.pair.shared.logging.Masque;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.invitation.SlotInvitation;
@@ -218,7 +219,7 @@ public class PublicSlotController {
                 .contentType(contentTypeOf(filename))
                 .body(new InputStreamResource(stream));
         } catch (IOException e) {
-            log.warn("Image de partage illisible pour le jeton {} : {}", token, e.getMessage());
+            log.warn("Image de partage illisible pour le jeton {} : {}", Masque.jeton(token), e.getMessage());
             throw new ResourceNotFoundException("Image introuvable.");
         }
     }
@@ -307,7 +308,7 @@ public class PublicSlotController {
                 .body(PublicSlotCover.render(
                     slot.categoryColorRamp(), slot.programTitle(), subtitle));
         } catch (IOException e) {
-            log.warn("Vignette illisible pour le jeton {} : {}", token, e.getMessage());
+            log.warn("Vignette illisible pour le jeton {} : {}", Masque.jeton(token), e.getMessage());
             throw new ResourceNotFoundException("Image introuvable.");
         }
     }

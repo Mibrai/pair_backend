@@ -1,5 +1,6 @@
 package org.program.pair.domain.publicslot;
 
+import org.program.pair.shared.logging.Masque;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.activity.Activity;
@@ -178,7 +179,7 @@ public class PublicSlotService {
         try {
             scheduleRepository.incrementPublicViewCount(token);
         } catch (RuntimeException e) {
-            log.warn("Comptage d'ouverture perdu pour le jeton {} : {}", token, e.getMessage());
+            log.warn("Comptage d'ouverture perdu pour le jeton {} : {}", Masque.jeton(token), e.getMessage());
         }
     }
 
