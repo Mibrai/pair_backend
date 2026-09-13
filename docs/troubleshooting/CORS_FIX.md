@@ -1,3 +1,8 @@
+> **Obsolète depuis le 2026-09-13 (P-BS-18).** Les origines ne sont plus codées dans
+> `SecurityConfig` : elles viennent de `pair.cors.allowed-origins`, vide par défaut et en
+> production — aucune origine web, ni localhost ni Vercel. Seul `application-dev.properties`
+> pose les origines localhost. Plus de `allowCredentials`.
+
 # 🌐 Fix CORS Configuration - Résolu
 
 ## 🚨 Problème Initial
