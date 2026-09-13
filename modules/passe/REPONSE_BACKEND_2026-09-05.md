@@ -237,6 +237,20 @@ remplir. Un champ de date qui ne dit pas son format en a besoin.
 
 ### 3.5 Le statut du créneau n'est pas exposé, et ce n'est pas un oubli
 
+> **Corrigé le 13/09/2026 — ce paragraphe avait tort, et il est laissé tel quel en
+> dessous pour que la correction se lise.** Le statut est exposé depuis le 12/09
+> (`c5adbcf`, fiche P-BL-08) : `SlotFeedItemDto` porte `status`
+> (`OPEN|FULL|CANCELLED|PAST`), `cancelledAt` et `cancellationReason`, sur
+> `/slots/mine`, `/slots/{id}` et le fil.
+>
+> Nous vous demandions ce qu'un statut répondrait que les dates ne répondent pas.
+> La réponse existait déjà, et elle est grave : **l'annulation**. Un créneau annulé
+> garde ses dates ; lu sur `startsAt`/`endsAt`, il s'affichait comme une séance qui
+> aurait lieu, dans « Mes créneaux » comme sur sa fiche. Votre modèle
+> `SlotFeedItem` lisait déjà ces trois champs et préférait le statut serveur : il
+> reçoit enfin quelque chose. Un créneau annulé ne rend plus non plus son adresse
+> exacte ni ses coordonnées — il n'y a plus de raison d'y aller.
+
 `SlotFeedItemDto` ne porte pas de champ `status`, et nous n'en avons pas ajouté.
 Votre règle d'affichage se lit sur `startsAt`/`endsAt`, que le DTO rend déjà —
 c'est la même règle que sur les trois autres écrans, et elle donne le même
