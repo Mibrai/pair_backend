@@ -45,8 +45,10 @@ public final class ReliabilitySignal {
     /**
      * Le libellé à afficher, ou {@code null} s'il n'y a rien à dire.
      *
-     * @param joinedSlots créneaux passés auxquels la personne s'était inscrite
-     * @param attended    ceux où sa présence a été confirmée
+     * @param joinedSlots séances auxquelles la personne a répondu, présente ou
+     *                    non — des occurrences, comme {@code attended} (P-BL-16).
+     *                    Le nom vient de la colonne, qui comptait des créneaux
+     * @param attended    celles où elle était présente
      */
     public static String of(Integer joinedSlots, Integer attended) {
         int joined = joinedSlots == null ? 0 : joinedSlots;

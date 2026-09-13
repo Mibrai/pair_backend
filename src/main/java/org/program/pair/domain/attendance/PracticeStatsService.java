@@ -50,8 +50,14 @@ public class PracticeStatsService {
         // Recalculé et non incrémenté, comme les autres : la reconstruction est
         // idempotente et se répare toute seule, là où un +1 manqué reste faux
         // pour toujours.
-        user.setJoinedSlotsCount(
-            slotParticipationRepository.countPastJoinedByUserId(userId, Instant.now()));
+        //
+        // Le dénominateur compte des SÉANCES, comme le numérateur (P-BL-16). Il
+        // comptait des créneaux : une série hebdomadaire suivie vingt fois pesait
+        // 1 en bas et 20 en haut, si bien que le numérateur pouvait dépasser le
+        // dénominateur, et les inscriptions par programme n'y entraient pas du
+        // tout alors que leurs présences comptaient au-dessus. La colonne garde
+        // son nom (joined_slots_count) : la renommer appartient à P-BA-13.
+        user.setJoinedSlotsCount(attendanceRepository.countAnsweredByUserId(userId));
         user.setAttendanceCount(attendanceCount);
         user.setDistinctPartnersCount(distinctPartners);
         user.setCurrentStreakWeeks(streakWeeks);

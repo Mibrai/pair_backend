@@ -285,4 +285,8 @@ public interface UserRepository extends JpaRepository<User, UUID> {
         @Param("radiusMeters") int radiusMeters,
         @Param("viewerId") UUID viewerId
     );
+
+    /** Les identifiants de tous les comptes, par page stable — pour les recalculs en lots. */
+    @org.springframework.data.jpa.repository.Query("SELECT u.id FROM User u ORDER BY u.id")
+    java.util.List<UUID> findAllIds(org.springframework.data.domain.Pageable pageable);
 }
