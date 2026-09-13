@@ -41,7 +41,6 @@ public class ProgramService {
     private final ScheduleRepository scheduleRepository;
     private final UserActivityRepository userActivityRepository;
     private final ProgramMediaRepository programMediaRepository;
-    private final ReviewRepository reviewRepository;
     private final UserProgramRepository userProgramRepository;
     private final SlotParticipationRepository slotParticipationRepository;
     private final ActivityAlertService activityAlertService;
@@ -941,14 +940,12 @@ public class ProgramService {
      * il y en a cent. Sans cette séparation, la version par lot serait une copie
      * de la version unitaire, et les deux divergeraient au premier champ ajouté.
      *
-     * <p>{@code averageRating} est nullable — aucun avis n'a pas de moyenne — là
-     * où les deux comptes valent zéro et jamais {@code null}.
+     * <p>Plus de moyenne ni de nombre d'avis (P-BL-10, décision du 13/09) : le
+     * DTO les sert à {@code null}, et rien ne les lit plus en base.
      */
     private record ProgramAggregates(
         List<Schedule> schedules,
         List<ProgramMedia> media,
-        Double averageRating,
-        long reviewCount,
         long enrolledCount
     ) {}
 
@@ -959,9 +956,8 @@ public class ProgramService {
      * médias, la moyenne de ses avis, leur nombre et son nombre d'inscrits :
      * une page de cent programmes en demandait plus de cinq cents, et
      * {@code GET /programs?lat&lng&radius_km} était la route la plus lente du
-     * service pour cette seule raison. Ici, quatre lectures servent la page
-     * entière, quel que soit le nombre de programmes — la moyenne des avis et
-     * leur nombre tenant dans le même {@code GROUP BY}.
+     * service pour cette seule raison. Ici, trois lectures servent la page
+     * entière, quel que soit le nombre de programmes.
      *
      * <p>L'ordre des programmes reçus est conservé tel quel : c'est un résultat
      * de tri chez l'appelant, pas à cette méthode de le décider.
@@ -983,15 +979,6 @@ public class ProgramService {
             .stream()
             .collect(Collectors.groupingBy(m -> m.getProgram().getId()));
 
-        // Un programme sans avis n'a pas de ligne dans le GROUP BY : son absence
-        // de ces deux tables est ce qui distingue « aucune moyenne » de « zéro ».
-        Map<UUID, Double> averageByProgram = new java.util.HashMap<>();
-        Map<UUID, Long> reviewCountByProgram = new java.util.HashMap<>();
-        for (Object[] row : reviewRepository.findRatingSummariesByProgramIds(programIds)) {
-            averageByProgram.put((UUID) row[0], (Double) row[1]);
-            reviewCountByProgram.put((UUID) row[0], (Long) row[2]);
-        }
-
         Map<UUID, Long> enrolledByProgram = userProgramRepository
             .countActiveParticipantsByProgramIds(programIds)
             .stream()
@@ -1006,8 +993,6 @@ public class ProgramService {
             .map(p -> toDto(p, requesterId, now, new ProgramAggregates(
                 schedulesByProgram.getOrDefault(p.getId(), List.of()),
                 mediaByProgram.getOrDefault(p.getId(), List.of()),
-                averageByProgram.get(p.getId()),
-                reviewCountByProgram.getOrDefault(p.getId(), 0L),
                 enrolledByProgram.getOrDefault(p.getId(), 0L))))
             .collect(Collectors.toList());
     }
@@ -1016,8 +1001,6 @@ public class ProgramService {
         return toDto(p, requesterId, Instant.now(), new ProgramAggregates(
             scheduleRepository.findByProgramId(p.getId()),
             programMediaRepository.findByProgramIdOrderBySortOrder(p.getId()),
-            reviewRepository.findAverageRatingByProgramId(p.getId()),
-            reviewRepository.countByProgramId(p.getId()),
             userProgramRepository.countActiveParticipantsByProgramId(p.getId())));
     }
 
@@ -1037,9 +1020,10 @@ public class ProgramService {
             ))
             .collect(Collectors.toList());
 
-        Double avgDouble = aggregates.averageRating();
-        Float averageScore = avgDouble != null ? avgDouble.floatValue() : null;
-        Integer reviewCount = (int) aggregates.reviewCount();
+        // P-BL-10 : plus de moyenne publique à comparer. Servis à null tant que
+        // l'app publiée déclare les champs ; retirés du schéma après P-MU-02.
+        Float averageScore = null;
+        Integer reviewCount = null;
         Integer enrolledCount = (int) aggregates.enrolledCount();
 
         // Les séances déjà en main, et non p.getSchedules() : la collection

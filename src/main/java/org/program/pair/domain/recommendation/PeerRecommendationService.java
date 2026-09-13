@@ -77,7 +77,6 @@ public class PeerRecommendationService {
             .recommendedId(recommendedId)
             .conversationId(conversationId)
             .interactionProofType(proofType)
-            .rating(request.getRating())
             .comment(request.getComment())
             .activityContext(request.getActivityContext())
             .programContext(request.getProgramContext())
@@ -95,7 +94,7 @@ public class PeerRecommendationService {
             // recommandé » comme un autre, pas un 500.
             throw dejaRecommande();
         }
-        log.info("User {} recommended user {} with rating {}", recommenderId, recommendedId, request.getRating());
+        log.info("User {} recommended user {}", recommenderId, recommendedId);
 
         // Trigger badge evaluation for recommended user
         try {
@@ -140,7 +139,6 @@ public class PeerRecommendationService {
     public RecommendationStatsDto getUserStats(UUID userId) {
         long receivedCount = recommendationRepository.countByRecommendedId(userId);
         long givenCount = recommendationRepository.countByRecommenderId(userId);
-        Double averageRating = recommendationRepository.findAverageRatingByUserId(userId);
 
         // Count unique recommenders
         Page<PeerRecommendation> received = recommendationRepository.findByRecommendedIdOrderByCreatedAtDesc(
@@ -154,7 +152,6 @@ public class PeerRecommendationService {
         return RecommendationStatsDto.builder()
             .recommendationsReceivedCount(receivedCount)
             .recommendationsGivenCount(givenCount)
-            .averageRating(averageRating != null ? averageRating : 0.0)
             .uniqueRecommenders(uniqueRecommenders)
             .build();
     }

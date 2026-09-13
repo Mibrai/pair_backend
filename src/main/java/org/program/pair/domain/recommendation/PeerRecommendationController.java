@@ -112,15 +112,24 @@ public class PeerRecommendationController {
         return ResponseEntity.ok(recommendations);
     }
 
+    /**
+     * Ses propres statistiques seulement (P-BL-10, décision du 13/09) : les
+     * décomptes d'une autre personne ne se lisent plus, et ceux de l'appelant
+     * sont aussi à {@code /me/stats}. Pour autrui, le même 404 qu'un compte
+     * inexistant.
+     */
     @GetMapping("/stats/{userId}")
     @Operation(
         summary = "Statistiques de recommandations",
-        description = "Statistiques des recommandations d'un utilisateur (reçues, données, moyenne)"
+        description = "Ses propres statistiques (reçues, données). 404 pour toute autre personne : "
+            + "les décomptes d'autrui ne se lisent plus (P-BL-10). Préférer /me/stats."
     )
     public ResponseEntity<RecommendationStatsDto> getUserStats(
             @AuthenticationPrincipal UserPrincipal currentUser,
             @PathVariable UUID userId) {
-        introuvableSiBloque(currentUser, userId);
+        if (!currentUser.getId().equals(userId)) {
+            throw new UserNotFoundException("Utilisateur introuvable.");
+        }
         RecommendationStatsDto stats = recommendationService.getUserStats(userId);
         return ResponseEntity.ok(stats);
     }

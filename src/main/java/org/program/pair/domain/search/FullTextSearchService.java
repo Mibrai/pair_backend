@@ -66,12 +66,6 @@ public class FullTextSearchService {
                   ORDER BY pm.sort_order ASC
                   LIMIT 1)
             )                              AS thumbnail_url,
-            (SELECT AVG(r.score)::float
-               FROM reviews r
-              WHERE r.program_id = p.id)   AS average_score,
-            (SELECT COUNT(*)::int
-               FROM reviews r
-              WHERE r.program_id = p.id)   AS review_count,
             (SELECT COUNT(*)::int
                FROM user_programs up
               WHERE up.program_id = p.id AND up.status = 'ACTIVE') AS enrolled_count,
@@ -444,10 +438,6 @@ public class FullTextSearchService {
             ? ((Number) row.get("lng")).doubleValue() : null;
         Float rank = row.get("rank") != null
             ? ((Number) row.get("rank")).floatValue() : 0f;
-        Float avgScore = row.get("average_score") != null
-            ? ((Number) row.get("average_score")).floatValue() : null;
-        Integer reviewCount = row.get("review_count") != null
-            ? ((Number) row.get("review_count")).intValue() : 0;
         Integer enrolledCount = row.get("enrolled_count") != null
             ? ((Number) row.get("enrolled_count")).intValue() : 0;
 
@@ -491,8 +481,8 @@ public class FullTextSearchService {
             (String) row.get("display_name"),
             (String) row.get("avatar_url"),
             (String) row.get("thumbnail_url"),
-            avgScore,
-            reviewCount,
+            null,   // averageScore : plus de moyenne publique (P-BL-10)
+            null,   // reviewCount : idem
             enrolledCount,
             (String) row.get("status"),
             (String) row.get("location_type"),

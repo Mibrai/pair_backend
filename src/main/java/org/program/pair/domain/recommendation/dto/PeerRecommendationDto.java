@@ -19,7 +19,6 @@ public class PeerRecommendationDto {
     private String recommenderDisplayName;
     private UUID recommendedId;
     private String recommendedDisplayName;
-    private Integer rating;
     private String comment;
     private UUID activityContext;
     private String activityName;
@@ -34,7 +33,6 @@ public class PeerRecommendationDto {
             .recommenderDisplayName(rec.getRecommender() != null ? rec.getRecommender().getDisplayName() : null)
             .recommendedId(rec.getRecommendedId())
             .recommendedDisplayName(rec.getRecommended() != null ? rec.getRecommended().getDisplayName() : null)
-            .rating(rec.getRating())
             .comment(rec.getComment())
             .activityContext(rec.getActivityContext())
             .activityName(rec.getActivity() != null ? rec.getActivity().getName() : null)

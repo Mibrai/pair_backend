@@ -12,6 +12,5 @@ import lombok.NoArgsConstructor;
 public class RecommendationStatsDto {
     private long recommendationsReceivedCount;
     private long recommendationsGivenCount;
-    private Double averageRating;
     private long uniqueRecommenders;
 }

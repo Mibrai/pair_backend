@@ -17,10 +17,12 @@ public class CreateRecommendationRequest {
     @NotNull(message = "L'utilisateur recommandé est requis")
     private UUID recommendedId;
 
-    // Facultatif : une recommandation est un geste binaire, pas une note
-    // comparative. Quand fournie, reste bornée à 1..5.
-    @Min(value = 1, message = "La note doit être entre 1 et 5")
-    @Max(value = 5, message = "La note doit être entre 1 et 5")
+    // Ignorée (P-BL-10, décision du 13/09) : on recommande quelqu'un, on ne le
+    // note plus. Acceptée sans validation pour qu'un client ancien qui
+    // l'enverrait ne reçoive pas de 400 ; jamais écrite. Retirée ensuite.
+    @io.swagger.v3.oas.annotations.media.Schema(deprecated = true,
+        description = "Ignorée depuis le 13/09 (P-BL-10) : une recommandation ne porte plus de note.")
+    @Deprecated
     private Integer rating;
 
     // Facultatif : pas de minimum de longueur imposé, un mot suffit.

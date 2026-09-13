@@ -63,6 +63,23 @@ class OpenApiContractIntegrationTest extends AbstractIntegrationTest {
     }
 
     /**
+     * P-BL-10 — aucune note ni moyenne d'une personne au contrat ; les moyennes
+     * de programme restent déclarées, dépréciées, le temps que l'app cesse de les
+     * lire (P-MU-02).
+     */
+    @Test
+    void apiDocs_neDoitPublierAucuneNoteDePersonne_etDeprecierLesMoyennesDeProgramme() throws Exception {
+        JsonNode schemas = fetchApiDocs().path("components").path("schemas");
+
+        assertThat(schemas.path("PeerRecommendationDto").path("properties").has("rating")).isFalse();
+        assertThat(schemas.path("RecommendationStatsDto").path("properties").has("averageRating")).isFalse();
+        assertThat(schemas.path("CreateRecommendationRequest").path("properties").path("rating")
+            .path("deprecated").asBoolean()).isTrue();
+        assertThat(schemas.path("ProgramDto").path("properties").path("averageScore")
+            .path("deprecated").asBoolean()).isTrue();
+    }
+
+    /**
      * P-BA-12 — le contrat ne publie plus l'entité de signalement comme réponse.
      * La création référence {@code ReportDto}, et ni {@code Report} ni son nom
      * d'entité {@code ReportPhase3} n'apparaissent parmi les schémas.

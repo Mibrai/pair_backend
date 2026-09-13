@@ -65,7 +65,11 @@ public record SearchResultDto(
     String organizerName,
     String organizerAvatarUrl,
     String thumbnailUrl,
+    @io.swagger.v3.oas.annotations.media.Schema(deprecated = true, nullable = true,
+        description = "Toujours null depuis le 13/09 (P-BL-10) : plus de moyenne publique. Retiré après P-MU-02.")
     Float averageScore,
+    @io.swagger.v3.oas.annotations.media.Schema(deprecated = true, nullable = true,
+        description = "Toujours null depuis le 13/09 (P-BL-10). Retiré après P-MU-02.")
     Integer reviewCount,
     Integer enrolledCount,
     String status,

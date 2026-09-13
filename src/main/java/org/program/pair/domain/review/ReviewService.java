@@ -125,7 +125,6 @@ public class ReviewService {
     public ReviewSummaryDto getProgramReviewSummary(UUID appelantId, UUID programId) {
         introuvableSiAuteurBloque(appelantId, programId);
         long total = reviewRepository.countByProgramId(programId);
-        Double avg = reviewRepository.findAverageRatingByProgramId(programId);
 
         List<ReviewDto> recent = reviewRepository
             .findByProgramIdOrderByCreatedAtDesc(programId, PageRequest.of(0, 5))
@@ -133,7 +132,8 @@ public class ReviewService {
             .map(ReviewDto::fromEntity)
             .toList();
 
-        return new ReviewSummaryDto(programId, avg, total, recent);
+        // Plus de moyenne publique (P-BL-10) : null, le champ reste déclaré.
+        return new ReviewSummaryDto(programId, null, total, recent);
     }
 
     /**

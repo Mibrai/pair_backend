@@ -104,7 +104,8 @@ class PeerRecommendationServiceTest {
             .thenReturn(Optional.empty());
         when(recommendationRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        CreateRecommendationRequest request = new CreateRecommendationRequest(toId, null, null, null, null);
+        // Une note envoyée est ignorée (P-BL-10) : elle n'est jamais écrite.
+        CreateRecommendationRequest request = new CreateRecommendationRequest(toId, 5, null, null, null);
 
         PeerRecommendation result = recommendationService.createRecommendation(fromId, request);
 
@@ -175,15 +176,16 @@ class PeerRecommendationServiceTest {
         assertThat(violations).isEmpty();
     }
 
+    /** P-BL-10 : la note est ignorée, donc jamais un motif de 400 pour un client ancien. */
     @Test
-    void validation_devraitRejeter_ratingHorsBornes() {
+    void validation_neDoitPlusRejeter_uneNoteQuelconque() {
         var validator = jakarta.validation.Validation.buildDefaultValidatorFactory().getValidator();
         CreateRecommendationRequest request = new CreateRecommendationRequest(
             UUID.randomUUID(), 6, null, null, null);
 
         var violations = validator.validate(request);
 
-        assertThat(violations).isNotEmpty();
+        assertThat(violations).isEmpty();
     }
 
     @Test

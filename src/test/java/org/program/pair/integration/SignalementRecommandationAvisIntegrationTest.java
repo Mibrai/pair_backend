@@ -64,6 +64,7 @@ class SignalementRecommandationAvisIntegrationTest extends AbstractIntegrationTe
     @Autowired ReportRepository reportRepository;
     @Autowired ScheduleRepository scheduleRepository;
     @Autowired AttendanceRepository attendanceRepository;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     private final GeometryFactory geometryFactory = new GeometryFactory(new PrecisionModel(), 4326);
 
@@ -189,6 +190,44 @@ class SignalementRecommandationAvisIntegrationTest extends AbstractIntegrationTe
             .expectBody(Boolean.class).isEqualTo(false);
     }
 
+    /**
+     * P-BL-10 (décision du 13/09) — on recommande quelqu'un, on ne le note plus :
+     * une note envoyée n'est pas écrite, et les décomptes d'autrui ne se lisent
+     * plus.
+     */
+    @Test
+    void uneNoteEnvoyee_nEstPasEnregistree_etLesStatistiquesDAutruiSontIntrouvables() {
+        Decor d = monterLeDecor("reco-note");
+
+        webTestClient.post()
+            .uri("/api/recommendations")
+            .headers(h -> h.setBearerAuth(d.tokenA))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue("{\"recommendedId\":\"%s\",\"rating\":2}".formatted(d.userB))
+            .exchange()
+            .expectStatus().isCreated()
+            .expectBody().jsonPath("$.rating").doesNotExist();
+
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT rating FROM peer_recommendations WHERE recommender_id = ? AND recommended_id = ?",
+            Integer.class, d.userA, d.userB)).isNull();
+
+        webTestClient.get()
+            .uri("/api/recommendations/stats/{userId}", d.userB)
+            .headers(h -> h.setBearerAuth(d.tokenA))
+            .exchange()
+            .expectStatus().isNotFound();
+
+        webTestClient.get()
+            .uri("/api/recommendations/stats/{userId}", d.userA)
+            .headers(h -> h.setBearerAuth(d.tokenA))
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.recommendationsGivenCount").isEqualTo(1)
+            .jsonPath("$.averageRating").doesNotExist();
+    }
+
     @Test
     void evaluerUnProgramme_ecritLAvis_etIlApparaitDansMesAvis() {
         Decor d = monterLeDecor("avis");
@@ -215,6 +254,24 @@ class SignalementRecommandationAvisIntegrationTest extends AbstractIntegrationTe
             .expectBody()
             .jsonPath("$.page.totalElements").isEqualTo(1)
             .jsonPath("$.content[0].programId").isEqualTo(d.programId.toString());
+
+        // P-BL-10 : plus de moyenne publique, ni dans le résumé ni sur le programme.
+        webTestClient.get()
+            .uri("/api/reviews/programs/{id}/summary", d.programId)
+            .headers(h -> h.setBearerAuth(d.tokenA))
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.totalReviews").isEqualTo(1)
+            .jsonPath("$.averageScore").value(v -> assertThat(v).isNull());
+        webTestClient.get()
+            .uri("/api/programs/{id}", d.programId)
+            .headers(h -> h.setBearerAuth(d.tokenA))
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$.averageScore").value(v -> assertThat(v).isNull())
+            .jsonPath("$.reviewCount").value(v -> assertThat(v).isNull());
     }
 
     @Test

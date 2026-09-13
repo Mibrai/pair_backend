@@ -115,8 +115,6 @@ class ProgramServiceTest {
         });
         when(scheduleRepository.findByProgramId(any())).thenReturn(java.util.List.of());
         when(programMediaRepository.findByProgramIdOrderBySortOrder(any())).thenReturn(java.util.List.of());
-        when(reviewRepository.findAverageRatingByProgramId(any())).thenReturn(null);
-        when(reviewRepository.countByProgramId(any())).thenReturn(0L);
         when(userProgramRepository.countActiveParticipantsByProgramId(any())).thenReturn(0L);
 
         CreateProgramRequest request = new CreateProgramRequest(
@@ -327,8 +325,6 @@ class ProgramServiceTest {
         when(programRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(scheduleRepository.findByProgramId(any())).thenReturn(java.util.List.of());
         when(programMediaRepository.findByProgramIdOrderBySortOrder(any())).thenReturn(java.util.List.of());
-        when(reviewRepository.findAverageRatingByProgramId(any())).thenReturn(null);
-        when(reviewRepository.countByProgramId(any())).thenReturn(0L);
         when(userProgramRepository.countActiveParticipantsByProgramId(any())).thenReturn(0L);
 
         // When

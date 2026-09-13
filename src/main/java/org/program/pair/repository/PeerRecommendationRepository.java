@@ -42,12 +42,6 @@ public interface PeerRecommendationRepository extends JpaRepository<PeerRecommen
     long countByRecommenderId(UUID recommenderId);
 
     /**
-     * Calcule la note moyenne d'un utilisateur
-     */
-    @Query("SELECT AVG(r.rating) FROM PeerRecommendationPhase3 r WHERE r.recommendedId = :userId")
-    Double findAverageRatingByUserId(@Param("userId") UUID userId);
-
-    /**
      * Trouve les recommandations par contexte d'activité
      */
     List<PeerRecommendation> findByActivityContext(UUID activityId);
