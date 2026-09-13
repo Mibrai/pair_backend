@@ -3,6 +3,7 @@ package org.program.pair.domain.auth;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
 import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.JwtParser;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
@@ -77,6 +78,12 @@ public class JwtTokenProvider {
     /** La clé de signature, résolue une fois au démarrage — voir {@link #resoudreCle()}. */
     private SecretKey signingKey;
 
+    /**
+     * Le parseur, construit une fois avec la clé (P-BA-05) : chaque lecture en
+     * reconstruisait un, trois fois par requête authentifiée.
+     */
+    private JwtParser parser;
+
     @Autowired
     public JwtTokenProvider(Environment environment, MeterRegistry registre) {
         this.environment = environment;
@@ -112,6 +119,7 @@ public class JwtTokenProvider {
     void resoudreCle() {
         if (jwtSecret != null && !jwtSecret.isBlank()) {
             this.signingKey = Keys.hmacShaKeyFor(Decoders.BASE64.decode(jwtSecret));
+            this.parser = Jwts.parser().verifyWith(signingKey).build();
             return;
         }
 
@@ -133,6 +141,7 @@ public class JwtTokenProvider {
         byte[] ephemere = new byte[48];
         new SecureRandom().nextBytes(ephemere);
         this.signingKey = Keys.hmacShaKeyFor(ephemere);
+        this.parser = Jwts.parser().verifyWith(signingKey).build();
         log.warn("Aucune JWT_SECRET configurée : une clé de signature éphémère est "
             + "tirée pour ce démarrage. Les jetons ne survivront pas au redémarrage. "
             + "Acceptable en développement, jamais en déploiement.");
@@ -167,7 +176,7 @@ public class JwtTokenProvider {
     }
 
     public UUID extractUserId(String token) {
-        return UUID.fromString(lire(token).getSubject());
+        return UUID.fromString(verifier(token).getSubject());
     }
 
     /**
@@ -179,9 +188,8 @@ public class JwtTokenProvider {
      * avant ce déploiement n'en portent pas — trente jours pour un jeton de
      * rafraîchissement — et les refuser d'emblée déconnecterait tout le monde.
      */
-    private Claims lire(String token) {
-        Claims claims = Jwts.parser().verifyWith(getSigningKey()).build()
-            .parseSignedClaims(token).getPayload();
+    private Claims verifier(String token) {
+        Claims claims = parser.parseSignedClaims(token).getPayload();
 
         String emetteur = claims.getIssuer();
         Set<String> audience = claims.getAudience();
@@ -221,13 +229,44 @@ public class JwtTokenProvider {
      */
     public EtatJeton etatDe(String token) {
         try {
-            lire(token);
+            verifier(token);
             return EtatJeton.VALIDE;
         } catch (ExpiredJwtException e) {
             return EtatJeton.EXPIRE;
         } catch (JwtException | IllegalArgumentException e) {
             return EtatJeton.INVALIDE;
         }
+    }
+
+    /**
+     * Une lecture, trois réponses : l'état, le type et le sujet (P-BA-05).
+     *
+     * <p>Le filtre d'authentification appelait {@link #etatDe}, puis
+     * {@link #estJetonDeRafraichissement}, puis {@link #extractUserId} : trois
+     * vérifications de signature pour une requête. Celle-ci n'en fait qu'une, et
+     * rend un résultat que le filtre n'a plus qu'à lire. Les trois méthodes
+     * restent pour leurs autres appelants (WebSocket, rafraîchissement).
+     */
+    public JetonLu lire(String token) {
+        try {
+            Claims claims = verifier(token);
+            return new JetonLu.Valide(UUID.fromString(claims.getSubject()),
+                TYPE_RAFRAICHISSEMENT.equals(claims.get(CLAIM_TYPE, String.class)));
+        } catch (ExpiredJwtException e) {
+            return new JetonLu.Expire();
+        } catch (JwtException | IllegalArgumentException e) {
+            return new JetonLu.Invalide();
+        }
+    }
+
+    /** Ce qu'une lecture de jeton a établi — voir {@link #lire}. */
+    public sealed interface JetonLu {
+        /** Signature, échéance, émetteur et audience reconnus. */
+        record Valide(UUID sujet, boolean rafraichissement) implements JetonLu {}
+        /** Bien signé, mais échu : un rafraîchissement le répare. */
+        record Expire() implements JetonLu {}
+        /** Illisible, mal signé, d'un autre émetteur, ou vide. */
+        record Invalide() implements JetonLu {}
     }
 
     /** Les trois issues de la lecture d'un jeton — voir {@link #etatDe}. */
@@ -268,7 +307,7 @@ public class JwtTokenProvider {
      */
     public boolean estJetonDeRafraichissement(String token) {
         try {
-            String type = lire(token).get(CLAIM_TYPE, String.class);
+            String type = verifier(token).get(CLAIM_TYPE, String.class);
             return TYPE_RAFRAICHISSEMENT.equals(type);
         } catch (JwtException | IllegalArgumentException e) {
             return false;
