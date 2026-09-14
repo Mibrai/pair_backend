@@ -94,8 +94,10 @@ public class ProgressionService {
         Progression progression = progressionRepository.findById(id)
             .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Progression not found"));
 
+        // 404 et non 403 : un refus nommé confirmait l'existence d'une progression
+        // privée à qui n'avait pas à la connaître (demande mobile badges TER, 14/09).
         if (!progression.getIsPublic() && !progression.getUser().getId().equals(requestingUserId)) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Not authorized to view this progression");
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Progression not found");
         }
 
         return toDto(progression);
@@ -116,80 +118,17 @@ public class ProgressionService {
         }
     }
 
+    /**
+     * Les progressions d'une personne, <b>pour elle seule</b>.
+     *
+     * <p>Rendait à tout compte connecté toutes les progressions de n'importe qui,
+     * privées comprises — titre, contenu, mesures, dates — sans filtre ni blocage
+     * (relevé le 14/09, demande mobile badges TER). Seul {@code /my} l'appelle
+     * désormais ; {@code /user/{userId}} rend 404 pour autrui.
+     */
     public Page<ProgressionDto> getProgressionsByUser(UUID userId, Pageable pageable) {
         return progressionRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable)
             .map(this::toDto);
-    }
-
-    public StreakDto calculateStreak(UUID userId) {
-        List<Object[]> progressionDates = progressionRepository.findProgressionDatesByUserId(userId);
-
-        if (progressionDates.isEmpty()) {
-            return new StreakDto(0, 0, null, 0, List.of());
-        }
-
-        List<LocalDate> activeDates = progressionDates.stream()
-            .map(row -> {
-                Object dateObj = row[0];
-                if (dateObj instanceof java.sql.Date) {
-                    return ((java.sql.Date) dateObj).toLocalDate();
-                } else if (dateObj instanceof LocalDate) {
-                    return (LocalDate) dateObj;
-                }
-                return null;
-            })
-            .filter(Objects::nonNull)
-            .sorted(Comparator.reverseOrder())
-            .distinct()
-            .collect(Collectors.toList());
-
-        LocalDate lastDate = activeDates.get(0);
-        LocalDate today = LocalDate.now();
-
-        int currentStreak = 0;
-        if (lastDate.equals(today) || lastDate.equals(today.minusDays(1))) {
-            currentStreak = calculateStreakFromDate(activeDates, lastDate);
-        }
-
-        int longestStreak = calculateLongestStreak(activeDates);
-        int total = progressionRepository.countByUserId(userId);
-
-        return new StreakDto(currentStreak, longestStreak, lastDate, total, activeDates);
-    }
-
-    private int calculateStreakFromDate(List<LocalDate> dates, LocalDate startDate) {
-        int streak = 0;
-        LocalDate currentDate = startDate;
-
-        for (LocalDate date : dates) {
-            if (date.equals(currentDate)) {
-                streak++;
-                currentDate = currentDate.minusDays(1);
-            } else if (date.isBefore(currentDate.minusDays(1))) {
-                break;
-            }
-        }
-
-        return streak;
-    }
-
-    private int calculateLongestStreak(List<LocalDate> dates) {
-        if (dates.isEmpty()) return 0;
-
-        int maxStreak = 1;
-        int currentStreak = 1;
-
-        for (int i = 0; i < dates.size() - 1; i++) {
-            long daysBetween = ChronoUnit.DAYS.between(dates.get(i + 1), dates.get(i));
-            if (daysBetween == 1) {
-                currentStreak++;
-                maxStreak = Math.max(maxStreak, currentStreak);
-            } else {
-                currentStreak = 1;
-            }
-        }
-
-        return maxStreak;
     }
 
     public ProgressionStatsDto getProgressionStats(UUID userId) {
@@ -197,15 +136,13 @@ public class ProgressionService {
         int publicCount = progressionRepository.countByUserIdAndIsPublicTrue(userId);
         int privateCount = progressionRepository.countByUserIdAndIsPublicFalse(userId);
 
-        StreakDto streak = calculateStreak(userId);
-
         Instant thirtyDaysAgo = Instant.now().minus(30, ChronoUnit.DAYS);
         List<Progression> recentProgressions = progressionRepository
             .findByUserIdAndCreatedAtAfter(userId, thirtyDaysAgo);
 
         Map<String, Object> metricsAggregates = calculateMetricsAggregates(recentProgressions);
 
-        return new ProgressionStatsDto(total, publicCount, privateCount, metricsAggregates, streak);
+        return new ProgressionStatsDto(total, publicCount, privateCount, metricsAggregates);
     }
 
     private Map<String, Object> calculateMetricsAggregates(List<Progression> progressions) {

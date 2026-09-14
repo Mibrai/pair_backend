@@ -24,9 +24,6 @@ public interface ProgressionRepository extends JpaRepository<Progression, UUID> 
     @Query("SELECT p FROM Progression p WHERE p.user.id = :userId AND p.createdAt >= :startDate ORDER BY p.createdAt DESC")
     List<Progression> findByUserIdAndCreatedAtAfter(@Param("userId") UUID userId, @Param("startDate") Instant startDate);
 
-    @Query("SELECT DATE(p.createdAt) as date, COUNT(p) FROM Progression p WHERE p.user.id = :userId GROUP BY DATE(p.createdAt) ORDER BY DATE(p.createdAt) DESC")
-    List<Object[]> findProgressionDatesByUserId(@Param("userId") UUID userId);
-
     int countByUserId(UUID userId);
 
     int countByUserIdAndIsPublicTrue(UUID userId);

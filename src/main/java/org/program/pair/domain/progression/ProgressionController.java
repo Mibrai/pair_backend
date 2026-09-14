@@ -63,9 +63,14 @@ public class ProgressionController {
 
     @GetMapping("/user/{userId}")
     public Page<ProgressionDto> getProgressionsByUser(
+            @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID userId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") @Parameter(schema = @Schema(maximum = "50", defaultValue = "20")) int size) {
+        // Réservée à l'intéressé : rendait les progressions privées de n'importe qui.
+        if (!userId.equals(principal.getId())) {
+            throw new org.springframework.web.server.ResponseStatusException(HttpStatus.NOT_FOUND, "Not found");
+        }
         return progressionService.getProgressionsByUser(userId, Pages.borne(page, size));
     }
 
@@ -75,11 +80,6 @@ public class ProgressionController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") @Parameter(schema = @Schema(maximum = "50", defaultValue = "20")) int size) {
         return progressionService.getProgressionsByUser(principal.getId(), Pages.borne(page, size));
-    }
-
-    @GetMapping("/my/streak")
-    public StreakDto getMyStreak(@AuthenticationPrincipal UserPrincipal principal) {
-        return progressionService.calculateStreak(principal.getId());
     }
 
     @GetMapping("/my/stats")
