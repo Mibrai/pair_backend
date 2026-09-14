@@ -158,6 +158,10 @@ public class ProgramService {
         if (request.description() != null)
             program.setDescription(sanitizer.sanitize(request.description()));
         if (request.status() != null) {
+            // Passer à ACTIVE rend visibles les créneaux du programme (P-MU-17).
+            if (request.status() == ProgramStatus.ACTIVE && program.getStatus() != ProgramStatus.ACTIVE) {
+                PublicationVerifiee.exiger(program.getUserActivity().getUser());
+            }
             program.setStatus(request.status());
             if (request.status() == ProgramStatus.ARCHIVED) {
                 program.setArchivedAt(Instant.now());
@@ -414,6 +418,11 @@ public class ProgramService {
     public ScheduleDto addSchedule(UUID userId, UUID programId,
                                     CreateScheduleRequest request) {
         Program program = findProgramOwnedBy(programId, userId);
+        // Un créneau posé hors brouillon est publié (P-MU-17) ; dans un
+        // brouillon, personne ne le voit encore.
+        if (program.getStatus() != ProgramStatus.DRAFT) {
+            PublicationVerifiee.exiger(program.getUserActivity().getUser());
+        }
 
         if (request.placeType() == PlaceType.PUBLIC && request.addressPublic() == null) {
             throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_ADRESSE_LIEU_PUBLIC", "L'adresse est obligatoire pour un lieu public.");

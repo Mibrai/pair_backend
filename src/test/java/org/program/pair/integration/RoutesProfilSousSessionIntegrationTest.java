@@ -170,6 +170,7 @@ class RoutesProfilSousSessionIntegrationTest extends AbstractIntegrationTest {
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(new RegisterRequest(email, "Password123!", "Profil"))
             .exchange().expectStatus().isCreated();
+        adresseVerifiee(email);
         AuthResponse auth = webTestClient.post().uri("/api/auth/login")
             .contentType(MediaType.APPLICATION_JSON)
             .bodyValue(new LoginRequest(email, "Password123!"))

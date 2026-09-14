@@ -58,6 +58,10 @@ public enum ErrorCode {
      */
     TOKEN_EXPIRED,
     EMAIL_EXISTS,
+    // Publication d'un créneau par un compte dont l'adresse n'est pas vérifiée
+    // (P-MU-17). Nommé, jamais un FORBIDDEN générique : l'app en tire « vérifie
+    // ton adresse pour publier » et un lien vers la vérification.
+    EMAIL_NOT_VERIFIED,
     RATE_LIMITED,
     INVALID_PARAMETER,
     /** Taille de page au-delà du plafond, sur une route qui refuse au lieu de ramener (P-BA-14). */

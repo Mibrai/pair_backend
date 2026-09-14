@@ -84,6 +84,8 @@ public class ProgramController {
     }
 
     @PutMapping("/{programId}")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403",
+        description = "Passage à ACTIVE par un compte à l'adresse non vérifiée (EMAIL_NOT_VERIFIED).")
     public ProgramDto updateProgram(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID programId,
@@ -92,6 +94,8 @@ public class ProgramController {
     }
 
     @PatchMapping("/{programId}")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403",
+        description = "Passage à ACTIVE par un compte à l'adresse non vérifiée (EMAIL_NOT_VERIFIED).")
     public ProgramDto patchProgram(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID programId,
@@ -151,6 +155,8 @@ public class ProgramController {
     }
 
     @PostMapping("/{programId}/schedules")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403",
+        description = "Créneau posé hors brouillon par un compte à l'adresse non vérifiée (EMAIL_NOT_VERIFIED) : rien n'est créé. Dans un programme DRAFT, le créneau est accepté.")
     @ResponseStatus(HttpStatus.CREATED)
     public ScheduleDto addSchedule(
             @AuthenticationPrincipal UserPrincipal principal,

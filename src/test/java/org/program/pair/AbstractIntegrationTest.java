@@ -85,6 +85,7 @@ public abstract class AbstractIntegrationTest {
     protected WebTestClient webTestClient;
     @Autowired protected ObjectMapper objectMapper;
     @Autowired private RateLimiter rateLimiter;
+    @Autowired private org.springframework.jdbc.core.JdbcTemplate jdbcDeBase;
 
     /**
      * Le limiteur est un singleton du contexte, et ses compteurs d'inscription
@@ -107,6 +108,22 @@ public abstract class AbstractIntegrationTest {
             // contrat OpenAPI échouent en DataBufferLimitException.
             .codecs(configurer -> configurer.defaultCodecs().maxInMemorySize(4 * 1024 * 1024))
             .build();
+    }
+
+    /**
+     * Marque l'adresse d'un compte comme vérifiée, sans passer par l'e-mail.
+     *
+     * <p>Publier un créneau exige une adresse vérifiée (P-MU-17,
+     * {@code PublicationVerifiee}). Une classe qui publie avec un compte fraîchement
+     * inscrit l'appelle juste après l'inscription ; celle qui éprouve le refus ne
+     * l'appelle pas.
+     */
+    protected void adresseVerifiee(String email) {
+        int lignes = jdbcDeBase.update(
+            "UPDATE users SET verification_status = 'EMAIL_VERIFIED' WHERE LOWER(email) = LOWER(?)", email);
+        if (lignes != 1) {
+            throw new IllegalStateException("Aucun compte unique pour " + email);
+        }
     }
 
     protected HttpHeaders authHeaders(String accessToken) {

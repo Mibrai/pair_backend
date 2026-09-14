@@ -28,6 +28,8 @@ public class QuickSlotController {
             + "auto-généré et y pose le créneau — le tout dans une transaction. La réponse "
             + "est le même objet que GET /api/slots/{scheduleId} : un seul modèle de "
             + "créneau à maintenir côté client.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "403",
+        description = "Adresse e-mail non vérifiée (EMAIL_NOT_VERIFIED) : rien n'est créé.")
     public SlotFeedItemDto create(
             @AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody QuickSlotRequest request) {

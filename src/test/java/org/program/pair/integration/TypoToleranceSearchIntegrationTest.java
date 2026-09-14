@@ -196,6 +196,8 @@ class TypoToleranceSearchIntegrationTest extends AbstractIntegrationTest {
             .bodyValue(registerReq)
             .exchange()
             .expectStatus().isCreated();
+        // Le test active des programmes : publier exige une adresse vérifiée (P-MU-17).
+        adresseVerifiee(email);
 
         LoginRequest loginReq = new LoginRequest(email, password);
         AuthResponse authResponse = webTestClient.post()

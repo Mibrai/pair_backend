@@ -72,6 +72,9 @@ public class QuickSlotService {
     public SlotFeedItemDto create(UUID userId, QuickSlotRequest request) {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_UTILISATEUR_INTROUVABLE", "Utilisateur introuvable."));
+        // Avant toute écriture : le créneau rapide naît publié, et un refus
+        // levé après la déclaration d'activité compterait sur le rollback.
+        PublicationVerifiee.exiger(user);
 
         Activity activity = activityRepository.findById(request.activityId())
             .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_ACTIVITE_INTROUVABLE", "Activité introuvable."));

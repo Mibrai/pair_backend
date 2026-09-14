@@ -352,6 +352,7 @@ class WatchWithoutGuardianIntegrationTest extends AbstractIntegrationTest {
             .bodyValue(new RegisterRequest(email, "Password123!",
                 "Seule" + UUID.randomUUID().toString().substring(0, 8)))
             .exchange().expectStatus().isCreated();
+        adresseVerifiee(email);
 
         AuthResponse auth = webTestClient.post().uri("/api/auth/login")
             .contentType(MediaType.APPLICATION_JSON)

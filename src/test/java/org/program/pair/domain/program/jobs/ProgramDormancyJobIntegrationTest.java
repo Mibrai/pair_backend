@@ -238,6 +238,8 @@ class ProgramDormancyJobIntegrationTest extends AbstractIntegrationTest {
             .passwordHash("x")
             .displayName("Auteur de test")
             .isActive(true)
+            // Réveiller publie : l'auteur doit avoir une adresse vérifiée (P-MU-17).
+            .verificationStatus(org.program.pair.domain.user.VerificationStatus.EMAIL_VERIFIED)
             .build());
 
         Activity activity = activityRepository.findBySlug("yoga").orElseThrow();
