@@ -38,6 +38,15 @@ public class AppLinksController {
     private String bundleId;
 
     /**
+     * Les deux motifs de réinitialisation du mot de passe, derrière un
+     * interrupteur éteint par défaut (décision du 14/09/2026). Voir
+     * {@code meetdo.links.reinitialisation-dans-app} : ils ne rejoignent le
+     * fichier que le jour où la version de l'app qui gère {@code /r/} est publiée.
+     */
+    @Value("${meetdo.links.reinitialisation-dans-app:false}")
+    private boolean reinitialisationDansApp;
+
+    /**
      * Empreintes SHA-256 des certificats qui signent l'app Android, séparées par
      * des virgules (P-MS-17). Avec Play App Signing, <b>deux</b> clés signent :
      * la clé d'app gérée par Google et la clé d'upload.
@@ -86,16 +95,24 @@ public class AppLinksController {
                       { "/": "/p/*", "comment": "Pages publiques de programme" },
                       { "/": "/public/slots/*", "comment": "JSON et image d'aperçu, créneau" },
                       { "/": "/public/programs/*", "comment": "JSON et image d'aperçu, programme" },
-                      { "/": "/v/*", "comment": "Vérification d'adresse e-mail" },
-                      { "/": "/r/*", "comment": "Réinitialisation du mot de passe" },
-                      { "/": "/reset-password", "?": { "token": "*" }, "comment": "Réinitialisation, e-mails envoyés avant le 14/09/2026" }
+                      { "/": "/v/*", "comment": "Vérification d'adresse e-mail" }%s
                     ]
                   }
                 ]
               }
             }
-            """.formatted(appleTeamId, bundleId));
+            """.formatted(appleTeamId, bundleId, reinitialisationDansApp ? MOTIFS_REINITIALISATION : ""));
     }
+
+    /**
+     * Retirés le 14/09, quelques heures après leur ajout : la version publiée de
+     * l'app ne sait rien de {@code /r/}, et un iPhone qui l'a installée ouvrait le
+     * lien de l'e-mail dans une app qui ne faisait rien de lui.
+     */
+    private static final String MOTIFS_REINITIALISATION = """
+        ,
+                      { "/": "/r/*", "comment": "Réinitialisation du mot de passe" },
+                      { "/": "/reset-password", "?": { "token": "*" }, "comment": "Réinitialisation, e-mails envoyés avant le 14/09/2026" }""";
 
     @GetMapping(value = "/.well-known/assetlinks.json",
         produces = MediaType.APPLICATION_JSON_VALUE)

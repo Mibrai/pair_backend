@@ -30,6 +30,31 @@ class AppLinksControllerTest {
             .contains("com.meetdo.app");
     }
 
+    // — les motifs de réinitialisation, derrière leur interrupteur (14/09/2026) —
+
+    @Test
+    void interrupteurEteint_laReinitialisationNEstPasConfieeALApp() throws Exception {
+        String aasa = controleur("").appleAppSiteAssociation().getBody();
+
+        assertThat(aasa).doesNotContain("/r/*").doesNotContain("reset-password").contains("/v/*");
+        assertThat(new com.fasterxml.jackson.databind.ObjectMapper().readTree(aasa)
+            .at("/applinks/details/0/components").size()).isEqualTo(5);
+    }
+
+    @Test
+    void interrupteurAllume_lesDeuxMotifsRejoignentLeFichier() throws Exception {
+        AppLinksController c = controleur("");
+        ReflectionTestUtils.setField(c, "reinitialisationDansApp", true);
+        String aasa = c.appleAppSiteAssociation().getBody();
+
+        var composants = new com.fasterxml.jackson.databind.ObjectMapper().readTree(aasa)
+            .at("/applinks/details/0/components");
+        assertThat(composants.size()).isEqualTo(7);
+        assertThat(composants.get(5).get("/").asText()).isEqualTo("/r/*");
+        assertThat(composants.get(6).get("/").asText()).isEqualTo("/reset-password");
+        assertThat(composants.get(6).get("?").get("token").asText()).isEqualTo("*");
+    }
+
     @Test
     void sansEmpreinte_rienNEstServi() {
         assertThat(controleur("").assetLinks().getStatusCode().value()).isEqualTo(404);

@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.program.pair.shared.exception.InvalidTokenException;
 import org.program.pair.shared.exception.TooManyRequestsException;
 import org.program.pair.shared.security.RateLimiter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Controller;
@@ -70,15 +71,55 @@ public class ReinitialisationLinkController {
      */
     private static final Pattern ADRESSE = Pattern.compile("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
 
+    /** Un identifiant App Store Connect : des chiffres, rien d'autre. */
+    private static final Pattern IDENTIFIANT_APP_STORE = Pattern.compile("\\d+");
+
     private final EmailVerificationService jetons;
     private final AuthService authService;
     private final RateLimiter rateLimiter;
 
-    /** Posé avant chaque gestionnaire de ce contrôleur, erreurs comprises. */
+    @Value("${meetdo.links.reinitialisation-dans-app:false}")
+    private boolean reinitialisationDansApp;
+
+    @Value("${meetdo.links.app-store-id:}")
+    private String appStoreId;
+
+    @Value("${pair.public.base-url:https://lien.meetdo.fun}")
+    private String baseUrl;
+
+    /**
+     * Posé avant chaque gestionnaire de ce contrôleur, erreurs comprises : les
+     * en-têtes qui retiennent le jeton, et la bannière sans jeton — celle des
+     * pages d'échec, que {@link #page} remplace quand le formulaire est proposé.
+     */
     @ModelAttribute
-    void protegerLeJeton(HttpServletResponse response) {
+    void protegerLeJeton(HttpServletResponse response, Model model) {
         response.setHeader("Referrer-Policy", "no-referrer");
         response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
+        model.addAttribute("banniereApp", banniere(null));
+    }
+
+    /**
+     * Le contenu de la Smart App Banner, ou {@code null} pour n'en poser aucune.
+     *
+     * <p>Rien tant que l'interrupteur est éteint ou que l'identifiant App Store
+     * manque : Safari proposerait « Ouvrir » à toute version installée, et une
+     * version qui ne gère pas {@code /r/} ignorerait l'argument — la même impasse
+     * que l'AASA (décision du 14/09/2026).
+     *
+     * <p>{@code app-argument} est toujours l'adresse <b>canonique</b>
+     * {@code /r/<jeton>}, même quand la page a été ouverte par
+     * {@code /reset-password?token=} ; {@code /r} sans jeton sur une page d'échec,
+     * que l'app ouvre sur « mot de passe oublié ». Jamais {@code meetdo://}
+     * (P-MS-17).
+     */
+    String banniere(String tokenValide) {
+        if (!reinitialisationDansApp || appStoreId == null
+                || !IDENTIFIANT_APP_STORE.matcher(appStoreId.strip()).matches()) {
+            return null;
+        }
+        String argument = tokenValide == null ? baseUrl + "/r" : baseUrl + "/r/" + tokenValide;
+        return "app-id=" + appStoreId.strip() + ", app-argument=" + argument;
     }
 
     @GetMapping("/r/{token}")
@@ -117,6 +158,7 @@ public class ReinitialisationLinkController {
         if (erreur != null) {
             model.addAttribute("etat", "VALIDE");
             model.addAttribute("token", token);
+            model.addAttribute("banniereApp", banniere(token));
             model.addAttribute("erreur", erreur);
             return VUE;
         }
@@ -168,6 +210,7 @@ public class ReinitialisationLinkController {
         // formulaire. Sur une page d'échec, il n'a plus rien à y faire.
         if (etat == EtatReinitialisation.VALIDE) {
             model.addAttribute("token", token);
+            model.addAttribute("banniereApp", banniere(token));
         }
         // 200 dans tous les cas, comme la vérification : un code d'erreur
         // exposerait la page à être remplacée par celle d'un intermédiaire.

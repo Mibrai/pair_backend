@@ -266,10 +266,10 @@ class PublicSlotPageIntegrationTest extends AbstractIntegrationTest {
             // Ajouté le 2026-08-26 : sans ce motif, iOS remet le lien de
             // vérification à Safari quoi que fasse l'application.
             .contains("/v/*")
-            // Ajoutés le 2026-09-14 avec la page de réinitialisation : le lien
-            // court des e-mails actuels, et l'ancien pour ceux déjà partis.
-            .contains("\"/r/*\"")
-            .contains("\"/reset-password\", \"?\": { \"token\": \"*\" }");
+            // Retirés le 2026-09-14, derrière un interrupteur éteint par défaut :
+            // la version publiée de l'app ne gère pas /r/ (AppLinksControllerTest).
+            .doesNotContain("/r/*")
+            .doesNotContain("reset-password");
     }
 
     @Test

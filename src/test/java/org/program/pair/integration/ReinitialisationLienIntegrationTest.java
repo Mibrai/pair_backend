@@ -123,6 +123,16 @@ class ReinitialisationLienIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void sansInterrupteur_aucuneSmartAppBanner() {
+        // L'interrupteur est éteint par défaut : la page ne propose pas d'ouvrir
+        // une app qui, dans sa version publiée, ne gère pas ce lien.
+        String jeton = jetonPour(inscrire("reset-banniere"));
+
+        assertThat(corps(page("/r/" + jeton))).doesNotContain("apple-itunes-app");
+        assertThat(corps(page("/r/jeton-bidon"))).doesNotContain("apple-itunes-app");
+    }
+
+    @Test
     void headSurLeLien_doitRepondreCommeGet() {
         webTestClient.head().uri("/r/jeton-bidon").exchange().expectStatus().isOk();
         webTestClient.head().uri("/reset-password?token=jeton-bidon").exchange().expectStatus().isOk();
