@@ -36,7 +36,8 @@ public class Review {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "reviewer_id", nullable = false)
+    /** Nul une fois le compte de l'auteur purgé (V123, P-BL-03) : l'avis reste, anonymisé. */
+    @Column(name = "reviewer_id")
     private UUID reviewerId;
 
     @ManyToOne(fetch = FetchType.LAZY)

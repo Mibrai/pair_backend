@@ -42,7 +42,8 @@ public class PeerRecommendation {
     @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
 
-    @Column(name = "recommender_id", nullable = false)
+    /** Nul une fois le compte de l'auteur purgé (V123, P-BL-03) : la recommandation reste, anonymisée. */
+    @Column(name = "recommender_id")
     private UUID recommenderId;
 
     @ManyToOne(fetch = FetchType.LAZY)

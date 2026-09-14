@@ -29,6 +29,6 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
     List<Review> findByReviewerId(UUID reviewerId);
 
     @Modifying
-    @Query("UPDATE ReviewPhase3 r SET r.reviewer = null, r.comment = '[Avis anonymisé]' WHERE r.reviewer.id = :reviewerId")
+    @Query("UPDATE ReviewPhase3 r SET r.reviewerId = null, r.comment = '[Avis anonymisé]' WHERE r.reviewerId = :reviewerId")
     void anonymizeByReviewerId(@Param("reviewerId") UUID reviewerId);
 }

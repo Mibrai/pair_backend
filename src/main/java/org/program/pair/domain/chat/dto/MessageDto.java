@@ -8,6 +8,10 @@ import java.util.UUID;
 public record MessageDto(
     UUID id,
     UUID conversationId,
+
+    @Schema(nullable = true, description = "Nul, avec senderName et senderAvatarUrl, quand le "
+        + "compte de l'expéditeur a été supprimé puis purgé : le message reste dans le fil, "
+        + "son contenu vaut « [Message supprimé] », et il n'appartient plus à personne.")
     UUID senderId,
     String senderName,
     String senderAvatarUrl,

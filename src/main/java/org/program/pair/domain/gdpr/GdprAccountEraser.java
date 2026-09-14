@@ -83,24 +83,21 @@ import java.util.UUID;
  *       si l'avis dit autre chose.</li>
  * </ol>
  *
- * <h2>Le blocage qu'il reste, et qui n'appartient pas à ce paquet</h2>
+ * <h2>Ce qui échouait pour toute personne qui avait écrit, et ce qui l'a fermé</h2>
  *
- * <p>{@link #eraseOne(UUID)} <b>échoue aujourd'hui pour tout compte qui a envoyé
- * au moins un message</b>, et ce n'est pas un oubli : c'est un constat à porter à
- * qui tient le domaine de la conversation.
- * {@code MessageRepository.anonymizeBySenderId} pose {@code sender = null} —
- * l'intention de la décision D2, pour que le fil de l'autre personne garde sa
- * forme — mais {@code messages.sender_id} est {@code NOT NULL} depuis V6, et la
- * mise à jour part en violation de contrainte. Rendre la colonne nullable ne
- * suffirait pas : {@code ChatService} déréférence {@code msg.getSender().getId()}
- * en construisant le DTO d'un message, si bien qu'un message anonymisé rendrait
- * <b>toute la conversation de l'autre personne</b> en erreur — ce qui est pire
- * que de ne pas purger. La fermeture demande donc un même mouvement dans le
- * domaine de la conversation (colonne nullable <i>et</i> lecture qui sait lire un
- * expéditeur absent), ou une décision produit de laisser les messages partir avec
- * la cascade. Tant que ce n'est pas tranché, l'échec est <b>compté, journalisé et
- * circonscrit à ce compte</b> : c'est exactement ce que cette classe apporte, et
- * c'est mieux qu'une purge entière annulée en silence.
+ * <p>Jusqu'à V123, {@link #eraseOne(UUID)} <b>échouait pour tout compte qui avait
+ * envoyé un message, laissé un avis ou une recommandation</b> : l'anonymisation
+ * pose l'auteur à {@code null}, et {@code messages.sender_id},
+ * {@code reviews.reviewer_id} et {@code peer_recommendations.recommender_id}
+ * étaient {@code NOT NULL} depuis V6 et V7. L'échec était compté et circonscrit
+ * au compte, mais le compte n'était jamais effacé — c'est-à-dire presque tous
+ * les comptes réels.
+ *
+ * <p>V123 rend les trois colonnes nullables, en {@code ON DELETE SET NULL}, et
+ * la lecture des messages sait rendre un expéditeur absent
+ * ({@code ChatService.senderIdOf}) : sans ce second volet, un message anonymisé
+ * aurait fait tomber <b>toute la conversation de l'autre personne</b>, ce qui
+ * est pire que de ne pas purger.
  */
 @Service
 @RequiredArgsConstructor
