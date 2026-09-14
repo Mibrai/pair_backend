@@ -110,5 +110,11 @@ public record SlotFeedItemDto(
 
     @Schema(description = "Précision libre sur les frais, reprise du programme, ou null. "
         + "Toujours null quand costToShare est false.")
-    String costNote
+    String costNote,
+
+    @Schema(description = "Ville du créneau, ou null. Celle que l'organisateur a saisie "
+        + "(champ city de POST /quick-slots et des routes de créneau), jamais déduite de "
+        + "l'adresse ni des coordonnées. Même valeur que PublicSlotView.city. Servie quel "
+        + "que soit le lieu, privé compris : une ville ne situe personne.")
+    String city
 ) {}

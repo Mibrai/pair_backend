@@ -188,7 +188,33 @@ class QuickSlotIntegrationTest extends AbstractIntegrationTest {
             .jsonPath("$.createdVia").isEqualTo("QUICK");
     }
 
+    @Test
+    void laFicheDuCreneau_rendLaVilleSaisie_memeSurUnLieuPrive() {
+        // Demande mobile du 14/09/2026 (modules/creneau-modifiable) : la ligne
+        // météo de la fiche lit SlotFeedItemDto.city, et rien d'autre.
+        String token = registerAndLogin();
+        SlotFeedItemDto prive = create(token, request(PlaceType.PRIVATE, LAT, LNG));
+        assertThat(prive.city()).isEqualTo("Strasbourg");
+        assertThat(prive.displayAddress()).as("la ville ne rouvre pas l'adresse").isNull();
+        assertThat(fiche(token, prive.scheduleId()).city()).isEqualTo("Strasbourg");
+
+        // Retirée par un PUT « city »: "" : la fiche rend null, pas une chaîne vide.
+        webTestClient.put().uri("/api/programs/{p}/schedules/{s}", prive.programId(), prive.scheduleId())
+            .headers(h -> h.setBearerAuth(token))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("city", ""))
+            .exchange().expectStatus().isOk();
+        assertThat(fiche(token, prive.scheduleId()).city()).isNull();
+    }
+
     // — helpers —
+
+    private SlotFeedItemDto fiche(String token, UUID scheduleId) {
+        return webTestClient.get().uri("/api/slots/{id}", scheduleId)
+            .headers(h -> h.setBearerAuth(token))
+            .exchange().expectStatus().isOk()
+            .expectBody(SlotFeedItemDto.class).returnResult().getResponseBody();
+    }
 
     private SlotFeedItemDto create(String token, QuickSlotRequest request) {
         return webTestClient.post()
@@ -241,6 +267,7 @@ class QuickSlotIntegrationTest extends AbstractIntegrationTest {
             .bodyValue(new RegisterRequest(email, "Password123!", "Organisateur"))
             .exchange()
             .expectStatus().isCreated();
+        adresseVerifiee(email);
 
         AuthResponse auth = webTestClient.post()
             .uri("/api/auth/login")

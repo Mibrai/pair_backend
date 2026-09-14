@@ -856,7 +856,10 @@ public class SlotService {
             slot.getPrimaryLanguage(),
             slot.getAccessibilityTags().stream().map(Enum::name).sorted().toList(),
             Boolean.TRUE.equals(program.getCostToShare()),
-            Boolean.TRUE.equals(program.getCostToShare()) ? program.getCostNote() : null
+            Boolean.TRUE.equals(program.getCostToShare()) ? program.getCostNote() : null,
+            // La ville telle que saisie, la même que PublicSlotView.city. Une
+            // chaîne blanche (un PUT « city »: "") vaut une ville retirée.
+            slot.getCity() != null && !slot.getCity().isBlank() ? slot.getCity() : null
         );
     }
 
