@@ -263,11 +263,18 @@ public interface ScheduleRepository extends JpaRepository<Schedule, UUID> {
      *   <li>{@code reminderSentFor <> startsAt} — un créneau déplacé redevient
      *       éligible, donc son rappel est replanifié sans qu'on ait à le
      *       replanifier.</li>
+     *   <li>{@code user.isActive = true} — le créneau d'un hôte au compte fermé
+     *       n'est plus rappelé (P-BL-18, étape 2). Depuis le 14/09, fermer son
+     *       compte annule ses créneaux à venir ; ce filtre couvre ceux qui ne
+     *       l'ont pas été : les comptes fermés avant, dont les vingt comptes démo
+     *       de V116. Leur fiche est introuvable : un rappel y renverrait vers un
+     *       {@code 404}.</li>
      * </ul>
      */
     @Query("SELECT s FROM Schedule s WHERE s.status IN ('OPEN', 'FULL') "
         + "AND s.startsAt > :now AND s.startsAt <= :horizon "
-        + "AND (s.reminderSentFor IS NULL OR s.reminderSentFor <> s.startsAt)")
+        + "AND (s.reminderSentFor IS NULL OR s.reminderSentFor <> s.startsAt) "
+        + "AND s.program.userActivity.user.isActive = true")
     List<Schedule> findDueForReminder(@Param("now") Instant now, @Param("horizon") Instant horizon);
 
     /**

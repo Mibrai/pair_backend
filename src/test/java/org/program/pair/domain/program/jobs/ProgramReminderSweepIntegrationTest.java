@@ -106,6 +106,43 @@ class ProgramReminderSweepIntegrationTest extends AbstractIntegrationTest {
         assertThat(dueIds(now)).contains(slot.getId());
     }
 
+    /**
+     * Le créneau d'un hôte au compte fermé n'est plus rappelé (P-BL-18, étape 2).
+     *
+     * <p>La fermeture annule les créneaux à venir depuis le 14/09, mais les comptes
+     * fermés avant — les vingt comptes démo de V116 — gardent des créneaux ouverts,
+     * introuvables pour leurs inscrits. Un rappel les enverrait vers un 404.
+     *
+     * <p>L'hôte est un compte jetable créé ici et fermé par sa ligne seule :
+     * l'hôte partagé des autres méthodes ne doit jamais être désactivé.
+     */
+    @Test
+    void creneauDUnHoteAuCompteFerme_neDoitPasEtreRappele() {
+        Instant now = Instant.now();
+        User hote = userRepository.save(User.builder()
+            .email(uniqueEmail("rappel-hote-ferme"))
+            .passwordHash("x")
+            .displayName("Hôte fermé")
+            .build());
+        Activity yoga = activityRepository.findBySlug("yoga").orElseThrow();
+        UserActivity activite = userActivityRepository.save(
+            UserActivity.builder().user(hote).activity(yoga).build());
+        Program programmeFerme = programRepository.save(Program.builder()
+            .userActivity(activite)
+            .title("Programme d'un hôte fermé")
+            .status(ProgramStatus.ACTIVE)
+            .isPublic(true)
+            .build());
+        Schedule slot = persistSlot(programmeFerme, now.plus(90, ChronoUnit.MINUTES), SlotStatus.OPEN);
+
+        assertThat(dueIds(now)).as("hôte actif : le rappel est dû").contains(slot.getId());
+
+        hote.setIsActive(false);
+        userRepository.saveAndFlush(hote);
+
+        assertThat(dueIds(now)).as("hôte fermé : plus de rappel").doesNotContain(slot.getId());
+    }
+
     private List<UUID> dueIds(Instant now) {
         return scheduleRepository.findDueForReminder(now, now.plus(2, ChronoUnit.HOURS))
             .stream().map(Schedule::getId).toList();
@@ -142,8 +179,12 @@ class ProgramReminderSweepIntegrationTest extends AbstractIntegrationTest {
     }
 
     private Schedule persistSlot(Instant startsAt, SlotStatus status) {
+        return persistSlot(program, startsAt, status);
+    }
+
+    private Schedule persistSlot(Program programme, Instant startsAt, SlotStatus status) {
         return scheduleRepository.saveAndFlush(Schedule.builder()
-            .program(program)
+            .program(programme)
             .placeName("Studio test")
             // placeType et location sont NOT NULL en base : un créneau a toujours
             // un type de lieu et une position.
