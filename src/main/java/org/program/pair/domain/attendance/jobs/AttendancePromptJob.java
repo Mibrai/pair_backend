@@ -1,5 +1,6 @@
 package org.program.pair.domain.attendance.jobs;
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.program.pair.shared.observabilite.ScheduledJobMetricsAspect;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -71,6 +72,7 @@ public class AttendancePromptJob {
     private final SlotAudience slotAudience;
     private final NotificationService notificationService;
 
+    @SchedulerLock(name = "attendance-prompt", lockAtMostFor = "PT30M")
     @Scheduled(cron = "0 0 * * * *") // Toutes les heures, à l'heure pile
     @Transactional
     public void promptAttendanceConfirmation() {
@@ -156,6 +158,7 @@ public class AttendancePromptJob {
      * <p>La fenêtre de sept jours n'existait nulle part : la relance travaille
      * sur une à trois heures après la fin, et rien ne repassait ensuite.
      */
+    @SchedulerLock(name = "attendance-close-windows")
     @Scheduled(cron = "0 30 3 * * *") // Une fois par jour, la nuit
     @Transactional
     public void closeUnansweredAttendanceWindows() {
@@ -185,6 +188,7 @@ public class AttendancePromptJob {
      * Fait avancer les créneaux OPEN/FULL dont la fin est passée vers PAST,
      * pour que le statut affiché reste fidèle à la réalité.
      */
+    @SchedulerLock(name = "attendance-close-elapsed-slots", lockAtMostFor = "PT30M")
     @Scheduled(cron = "0 15 * * * *") // Toutes les heures, à :15
     @Transactional
     public void closeElapsedSlots() {

@@ -1,5 +1,6 @@
 package org.program.pair.domain.program.jobs;
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.program.pair.shared.observabilite.ScheduledJobMetricsAspect;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -62,6 +63,7 @@ public class RecurringSlotRolloverJob {
     private final RecurrenceExpander recurrenceExpander;
     private final ParticipantCounter participantCounter;
 
+    @SchedulerLock(name = "program-recurring-rollover", lockAtMostFor = "PT9M")
     @Scheduled(cron = "0 */10 * * * *")
     @Transactional
     public void rollPastRecurringSchedulesForward() {

@@ -1,5 +1,6 @@
 package org.program.pair.domain.watch.jobs;
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.program.pair.shared.observabilite.ScheduledJobMetricsAspect;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -81,6 +82,7 @@ public class WatchOutboundJob {
     /** Voir {@link WatchReturnLoopJob} : {@code REQUIRED} suffit, une connexion par veille. */
     private final TransactionTemplate tx;
 
+    @SchedulerLock(name = "watch-outbound", lockAtMostFor = "PT2M")
     @Scheduled(fixedDelay = 60_000, initialDelay = 45_000)
     public void tick() {
         Instant now = Instant.now();

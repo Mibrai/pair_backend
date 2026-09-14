@@ -75,7 +75,7 @@ class ArchitectureTest {
      * n'écrive un {@code Job} ou un {@code Trigger} Quartz en croyant que le
      * dépôt s'en sert. La planification ici est celle de Spring
      * ({@code @EnableScheduling} et {@code config/SchedulingConfig}), et le
-     * verrou distribué qui manque sera ShedLock (P-BA-04 lot 2), pas Quartz.
+     * verrou distribué est ShedLock (P-BA-04 lot 2), pas Quartz.
      *
      * <p>Elle passe aujourd'hui, et c'est voulu : une règle posée sur un code
      * déjà conforme est une règle qui restera lisible le jour où elle cassera.
@@ -85,7 +85,7 @@ class ArchitectureTest {
         .should().dependOnClassesThat().resideInAnyPackage("org.quartz..")
         .because("la planification de ce dépôt est celle de Spring (@EnableScheduling et "
             + "config/SchedulingConfig) ; le starter Quartz a été retiré parce qu'il était "
-            + "déclaré et jamais utilisé, et le verrou distribué qui manque sera ShedLock "
+            + "déclaré et jamais utilisé, et le verrou distribué est ShedLock "
             + "(P-BA-04 lot 2)");
 
     /**

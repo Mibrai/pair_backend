@@ -233,10 +233,16 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     List<Message> findBySenderId(UUID senderId);
 
     /**
-     * Anonymize messages for GDPR purge (Article 17)
-     * Replace sender info with anonymous placeholder
+     * Anonymise les messages d'un compte purgé (RGPD article 17, P-BL-03).
+     *
+     * <p>L'expéditeur disparaît, le contenu devient « [Message supprimé] », et la
+     * position éventuellement partagée est effacée : un point géographique est
+     * une donnée personnelle au même titre que le texte. Le message garde sa
+     * place et sa date dans le fil de l'autre personne.
      */
     @Modifying
-    @Query("UPDATE Message m SET m.sender = null, m.content = '[Message supprimé]' WHERE m.sender.id = :userId")
+    @Query("UPDATE Message m SET m.sender = null, m.content = '[Message supprimé]', "
+        + "m.locationLat = null, m.locationLng = null, m.locationExpiresAt = null "
+        + "WHERE m.sender.id = :userId")
     void anonymizeBySenderId(@Param("userId") UUID userId);
 }

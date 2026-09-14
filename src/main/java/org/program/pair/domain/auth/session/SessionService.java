@@ -1,5 +1,6 @@
 package org.program.pair.domain.auth.session;
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.auth.JwtTokenProvider;
 import org.program.pair.domain.auth.JwtTokenProvider.JetonLu;
@@ -193,6 +194,7 @@ public class SessionService {
      * Nettoyage quotidien : une ligne par rafraîchissement, soit une centaine par
      * jour par utilisateur actif, ne peut pas s'accumuler indéfiniment.
      */
+    @SchedulerLock(name = "session-purge")
     @Scheduled(cron = "0 40 3 * * *")
     @Transactional
     public void purger() {

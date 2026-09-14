@@ -1,5 +1,6 @@
 package org.program.pair.domain.program.jobs;
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.program.pair.shared.observabilite.ScheduledJobMetricsAspect;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -69,6 +70,7 @@ public class ProgramReminderJob {
     private final NotificationService notificationService;
     private final UserRepository userRepository;
 
+    @SchedulerLock(name = "program-slot-reminders", lockAtMostFor = "PT4M")
     @Scheduled(cron = "0 */5 * * * *")
     @Transactional
     public void sendUpcomingSlotReminders() {

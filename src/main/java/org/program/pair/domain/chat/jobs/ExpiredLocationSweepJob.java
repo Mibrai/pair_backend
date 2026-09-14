@@ -1,5 +1,6 @@
 package org.program.pair.domain.chat.jobs;
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.repository.MessageRepository;
@@ -43,6 +44,7 @@ public class ExpiredLocationSweepJob {
      * coordonnée échue traîne en base — au plus dix minutes de plus que les
      * trente autorisées.
      */
+    @SchedulerLock(name = "chat-expired-location-sweep", lockAtMostFor = "PT9M")
     @Scheduled(fixedDelay = 10 * 60 * 1000, initialDelay = 60 * 1000)
     @Transactional
     public void sweep() {

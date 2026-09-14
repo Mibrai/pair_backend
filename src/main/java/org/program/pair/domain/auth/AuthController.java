@@ -225,14 +225,13 @@ public class AuthController {
      * gratuits. Le budget par couple (compte, adresse) du limiteur en dépend
      * directement.
      *
-     * <p><b>Ce qui manque pour le corriger</b> : le relevé d'exploitation décrit à
-     * l'étape 1 de la fiche — une requête de diagnostic en production, journaux
-     * lus, qui dit si l'arête ajoute ou remplace et depuis quelles plages elle
-     * parle. Il n'a pas été fait. Le remède est prêt et inactif dans
-     * {@code config/ProxyDeConfiance} : il n'attend que ces plages, et sa javadoc
-     * dit exactement quelles lignes poser. Deviner les plages serait pire que de
-     * ne rien poser — une plage fausse fait voir toutes les requêtes comme venant
-     * du proxy, et le plafond par adresse devient commun à tout le monde.
+     * <p><b>Le relevé du 14/09/2026 a tranché</b> (étape 1 de la fiche) :
+     * l'arête Railway <b>remplace</b> {@code X-Forwarded-For} par
+     * {@code <IP du client>, <IP de l'arête>}. La première valeur, celle que
+     * retient le filtre de Spring, est donc écrite par l'arête et non par le
+     * client : l'adresse n'est pas falsifiable sur Railway. Le remède préparé
+     * dans {@code config/ProxyDeConfiance} n'a pas à être posé, et serait faux :
+     * sa javadoc dit pourquoi. Un changement de plateforme rouvre la question.
      */
     private static String adresseAppelante(HttpServletRequest httpRequest) {
         return httpRequest.getRemoteAddr();

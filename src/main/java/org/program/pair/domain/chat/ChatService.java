@@ -787,7 +787,7 @@ public class ChatService {
             Set<UUID> invisible = blockFilterService.invisibleTo(userId);
             if (!invisible.isEmpty()) {
                 messages = messages.stream()
-                    .filter(msg -> !invisible.contains(msg.getSender().getId()))
+                    .filter(msg -> !invisible.contains(senderIdOf(msg)))
                     .toList();
             }
         }
@@ -971,14 +971,14 @@ public class ChatService {
         if (last == null
                 || conv.getType() == ConversationType.DIRECT
                 || invisible.isEmpty()
-                || !invisible.contains(last.getSender().getId())) {
+                || !invisible.contains(senderIdOf(last))) {
             return last;
         }
 
         return messageRepository
             .findLatest(conv.getId(), org.springframework.data.domain.PageRequest.of(0, PREVIEW_LOOKBACK))
             .stream()
-            .filter(msg -> !invisible.contains(msg.getSender().getId()))
+            .filter(msg -> !invisible.contains(senderIdOf(msg)))
             .findFirst()
             .orElse(null);
     }
@@ -1126,7 +1126,7 @@ public class ChatService {
         Message message = messageRepository.findById(messageId)
             .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_MESSAGE_INTROUVABLE", "Message introuvable."));
 
-        if (!message.getSender().getId().equals(userId)) {
+        if (!userId.equals(senderIdOf(message))) {
             throw new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_MODIFIER_MESSAGE_AUTRUI", "Vous ne pouvez modifier que vos propres messages.");
         }
 
@@ -1192,7 +1192,7 @@ public class ChatService {
         Message message = messageRepository.findById(messageId)
             .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_MESSAGE_INTROUVABLE", "Message introuvable."));
 
-        if (!message.getSender().getId().equals(userId)) {
+        if (!userId.equals(senderIdOf(message))) {
             throw new ForbiddenException(ErrorCode.FORBIDDEN, "REFUS_SUPPRIMER_MESSAGE_AUTRUI", "Vous ne pouvez supprimer que vos propres messages.");
         }
 
@@ -1324,6 +1324,15 @@ public class ChatService {
         return mediaFileService.attacher(imageUrl, userId, null);
     }
 
+    /**
+     * L'expéditeur d'un message, ou {@code null} si son compte a été purgé
+     * (V123, P-BL-03). Un message sans auteur n'est masqué par aucun blocage et
+     * n'appartient à personne : il ne se modifie ni ne se supprime plus.
+     */
+    private static UUID senderIdOf(Message msg) {
+        return msg.getSender() == null ? null : msg.getSender().getId();
+    }
+
     private MessageDto toMessageDto(Message msg) {
         // Un point échu n'est pas servi, même si les colonnes le portent encore.
         // C'est ici que se joue l'expiration, pas dans le balayage : celui-ci
@@ -1333,12 +1342,16 @@ public class ChatService {
         boolean locationLive = msg.getLocationExpiresAt() != null
             && msg.getLocationExpiresAt().isAfter(Instant.now());
 
+        // Nul une fois le compte de l'expéditeur purgé (V123, P-BL-03) : le
+        // message reste dans le fil, sans auteur.
+        User sender = msg.getSender();
+
         return new MessageDto(
             msg.getId(),
             msg.getConversation().getId(),
-            msg.getSender().getId(),
-            msg.getSender().getDisplayName(),
-            msg.getSender().getAvatarUrl(),
+            sender == null ? null : sender.getId(),
+            sender == null ? null : sender.getDisplayName(),
+            sender == null ? null : sender.getAvatarUrl(),
             msg.getContent(),
             msg.getStatus().name(),
             msg.getSentAt(),

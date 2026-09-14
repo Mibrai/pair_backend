@@ -1,5 +1,6 @@
 package org.program.pair.domain.outbox;
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.program.pair.shared.observabilite.ScheduledJobMetricsAspect;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,6 +40,7 @@ public class OutboxSweepJob {
     private final ScheduledJobMetricsAspect metriques;
     private final OutboxMessageRepository repository;
 
+    @SchedulerLock(name = "outbox-send", lockAtMostFor = "PT2M")
     @Scheduled(fixedDelay = 10_000, initialDelay = 15_000)
     public void envoyer() {
         try {
@@ -52,6 +54,7 @@ public class OutboxSweepJob {
         }
     }
 
+    @SchedulerLock(name = "outbox-purge")
     @Scheduled(cron = "0 20 3 * * *") // chaque nuit, à 3h20
     @Transactional
     public void purger() {

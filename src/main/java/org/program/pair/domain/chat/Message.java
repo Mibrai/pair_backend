@@ -30,8 +30,13 @@ public class Message {
     @JoinColumn(name = "conversation_id", nullable = false)
     private Conversation conversation;
 
+    /**
+     * L'expéditeur, <b>nul une fois son compte purgé</b> (V123, P-BL-03) : le
+     * message reste dans le fil de l'autre personne, anonymisé, sans auteur.
+     * Tout lecteur doit le supporter.
+     */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "sender_id", nullable = false)
+    @JoinColumn(name = "sender_id")
     private User sender;
 
     @Column(nullable = false, length = 4000)

@@ -1,6 +1,11 @@
 package org.program.pair.config;
 
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.core.LockProvider;
+import net.javacrumbs.shedlock.provider.jdbctemplate.JdbcTemplateLockProvider;
+import net.javacrumbs.shedlock.spring.annotation.EnableSchedulerLock;
+import net.javacrumbs.shedlock.spring.annotation.EnableSchedulerLock.InterceptMode;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.annotation.SchedulingConfigurer;
@@ -37,22 +42,66 @@ import org.springframework.scheduling.config.ScheduledTaskRegistrar;
  * déconnectés. Le symptôme ne se voit pas du côté des jobs — il se voit sur une
  * conversation qui se coupe à trois heures du matin, à l'heure de la purge.
  *
- * <p><b>Ce que cette classe ne fait pas, et qu'il faut savoir avant de déployer.</b>
- * Un planificateur dédié range les jobs ; il ne les protège pas d'eux-mêmes. Il
- * n'y a <b>aucun verrou distribué</b> dans ce dépôt : deux instances du service
- * exécuteraient chacune les quatorze méthodes, et doubleraient donc rappels,
- * SMS et bascule des créneaux récurrents. Le service doit rester à une seule
- * réplique jusqu'à la livraison de ShedLock (P-BA-04, lot 2, décision D4
- * option B). C'est un choix assumé et non un oubli : voir la note
- * d'exploitation qui l'accompagne.
+ * <p><b>Et un verrou en base par job (P-BA-04, lot 2, décision D4 option B).</b>
+ * Un planificateur dédié range les jobs ; il ne les protège pas d'eux-mêmes.
+ * Deux instances du service — le chevauchement de l'ancien et du nouveau
+ * conteneur pendant un déploiement, ou une seconde réplique — exécutaient
+ * chacune toutes les méthodes {@code @Scheduled}, et doublaient rappels, SMS et
+ * bascule des créneaux récurrents. Chaque méthode porte désormais un
+ * {@code @SchedulerLock} nommé, pris dans la table {@code shedlock} (V124) à
+ * l'heure de la base : une seule instance l'exécute.
+ *
+ * <p><b>Le verrou entoure l'exécution planifiée, pas la méthode</b>
+ * ({@code InterceptMode.PROXY_SCHEDULER}). Deux raisons. Il est pris <b>avant</b>
+ * la transaction des jobs qui en ouvrent une, et non dedans : un verrou écrit
+ * dans la transaction du job ne serait visible des autres instances qu'au
+ * commit, c'est-à-dire trop tard. Et un appel direct — un test qui déclenche
+ * {@code tick()} à la main — n'est pas verrouillé : sans cela, un tick de fond
+ * tombant au même instant ferait sauter l'appel du test, sans erreur.
+ *
+ * <p>Ce que le verrou ne rend pas encore possible : plusieurs répliques
+ * durables. Le limiteur de débit reste en mémoire, local à chaque instance
+ * (P-BS-08).
  *
  * @see AsyncConfig l'exécuteur des {@code @Async}, dont la javadoc raconte le
  *      même genre de mésaventure — un bean manquant, et Spring qui se rabat sur
  *      un choix que personne n'a fait
  */
 @Configuration
+@EnableSchedulerLock(
+    interceptMode = InterceptMode.PROXY_SCHEDULER,
+    defaultLockAtMostFor = SchedulingConfig.VERROU_AU_PLUS_PAR_DEFAUT,
+    // Proxy de classe : le bean reste un ThreadPoolTaskScheduler pour qui
+    // l'injecte par son type (métriques, tests), et pas une simple interface.
+    proxyTargetClass = true)
 @Slf4j
 public class SchedulingConfig implements SchedulingConfigurer {
+
+    /**
+     * La durée au bout de laquelle un verrou se libère seul si l'instance qui le
+     * tient est morte en cours de job.
+     *
+     * <p>Au-dessus de la durée normale de chaque job, sans quoi deux exécutions se
+     * chevauchent ; en dessous de sa période quand c'est possible, sans quoi une
+     * instance tuée fait sauter le passage suivant. Les jobs dont la période est
+     * plus courte le précisent sur leur annotation.
+     */
+    static final String VERROU_AU_PLUS_PAR_DEFAUT = "PT10M";
+
+    /**
+     * Le fournisseur de verrous : la table {@code shedlock}, à l'heure de la base.
+     *
+     * <p>{@code usingDbTime} et non l'horloge de la JVM : deux conteneurs dont les
+     * horloges diffèrent de quelques secondes comparent sinon deux heures
+     * différentes, et l'un peut croire expiré un verrou que l'autre tient.
+     */
+    @Bean
+    public LockProvider lockProvider(JdbcTemplate jdbcTemplate) {
+        return new JdbcTemplateLockProvider(JdbcTemplateLockProvider.Configuration.builder()
+            .withJdbcTemplate(jdbcTemplate)
+            .usingDbTime()
+            .build());
+    }
 
     /**
      * Le préfixe des fils, qui est la partie visible du correctif.

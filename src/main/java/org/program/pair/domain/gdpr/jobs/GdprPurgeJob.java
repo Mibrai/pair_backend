@@ -1,5 +1,6 @@
 package org.program.pair.domain.gdpr.jobs;
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.program.pair.shared.observabilite.ScheduledJobMetricsAspect;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -63,6 +64,7 @@ public class GdprPurgeJob {
      * tourne aujourd'hui qu'en une instance ; passer à deux avant P-BA-04 demande
      * d'éteindre ce job par la propriété.
      */
+    @SchedulerLock(name = "gdpr-purge-accounts", lockAtMostFor = "PT30M")
     @Scheduled(cron = "0 0 3 * * *")
     public void purgeInactiveAccounts() {
         if (!purgeActivee) {
@@ -86,6 +88,7 @@ public class GdprPurgeJob {
      * Purge old audit logs monthly (retention: 2 years)
      * GDPR Article 5.1.e: Storage limitation
      */
+    @SchedulerLock(name = "gdpr-purge-audit-logs", lockAtMostFor = "PT30M")
     @Scheduled(cron = "0 0 4 1 * *") // First day of month at 4 AM
     public void purgeOldAuditLogs() {
         log.info("Starting audit log purge job");

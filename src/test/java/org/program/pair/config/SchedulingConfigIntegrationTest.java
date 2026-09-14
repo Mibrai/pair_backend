@@ -9,6 +9,11 @@ import org.springframework.scheduling.annotation.ScheduledAnnotationBeanPostProc
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.scheduling.config.ScheduledTask;
 import org.springframework.scheduling.config.ScheduledTaskRegistrar;
+import org.springframework.scheduling.config.Task;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.core.annotation.AnnotatedElementUtils;
+import org.springframework.scheduling.support.ScheduledMethodRunnable;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.util.ClassUtils;
 
@@ -76,6 +81,7 @@ class SchedulingConfigIntegrationTest extends AbstractIntegrationTest {
     private static final int TACHES_PLANIFIEES_AU_12_09 = 14;
 
     @Autowired private ApplicationContext context;
+    @Autowired private net.javacrumbs.shedlock.core.LockProvider lockProvider;
 
     @Test
     void planificateurDesJobs_doitPorterLePrefixeJobEtQuatreFils_quandLeContexteEstDemarre() {
@@ -170,6 +176,108 @@ class SchedulingConfigIntegrationTest extends AbstractIntegrationTest {
     @Test
     void quartz_doitAvoirQuitteLeClasspath_quandLeStarterEstRetire() {
         assertThat(ClassUtils.isPresent("org.quartz.Scheduler", null)).isFalse();
+    }
+
+    /**
+     * Chaque méthode planifiée porte un verrou nommé, et aucun nom n'est pris
+     * deux fois (P-BA-04, lot 2).
+     *
+     * <p>Un job sans {@code @SchedulerLock} tournerait sur chaque instance ; deux
+     * jobs sous le même nom se bloqueraient l'un l'autre, et le second sauterait
+     * chaque passage où le premier s'exécute. Les deux défauts sont silencieux :
+     * seul ce test les voit.
+     *
+     * <p>Le parcours part des beans du contexte, classe cible comprise (un bean
+     * transactionnel est un proxy) : une méthode {@code @Scheduled} d'une classe
+     * jamais instanciée ne tourne pas, et n'a pas besoin de verrou.
+     */
+    @Test
+    void chaqueTachePlanifiee_doitPorterUnVerrouNomme_sansDoublon() {
+        java.util.Map<String, String> noms = new java.util.HashMap<>();
+        java.util.List<String> sansVerrou = new java.util.ArrayList<>();
+        java.util.Set<Class<?>> vues = new java.util.HashSet<>();
+
+        for (String nomDuBean : context.getBeanDefinitionNames()) {
+            Class<?> type = context.getType(nomDuBean);
+            if (type == null) {
+                continue;
+            }
+            Class<?> cible = ClassUtils.getUserClass(type);
+            if (!cible.getName().startsWith("org.program.pair.") || !vues.add(cible)) {
+                continue;
+            }
+            for (java.lang.reflect.Method methode : cible.getDeclaredMethods()) {
+                if (!AnnotatedElementUtils.hasAnnotation(methode, Scheduled.class)) {
+                    continue;
+                }
+                String qui = cible.getSimpleName() + "." + methode.getName();
+                SchedulerLock verrou = AnnotatedElementUtils.findMergedAnnotation(methode, SchedulerLock.class);
+                if (verrou == null) {
+                    sansVerrou.add(qui);
+                    continue;
+                }
+                String dejaPris = noms.put(verrou.name(), qui);
+                assertThat(dejaPris)
+                    .as("le verrou « %s » est porté par %s et par %s", verrou.name(), dejaPris, qui)
+                    .isNull();
+            }
+        }
+
+        assertThat(sansVerrou).as("tâches planifiées sans @SchedulerLock").isEmpty();
+        assertThat(noms).hasSizeGreaterThanOrEqualTo(TACHES_PLANIFIEES_AU_12_09);
+    }
+
+    /**
+     * Deux instances ne laissent passer qu'une exécution (P-BA-04, lot 2).
+     *
+     * <p>L'autre instance est simulée par ce qu'elle laisse en base : le verrou
+     * pris directement dans la table {@code shedlock}. La tâche est confiée au
+     * planificateur des jobs <b>sous la forme exacte que Spring 7 lui passe</b> —
+     * la méthode enveloppée par {@link Task}, qui la trace — parce que c'est
+     * cette enveloppe que le verrou doit savoir déballer : une tâche nue passerait
+     * le test et laisserait la production sans verrou. Verrou tenu, rien ne
+     * s'exécute ; verrou rendu, l'exécution a lieu.
+     */
+    @Test
+    void uneTacheDontLeVerrouEstTenuAilleurs_neDoitPasSExecuter() throws Exception {
+        TaskScheduler celuiQuiPlanifieLesJobs = registrar().getScheduler();
+        TacheVerrouillee tache = new TacheVerrouillee();
+        Runnable commeSpringLaPasse = new Task(new ScheduledMethodRunnable(
+            tache, TacheVerrouillee.class.getMethod("executer"))).getRunnable();
+
+        var tenuAilleurs = lockProvider.lock(new net.javacrumbs.shedlock.core.LockConfiguration(
+            Instant.now(), TacheVerrouillee.NOM, java.time.Duration.ofMinutes(1), java.time.Duration.ZERO));
+        assertThat(tenuAilleurs).as("le verrou de test doit être libre au départ").isPresent();
+
+        try {
+            celuiQuiPlanifieLesJobs.schedule(commeSpringLaPasse, Instant.now());
+            // Rien à attendre quand l'exécution est sautée : on laisse au pool le
+            // temps de la prendre, puis on constate qu'elle n'a pas eu lieu.
+            Thread.sleep(2_000);
+            assertThat(tache.executions.get())
+                .as("verrou tenu par une autre instance : l'exécution est sautée").isZero();
+        } finally {
+            tenuAilleurs.get().unlock();
+        }
+
+        celuiQuiPlanifieLesJobs.schedule(commeSpringLaPasse, Instant.now());
+        long limite = System.currentTimeMillis() + 10_000;
+        while (tache.executions.get() == 0 && System.currentTimeMillis() < limite) {
+            Thread.sleep(50);
+        }
+        assertThat(tache.executions.get()).as("verrou rendu : l'exécution a lieu").isEqualTo(1);
+    }
+
+    /** Une tâche de test : elle compte ses exécutions, sous un nom de verrou à elle. */
+    public static class TacheVerrouillee {
+        static final String NOM = "test-scheduling-config-verrou";
+        final java.util.concurrent.atomic.AtomicInteger executions =
+            new java.util.concurrent.atomic.AtomicInteger();
+
+        @SchedulerLock(name = NOM, lockAtMostFor = "PT1M")
+        public void executer() {
+            executions.incrementAndGet();
+        }
     }
 
     /**

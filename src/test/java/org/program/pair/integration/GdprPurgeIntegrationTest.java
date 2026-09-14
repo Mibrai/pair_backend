@@ -94,12 +94,20 @@ class GdprPurgeIntegrationTest extends AbstractIntegrationTest {
     /** Les seules lignes {@code users} que cette classe a le droit de toucher. */
     private final List<UUID> comptesJetables = new ArrayList<>();
 
+    /** Les conversations créées ici : elles survivent à leurs membres, il faut les retirer. */
+    private final List<UUID> conversationsJetables = new ArrayList<>();
+
     @AfterEach
     void nettoyerLesComptesJetables() {
         // Le blocage d'abord : sa clé en RESTRICT empêcherait la suppression du
         // compte qu'elle retient, et le laisserait désactivé et antidaté dans la
         // base pour toute la suite.
         jdbcTemplate.execute("DROP SCHEMA IF EXISTS " + SCHEMA_DE_BLOCAGE + " CASCADE");
+
+        for (UUID id : conversationsJetables) {
+            jdbcTemplate.update("DELETE FROM conversations WHERE id = ?", id);
+        }
+        conversationsJetables.clear();
 
         for (UUID id : comptesJetables) {
             jdbcTemplate.update("DELETE FROM users WHERE id = ?", id);
@@ -158,6 +166,89 @@ class GdprPurgeIntegrationTest extends AbstractIntegrationTest {
             "SELECT count(*) FROM schedules WHERE id = ?", Integer.class, creneau))
             .as("le créneau de l'hôte reste, il n'appartenait pas au compte purgé")
             .isEqualTo(1);
+    }
+
+    /**
+     * Avoir écrit ne rend plus un compte inaffaçable — et l'autre personne relit
+     * toujours sa conversation.
+     *
+     * <p><b>Le défaut.</b> L'effacement anonymise ce qui doit survivre au compte
+     * en posant son auteur à {@code null} : messages, avis, recommandations. Les
+     * trois colonnes étaient {@code NOT NULL} depuis V6 et V7, si bien que la
+     * purge échouait pour toute personne qui avait envoyé un seul message —
+     * presque tout compte réel. V123 les rend nullables.
+     *
+     * <p><b>La seconde moitié est la conversation de l'autre.</b> Rendre la
+     * colonne nullable sans apprendre à la lecture un expéditeur absent aurait
+     * fait tomber le fil de l'hôte en erreur : la dernière assertion passe par la
+     * route que l'app appelle, pas par la base.
+     */
+    @Test
+    void unePersonneQuiAEcrit_doitEtrePurgee_etSonMessageRestAnonymeDansLeFilDeLAutre() {
+        Compte hote = inscrire("purge-ecrit-hote");
+        Compte auteur = inscrire("purge-ecrit-auteur");
+        UUID creneau = creerUnCreneauDe(hote.id());
+        UUID programme = UUID.fromString(jdbcTemplate.queryForObject(
+            "SELECT program_id::text FROM schedules WHERE id = ?", String.class, creneau));
+
+        UUID conversation = UUID.randomUUID();
+        conversationsJetables.add(conversation);
+        jdbcTemplate.update("INSERT INTO conversations (id, type) VALUES (?, 'DIRECT')", conversation);
+        jdbcTemplate.update("""
+            INSERT INTO conversation_members (conversation_id, user_id) VALUES (?, ?), (?, ?)
+            """, conversation, hote.id(), conversation, auteur.id());
+        UUID message = UUID.randomUUID();
+        jdbcTemplate.update("""
+            INSERT INTO messages (id, conversation_id, sender_id, content, location_lat,
+                                  location_lng, location_expires_at)
+            VALUES (?, ?, ?, 'On se retrouve devant le portail', 48.85, 2.35, ?)
+            """, message, conversation, auteur.id(),
+            Timestamp.from(Instant.now().plus(1, ChronoUnit.HOURS)));
+        UUID avis = UUID.randomUUID();
+        jdbcTemplate.update("""
+            INSERT INTO reviews (id, program_id, reviewer_id, score, comment)
+            VALUES (?, ?, ?, 4, 'Séance agréable et bien organisée, merci beaucoup')
+            """, avis, programme, auteur.id());
+        UUID recommandation = UUID.randomUUID();
+        jdbcTemplate.update("""
+            INSERT INTO peer_recommendations (id, recommender_id, recommended_id, comment)
+            VALUES (?, ?, ?, 'Hôte ponctuel')
+            """, recommandation, auteur.id(), hote.id());
+
+        demanderLaSuppression(auteur);
+        antidaterLaDemande(auteur.id(), 40);
+
+        gdprService.purgeInactiveAccounts();
+
+        assertThat(userRepository.findById(auteur.id()))
+            .as("un compte qui a écrit est effacé comme les autres")
+            .isEmpty();
+
+        var ligne = jdbcTemplate.queryForMap(
+            "SELECT sender_id, content, location_lat, location_expires_at FROM messages WHERE id = ?",
+            message);
+        assertThat(ligne.get("sender_id")).as("le message n'a plus d'auteur").isNull();
+        assertThat(ligne.get("content")).isEqualTo("[Message supprimé]");
+        assertThat(ligne.get("location_lat")).as("la position partagée part avec le texte").isNull();
+        assertThat(ligne.get("location_expires_at")).isNull();
+
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT reviewer_id::text FROM reviews WHERE id = ?", String.class, avis))
+            .as("l'avis reste sur le programme, sans auteur").isNull();
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT recommender_id::text FROM peer_recommendations WHERE id = ?",
+            String.class, recommandation))
+            .as("la recommandation reste, sans auteur").isNull();
+
+        webTestClient.get()
+            .uri("/api/conversations/{id}/messages", conversation)
+            .headers(headers -> headers.setBearerAuth(hote.jeton()))
+            .exchange()
+            .expectStatus().isOk()
+            .expectBody()
+            .jsonPath("$[0].id").isEqualTo(message.toString())
+            .jsonPath("$[0].senderId").doesNotExist()
+            .jsonPath("$[0].content").isEqualTo("[Message supprimé]");
     }
 
     /**
