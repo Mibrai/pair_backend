@@ -44,8 +44,12 @@ class TypoToleranceSearchIntegrationTest extends AbstractIntegrationTest {
     private static final UUID RUNNING_ACTIVITY_ID =
         UUID.fromString("20000000-0000-0000-0000-000000000001");
 
-    private static final double LAT = 48.8566;
-    private static final double LNG = 2.3522;
+    // Décor à soi : Bordeaux. À Paris, point partagé par d'autres classes et avec
+    // l'activité que beaucoup d'entre elles prennent par défaut, la recherche
+    // (20 programmes au plus) pouvait couper celui du test selon l'ordre des
+    // classes. Ici, il est le plus proche du chercheur, donc en tête.
+    private static final double LAT = 44.8378;
+    private static final double LNG = -0.5792;
 
     @MockitoBean
     LocalEmbeddingService embeddingService;
