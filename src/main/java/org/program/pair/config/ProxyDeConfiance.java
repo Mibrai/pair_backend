@@ -12,10 +12,36 @@ import org.springframework.context.annotation.Configuration;
  * L'adresse du client, telle qu'un proxy <b>de confiance</b> l'établit — et non
  * telle que le client l'annonce.
  *
- * <p><b>Inactive à dessein.</b> Aucun bean n'est créé tant que
- * {@code pair.proxy-de-confiance.plages} n'est pas posée, et elle ne l'est nulle
- * part : le comportement actuel est conservé à l'octet. Ce qui manque n'est pas du
- * code, c'est un <b>relevé d'exploitation</b> — voir plus bas.
+ * <p><b>Inactive, et elle doit le rester sur Railway.</b> Aucun bean n'est créé
+ * tant que {@code pair.proxy-de-confiance.plages} n'est pas posée. Le relevé de
+ * l'étape 1 de la fiche P-BS-08 a été fait le 14/09/2026, et il rend cette
+ * classe inutile sur la plateforme actuelle — voir « Le relevé du 14/09 »
+ * ci-dessous avant d'y toucher.
+ *
+ * <h2>Le relevé du 14/09/2026</h2>
+ *
+ * <p>Deux connexions de diagnostic, chacune avec un {@code X-Forwarded-For}
+ * inventé, sur le domaine technique (port 8080) et sur {@code lien.meetdo.fun}
+ * (port 8091). Ce que Tomcat a reçu, avant tout filtre :
+ *
+ * <ul>
+ *   <li>pair TCP en {@code 100.64.0.x} (plage partagée RFC 6598) ;</li>
+ *   <li>{@code X-Forwarded-For: <IP réelle du client>, <IP publique de l'arête>},
+ *       <b>sans la valeur inventée</b> : l'arête Railway <b>remplace</b>
+ *       l'en-tête reçu, elle n'y ajoute pas ;</li>
+ *   <li>{@code X-Real-Ip: <IP réelle du client>}, {@code X-Forwarded-Proto: https}.</li>
+ * </ul>
+ *
+ * <p><b>Conséquence : le défaut (a) de P-BS-08 n'existe pas sur Railway.</b>
+ * {@code forward-headers-strategy=framework} retient la première valeur, qui est
+ * l'IP du client écrite par l'arête, jamais une valeur écrite par le client.
+ *
+ * <p><b>Et la valve serait fausse.</b> Elle lit l'en-tête de droite à gauche et
+ * s'arrête au premier bond hors des plages de confiance. Or le dernier bond est
+ * l'IP <b>publique</b> de l'arête, hors de toute plage privée : avec
+ * {@link #PLAGES_PRIVEES_RFC1918_ET_CGNAT}, chaque requête serait comptée à
+ * l'adresse de l'arête, commune à tout le monde — l'effondrement en 429 décrit
+ * plus bas. À ne poser que si la plateforme change, et après un nouveau relevé.
  *
  * <h2>Le défaut que cette classe existe pour refermer</h2>
  *
