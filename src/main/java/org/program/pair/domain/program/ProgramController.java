@@ -224,19 +224,19 @@ public class ProgramController {
     /**
      * L'adresse publique de ce programme, créée à la première demande.
      *
-     * <p>Réservée à l'organisateur, là où celle d'un créneau s'ouvre à tous ses
-     * participants : partager une séance qu'on a rejointe est un geste ordinaire,
-     * mais un programme n'appartient qu'à son auteur, et c'est lui qui décide
-     * s'il existe sur le web ouvert.
-     *
-     * <p>{@code 404} pour quiconque d'autre, jamais {@code 403}.
+     * <p>Voir {@code PublicProgramService.shareLink} : ouverte à tout compte
+     * quand le programme est publiquement visible, {@code 404} sinon, jamais
+     * {@code 403}.
      */
     @GetMapping("/{programId}/share-link")
     @io.swagger.v3.oas.annotations.Operation(
         summary = "L'adresse publique de ce programme.",
         description = "Créée à la première demande — un programme que personne n'a jamais "
             + "partagé n'a pas besoin d'adresse publique. pageUrl est à lire tel quel, "
-            + "sans le recomposer.")
+            + "sans le recomposer. Rendue à tout compte connecté quand le programme est "
+            + "publiquement visible : partage ouvert par son auteur, programme public et actif, "
+            + "activité montrée sur la carte, auteur actif. 404 sinon, et 404 à un compte bloqué "
+            + "avec l'auteur dans un sens ou dans l'autre. L'auteur l'obtient dans tous les cas.")
     public org.program.pair.domain.publicslot.dto.PublicShareLinkDto shareLink(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID programId) {

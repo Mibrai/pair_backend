@@ -66,14 +66,57 @@ class PublicProgramPageIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
-    void leLien_doitEtreReserveALorganisateur() {
+    void leLien_doitEtreRenduATous_quandLeProgrammeEstVisible() {
+        // Demande mobile partage du 14/09 : réservé à l'organisateur, le lien
+        // manquait à tout autre compte, dont le partage partait en meetdo://.
         String host = registerAndLogin("prog-c");
         UUID programId = activeProgram(host, "Course du matin");
-        String intruder = registerAndLogin("prog-c2");
+        String lecteur = registerAndLogin("prog-c2");
+
+        PublicShareLinkDto lien = shareLink(lecteur, programId);
+
+        assertThat(lien.token()).isNotBlank();
+        assertThat(lien.shareable()).isTrue();
+        // Le même jeton que celui de l'organisateur : jamais un second.
+        assertThat(shareLink(host, programId).token()).isEqualTo(lien.token());
+    }
+
+    @Test
+    void unPartageFermeParLAuteur_doitResterIntrouvablePourLesAutres() {
+        String host = registerAndLogin("prog-c3");
+        UUID programId = activeProgram(host, "Course du soir");
+        String lecteur = registerAndLogin("prog-c4");
+
+        setShareable(host, programId, false);
 
         webTestClient.get().uri("/api/programs/{id}/share-link", programId)
-            .headers(h -> h.setBearerAuth(intruder))
+            .headers(h -> h.setBearerAuth(lecteur))
             .exchange().expectStatus().isNotFound();
+        // L'auteur garde son lien : c'est son écran de réglage qui le lit.
+        assertThat(shareLink(host, programId).shareable()).isFalse();
+    }
+
+    @Test
+    void unCompteBloqueAvecLAuteur_neDoitPasObtenirLeLien() {
+        String host = registerAndLogin("prog-c5");
+        UUID programId = activeProgram(host, "Course du midi");
+        String bloque = registerAndLogin("prog-c6");
+
+        webTestClient.post().uri("/api/users/{id}/block", idDe(bloque))
+            .headers(h -> h.setBearerAuth(host))
+            .exchange().expectStatus().isNoContent();
+
+        webTestClient.get().uri("/api/programs/{id}/share-link", programId)
+            .headers(h -> h.setBearerAuth(bloque))
+            .exchange().expectStatus().isNotFound();
+    }
+
+    private UUID idDe(String token) {
+        Map<?, ?> moi = webTestClient.get().uri("/api/users/me")
+            .headers(h -> h.setBearerAuth(token))
+            .exchange().expectStatus().isOk()
+            .expectBody(Map.class).returnResult().getResponseBody();
+        return UUID.fromString(String.valueOf(moi.get("id")));
     }
 
     // — la page —

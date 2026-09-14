@@ -55,6 +55,7 @@ public class PublicProgramService {
     private final ProgramRepository programRepository;
     private final ScheduleRepository scheduleRepository;
     private final UserProgramRepository userProgramRepository;
+    private final org.program.pair.domain.block.BlockFilterService blockFilterService;
 
     @Value("${pair.public.base-url:https://lien.meetdo.fun}")
     private String publicBaseUrl;
@@ -62,17 +63,34 @@ public class PublicProgramService {
     /**
      * L'adresse publique du programme, créée si elle n'existe pas encore.
      *
-     * <p>Réservée à l'organisateur. Pour un créneau, la fabrication est ouverte
-     * aux participants — partager une séance qu'on a rejointe est un geste
-     * ordinaire. Un programme n'a pas d'équivalent : il n'appartient qu'à son
-     * auteur, et c'est son auteur qui décide s'il existe sur le web ouvert.
+     * <p><b>Ouverte à tout compte depuis le 14/09</b> (demande mobile partage),
+     * dès que le programme est publiquement visible. Elle était réservée à
+     * l'organisateur : tout autre compte recevait 404, et son partage partait en
+     * {@code meetdo://programs/…}, un texte mort dans une messagerie.
+     *
+     * <p><b>L'auteur décide toujours</b> s'il existe sur le web ouvert, par
+     * {@code isPubliclyShareable}, que {@link #publiclyVisible} lit : un partage
+     * fermé rend 404 à tout autre que lui. Créer le jeton à la demande d'un tiers
+     * ne publie rien de plus — la page {@code /p/} applique les mêmes conditions,
+     * et le jeton n'est jamais régénéré.
+     *
+     * <p>Un compte bloqué avec l'organisateur, dans un sens ou dans l'autre,
+     * reçoit 404, comme sur le profil, les avis et la fiche d'un créneau. La page
+     * publique reste lisible sans compte ; la route authentifiée n'a pas à lui
+     * fabriquer le lien.
+     *
+     * <p>L'organisateur, lui, obtient le lien dans tous les cas, partage fermé
+     * compris : c'est son écran de réglage qui le lit.
      */
     @Transactional
     public PublicShareLinkDto shareLink(UUID userId, UUID programId) {
         Program program = programRepository.findById(programId)
             .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_PROGRAMME_INTROUVABLE", "Programme introuvable."));
 
-        if (!userId.equals(hostIdOf(program))) {
+        UUID hostId = hostIdOf(program);
+        boolean auteur = userId.equals(hostId);
+        if (!auteur && (!publiclyVisible(program)
+                || (hostId != null && blockFilterService.blocked(userId, hostId)))) {
             throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_PROGRAMME_INTROUVABLE", "Programme introuvable.");
         }
 
