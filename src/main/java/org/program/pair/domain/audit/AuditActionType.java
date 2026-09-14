@@ -45,6 +45,9 @@ public enum AuditActionType {
     LOCATION_UPDATE,
     VISIBILITY_CHANGE,
     PREFERENCE_UPDATE,
+    // « Tout couper » (POST /users/me/visibility/cut-all) : un événement de
+    // compte, qui n'appartient à aucune veille. Relu par GET /users/me/visibility.
+    VISIBILITY_CUT_ALL,
 
     // Parcours d'accueil. Passer l'accueil est permis — la spec le dit
     // explicitement — mais tracé : c'est la seule façon de savoir plus tard si

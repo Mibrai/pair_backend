@@ -174,11 +174,21 @@ public class MapService {
         // Zoom 16-20: minimal/no clustering
         double gridSize = calculateGridSize(zoom);
 
+        // Le flou s'applique AVANT le regroupement, à la cellule comme aux
+        // bornes : un groupe d'une seule personne rendait sa position exacte à
+        // 11 m près, et la cellule d'un zoom élevé en disait presque autant
+        // (tracabilite, 14/09/2026 §5.5).
+        Map<User, double[]> floues = new java.util.LinkedHashMap<>();
+        for (User user : users) {
+            floues.put(user, applyBlur(user.getLocation().getY(), user.getLocation().getX(),
+                user.getBlurRadiusM()));
+        }
+
         // Group users by grid cell
         Map<String, List<User>> grid = users.stream()
             .collect(Collectors.groupingBy(user -> {
-                double lat = user.getLocation().getY();
-                double lng = user.getLocation().getX();
+                double lat = floues.get(user)[0];
+                double lng = floues.get(user)[1];
                 int gridLat = (int) Math.floor(lat / gridSize);
                 int gridLng = (int) Math.floor(lng / gridSize);
                 return gridLat + "," + gridLng;
@@ -190,7 +200,7 @@ public class MapService {
                 List<User> cellUsers = entry.getValue();
 
                 List<double[]> points = cellUsers.stream()
-                    .map(u -> new double[]{u.getLocation().getY(), u.getLocation().getX()})
+                    .map(floues::get)
                     .toList();
 
                 // Determine cluster type based on size
@@ -297,6 +307,10 @@ public class MapService {
      * position réelle. Le point peut alors dépasser le rayon demandé de ce pas,
      * ce qui est sans conséquence : s'éloigner ne dévoile rien.
      */
+    private double[] floue(User user) {
+        return applyBlur(user.getLocation().getY(), user.getLocation().getX(), user.getBlurRadiusM());
+    }
+
     double[] applyBlur(double lat, double lng, int radiusMeters) {
         double radiusDeg = radiusMeters / 111320.0;
         double angle = random.nextDouble() * 2 * Math.PI;
@@ -523,6 +537,10 @@ public class MapService {
                     .map(ua -> {
                         User user = ua.getUser();
                         Activity activity = ua.getActivity();
+                        // La position d'une personne, donc floutée comme sur
+                        // /map/users : elle partait telle quelle (§5.5).
+                        double[] floue = applyBlur(user.getLocation().getY(),
+                            user.getLocation().getX(), user.getBlurRadiusM());
                         return new MapActivityDto(
                             activity.getId(),
                             activity.getName(),
@@ -530,8 +548,8 @@ public class MapService {
                             activity.getDescription(),
                             activity.getCategory() != null ? activity.getCategory().getName() : null,
                             activity.getCategory() != null ? activity.getCategory().getColorRamp() : null,
-                            user.getLocation().getY(),
-                            user.getLocation().getX()
+                            floue[0],
+                            floue[1]
                         );
                     })
                     .toList();
@@ -548,6 +566,7 @@ public class MapService {
                         UserActivity userActivity = program.getUserActivity();
                         User organizer = userActivity.getUser();
                         Activity activity = userActivity.getActivity();
+                        double[] floue = floue(organizer);
                         long enrollmentCount = userProgramRepository
                             .countActiveParticipantsByProgramId(program.getId());
 
@@ -560,8 +579,9 @@ public class MapService {
                                 ? activity.getCategory().getColorRamp() : null,
                             null,  // placeName (from schedule)
                             null,  // addressPublic (from schedule)
-                            organizer.getLocation().getY(),
-                            organizer.getLocation().getX(),
+                            // Le domicile déclaré de l'organisateur, flouté (§5.5).
+                            floue[0],
+                            floue[1],
                             null,  // startsAt (from schedule)
                             null,  // endsAt (from schedule)
                             null,  // maxParticipants (from schedule)

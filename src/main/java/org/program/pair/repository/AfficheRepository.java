@@ -4,6 +4,7 @@ import org.program.pair.domain.affiche.Affiche;
 import org.program.pair.domain.affiche.AfficheAudience;
 import org.program.pair.domain.block.BlockSql;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -231,4 +232,18 @@ public interface AfficheRepository extends JpaRepository<Affiche, UUID> {
         @Param("viewerId") UUID viewerId,
         @Param("since") Instant since,
         @Param("limit") int limit);
+
+    /**
+     * Ferme toutes les affiches d'une personne, sans toucher {@code publishedAt} :
+     * une fermeture n'est pas une publication (voir {@code AfficheAudience.openness}).
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE Affiche a SET a.audience = org.program.pair.domain.affiche.AfficheAudience.NOBODY, "
+        + "a.updatedAt = :now WHERE a.user.id = :userId "
+        + "AND a.audience <> org.program.pair.domain.affiche.AfficheAudience.NOBODY")
+    int fermerToutes(@Param("userId") UUID userId, @Param("now") Instant now);
+
+    @Query("SELECT COUNT(a) > 0 FROM Affiche a WHERE a.user.id = :userId "
+        + "AND a.audience <> org.program.pair.domain.affiche.AfficheAudience.NOBODY")
+    boolean existeOuverte(@Param("userId") UUID userId);
 }

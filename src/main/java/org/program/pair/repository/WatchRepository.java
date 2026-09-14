@@ -3,6 +3,7 @@ package org.program.pair.repository;
 import org.program.pair.domain.watch.Watch;
 import org.program.pair.domain.watch.WatchState;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -184,4 +185,21 @@ public interface WatchRepository extends JpaRepository<Watch, UUID> {
         @Param("states") Collection<WatchState> states,
         @Param("depuis") Instant depuis,
         @Param("jusqua") Instant jusqua);
+
+    /**
+     * Révoque tous les liens publics encore ouvrables d'une personne : ceux que
+     * {@code PublicWatchService.ouvrable} servirait — non révoqués, et veille non
+     * close ou close depuis moins de {@code closAvant}.
+     */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE Watch w SET w.publicTokenRevokedAt = :now WHERE w.userId = :userId "
+        + "AND w.publicToken IS NOT NULL AND w.publicTokenRevokedAt IS NULL "
+        + "AND (w.closedAt IS NULL OR w.closedAt >= :closAvant)")
+    int revoquerLiensOuvrables(@Param("userId") UUID userId, @Param("now") Instant now,
+                               @Param("closAvant") Instant closAvant);
+
+    @Query("SELECT COUNT(w) > 0 FROM Watch w WHERE w.userId = :userId "
+        + "AND w.publicToken IS NOT NULL AND w.publicTokenRevokedAt IS NULL "
+        + "AND (w.closedAt IS NULL OR w.closedAt >= :closAvant)")
+    boolean existeLienOuvrable(@Param("userId") UUID userId, @Param("closAvant") Instant closAvant);
 }

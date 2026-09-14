@@ -64,11 +64,13 @@ public record WatchDto(
     Instant closedAt,
     Instant createdAt,
 
-    @Schema(description = "Jeton du lien public de statut. Null tant que l'alerte n'est pas partie. "
-        + "Son absence — jamais l'état — dit qu'il n'y a pas de lien à montrer.")
+    @Schema(description = "Jeton du lien public de statut. Null tant que l'alerte n'est pas partie, "
+        + "et null de nouveau une fois le lien révoqué (voir publicLinkRevokedAt). Son absence — "
+        + "jamais l'état — dit qu'il n'y a pas de lien à montrer.")
     String publicToken,
 
-    @Schema(description = "URL complète de la page de statut publique, si le jeton existe.")
+    @Schema(description = "URL complète de la page de statut publique, si le jeton existe et "
+        + "n'est pas révoqué.")
     String publicStatusUrl,
 
     @Schema(description = "Quand le contact a cliqué « j'ai vu ». Null sinon.")
@@ -86,7 +88,12 @@ public record WatchDto(
     @Schema(description = "Reports encore possibles (P-BL-22) : 3 au départ, plafonnés aussi à "
         + "deux heures cumulées. À 0, le bouton « reporter » se grise — le serveur refuse "
         + "de toute façon (409 WATCH_SNOOZE_LIMIT).")
-    int snoozesLeft
+    int snoozesLeft,
+
+    @Schema(description = "Quand le lien public a été révoqué — par POST /watches/{id}/revoke-link "
+        + "ou par POST /users/me/visibility/cut-all. Null tant qu'il ne l'est pas. Une fois "
+        + "révoqué, publicToken et publicStatusUrl valent null : la page rend 404.")
+    Instant publicLinkRevokedAt
 ) {
 
     /**
@@ -95,7 +102,9 @@ public record WatchDto(
      *                      {@code WatchService.deliveryOf}).
      */
     public static WatchDto from(Watch w, String publicBaseUrl, String alertDelivery) {
-        String token = w.getPublicToken();
+        // Un lien révoqué ne se sert plus : la page rend 404, et la montrer
+        // laisserait croire qu'elle s'ouvre (tracabilite, 14/09/2026 §3.4).
+        String token = w.getPublicTokenRevokedAt() == null ? w.getPublicToken() : null;
         String url = token == null ? null : publicBaseUrl + "/public/watch/" + token;
         return new WatchDto(
             w.getId(),
@@ -117,6 +126,7 @@ public record WatchDto(
             w.getGuardianSeenAt(),
             w.getGuardianCalledAt(),
             alertDelivery,
-            org.program.pair.domain.watch.WatchService.reportsRestants(w));
+            org.program.pair.domain.watch.WatchService.reportsRestants(w),
+            w.getPublicTokenRevokedAt());
     }
 }

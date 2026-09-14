@@ -140,6 +140,37 @@ public interface MessageRepository extends JpaRepository<Message, UUID> {
     long countUnreadByUserId(@Param("userId") UUID userId);
 
     /**
+     * Les partages de position encore ouverts d'une personne : un point non échu,
+     * ou un message texte porteur du marqueur de position envoyé depuis
+     * {@code depuis}. Voir {@code ChatService.echoirPartagesDePosition}.
+     */
+    @Query("""
+        SELECT m FROM Message m
+         WHERE m.sender.id = :senderId
+           AND m.deletedAt IS NULL
+           AND (m.locationExpiresAt > :now
+                OR (m.sentAt > :depuis AND LOCATE(:marqueur, m.content) > 0))
+        """)
+    List<Message> findPartagesOuverts(@Param("senderId") UUID senderId,
+                                      @Param("now") Instant now,
+                                      @Param("depuis") Instant depuis,
+                                      @Param("marqueur") String marqueur);
+
+    @Query("""
+        SELECT m FROM Message m
+         WHERE m.sender.id = :senderId
+           AND m.conversation.id = :conversationId
+           AND m.deletedAt IS NULL
+           AND (m.locationExpiresAt > :now
+                OR (m.sentAt > :depuis AND LOCATE(:marqueur, m.content) > 0))
+        """)
+    List<Message> findPartagesOuvertsDansLeFil(@Param("senderId") UUID senderId,
+                                               @Param("conversationId") UUID conversationId,
+                                               @Param("now") Instant now,
+                                               @Param("depuis") Instant depuis,
+                                               @Param("marqueur") String marqueur);
+
+    /**
      * Efface les coordonnées des partages de position échus.
      *
      * <p>Ne touche ni au message ni à son contenu : le fil garde la trace qu'une

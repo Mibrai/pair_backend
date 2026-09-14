@@ -20,6 +20,9 @@ public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
      */
     Page<AuditLog> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
 
+    /** Les derniers événements d'un type pour une personne — le journal des coupures. */
+    List<AuditLog> findTop10ByUserIdAndActionTypeOrderByCreatedAtDesc(UUID userId, AuditActionType actionType);
+
     /**
      * Find audit logs by action type
      */

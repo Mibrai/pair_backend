@@ -35,7 +35,7 @@ import java.time.Instant;
 public class PublicWatchService {
 
     /** Combien de temps la page reste lisible après la clôture. */
-    private static final Duration APRES_CLOTURE = Duration.ofHours(24);
+    public static final Duration APRES_CLOTURE = Duration.ofHours(24);
 
     private final WatchRepository watchRepository;
     private final WatchEventRepository eventRepository;

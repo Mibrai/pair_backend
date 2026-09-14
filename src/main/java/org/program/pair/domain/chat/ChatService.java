@@ -1200,9 +1200,13 @@ public class ChatService {
             throw new ValidationException(ErrorCode.VALIDATION_ERROR, "REFUS_MESSAGE_DEJA_SUPPRIME", "Message déjà supprimé.");
         }
 
-        // 2. Soft delete
+        // 2. Soft delete. Le point d'un partage de position part avec le
+        // message : sans cela, un partage « supprimé » restait servi par
+        // toMessageDto jusqu'à son échéance (demande mobile du 14/09/2026,
+        // tracabilite §2.6 a). Le texte, lien de carte compris, est remplacé.
         message.setDeletedAt(Instant.now());
-        message.setContent("[Message supprimé]");
+        message.setContent(CONTENU_SUPPRIME);
+        effacerPoint(message);
         messageRepository.save(message);
 
         // 3. Broadcast deletion via WebSocket
@@ -1216,6 +1220,77 @@ public class ChatService {
                 messageId
             );
         }
+    }
+
+    /**
+     * Le marqueur que l'app écrit dans un message porteur de position
+     * ({@code LivePositionShare.encode} : un lien de carte, puis
+     * {@code [meetdo:pos v1 lat=… lng=… exp=…]}). L'app n'appelle pas la route
+     * {@code /location} : c'est par ce marqueur, et par lui seul, que le serveur
+     * reconnaît une position envoyée en texte.
+     */
+    static final String MARQUEUR_POSITION = "[meetdo:pos v1 ";
+
+    /** La durée maximale d'un partage, côté app comme côté route : trente minutes. */
+    private static final java.time.Duration DUREE_PARTAGE_MAX = java.time.Duration.ofMinutes(MAX_LOCATION_SHARE_MINUTES);
+
+    private static final String CONTENU_SUPPRIME = "[Message supprimé]";
+
+    /**
+     * Met fin, maintenant, à tous les partages de position encore ouverts de
+     * {@code senderId} — dans un seul fil si {@code conversationId} est donné.
+     *
+     * <p>Deux formes de partage, deux gestes :
+     * <ul>
+     *   <li>un point posé par {@code POST /conversations/{id}/location} et non
+     *       échu : ses coordonnées et son échéance sont effacées, le message
+     *       reste ;</li>
+     *   <li>un message texte porteur du {@link #MARQUEUR_POSITION}, envoyé depuis
+     *       moins de trente minutes : il est traité comme une suppression — le
+     *       contenu, lien de carte compris, est remplacé.</li>
+     * </ul>
+     * Chaque message touché est rediffusé sur {@code /queue/messages.edited} à
+     * tous les membres du fil, blocage compris : c'est un retrait, il ne dit rien
+     * de neuf à personne.
+     *
+     * <p>Sert à « tout couper » ({@code VisibilityService}) et au blocage
+     * ({@code ChatBlockEffects}). Une push déjà remise ne se rappelle pas.
+     */
+    public void echoirPartagesDePosition(UUID senderId, UUID conversationId) {
+        Instant now = Instant.now();
+        List<Message> ouverts = conversationId == null
+            ? messageRepository.findPartagesOuverts(senderId, now, now.minus(DUREE_PARTAGE_MAX), MARQUEUR_POSITION)
+            : messageRepository.findPartagesOuvertsDansLeFil(senderId, conversationId, now,
+                now.minus(DUREE_PARTAGE_MAX), MARQUEUR_POSITION);
+
+        for (Message message : ouverts) {
+            if (message.getContent() != null && message.getContent().contains(MARQUEUR_POSITION)) {
+                message.setDeletedAt(now);
+                message.setContent(CONTENU_SUPPRIME);
+            }
+            effacerPoint(message);
+            Message enregistre = messageRepository.save(message);
+
+            MessageDto dto = toMessageDto(enregistre);
+            for (UUID memberId : conversationMemberRepository
+                    .findUserIdsByConversationId(enregistre.getConversation().getId())) {
+                messagingTemplate.convertAndSendToUser(memberId.toString(), "/queue/messages.edited", dto);
+            }
+        }
+    }
+
+    /** Vrai s'il reste à {@code senderId} un partage que {@link #echoirPartagesDePosition} couperait. */
+    @Transactional(readOnly = true)
+    public boolean aDesPartagesDePositionOuverts(UUID senderId) {
+        Instant now = Instant.now();
+        return !messageRepository.findPartagesOuverts(senderId, now, now.minus(DUREE_PARTAGE_MAX),
+            MARQUEUR_POSITION).isEmpty();
+    }
+
+    private static void effacerPoint(Message message) {
+        message.setLocationLat(null);
+        message.setLocationLng(null);
+        message.setLocationExpiresAt(null);
     }
 
     public void markAllAsRead(UUID userId, UUID conversationId) {
