@@ -299,6 +299,27 @@ class ObservabiliteConfigurationTest {
             .contains("-Duser.timezone=UTC");
     }
 
+    /**
+     * Le sha du commit atteint Maven : sans {@code ARG}, une construction Docker ne
+     * transmet pas la variable de la plateforme à {@code RUN}, et
+     * {@code /actuator/info} rendait {@code "commit":"local"} sur chaque
+     * déploiement — relevé par l'équipe mobile le 02/09, toujours vrai le 14/09.
+     * Le profil du pom existait ; c'est cette ligne qui manquait.
+     */
+    @Test
+    void laConstruction_doitRecevoirLeShaDuCommit_avantLePackage() throws IOException {
+        String dockerfile = Files.readString(Path.of("Dockerfile"));
+        int arg = dockerfile.indexOf("ARG RAILWAY_GIT_COMMIT_SHA");
+        int packageMaven = dockerfile.indexOf("mvnw clean package");
+        int etapeExecution = dockerfile.indexOf("FROM ", dockerfile.indexOf("FROM ") + 1);
+
+        assertThat(arg).as("ARG RAILWAY_GIT_COMMIT_SHA déclaré").isNotNegative();
+        assertThat(arg)
+            .as("déclaré avant le package Maven, dans l'étape de construction")
+            .isLessThan(packageMaven)
+            .isLessThan(etapeExecution);
+    }
+
     // ------------------------------------------------------------------ outils
 
     private static JsonNode railwayJson() throws IOException {

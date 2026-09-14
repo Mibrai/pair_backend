@@ -7,6 +7,15 @@ RUN chmod +x mvnw
 RUN ./mvnw dependency:go-offline -B
 COPY src ./src
 # Cache bust: 2026-07-04-v2
+
+# Le sha du commit déployé, pour /actuator/info (profil build-identity-from-env
+# du pom). Railway le fournit à la construction, mais une construction Docker ne
+# transmet une variable à RUN que si elle est déclarée par ARG : sans cette ligne,
+# Maven ne la voyait jamais et chaque déploiement gravait « local » (relevé par
+# l'équipe mobile le 02/09). Déclarée juste avant le package et non plus haut :
+# sa valeur change à chaque commit et invaliderait sinon la couche des dépendances.
+# Absente ou vide — construction locale —, le pom garde « local ».
+ARG RAILWAY_GIT_COMMIT_SHA
 RUN ./mvnw clean package -DskipTests -B
 
 # Run stage
