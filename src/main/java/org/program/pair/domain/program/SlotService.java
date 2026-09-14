@@ -307,8 +307,13 @@ public class SlotService {
         Schedule slot = scheduleRepository.findById(scheduleId)
             .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
-        UUID hostId = slot.getProgram().getUserActivity().getUser().getId();
-        if (blockFilterService.blocked(requesterId, hostId)) {
+        User host = slot.getProgram().getUserActivity().getUser();
+        // Organisateur au compte fermé : introuvable, comme dans le fil. Sans ce
+        // refus, la fiche tombait en « Utilisateur introuvable » en composant
+        // son profil — un 404 qui parle d'une personne là où l'on a demandé un
+        // créneau (incident du 14/09/2026).
+        entryGuard.assertHostActive(host);
+        if (blockFilterService.blocked(requesterId, host.getId())) {
             throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
         }
 
@@ -572,6 +577,9 @@ public class SlotService {
         }
 
         return participationRepository.findWaitlist(scheduleId).stream()
+            // Même raison que getParticipants : un compte fermé ne fait pas
+            // tomber la file entière.
+            .filter(p -> Boolean.TRUE.equals(p.getUser().getIsActive()))
             .map(p -> new SlotParticipantDto(
                 p.getId(),
                 userService.getPublicProfile(p.getUser().getId(), userId),
@@ -642,6 +650,12 @@ public class SlotService {
         List<Schedule> slots = java.util.stream.Stream.concat(hosted.stream(), joined.stream())
             .distinct()
             .filter(s -> !invisible.contains(s.getProgram().getUserActivity().getUser().getId()))
+            // L'organisateur a fermé son compte : le créneau sort de la liste,
+            // comme il est déjà absent du fil et de la carte, et comme sa fiche
+            // rend 404. Un seul hôte dans ce cas faisait tomber toute la liste en
+            // « 404 Utilisateur introuvable » — pour tout inscrit à l'un des
+            // créneaux des vingt comptes démo fermés par V116 (incident du 14/09/2026).
+            .filter(s -> Boolean.TRUE.equals(s.getProgram().getUserActivity().getUser().getIsActive()))
             .filter(s -> !upcomingOnly || SlotTiming.endOf(s).isAfter(now))
             .sorted(java.util.Comparator.comparing(Schedule::getStartsAt))
             .toList();
@@ -675,6 +689,9 @@ public class SlotService {
         return participationRepository.findByScheduleId(scheduleId).stream()
             .filter(p -> p.getStatus() == ParticipationStatus.CONFIRMED)
             .filter(p -> !invisible.contains(p.getUser().getId()))
+            // Un inscrit au compte fermé n'est plus là, et son profil lève : sans
+            // ce filtre, un seul faisait tomber la liste de l'hôte en 404.
+            .filter(p -> Boolean.TRUE.equals(p.getUser().getIsActive()))
             .map(p -> new SlotParticipantDto(
                 p.getId(),
                 userService.getPublicProfile(p.getUser().getId(), userId),
@@ -761,8 +778,15 @@ public class SlotService {
 
         // distinct() avant l'appel, et non après : c'est tout l'intérêt: deux
         // créneaux du même hôte ne redemandent pas deux fois le même profil.
+        //
+        // Les hôtes au compte fermé sont écartés AVANT l'appel, qui lèverait
+        // pour eux : leur créneau est rendu sans profil plutôt que de faire
+        // échouer tout le lot. Les listes les filtrent déjà en amont ; ceci est
+        // le filet pour la prochaine qui l'oubliera (incident du 14/09/2026).
         Map<UUID, UserPublicDto> profiles = slots.stream()
-            .map(s -> s.getProgram().getUserActivity().getUser().getId())
+            .map(s -> s.getProgram().getUserActivity().getUser())
+            .filter(host -> Boolean.TRUE.equals(host.getIsActive()))
+            .map(User::getId)
             .distinct()
             .collect(Collectors.toMap(Function.identity(),
                                       id -> userService.getPublicProfile(id, requesterId)));

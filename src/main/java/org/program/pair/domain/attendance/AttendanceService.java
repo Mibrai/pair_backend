@@ -141,6 +141,9 @@ public class AttendanceService {
             return List.of();
         }
         return attendanceRepository.findPresentCoParticipants(scheduleId, userId).stream()
+            // Un compte fermé ne se recommande plus, et son profil lève : sans
+            // ce filtre, un seul co-présent dans ce cas vidait l'écran en 404.
+            .filter(u -> Boolean.TRUE.equals(u.getIsActive()))
             .map(u -> userService.getPublicProfile(u.getId(), userId))
             .toList();
     }

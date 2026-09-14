@@ -606,7 +606,10 @@ public class SlotRecapService {
             context.topVibes(recap).stream().map(VibeCountDto::vibe).toList(),
             publicPhotos(presences),
             recap.getHostNote(),
-            host != null ? context.profile(host.getId()) : null,
+            // Un hôte au compte fermé : la carte-souvenir reste, sans profil. Le
+            // profil unitaire lève pour lui, et faisait tomber toute la liste
+            // des souvenirs — les présents sont déjà filtrés de la même façon.
+            host != null && Boolean.TRUE.equals(host.getIsActive()) ? context.profile(host.getId()) : null,
             visibleAttendees(recap, host, presences, context),
             context.nextSlot(program),
             recap.getVisibility().name(),

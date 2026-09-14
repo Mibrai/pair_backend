@@ -65,6 +65,7 @@ public class SlotEntryGuard {
     public void assertMayEnter(UUID userId, Schedule slot, Instant now) {
         User host = slot.getProgram().getUserActivity().getUser();
 
+        assertHostActive(host);
         assertNotBlocked(userId, host.getId());
 
         if (host.getId().equals(userId)) {
@@ -111,6 +112,7 @@ public class SlotEntryGuard {
     public void assertMayWait(UUID userId, Schedule slot, Instant now) {
         User host = slot.getProgram().getUserActivity().getUser();
 
+        assertHostActive(host);
         assertNotBlocked(userId, host.getId());
 
         if (host.getId().equals(userId)) {
@@ -128,6 +130,22 @@ public class SlotEntryGuard {
         }
 
         assertNotStarted(slot, now);
+    }
+
+    /**
+     * Un créneau dont l'organisateur a fermé son compte n'existe plus pour
+     * personne : introuvable, comme dans le fil et la carte, qui l'écartent en SQL.
+     *
+     * <p>En tête de chaîne, avant même le blocage : aucun refus plus précis n'a de
+     * sens sur une séance qui n'aura pas d'organisateur. Sans ce contrôle,
+     * l'inscription passait et la réponse tombait ensuite en
+     * {@code 404 « Utilisateur introuvable »} en composant le profil de l'hôte
+     * (incident du 14/09/2026).
+     */
+    public void assertHostActive(User host) {
+        if (!Boolean.TRUE.equals(host.getIsActive())) {
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
+        }
     }
 
     /**
