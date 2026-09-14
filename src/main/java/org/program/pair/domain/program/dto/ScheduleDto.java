@@ -30,5 +30,10 @@ public record ScheduleDto(
 
     @io.swagger.v3.oas.annotations.media.Schema(description = "Niveau attendu déclaré "
         + "par l'organisateur pour cette séance, ou null quand il n'est pas précisé.")
-    String level
+    String level,
+
+    @io.swagger.v3.oas.annotations.media.Schema(description = "Réglage « montrer l'adresse "
+        + "exacte » d'un lieu non public, pour que l'écran de modification relise l'état courant. "
+        + "Rendu à l'organisateur seul ; null pour tout autre lecteur.")
+    Boolean showExactAddress
 ) {}

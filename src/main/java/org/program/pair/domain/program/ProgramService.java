@@ -467,6 +467,11 @@ public class ProgramService {
         if (request.isOpenToPartners() != null) {
             schedule.setIsOpenToPartners(request.isOpenToPartners());
         }
+        // Absent : le défaut de l'entité (partageable), comme avant que la clé
+        // ne soit lue.
+        if (request.isPubliclyShareable() != null) {
+            schedule.setIsPubliclyShareable(request.isPubliclyShareable());
+        }
         if (request.welcomeNote() != null) {
             schedule.setWelcomeNote(sanitizer.sanitize(request.welcomeNote()).strip());
         }
@@ -633,14 +638,20 @@ public class ProgramService {
                 "Les coordonnées sont obligatoires pour un lieu physique.");
         }
 
+        // showExactAddress d'abord, et l'adresse jugée sur la valeur EFFECTIVE.
+        // Elle l'était sur la seule requête : dans une mise à jour partielle, un
+        // client qui n'envoyait que la nouvelle adresse d'un domicile déjà
+        // montré la voyait ignorée sans erreur — il fallait renvoyer
+        // showExactAddress=true dans le même corps pour qu'elle soit prise.
+        if (request.showExactAddress() != null)
+            schedule.setShowExactAddress(request.showExactAddress());
+
         if (request.addressPublic() != null) {
             if (effectivePlaceType == PlaceType.PUBLIC
-                    || Boolean.TRUE.equals(request.showExactAddress())) {
+                    || Boolean.TRUE.equals(schedule.getShowExactAddress())) {
                 schedule.setAddressPublic(request.addressPublic());
             }
         }
-        if (request.showExactAddress() != null)
-            schedule.setShowExactAddress(request.showExactAddress());
 
         if (request.city() != null)           schedule.setCity(sanitizer.sanitize(request.city()).strip());
         if (request.startsAt() != null)       schedule.setStartsAt(request.startsAt());
@@ -1151,7 +1162,10 @@ public class ProgramService {
             s.getStatus().name(),
             s.getParticipantCount(),
             s.getWelcomeNote(),
-            s.getLevel() != null ? s.getLevel().name() : null
+            s.getLevel() != null ? s.getLevel().name() : null,
+            // L'organisateur seul : c'est un réglage de son écran de modification,
+            // et un autre lecteur voit déjà son effet — l'adresse, ou son absence.
+            isOwner ? Boolean.TRUE.equals(s.getShowExactAddress()) : null
         );
     }
 

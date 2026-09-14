@@ -264,7 +264,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
             // code client ne s'exécute pour aller le chercher, et un champ absent
             // n'est pas neutre : iOS conserve alors la valeur précédente.
             .setApnsConfig(apnsConfig(type, payload, badge))
-            .setAndroidConfig(androidConfig(type, badge))
+            .setAndroidConfig(androidConfig(type, payload, badge))
             .build();
 
         dispatch(userId, tokens, message);
@@ -299,7 +299,12 @@ public class PushNotificationService implements PushNotificationServiceInterface
      */
     private ApnsConfig apnsConfig(NotificationType type, Map<String, Object> payload, int badge) {
         if (!type.isTimeSensitive()) {
-            return ApnsConfig.builder().setAps(visibleAps(badge, type)).build();
+            ApnsConfig.Builder builder = ApnsConfig.builder().setAps(visibleAps(badge, type));
+            String regroupement = regroupementCreneauModifie(type, payload);
+            if (regroupement != null) {
+                builder.putHeader("apns-collapse-id", regroupement);
+            }
+            return builder.build();
         }
 
         ApnsConfig.Builder builder = ApnsConfig.builder()
@@ -321,11 +326,17 @@ public class PushNotificationService implements PushNotificationServiceInterface
      * franchissement effectif dépend aussi de l'importance du canal, posée par le
      * client — le serveur pousse au maximum ce qu'il contrôle.
      */
-    private AndroidConfig androidConfig(NotificationType type, int badge) {
+    private AndroidConfig androidConfig(NotificationType type, Map<String, Object> payload, int badge) {
         AndroidNotification.Builder notif = AndroidNotification.builder()
             .setSound("default")
             .setColor("#FF5722")
             .setNotificationCount(badge);
+        // Le tag Android est l'équivalent du collapse-id APNs : une notification
+        // de même tag remplace la précédente dans le tiroir.
+        String regroupement = regroupementCreneauModifie(type, payload);
+        if (regroupement != null) {
+            notif.setTag(regroupement);
+        }
         if (type.isTimeSensitive()) {
             notif.setPriority(AndroidNotification.Priority.MAX)
                 .setDefaultSound(true)
@@ -335,6 +346,23 @@ public class PushNotificationService implements PushNotificationServiceInterface
             .setPriority(AndroidConfig.Priority.HIGH)
             .setNotification(notif.build())
             .build();
+    }
+
+    /**
+     * L'identifiant de regroupement d'un {@code SCHEDULE_CHANGED} :
+     * {@code slot-changed-<scheduleId>}, ou {@code null} pour tout autre type.
+     *
+     * <p>Trois corrections d'affilée du même créneau remplacent la bannière au lieu
+     * d'en empiler trois (demande mobile du 02/09). Le texte de la dernière dit
+     * l'état courant, ce qui rend les précédentes inutiles. Réservé à ce type :
+     * regrouper une annulation avec une modification effacerait l'annulation.
+     */
+    static String regroupementCreneauModifie(NotificationType type, Map<String, Object> payload) {
+        if (type != NotificationType.SCHEDULE_CHANGED || payload == null) {
+            return null;
+        }
+        Object scheduleId = payload.get("scheduleId");
+        return scheduleId == null ? null : "slot-changed-" + scheduleId;
     }
 
     /**

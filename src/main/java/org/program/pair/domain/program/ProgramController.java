@@ -166,6 +166,18 @@ public class ProgramController {
     }
 
     @PutMapping("/{programId}/schedules/{scheduleId}")
+    @io.swagger.v3.oas.annotations.Operation(summary = "Modifier un créneau (mise à jour partielle)",
+        description = "FUSION, pas remplacement : un champ absent ou null reste ce qu'il était. "
+            + "Pour retirer une valeur : chaîne vide pour primaryLanguage et level, liste vide pour "
+            + "accessibilityTags ; endsAt ne se retire pas. Passer placeType à ONLINE efface la "
+            + "position. addressPublic n'est enregistrée que pour un lieu PUBLIC ou quand "
+            + "showExactAddress vaut true — la valeur envoyée, sinon celle déjà en place. "
+            + "isPubliclyShareable est ignoré ici : PATCH /api/slots/{id}/shareable. "
+            + "Une capacité sous le nombre d'inscrits ne désinscrit personne : le créneau passe FULL. "
+            + "Aucun contrôle de chevauchement d'agenda : jamais de 409 SCHEDULE_CONFLICT sur cette route. "
+            + "Les inscrits reçoivent SCHEDULE_CHANGED seulement si l'heure (startsAt, endsAt) ou le "
+            + "lieu (placeName, placeType, position, adresse diffusable) a changé ; une requête "
+            + "sans changement effectif ne notifie personne.")
     public ScheduleDto updateSchedule(
             @AuthenticationPrincipal UserPrincipal principal,
             @PathVariable UUID programId,

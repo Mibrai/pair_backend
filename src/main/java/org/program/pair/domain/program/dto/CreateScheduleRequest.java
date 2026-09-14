@@ -49,5 +49,13 @@ public record CreateScheduleRequest(
         + "(BEGINNER, INTERMEDIATE, ADVANCED, EXPERT, ANY). Absent ou vide : non précisé. "
         + "Jamais déduit du niveau que l'organisateur a déclaré sur son profil.",
         allowableValues = {"BEGINNER", "INTERMEDIATE", "ADVANCED", "EXPERT", "ANY", ""})
-    String level
+    String level,
+
+    // Déclaré le 14/09 : l'application l'envoyait depuis toujours, et Jackson
+    // ignorait en silence cette clé inconnue. Tous les créneaux créés depuis
+    // l'app partaient donc partageables, quel que soit le choix de l'hôte.
+    @Schema(description = "Le créneau peut-il avoir une page publique partageable ? "
+        + "Absent ou null : oui, comme avant. Ne vaut qu'à la création : ensuite, "
+        + "PATCH /api/slots/{id}/shareable est le seul chemin, et PUT ignore cette clé.")
+    Boolean isPubliclyShareable
 ) {}

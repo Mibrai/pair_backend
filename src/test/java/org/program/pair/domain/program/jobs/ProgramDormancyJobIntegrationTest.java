@@ -188,7 +188,7 @@ class ProgramDormancyJobIntegrationTest extends AbstractIntegrationTest {
         programService.addSchedule(authorId, program.getId(), new CreateScheduleRequest(
             "Lieu du réveil", PlaceType.ONLINE, null, null, null, null, null,
             Instant.now().plus(Duration.ofDays(2)), Instant.now().plus(Duration.ofDays(2)),
-            null, null, null, null, null, null, null));
+            null, null, null, null, null, null, null, null));
 
         assertThat(statusOf(program)).isEqualTo(ProgramStatus.ACTIVE);
     }
