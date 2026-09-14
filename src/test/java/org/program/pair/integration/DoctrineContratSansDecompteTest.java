@@ -31,6 +31,26 @@ class DoctrineContratSansDecompteTest extends AbstractIntegrationTest {
         assertThat(contrat).doesNotContain("currentStreakWeeks").doesNotContain("practitionersNearby");
     }
 
+    /**
+     * Le module {@code /api/progressions} est retiré (demande mobile badges TER,
+     * 14/09) : il servait les dernières séries du contrat (StreakDto). Aucune de ses
+     * routes, et aucune propriété {@code streak}, {@code longest} ni
+     * {@code activeDates}, ne doit y revenir.
+     */
+    @Test
+    void lesProgressions_etLeursSeries_ontQuitteLeContrat() {
+        JsonNode doc = contrat();
+        List<String> chemins = new ArrayList<>();
+        doc.at("/paths").fieldNames().forEachRemaining(chemins::add);
+
+        assertThat(chemins).noneMatch(c -> c.startsWith("/api/progressions"));
+        assertThat(doc.at("/components/schemas/StreakDto").isMissingNode()).isTrue();
+        assertThat(doc.at("/components/schemas/ProgressionStatsDto").isMissingNode()).isTrue();
+        String texte = doc.at("/components/schemas").toString();
+        assertThat(texte).doesNotContain("\"longestStreak\"").doesNotContain("\"activeDates\"")
+            .doesNotContain("\"currentStreak\"");
+    }
+
     @Test
     void aucuneProprieteNEvoqueUneSerieOuUnDecompteDePersonnes() {
         JsonNode schemas = contrat().at("/components/schemas");
