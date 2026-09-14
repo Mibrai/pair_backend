@@ -11,6 +11,7 @@ import org.program.pair.domain.trust.BadgeAward;
 import org.program.pair.domain.attendance.ReliabilitySignal;
 import org.program.pair.domain.guidelines.Guidelines;
 import org.program.pair.domain.notification.DeviceTokenService;
+import org.program.pair.domain.program.AccountClosureEffects;
 import org.program.pair.domain.subscription.SubscriptionService;
 import org.program.pair.domain.user.dto.*;
 import org.program.pair.repository.AfficheRepository;
@@ -83,6 +84,13 @@ public class UserService {
      */
     private final DeviceTokenService deviceTokenService;
     private final org.program.pair.domain.auth.session.SessionService sessionService;
+
+    /**
+     * Pour le seul {@code deactivateAccount} : ce que la fermeture fait aux
+     * séances (P-BL-18). Même mode de panne que les notes ci-dessus —
+     * {@code UserServiceTest} pose sa doublure dans le même mouvement.
+     */
+    private final AccountClosureEffects accountClosureEffects;
 
     private final GeometryFactory geometryFactory = new GeometryFactory(
         new PrecisionModel(), 4326);
@@ -228,7 +236,7 @@ public class UserService {
     }
 
     /**
-     * Retire le compte de la circulation — et <b>rien d'autre</b>.
+     * Retire le compte de la circulation, et ses séances avec lui.
      *
      * <p><b>Pourquoi ce n'est pas {@code findActiveUser}.</b> Toutes les autres
      * méthodes de ce service refusent un compte déjà inactif, et c'est juste :
@@ -241,12 +249,24 @@ public class UserService {
      * donc le même succès. Un compte <i>inconnu</i> reste, lui, un {@code 404} :
      * il n'y a rien à désactiver.
      *
-     * <p><b>Ce que cette méthode ne fait délibérément pas.</b> Annuler les
-     * créneaux animés, désinscrire des créneaux d'autrui, prévenir les inscrits,
-     * révoquer les jetons de session : tout cela est attendu et arrive dans un
-     * lot dédié. Les poser ici les mettrait dans <i>cette</i> transaction, où le
-     * moindre échec annulerait le {@code is_active = false} — et la demande de
-     * suppression serait à nouveau perdue, pour une raison de plus.
+     * <p><b>Les séances d'abord, le compte ensuite (P-BL-18, décision D2).</b>
+     * {@link AccountClosureEffects} retire ses inscriptions, annule ses créneaux à
+     * venir en prévenant leurs inscrits, referme ses veilles et archive ses
+     * programmes — <b>dans cette transaction, et avant</b> le
+     * {@code is_active = false}. Ce paragraphe disait autrefois l'inverse : que
+     * ces effets devaient rester hors d'ici, parce que leur moindre échec
+     * annulerait la désactivation et perdrait la demande. Deux choses ont changé.
+     * L'application rejoue la route : un échec rend un {@code 500} sans aucun
+     * effet, et la demande aboutit au rejeu au lieu d'être perdue. Et plus rien ne
+     * part avant le commit ({@code EnvoiApresCommit}) : une fermeture échouée ne
+     * prévient personne, son rejeu ne prévient personne deux fois. L'ordre
+     * inverse — fermer, puis annuler avec reprise — laissait au contraire une
+     * fenêtre où un compte fermé gardait des créneaux ouverts, masqués à leurs
+     * inscrits.
+     *
+     * <p>Le retour anticipé couvre aussi ces effets : un second appel sur un
+     * compte déjà fermé n'annule rien de plus, puisque tout l'a été avec la
+     * fermeture.
      *
      * <p><b>La date de la demande, maintenant que la colonne existe (V111).</b>
      * Elle est écrite ici et nulle part ailleurs, et c'est depuis elle seule que
@@ -284,6 +304,8 @@ public class UserService {
         if (!Boolean.TRUE.equals(user.getIsActive())) {
             return;
         }
+        accountClosureEffects.apply(userId);
+
         user.setIsActive(false);
         user.setDeactivatedAt(Instant.now());
         // Le compte disparaît de la carte dans le même mouvement : laisser le

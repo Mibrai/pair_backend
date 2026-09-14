@@ -3,7 +3,6 @@ package org.program.pair.domain.program;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.program.pair.domain.block.UserBlockedEvent;
-import org.program.pair.repository.ScheduleRepository;
 import org.program.pair.repository.SlotParticipationRepository;
 import org.program.pair.repository.UserProgramRepository;
 import org.springframework.stereotype.Component;
@@ -13,9 +12,7 @@ import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
 import java.time.Instant;
-import java.util.EnumSet;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -66,25 +63,11 @@ import java.util.UUID;
 @Slf4j
 public class SlotBlockEffects {
 
-    private final ScheduleRepository scheduleRepository;
     private final SlotParticipationRepository participationRepository;
     private final UserProgramRepository userProgramRepository;
-    private final WaitlistPromoter waitlistPromoter;
-    private final ParticipantCounter participantCounter;
 
-    /**
-     * Les statuts de participation qu'un blocage retire.
-     *
-     * <p>Les mêmes trois que {@link SlotConcernedPeople} retient, et ce n'est pas
-     * une coïncidence : ce sont exactement ceux qui font qu'une séance concerne
-     * quelqu'un — inscrit, intéressé, ou en attente d'une place. Un
-     * {@code WITHDRAWN} n'a rien à retirer, et un statut de séance passée ne se
-     * réécrit pas.
-     */
-    private static final Set<ParticipationStatus> A_RETIRER = EnumSet.of(
-        ParticipationStatus.CONFIRMED,
-        ParticipationStatus.INTERESTED,
-        ParticipationStatus.WAITLISTED);
+    /** Le retrait lui-même, partagé avec la fermeture de compte. */
+    private final ParticipationWithdrawal withdrawal;
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     @Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -125,7 +108,7 @@ public class SlotBlockEffects {
         // SQL ce que SlotTiming décide — la convention de fin de séance vivrait
         // alors en deux langages.
         List<UUID> scheduleIds = participationRepository
-            .findByUserIdAndStatusIn(participantId, List.copyOf(A_RETIRER))
+            .findByUserIdAndStatusIn(participantId, List.copyOf(ParticipationWithdrawal.A_RETIRER))
             .stream()
             .map(SlotParticipation::getSchedule)
             .filter(slot -> concerne(slot, hostId, now))
@@ -134,7 +117,9 @@ public class SlotBlockEffects {
             .toList();
 
         for (UUID scheduleId : scheduleIds) {
-            withdrawParticipation(scheduleId, participantId);
+            if (withdrawal.withdrawParticipation(scheduleId, participantId)) {
+                log.info("Blocage : participation de {} au créneau {} retirée", participantId, scheduleId);
+            }
         }
 
         // L'autre moitié des inscriptions : un créneau peut être rejoint par la
@@ -152,7 +137,9 @@ public class SlotBlockEffects {
                 // d'entrée s'occupe de la suite (SlotEntryGuard.assertNotBlocked).
                 continue;
             }
-            leaveEnrollment(enrollment, slot.getId());
+            withdrawal.leaveEnrollment(enrollment, slot.getId());
+            log.info("Blocage : inscription {} au programme du créneau {} quittée",
+                enrollment.getId(), slot.getId());
         }
     }
 
@@ -163,70 +150,5 @@ public class SlotBlockEffects {
         }
         UUID organizerId = slot.getProgram().getUserActivity().getUser().getId();
         return hostId.equals(organizerId) && SlotTiming.endOf(slot).isAfter(now);
-    }
-
-    /**
-     * Le même geste que {@code SlotService.leaveSlot}, verrou compris.
-     *
-     * <p>Le verrou est pris <b>avant</b> l'écriture, et la participation relue
-     * sous lui : sans cela, deux désistements simultanés — celui-ci et un départ
-     * volontaire — liraient la même file et promouvraient deux fois la même
-     * personne.
-     */
-    private void withdrawParticipation(UUID scheduleId, UUID participantId) {
-        Schedule slot = scheduleRepository.lockById(scheduleId).orElse(null);
-        if (slot == null) {
-            return;
-        }
-
-        SlotParticipation participation = participationRepository
-            .findByScheduleIdAndUserId(scheduleId, participantId)
-            .orElse(null);
-        if (participation == null || !A_RETIRER.contains(participation.getStatus())) {
-            return;
-        }
-
-        boolean wasConfirmed = participation.getStatus() == ParticipationStatus.CONFIRMED;
-
-        participation.setStatus(ParticipationStatus.WITHDRAWN);
-        participation.setWithdrawnAt(Instant.now());
-        participation.setWaitlistPosition(null);
-        participationRepository.save(participation);
-
-        // Seule une place réellement occupée se libère : un INTERESTED ou un
-        // WAITLISTED n'en tenait aucune, et promouvoir derrière lui ferait entrer
-        // quelqu'un sur une place qui n'existe pas.
-        if (wasConfirmed) {
-            waitlistPromoter.promoteFirstWaiting(slot);
-        }
-        participantCounter.refresh(slot);
-        scheduleRepository.save(slot);
-
-        log.info("Blocage : participation de {} au créneau {} retirée", participantId, scheduleId);
-    }
-
-    /** Le même geste que {@code ProgramEnrollmentService.leaveProgram}. */
-    private void leaveEnrollment(UserProgram enrollment, UUID scheduleId) {
-        Schedule slot = scheduleRepository.lockById(scheduleId).orElse(null);
-        if (slot == null) {
-            return;
-        }
-
-        enrollment.setStatus(UserProgramStatus.LEFT);
-        enrollment.setLeftAt(Instant.now());
-        // Aucun motif écrit : la colonne est rendue à l'auteur du programme dans
-        // ses écrans d'inscrits, et y écrire « blocage » lui dirait ce que le
-        // départ doit taire.
-        userProgramRepository.save(enrollment);
-
-        // Une inscription active occupait bien une place, d'où la promotion sans
-        // condition — comme au départ volontaire, et dans le même ordre : la place
-        // est reprise avant que le compteur ne soit relu.
-        waitlistPromoter.promoteFirstWaiting(slot);
-        participantCounter.refresh(slot);
-        scheduleRepository.save(slot);
-
-        log.info("Blocage : inscription {} au programme du créneau {} quittée",
-            enrollment.getId(), scheduleId);
     }
 }

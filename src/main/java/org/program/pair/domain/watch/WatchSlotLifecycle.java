@@ -14,6 +14,7 @@ import java.time.Instant;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Ce que devient une veille quand la séance qu'elle surveille change de nature.
@@ -99,6 +100,47 @@ public class WatchSlotLifecycle {
 
         log.info("Créneau {} annulé : {} veille(s) refermée(s), rien envoyé à personne",
             slot.getId(), aReferm.size());
+        return aReferm.size();
+    }
+
+    /**
+     * Referme les veilles <b>de la personne</b> dont le compte se ferme, sans rien
+     * envoyer à personne.
+     *
+     * <p><b>Le défaut fermé ici.</b> Fermer son compte retire ses inscriptions et
+     * annule ses créneaux ; les veilles de ses propres créneaux se referment avec
+     * l'annulation, mais celles qu'elle avait armées pour aller chez les autres
+     * restaient vivantes. La boucle retour envoyait alors ses rappels à un compte
+     * qui ne peut plus répondre — ses appareils sont détachés — puis alertait son
+     * proche pour une séance où elle n'irait pas.
+     *
+     * <p><b>Toutes ses veilles vivantes, pas seulement celles des séances
+     * quittées</b> : un compte fermé ne peut plus lever aucune veille, quelle que
+     * soit la séance qu'elle surveille. Même couple {@code CLOSED} +
+     * {@code ABANDONED} qu'à l'annulation, et même exclusion : une veille
+     * {@code ESCALATED} a déjà prévenu un proche, qui ne doit pas rester sans
+     * nouvelle parce que le serveur l'a refermée d'office.
+     *
+     * @return combien de veilles ont été refermées
+     */
+    @Transactional
+    public int closeForClosedAccount(UUID userId, Instant now) {
+        List<Watch> aReferm = watchRepository
+            .findByUserIdAndStateNotInOrderByArmedAtDesc(userId, WatchState.TERMINAUX).stream()
+            .filter(watch -> A_REFERMER.contains(watch.getState()))
+            .toList();
+        if (aReferm.isEmpty()) {
+            return 0;
+        }
+
+        for (Watch watch : aReferm) {
+            watch.setState(WatchState.CLOSED);
+            watch.setClosedAt(now);
+            eventRepository.save(new WatchEvent(watch.getId(), WatchEventType.ABANDONED, now));
+        }
+
+        log.info("Compte {} fermé : {} veille(s) refermée(s), rien envoyé à personne",
+            userId, aReferm.size());
         return aReferm.size();
     }
 
