@@ -60,7 +60,12 @@ public class Review {
     @Column(name = "interaction_proof_type", length = 20)
     private InteractionProofType interactionProofType;
 
-    @Column(name = "score", nullable = false)
+    /**
+     * Plus écrite depuis le 14/09 (P-BL-10, D4) : nulle sur tout nouvel avis, et
+     * jamais rendue. Les notes antérieures restent en base jusqu'à l'étape D,
+     * qui supprime la colonne.
+     */
+    @Column(name = "score")
     private Float score;
 
     @Column(length = 1000)

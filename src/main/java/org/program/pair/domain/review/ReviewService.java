@@ -83,20 +83,36 @@ public class ReviewService {
             .programId(programId)
             .interactionProofId(conversationId)
             .interactionProofType(proofType)
-            .score(request.getScore())
+            // Aucune note enregistrée (P-BL-10, D4) : celle que l'app envoie
+            // encore est ignorée.
+            .score(null)
             .comment(request.getComment())
             .build();
 
         review = reviewRepository.save(review);
-        log.info("User {} reviewed program {} with score {}", reviewerId, programId, request.getScore());
+        log.info("User {} reviewed program {}", reviewerId, programId);
 
         return review;
     }
 
+    /**
+     * Les avis d'un programme, <b>pour qui a le droit de les lire</b> (P-BL-10, D4).
+     *
+     * <p>Le commentaire est devenu un retour privé : l'organisateur du programme
+     * lit tous les avis, l'auteur d'un avis lit le sien, et personne d'autre ne
+     * lit rien. Un autre lecteur reçoit une page vide en {@code 200}, pas un
+     * {@code 403} : les versions 1.1.0+16 et +17 de l'app affichent cet onglet à
+     * tout visiteur, et y liraient un 403 comme « impossible de charger les
+     * avis » (réponse de l'app du 14/09).
+     */
     @Transactional(readOnly = true)
     public Page<Review> getProgramReviews(UUID appelantId, UUID programId, Pageable pageable) {
         introuvableSiAuteurBloque(appelantId, programId);
-        return reviewRepository.findByProgramIdOrderByCreatedAtDesc(programId, pageable);
+        if (estOrganisateur(appelantId, programId)) {
+            return reviewRepository.findByProgramIdOrderByCreatedAtDesc(programId, pageable);
+        }
+        return reviewRepository.findByProgramIdAndReviewerIdOrderByCreatedAtDesc(
+            programId, appelantId, pageable);
     }
 
     @Transactional(readOnly = true)
@@ -124,16 +140,28 @@ public class ReviewService {
     @Transactional(readOnly = true)
     public ReviewSummaryDto getProgramReviewSummary(UUID appelantId, UUID programId) {
         introuvableSiAuteurBloque(appelantId, programId);
-        long total = reviewRepository.countByProgramId(programId);
+        // Même lecture que la liste : le décompte et les avis récents ne portent
+        // que sur ce que l'appelant a le droit de lire. Un total public dirait
+        // combien d'avis existent sur un programme dont on ne lit plus aucun.
+        boolean organisateur = estOrganisateur(appelantId, programId);
+        long total = organisateur
+            ? reviewRepository.countByProgramId(programId)
+            : reviewRepository.countByProgramIdAndReviewerId(programId, appelantId);
 
-        List<ReviewDto> recent = reviewRepository
-            .findByProgramIdOrderByCreatedAtDesc(programId, PageRequest.of(0, 5))
+        List<ReviewDto> recent = getProgramReviews(appelantId, programId, PageRequest.of(0, 5))
             .stream()
             .map(ReviewDto::fromEntity)
             .toList();
 
         // Plus de moyenne publique (P-BL-10) : null, le champ reste déclaré.
         return new ReviewSummaryDto(programId, null, total, recent);
+    }
+
+    private boolean estOrganisateur(UUID appelantId, UUID programId) {
+        return programRepository.findById(programId)
+            .filter(p -> p.getUserActivity() != null && p.getUserActivity().getUser() != null)
+            .map(p -> p.getUserActivity().getUser().getId().equals(appelantId))
+            .orElse(false);
     }
 
     /**

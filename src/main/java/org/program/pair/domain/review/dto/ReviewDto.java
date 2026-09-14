@@ -19,6 +19,8 @@ public class ReviewDto {
     private String reviewerDisplayName;
     private UUID programId;
     private String programTitle;
+    @io.swagger.v3.oas.annotations.media.Schema(deprecated = true, nullable = true,
+        description = "Toujours null depuis le 14/09 (P-BL-10, D4) : plus de note sur un avis.")
     private Float score;
     private String comment;
     private Instant createdAt;
@@ -30,7 +32,8 @@ public class ReviewDto {
             .reviewerDisplayName(review.getReviewer() != null ? review.getReviewer().getDisplayName() : null)
             .programId(review.getProgramId())
             .programTitle(review.getProgram() != null ? review.getProgram().getTitle() : null)
-            .score(review.getScore())
+            // Jamais rendue, y compris pour les notes antérieures encore en base.
+            .score(null)
             .comment(review.getComment())
             .createdAt(review.getCreatedAt())
             .build();

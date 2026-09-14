@@ -34,7 +34,9 @@ public class ReviewController {
     @PostMapping
     @Operation(
         summary = "Créer un avis",
-        description = "Évaluer un programme avec 5 critères. Nécessite d'avoir échangé avec le créateur du programme."
+        description = "Écrire un avis sur un programme : un commentaire de 30 à 1000 caractères, lu par "
+            + "l'organisateur seul. Aucune note : score est facultatif et ignoré depuis le 14/09. "
+            + "Nécessite d'avoir échangé avec le créateur du programme ou partagé une présence confirmée."
     )
     public ResponseEntity<ReviewDto> createReview(
             @AuthenticationPrincipal UserPrincipal currentUser,
@@ -46,7 +48,9 @@ public class ReviewController {
     }
 
     @GetMapping("/programs/{programId}/summary")
-    @Operation(summary = "Résumé des avis d'un programme", description = "Note moyenne, nombre total et moyennes par critère")
+    @Operation(summary = "Résumé des avis d'un programme",
+        description = "Organisateur : le nombre total d'avis et les cinq plus récents. Tout autre compte : "
+            + "seulement son propre avis (totalReviews vaut 0 ou 1). averageScore est toujours null.")
     public ResponseEntity<ReviewSummaryDto> getProgramReviewSummary(
             @AuthenticationPrincipal UserPrincipal currentUser,
             @PathVariable UUID programId) {
@@ -54,7 +58,9 @@ public class ReviewController {
     }
 
     @GetMapping("/programs/{programId}")
-    @Operation(summary = "Avis d'un programme", description = "Liste des avis d'un programme, paginés")
+    @Operation(summary = "Avis d'un programme",
+        description = "L'organisateur du programme lit tous les avis ; l'auteur d'un avis lit le sien ; "
+            + "tout autre compte reçoit une page vide (200, jamais 403). score est toujours null.")
     public ResponseEntity<Page<ReviewDto>> getProgramReviews(
             @AuthenticationPrincipal UserPrincipal currentUser,
             @PathVariable UUID programId,

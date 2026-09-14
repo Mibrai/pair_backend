@@ -20,6 +20,12 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
 
     Page<Review> findByReviewerIdOrderByCreatedAtDesc(UUID reviewerId, Pageable pageable);
 
+    /** L'avis d'un auteur sur un programme, en page : ce que lit un non-organisateur (P-BL-10). */
+    Page<Review> findByProgramIdAndReviewerIdOrderByCreatedAtDesc(
+        UUID programId, UUID reviewerId, Pageable pageable);
+
+    long countByProgramIdAndReviewerId(UUID programId, UUID reviewerId);
+
     Optional<Review> findByReviewerIdAndProgramId(UUID reviewerId, UUID programId);
 
     long countByProgramId(UUID programId);
