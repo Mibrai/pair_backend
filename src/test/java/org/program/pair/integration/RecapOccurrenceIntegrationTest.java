@@ -126,8 +126,8 @@ class RecapOccurrenceIntegrationTest extends AbstractIntegrationTest {
         // tourner le job, exactement comme sept jours plus tard.
         Schedule slot = scheduleRepository.findById(f.scheduleId).orElseThrow();
         Instant semaineDeux = slot.getStartsAt();
-        slot.setStartsAt(Instant.now().minus(3, ChronoUnit.HOURS));
-        slot.setEndsAt(Instant.now().minus(2, ChronoUnit.HOURS));
+        slot.setStartsAt(Instant.now().minus(3, ChronoUnit.HOURS).truncatedTo(ChronoUnit.MICROS));
+        slot.setEndsAt(Instant.now().minus(2, ChronoUnit.HOURS).truncatedTo(ChronoUnit.MICROS));
         scheduleRepository.save(slot);
         Instant vecuDeux = slot.getStartsAt();
 
@@ -226,8 +226,10 @@ class RecapOccurrenceIntegrationTest extends AbstractIntegrationTest {
             .isPublic(true)
             .build());
 
-        Instant livedStart = Instant.now().minus(3, ChronoUnit.HOURS);
-        Instant livedEnd   = Instant.now().minus(2, ChronoUnit.HOURS);
+        // À la microseconde, comme la base : sous Linux, Instant.now() porte des
+        // nanosecondes que PostgreSQL arrondit, et la relecture différerait.
+        Instant livedStart = Instant.now().minus(3, ChronoUnit.HOURS).truncatedTo(ChronoUnit.MICROS);
+        Instant livedEnd   = Instant.now().minus(2, ChronoUnit.HOURS).truncatedTo(ChronoUnit.MICROS);
 
         Schedule schedule = scheduleRepository.save(Schedule.builder()
             .program(program)

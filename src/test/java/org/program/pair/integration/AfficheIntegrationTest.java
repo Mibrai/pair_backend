@@ -454,9 +454,12 @@ class AfficheIntegrationTest extends AbstractIntegrationTest {
                     .as("ni la séance dont elle parle")
                     .isEqualTo(publique.slotStartedAt())
                     .isEqualTo(seanceAncienne);
+                // À une microseconde près : la réponse de publication rend la
+                // valeur calculée, la bande celle relue en base, arrondie.
                 assertThat(u.latestPublishedAt())
                     .as("la date suit la même ligne : celle de l'affiche visible")
-                    .isEqualTo(publique.publishedAt());
+                    .isCloseTo(publique.publishedAt(),
+                        org.assertj.core.api.Assertions.within(1, java.time.temporal.ChronoUnit.MICROS));
             });
     }
 

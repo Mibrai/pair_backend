@@ -63,8 +63,13 @@ class SlotBoundsIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void unRectangleAlEchelleDunPays_doitRendreLesCreneauxDesDeuxBouts() {
-        UUID cologne = publishSlot(registerAndLogin(), COLOGNE_LAT, COLOGNE_LNG);
-        UUID munich = publishSlot(registerAndLogin(), MUNICH_LAT, MUNICH_LNG);
+        // Dans l'heure : le rectangle trie par date et tronque, et la base partagée
+        // porte d'autres créneaux en Allemagne. Publiés tôt, ces deux-là passent
+        // devant, quel que soit l'ordre des classes. La troncature a ses propres
+        // tests, en zone déserte.
+        Instant bientot = Instant.now().plus(1, ChronoUnit.HOURS);
+        UUID cologne = publishSlot(registerAndLogin(), COLOGNE_LAT, COLOGNE_LNG, bientot);
+        UUID munich = publishSlot(registerAndLogin(), MUNICH_LAT, MUNICH_LNG, bientot);
         String viewer = registerAndLogin();
 
         // Le défaut, tel qu'il était mesuré : depuis le centre du pays, le disque
@@ -77,7 +82,6 @@ class SlotBoundsIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(response.slots()).extracting(SlotFeedItemDto::scheduleId)
             .contains(cologne, munich);
-        assertThat(response.truncated()).isFalse();
     }
 
     @Test
@@ -278,6 +282,9 @@ class SlotBoundsIntegrationTest extends AbstractIntegrationTest {
             .uri(b -> b.path("/api/slots/bounds")
                 .queryParam("north", NORTH).queryParam("south", SOUTH)
                 .queryParam("east", EAST).queryParam("west", WEST)
+                // Depuis J+29 : la fenêtre ne contient que les créneaux lointains,
+                // et celui du test n'est pas coupé par ceux des autres classes.
+                .queryParam("from", Instant.now().plus(29, ChronoUnit.DAYS))
                 .queryParam("to", Instant.now().plus(60, ChronoUnit.DAYS)).build())
             .headers(h -> h.setBearerAuth(viewer))
             .exchange().expectStatus().isOk()

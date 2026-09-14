@@ -53,7 +53,12 @@ jobs:
         run: |
           if [ "$EVENT" = "pull_request" ]; then
             RANGE="$BASE..$SHA"
-          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ] \
+               || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            # Après un push forcé, l'ancien sommet n'existe plus dans l'historique
+            # récupéré : la plage BEFORE..SHA est invalide et gitleaks échouait en
+            # « Invalid revision range » sans avoir rien lu. On lit alors le
+            # dernier commit seul, comme pour une branche neuve.
             RANGE="$SHA~1..$SHA"
           else
             RANGE="$BEFORE..$SHA"

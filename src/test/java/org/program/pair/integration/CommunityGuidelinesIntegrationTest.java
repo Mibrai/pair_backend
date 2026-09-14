@@ -1,6 +1,7 @@
 package org.program.pair.integration;
 
 import org.junit.jupiter.api.Test;
+import java.time.temporal.ChronoUnit;
 import org.program.pair.AbstractIntegrationTest;
 import org.program.pair.domain.auth.dto.AuthResponse;
 import org.program.pair.domain.auth.dto.LoginRequest;
@@ -60,7 +61,9 @@ class CommunityGuidelinesIntegrationTest extends AbstractIntegrationTest {
         var first = accept(token, currentVersion).acceptedAt();
         var second = accept(token, currentVersion).acceptedAt();
 
-        assertThat(second).isEqualTo(first);
+        // À une microseconde près : la première réponse rend la valeur calculée
+        // (nanosecondes sous Linux), la seconde celle relue en base, arrondie.
+        assertThat(second).isCloseTo(first, org.assertj.core.api.Assertions.within(1, ChronoUnit.MICROS));
     }
 
     @Test

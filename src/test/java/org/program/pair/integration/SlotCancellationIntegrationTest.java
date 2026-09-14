@@ -31,8 +31,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class SlotCancellationIntegrationTest extends AbstractIntegrationTest {
 
-    private static final double LAT = 48.5734;
-    private static final double LNG = 7.7521;
+    private static final double LAT = 49.1193;   // Metz : décor à soi, le fil de Strasbourg sature selon l'ordre des classes
+    private static final double LNG = 6.1757;
 
     @Autowired ActivityRepository activityRepository;
     @Autowired JdbcTemplate jdbcTemplate;

@@ -84,7 +84,9 @@ class ArrivalAndCloseIntegrationTest extends AbstractIntegrationTest {
 
         // enteredAt fait foi : on referme avec une heure de saisie antérieure à
         // la réception, et c'est elle qui doit dater la clôture.
-        Instant saisi = Instant.now().minus(20, ChronoUnit.MINUTES);
+        // À la microseconde, comme la base : sous Linux, Instant.now() porte des
+        // nanosecondes que PostgreSQL arrondit, et la relecture différerait.
+        Instant saisi = Instant.now().minus(20, ChronoUnit.MINUTES).truncatedTo(ChronoUnit.MICROS);
         fermer(moi, watchId, code, saisi).expectStatus().isAccepted();
 
         webTestClient.get().uri("/api/watches/{id}", watchId)

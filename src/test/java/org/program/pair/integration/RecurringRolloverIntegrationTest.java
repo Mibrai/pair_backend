@@ -103,7 +103,7 @@ class RecurringRolloverIntegrationTest extends AbstractIntegrationTest {
     void uneSerieCloseParUntil_doitResterPassee() {
         // L'ancien UPDATE avançait tout créneau récurrent passé, sans lire la
         // règle : il ressuscitait des séries terminées.
-        Instant seed = Instant.now().minus(60, ChronoUnit.DAYS);
+        Instant seed = Instant.now().minus(60, ChronoUnit.DAYS).truncatedTo(ChronoUnit.MICROS);
         String until = "UNTIL=" + ZonedDateTime.ofInstant(
                 Instant.now().minus(30, ChronoUnit.DAYS), ZoneId.of("UTC"))
             .format(java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'"));
@@ -132,7 +132,8 @@ class RecurringRolloverIntegrationTest extends AbstractIntegrationTest {
 
     @Test
     void unCreneauNonRecurrentPasse_neDoitPasEtreTouche() {
-        Instant seed = Instant.now().minus(3, ChronoUnit.DAYS);
+        // À la microseconde, comme la base (voir uneSerieCloseParUntil_doitResterPassee).
+        Instant seed = Instant.now().minus(3, ChronoUnit.DAYS).truncatedTo(ChronoUnit.MICROS);
         UUID_Holder holder = new UUID_Holder(createSchedule(null, seed, Duration.ofHours(1)));
 
         job.rollPastRecurringSchedulesForward();

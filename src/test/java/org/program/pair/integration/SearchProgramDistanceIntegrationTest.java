@@ -109,7 +109,7 @@ class SearchProgramDistanceIntegrationTest extends AbstractIntegrationTest {
     /** La demande du client, littéralement. */
     @Test
     void leProgramme_doitPorterLeLieuDeSaSeance_pasCeluiDeSonOrganisateur() {
-        String title = "Yoga Gelsenkirchen " + UUID.randomUUID();
+        String title = "Escrime Gelsenkirchen " + UUID.randomUUID();
         createProgramWithSchedules(title, null, List.of(new double[]{GELSEN_LAT, GELSEN_LNG}));
 
         SearchResultDto result = searchAndFind(title, 50_000);
@@ -131,7 +131,7 @@ class SearchProgramDistanceIntegrationTest extends AbstractIntegrationTest {
      */
     @Test
     void programmeVoisin_doitEtreTrouve_memeSiLOrganisateurEstLoin() {
-        String title = "Yoga proche " + UUID.randomUUID();
+        String title = "Escrime proche " + UUID.randomUUID();
         createProgramWithSchedules(title, null, List.of(new double[]{GELSEN_LAT, GELSEN_LNG}));
 
         SearchResultDto result = searchAndFind(title, 10_000);
@@ -145,7 +145,7 @@ class SearchProgramDistanceIntegrationTest extends AbstractIntegrationTest {
      */
     @Test
     void programmeLointain_doitResterExclu_dUnRayonSerre() {
-        String title = "Yoga Dortmund " + UUID.randomUUID();
+        String title = "Escrime Dortmund " + UUID.randomUUID();
         createProgramWithSchedules(title, null, List.of(new double[]{DORTMUND_LAT, DORTMUND_LNG}));
 
         // Dortmund est à 31 km de Herne : hors d'un rayon de 10 km.
@@ -162,7 +162,7 @@ class SearchProgramDistanceIntegrationTest extends AbstractIntegrationTest {
      */
     @Test
     void programmeAPlusieursLieux_doitEtreSitueAuPlusProche() {
-        String title = "Yoga deux villes " + UUID.randomUUID();
+        String title = "Escrime deux villes " + UUID.randomUUID();
         createProgramWithSchedules(title, null, List.of(
             new double[]{DORTMUND_LAT, DORTMUND_LNG},
             new double[]{GELSEN_LAT, GELSEN_LNG}));
@@ -181,7 +181,7 @@ class SearchProgramDistanceIntegrationTest extends AbstractIntegrationTest {
      */
     @Test
     void programmeSansSeanceLocalisee_doitEtreRenduSansCoordonnees() {
-        String title = "Yoga sans lieu " + UUID.randomUUID();
+        String title = "Escrime sans lieu " + UUID.randomUUID();
         createProgramWithSchedules(title, null, List.of());
 
         SearchResultDto result = searchAndFind(title, 10_000);
@@ -199,7 +199,7 @@ class SearchProgramDistanceIntegrationTest extends AbstractIntegrationTest {
      */
     @Test
     void programmeADistance_neDoitPorterNiLieuNiDistance() {
-        String title = "Yoga en ligne " + UUID.randomUUID();
+        String title = "Escrime en ligne " + UUID.randomUUID();
         createProgramWithSchedules(title, LocationType.ONLINE,
             List.of(new double[]{GELSEN_LAT, GELSEN_LNG}));
 
@@ -217,7 +217,7 @@ class SearchProgramDistanceIntegrationTest extends AbstractIntegrationTest {
      */
     @Test
     void laRequeteDeLieu_doitRendreUneSeuleLigneParProgramme_laPlusProche() {
-        String title = "Yoga requête " + UUID.randomUUID();
+        String title = "Escrime requête " + UUID.randomUUID();
         Program program = createProgramWithSchedules(title, null, List.of(
             new double[]{DORTMUND_LAT, DORTMUND_LNG},
             new double[]{GELSEN_LAT, GELSEN_LNG}));
@@ -293,7 +293,7 @@ class SearchProgramDistanceIntegrationTest extends AbstractIntegrationTest {
             .uri("/api/search")
             .headers(h -> h.setBearerAuth(searcherToken))
             .contentType(MediaType.APPLICATION_JSON)
-            .bodyValue(new SearchRequest("yoga", HERNE_LAT, HERNE_LNG, radiusMeters))
+            .bodyValue(new SearchRequest("escrime", HERNE_LAT, HERNE_LNG, radiusMeters))
             .exchange()
             .expectStatus().isOk()
             .expectBody(SearchResponse.class)
