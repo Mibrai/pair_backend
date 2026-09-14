@@ -15,15 +15,26 @@ public record UpdateScheduleRequest(
     Boolean showExactAddress,
 
     // Voir CreateScheduleRequest.city : nulle laisse la valeur en place.
+    @Schema(description = "Absente ou null : inchangée. Chaîne vide : retirée.")
     @Size(max = 120) String city,
 
     Instant startsAt,
     // Absente, la fin reste celle en place : une mise à jour ne peut pas la
     // retirer (P-BL-15).
+    @Schema(description = "Absente ou null : inchangée. Ne se retire pas : une séance a toujours une fin.")
     Instant endsAt,
+
+    @Schema(description = "Règle RFC 5545 sans le préfixe RRULE:. Absente ou null : inchangée. "
+        + "Chaîne vide : retirée — le créneau devient une séance unique, à la date de sa prochaine "
+        + "séance ; ses inscrits y restent, aucune séance ne suit. Aucune notification ne part.")
     String recurrenceRule,
-    @Min(1) Integer maxParticipants,
+
+    @Schema(description = "Absent ou null : inchangé. 0 : sans limite. Sinon au moins 1 ; une "
+        + "capacité relevée ou retirée fait entrer la liste d'attente.")
+    @Min(0) Integer maxParticipants,
     Boolean isOpenToPartners,
+
+    @Schema(description = "Absent ou null : inchangé. Chaîne vide : retiré.")
     @Size(max = 300) String welcomeNote,
 
     // Chaîne vide pour retirer la langue déclarée : null veut dire « ne touche

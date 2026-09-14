@@ -168,8 +168,10 @@ public class ProgramController {
     @PutMapping("/{programId}/schedules/{scheduleId}")
     @io.swagger.v3.oas.annotations.Operation(summary = "Modifier un créneau (mise à jour partielle)",
         description = "FUSION, pas remplacement : un champ absent ou null reste ce qu'il était. "
-            + "Pour retirer une valeur : chaîne vide pour primaryLanguage et level, liste vide pour "
-            + "accessibilityTags ; endsAt ne se retire pas. Passer placeType à ONLINE efface la "
+            + "Pour retirer une valeur : chaîne vide pour primaryLanguage, level, recurrenceRule, "
+            + "welcomeNote et city ; 0 pour maxParticipants (sans limite) ; liste vide pour "
+            + "accessibilityTags ; endsAt ne se retire pas. Retirer recurrenceRule garde la prochaine "
+            + "séance comme séance unique, inscrits compris, et ne notifie personne. Passer placeType à ONLINE efface la "
             + "position. addressPublic n'est enregistrée que pour un lieu PUBLIC ou quand "
             + "showExactAddress vaut true — la valeur envoyée, sinon celle déjà en place. "
             + "isPubliclyShareable est ignoré ici : PATCH /api/slots/{id}/shareable. "

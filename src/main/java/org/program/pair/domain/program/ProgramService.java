@@ -653,13 +653,25 @@ public class ProgramService {
             }
         }
 
-        if (request.city() != null)           schedule.setCity(sanitizer.sanitize(request.city()).strip());
+        // Retirer une valeur (demande mobile du 14/09/2026, creneau-modifiable TER) :
+        // null veut toujours dire « ne touche pas » ; la valeur vide du type retire.
+        // Une chaîne vide ou blanche s'enregistre null, jamais "" : plusieurs
+        // lectures testent recurrence_rule IS NULL pour dire « séance unique », et
+        // une règle vide y passerait pour une série.
+        if (request.city() != null)           schedule.setCity(texteOuNull(request.city()));
         if (request.startsAt() != null)       schedule.setStartsAt(request.startsAt());
+        // endsAt ne se retire pas : la colonne est NOT NULL depuis V120 (P-BL-15).
         if (request.endsAt() != null)         schedule.setEndsAt(request.endsAt());
-        if (request.recurrenceRule() != null) schedule.setRecurrenceRule(request.recurrenceRule());
-        if (request.maxParticipants() != null) schedule.setMaxParticipants(request.maxParticipants());
+        // Règle retirée : la ligne garde sa prochaine séance, qui devient la seule.
+        // Les inscrits y restent ; aucune séance ne suit, le rollover ne l'avance plus.
+        if (request.recurrenceRule() != null)
+            schedule.setRecurrenceRule(request.recurrenceRule().isBlank() ? null : request.recurrenceRule().strip());
+        // 0 : sans limite. Une capacité de zéro place n'a pas de sens, et c'est la
+        // seule façon d'écrire « aucune » dans un entier.
+        if (request.maxParticipants() != null)
+            schedule.setMaxParticipants(request.maxParticipants() == 0 ? null : request.maxParticipants());
         if (request.isOpenToPartners() != null) schedule.setIsOpenToPartners(request.isOpenToPartners());
-        if (request.welcomeNote() != null)    schedule.setWelcomeNote(sanitizer.sanitize(request.welcomeNote()).strip());
+        if (request.welcomeNote() != null)    schedule.setWelcomeNote(texteOuNull(request.welcomeNote()));
         if (request.primaryLanguage() != null)
             schedule.setPrimaryLanguage(request.primaryLanguage().isBlank() ? null
                 : request.primaryLanguage().strip().toLowerCase(java.util.Locale.ROOT));
@@ -723,6 +735,12 @@ public class ProgramService {
 
         refreshNextSessionAt(schedule.getProgram());
         return dto;
+    }
+
+    /** Texte assaini ; vide ou blanc après assainissement, il n'existe pas. */
+    private String texteOuNull(String brut) {
+        String propre = sanitizer.sanitize(brut).strip();
+        return propre.isEmpty() ? null : propre;
     }
 
     /**
