@@ -4,6 +4,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.time.Year;
+import java.util.Locale;
 
 /**
  * L'enveloppe de marque de tout e-mail sortant de meetDo.
@@ -84,6 +85,8 @@ public class GabaritEmail {
     private static final String TEXTE_2 = "#626274";
     private static final String TEXTE_3 = "#86869A";
     private static final String VIOLET = "#6C63FF";
+    /** Le fond de l'invitation : le lavis violet des encarts, un cran plus franc que le canevas. */
+    private static final String LAVANDE = "#E9E6FF";
 
     private static final String POLICE =
         "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif";
@@ -102,12 +105,24 @@ public class GabaritEmail {
     }
 
     public String envelopper(String corps, Accent accent) {
+        return envelopper(corps, accent, Locale.FRENCH);
+    }
+
+    /**
+     * Habille [corps] dans la langue du destinataire : seules l'invitation de
+     * fin et la phrase du pied se traduisent, le corps arrive déjà écrit.
+     *
+     * <p>Une langue que meetDo ne parle pas retombe sur le français, comme
+     * {@code LocaleConfig.closestSupported}.
+     */
+    public String envelopper(String corps, Accent accent, Locale langue) {
         if (corps == null || corps.isBlank() || estDejaEnveloppe(corps)) {
             return corps;
         }
+        Invitation invitation = Invitation.pour(langue);
         return """
             <!DOCTYPE html>
-            <html lang="fr"><head>
+            <html lang="%15$s"><head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width,initial-scale=1">
             <meta name="color-scheme" content="light">
@@ -150,8 +165,10 @@ public class GabaritEmail {
               </table>
             </td></tr>
 
+            %14$s
+
             <tr><td style="padding:18px 10px 0;text-align:center;font-family:%2$s;font-size:12px;line-height:1.6;color:%11$s;">
-              <span style="color:%12$s;font-weight:600;">meetDo — on publie un créneau, quelqu'un le rejoint.</span><br>
+              <span style="color:%12$s;font-weight:600;">%16$s</span><br>
               © %13$s meetDo · <a href="https://meetdo.fun" style="color:%12$s;">meetdo.fun</a>
             </td></tr>
 
@@ -172,7 +189,87 @@ public class GabaritEmail {
                 corps,                  // 10
                 TEXTE_3,                // 11
                 TEXTE_2,                // 12
-                Year.now().getValue()); // 13
+                Year.now().getValue(),  // 13
+                blocInvitation(invitation), // 14
+                invitation.langue(),        // 15
+                invitation.devise());       // 16
+    }
+
+    // ── L'invitation de fin ─────────────────────────────────────────────────
+
+    /** La page d'accueil du produit, et sa section d'installation. */
+    static final String SITE = "https://meetdo.fun";
+    static final String SITE_TELECHARGER = SITE + "/#telecharger";
+
+    /**
+     * Les mots de l'invitation, par langue.
+     *
+     * <p>Ici et non dans {@code messages*.properties} : l'enveloppe est posée
+     * par la porte de sortie, sans {@code MessageSource} ni requête, et ces
+     * cinq phrases n'ont de sens qu'avec la mise en page qui les porte.
+     *
+     * <p>« Sport, balade, jeu, atelier » et non « sport » : meetDo met en
+     * relation pour faire quelque chose ensemble, pas seulement pour courir.
+     */
+    record Invitation(String langue, String accroche, String texte, String bouton,
+                      String lienSite, String devise) {
+
+        static Invitation pour(Locale locale) {
+            String l = locale == null ? "fr" : locale.getLanguage();
+            return switch (l) {
+                case "en" -> new Invitation("en",
+                    "Your next plan is one tap away",
+                    "A run at dawn, a board game night, a walk, a pottery class: on meetDo,"
+                        + " someone posts a time, someone else joins. Free, no ads.",
+                    "Download meetDo",
+                    "Discover meetdo.fun",
+                    "meetDo — post a time, someone joins.");
+                case "de" -> new Invitation("de",
+                    "Deine nächste Verabredung ist nur einen Tipp entfernt",
+                    "Laufen im Morgengrauen, ein Spieleabend, ein Spaziergang, ein"
+                        + " Töpferkurs: Auf meetDo stellt jemand einen Termin ein, und"
+                        + " jemand anderes macht mit. Kostenlos, ohne Werbung.",
+                    "meetDo herunterladen",
+                    "meetdo.fun entdecken",
+                    "meetDo — einen Termin einstellen, jemand macht mit.");
+                default -> new Invitation("fr",
+                    "Votre prochaine sortie est à un geste",
+                    "Un footing à l'aube, une soirée jeux, une balade, un atelier poterie :"
+                        + " sur meetDo, quelqu'un publie un créneau, quelqu'un d'autre le"
+                        + " rejoint. Gratuit, sans publicité.",
+                    "Télécharger meetDo",
+                    "Découvrir meetdo.fun",
+                    "meetDo — on publie un créneau, quelqu'un le rejoint.");
+            };
+        }
+    }
+
+    /**
+     * Le bloc « et si vous essayiez ? » qui clôt <b>tout</b> courrier.
+     *
+     * <p>Hors de la carte, entre elle et le pied : le message du courrier reste
+     * seul dans son cadre, et l'invitation se lit comme la signature de
+     * l'expéditeur, jamais comme une partie de ce qu'on vous annonce. Le
+     * bouton est violet quel que soit l'accent du courrier — le corail et la
+     * menthe appartiennent à ce qu'on dit, pas à la marque.
+     */
+    private static String blocInvitation(Invitation i) {
+        return """
+            <tr><td style="padding:16px 0 0;">
+              <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" border="0" style="background:%1$s;border-radius:20px;">
+                <tr><td align="center" style="padding:22px 24px 20px;font-family:%2$s;text-align:center;">
+                  <div style="font-size:17px;font-weight:800;letter-spacing:-.2px;line-height:1.3;color:%3$s;">%4$s</div>
+                  <div style="margin:8px auto 0;max-width:440px;font-size:14px;line-height:1.55;color:%5$s;">%6$s</div>
+                  %7$s
+                  <a href="%8$s" style="font-size:13px;font-weight:600;color:%9$s;text-decoration:underline;">%10$s</a>
+                </td></tr>
+              </table>
+            </td></tr>
+            """.formatted(
+                LAVANDE, POLICE, TEXTE, i.accroche(), TEXTE_2, i.texte(),
+                bouton(SITE_TELECHARGER, i.bouton()).replace("margin:18px 0 4px;",
+                    "margin:16px auto 10px;"),
+                SITE, VIOLET, i.lienSite());
     }
 
     /**

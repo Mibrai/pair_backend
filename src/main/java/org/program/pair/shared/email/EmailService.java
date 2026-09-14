@@ -359,7 +359,8 @@ public class EmailService {
         // de compte. Le filet de la porte de sortie la laissera passer telle
         // quelle — envelopper est idempotent.
         boolean sent = resendEmailService.sendEmail(email, subjectFor(langue, type, subject), text,
-            gabarit.envelopper(htmlFor(langue, type, subject, text), GabaritEmail.Accent.CORAL));
+            gabarit.envelopper(htmlFor(langue, type, subject, text), GabaritEmail.Accent.CORAL,
+                langue));
         if (!sent) {
             // Un e-mail perdu ne doit pas emporter l'annulation elle-même : le
             // push et la notification in-app sont déjà partis.

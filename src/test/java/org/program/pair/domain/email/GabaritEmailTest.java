@@ -119,4 +119,67 @@ class GabaritEmailTest {
         assertThat(bouton).contains("href=\"https://lien.meetdo.fun/v/abc\"");
         assertThat(bouton).contains(">Vérifier</a>");
     }
+
+    // ── L'invitation de fin (14/09/2026) ────────────────────────────────────
+    //
+    // Demandée le 14/09/2026 : tout courrier meetDo se termine par une phrase
+    // qui donne envie, un lien vers meetdo.fun et une invitation à installer
+    // l'application. Un courrier est souvent le premier contact d'une personne
+    // qui n'a pas l'app — un contact de confiance, un invité — et il repartait
+    // sans lui dire ce qu'est meetDo ni où la trouver.
+
+    @Test
+    void toutCourrier_doitFinirParLInvitationATelecharger() {
+        String html = gabarit.envelopper("<p>Bonjour</p>");
+
+        assertThat(html).contains("href=\"https://meetdo.fun/#telecharger\"");
+        assertThat(html).contains(">Télécharger meetDo</a>");
+        assertThat(html).contains("href=\"https://meetdo.fun\"");
+        // Après le corps et avant le copyright : c'est la signature, pas le message.
+        int corps = html.indexOf("<p>Bonjour</p>");
+        int invitation = html.indexOf("meetdo.fun/#telecharger");
+        int copyright = html.indexOf("© ");
+        assertThat(corps).isLessThan(invitation);
+        assertThat(invitation).isLessThan(copyright);
+    }
+
+    @Test
+    void lInvitation_doitGarderLeVioletDeLaMarque_quelQueSoitLAccent() {
+        // Le corail est la couleur de l'alerte : un bouton « Télécharger » corail
+        // sous une alerte de non-retour se lirait comme une action de l'alerte.
+        String html = gabarit.envelopper("<p>Alerte</p>", GabaritEmail.Accent.CORAL);
+        int invitation = html.indexOf("meetdo.fun/#telecharger");
+        String avantLeLien = html.substring(0, invitation);
+        assertThat(avantLeLien.substring(avantLeLien.lastIndexOf("bgcolor=")))
+            .startsWith("bgcolor=\"#6C63FF\"");
+    }
+
+    @Test
+    void lInvitation_doitParlerLaLangueDuDestinataire() {
+        assertThat(gabarit.envelopper("<p>Hi</p>", GabaritEmail.Accent.VIOLET,
+                java.util.Locale.ENGLISH))
+            .contains(">Download meetDo</a>").contains("lang=\"en\"")
+            .doesNotContain("Télécharger");
+        assertThat(gabarit.envelopper("<p>Hallo</p>", GabaritEmail.Accent.VIOLET,
+                java.util.Locale.GERMAN))
+            .contains(">meetDo herunterladen</a>").contains("lang=\"de\"");
+        // Une langue que meetDo ne parle pas retombe sur le français.
+        assertThat(gabarit.envelopper("<p>Hola</p>", GabaritEmail.Accent.VIOLET,
+                java.util.Locale.forLanguageTag("es")))
+            .contains(">Télécharger meetDo</a>");
+    }
+
+    @Test
+    void lInvitation_neDoitPasReduireMeetDoAuSport() {
+        // meetDo met en relation pour faire quelque chose ensemble : l'accroche
+        // cite le sport parmi d'autres, jamais seul.
+        String html = gabarit.envelopper("<p>Bonjour</p>");
+        assertThat(html).contains("soirée jeux").contains("atelier");
+    }
+
+    @Test
+    void lInvitation_nApparaitQuUneFois_memeApresLeFilet() {
+        String html = gabarit.envelopper(gabarit.envelopper("<p>Bonjour</p>"));
+        assertThat(html.split("meetdo.fun/#telecharger", -1)).hasSize(2);
+    }
 }
