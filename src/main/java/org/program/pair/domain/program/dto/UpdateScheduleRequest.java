@@ -26,7 +26,7 @@ public record UpdateScheduleRequest(
 
     @Schema(description = "Règle RFC 5545 sans le préfixe RRULE:. Absente ou null : inchangée. "
         + "Chaîne vide : retirée — le créneau devient une séance unique, à la date de sa prochaine "
-        + "séance ; ses inscrits y restent, aucune séance ne suit. Aucune notification ne part.")
+        + "séance ; ses inscrits y restent, aucune séance ne suit, et ils reçoivent la notification SERIES_ENDED.")
     String recurrenceRule,
 
     @Schema(description = "Absent ou null : inchangé. 0 : sans limite. Sinon au moins 1 ; une "

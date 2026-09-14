@@ -1257,6 +1257,21 @@ class PushNotificationServiceTest {
         assertThat(service.buildBody(LocaleConfig.FRENCH, NotificationType.SCHEDULE_CHANGED, deux))
             .contains("19:00").contains("18:00")
             .contains("Gymnase Victor-Hugo").contains("Studio Lumière");
+
+        // La fin d'une série : son type, sa date, jamais un jour de semaine.
+        Map<String, Object> serie = new LinkedHashMap<>(Map.of(
+            "sessionAt", "2026-08-20T17:00:00Z",
+            "programTitle", "Yoga du soir",
+            "placeName", "Studio Lumière"));
+        assertThat(service.buildTitle(LocaleConfig.FRENCH, NotificationType.SERIES_ENDED, serie))
+            .contains("Yoga du soir");
+        assertThat(service.buildBody(LocaleConfig.FRENCH, NotificationType.SERIES_ENDED, serie))
+            .contains("20 août").contains("les suivantes non")
+            .as("aucun jour de semaine").doesNotContainIgnoringCase("jeu");
+        assertThat(service.buildBody(LocaleConfig.ENGLISH, NotificationType.SERIES_ENDED, serie))
+            .contains("following ones do not");
+        assertThat(service.buildBody(LocaleConfig.GERMAN, NotificationType.SERIES_ENDED, serie))
+            .contains("folgenden nicht");
     }
 
     /**

@@ -23,6 +23,15 @@ class RegroupementCreneauModifieTest {
     }
 
     @Test
+    void uneFinDeSerie_neDoitPasEtreRemplacee_parUneRetoucheSuivante() {
+        UUID id = UUID.randomUUID();
+
+        assertThat(PushNotificationService.regroupementCreneauModifie(
+            NotificationType.SERIES_ENDED, Map.of("scheduleId", id)))
+            .isEqualTo("slot-series-ended-" + id);
+    }
+
+    @Test
     void uneAnnulation_neDoitPasEtreRegroupee_avecUneModification() {
         // Même créneau, même scheduleId : regroupées, l'annulation remplacerait la
         // modification — ou l'inverse, et c'est l'annulation qui disparaîtrait.

@@ -110,6 +110,12 @@ class EmailServiceTest {
         assertThat(heure.toLowerCase()).contains("horaire");
         assertThat(lieu.toLowerCase()).contains("lieu");
         assertThat(deux.toLowerCase()).contains("horaire").contains("lieu");
+
+        // La fin d'une série a son texte : ni « l'horaire a changé », ni « annulée ».
+        String serie = service.notificationText(NotificationType.SERIES_ENDED, charge());
+        assertThat(serie.toLowerCase()).contains("ne se répète plus")
+            .doesNotContain("horaire").doesNotContain("annul");
+        assertThat(service.subjectFor(NotificationType.SERIES_ENDED, "Yoga du soir")).contains("Yoga du soir");
     }
 
     /**

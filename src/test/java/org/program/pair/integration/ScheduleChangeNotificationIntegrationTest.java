@@ -226,6 +226,103 @@ class ScheduleChangeNotificationIntegrationTest extends AbstractIntegrationTest 
 
     // ------------------------------------------------------------------ outils
 
+    /**
+     * Retirer la récurrence prévient chaque inscrit, file d'attente comprise, par
+     * un type dédié (demandes mobiles du 14/09/2026, creneau-modifiable TER et
+     * QUATER) — et jamais l'organisateur.
+     *
+     * <p>Sans cela, un inscrit à une série hebdomadaire l'apprenait la semaine
+     * suivante, devant un créneau qui n'existait plus.
+     */
+    @Test
+    void retirerLaRecurrence_doitPrevenirChaqueInscritQueLaSerieSArrete() {
+        Terrain terrain = terrain(PlaceType.PUBLIC, true, 2);
+        serie(terrain);
+        Compte premier = compte();
+        Compte second = compte();
+        rejoindre(premier, terrain);
+        rejoindre(second, terrain);
+        Compte enFile = compte();
+        webTestClient.post().uri("/api/slots/{id}/waitlist", terrain.scheduleId())
+            .headers(h -> h.setBearerAuth(enFile.token()))
+            .exchange().expectStatus().isCreated();
+
+        modifier(terrain, Map.of("recurrenceRule", ""));
+
+        for (Compte qui : List.of(premier, second, enFile)) {
+            await().atMost(Duration.ofSeconds(10)).pollInterval(Duration.ofMillis(100))
+                .until(() -> compterFinsDeSerie(qui) == 1);
+            Map<String, Object> payload = chargeFinDeSerie(qui);
+            assertThat(payload.get("sessionAt")).as("la date de la séance gardée")
+                .isEqualTo(terrain.debut().toString());
+            assertThat(payload.get("scheduleId")).isEqualTo(terrain.scheduleId().toString());
+            // Ni l'heure ni le lieu n'ont bougé : aucune modification annoncée.
+            assertThat(compter(qui)).isZero();
+        }
+        assertThat(compterFinsDeSerie(terrain.hote())).as("jamais l'auteur du geste").isZero();
+    }
+
+    /** Rien si la règle était déjà vide, ni si l'on change seulement de règle. */
+    @Test
+    void uneRegleDejaVide_ouChangee_neDoitPrevenirPersonne() {
+        Terrain unique = terrain(PlaceType.PUBLIC, true, 5);
+        Compte inscrit = compte();
+        rejoindre(inscrit, unique);
+        modifier(unique, Map.of("recurrenceRule", ""));
+
+        Terrain serie = terrain(PlaceType.PUBLIC, true, 5);
+        serie(serie);
+        Compte inscritSerie = compte();
+        rejoindre(inscritSerie, serie);
+        modifier(serie, Map.of("recurrenceRule", "FREQ=WEEKLY;INTERVAL=2"));
+
+        rienNArrive(inscrit);
+        rienNArrive(inscritSerie);
+        assertThat(compterFinsDeSerie(inscrit)).isZero();
+        assertThat(compterFinsDeSerie(inscritSerie)).isZero();
+    }
+
+    /** Une séance gardée déjà terminée n'a plus rien à annoncer. */
+    @Test
+    void uneSeanceGardeeDejaTerminee_neDoitPrevenirPersonne() {
+        Terrain terrain = terrain(PlaceType.PUBLIC, true, 5);
+        serie(terrain);
+        Compte inscrit = compte();
+        rejoindre(inscrit, terrain);
+        // Terminée, pas encore avancée par le roulement : la fenêtre de dix minutes.
+        jdbcTemplate.update("""
+            UPDATE schedules SET starts_at = now() - interval '3 hours', ends_at = now() - interval '2 hours'
+             WHERE id = ?""", terrain.scheduleId());
+
+        modifier(terrain, Map.of("recurrenceRule", ""));
+
+        rienNArrive(inscrit);
+        assertThat(compterFinsDeSerie(inscrit)).isZero();
+    }
+
+    private void serie(Terrain terrain) {
+        jdbcTemplate.update("UPDATE schedules SET recurrence_rule = 'FREQ=WEEKLY' WHERE id = ?",
+            terrain.scheduleId());
+    }
+
+    private long compterFinsDeSerie(Compte qui) {
+        Long n = jdbcTemplate.queryForObject(
+            "SELECT COUNT(*) FROM notifications WHERE user_id = ? AND type = ?",
+            Long.class, qui.id(), NotificationType.SERIES_ENDED.name());
+        return n == null ? 0 : n;
+    }
+
+    private Map<String, Object> chargeFinDeSerie(Compte qui) {
+        String json = jdbcTemplate.queryForObject("""
+            SELECT payload FROM notifications WHERE user_id = ? AND type = ?
+            ORDER BY sent_at DESC LIMIT 1""", String.class, qui.id(), NotificationType.SERIES_ENDED.name());
+        try {
+            return objectMapper.readValue(json, new com.fasterxml.jackson.core.type.TypeReference<>() {});
+        } catch (Exception e) {
+            throw new IllegalStateException("payload illisible : " + json, e);
+        }
+    }
+
     private record Compte(UUID id, String token) {}
 
     private record Terrain(Compte hote, UUID programId, UUID scheduleId, Instant debut) {}

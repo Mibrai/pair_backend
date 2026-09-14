@@ -610,6 +610,7 @@ public class ProgramService {
         // créneau de public à privé, et l'annonce ne doit pas être le chemin par
         // lequel l'adresse qu'on vient de masquer ressort.
         String oldAddress = SlotAddressVisibility.broadcastableAddress(schedule);
+        String oldRecurrenceRule = schedule.getRecurrenceRule();
 
         if (request.placeName() != null)
             schedule.setPlaceName(sanitizer.sanitize(request.placeName()).strip());
@@ -712,6 +713,12 @@ public class ProgramService {
 
         Set<ScheduleChange> changements = changementsAAnnoncer(
             schedule, oldStart, oldEnd, oldPlaceName, oldPlaceType, oldLocation, oldAddress);
+        // Une série qui s'arrête s'annonce aussi : ses inscrits comptaient sur les
+        // semaines suivantes. Changer de règle (hebdomadaire → mensuelle) ne
+        // s'annonce pas encore : la prochaine séance, elle, n'a pas bougé.
+        if (oldRecurrenceRule != null && schedule.getRecurrenceRule() == null) {
+            changements.add(ScheduleChange.SERIES_ENDED);
+        }
 
         // Les veilles retour suivent la séance, dans CETTE transaction : leur
         // échéance et la nouvelle heure doivent aboutir ensemble ou pas du tout.

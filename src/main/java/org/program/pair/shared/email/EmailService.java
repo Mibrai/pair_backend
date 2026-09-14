@@ -388,6 +388,8 @@ public class EmailService {
                 "Programme annulé : " + programTitle, programTitle);
             case SCHEDULE_CHANGED -> texte(langue, "email.SCHEDULE_CHANGED.subject",
                 "Séance modifiée : " + programTitle, programTitle);
+            case SERIES_ENDED -> texte(langue, "email.SERIES_ENDED.subject",
+                "La série s'arrête : " + programTitle, programTitle);
             default -> "meetDo — " + programTitle;
         };
     }
@@ -425,6 +427,10 @@ public class EmailService {
             texte(langue, "email.notification.defaultTitle", "votre créneau"));
         return switch (type) {
             case SCHEDULE_CHANGED -> scheduleChangedText(langue, payload, titre);
+            // Sans ce cas, la fin d'une série tombait sur le texte d'annulation.
+            case SERIES_ENDED -> texte(langue, "email.SERIES_ENDED.body",
+                "La séance « " + titre + " » ne se répète plus : la prochaine a bien lieu, les"
+                    + " suivantes non. Retrouvez les détails dans l'application.", titre);
             case PROGRAM_CANCELLED -> texte(langue, "email.PROGRAM_CANCELLED.body",
                 "Le programme « " + titre + " » est annulé.", titre);
             default -> cancellationText(langue, payload, titre);

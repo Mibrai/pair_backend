@@ -171,14 +171,16 @@ public class ProgramController {
             + "Pour retirer une valeur : chaîne vide pour primaryLanguage, level, recurrenceRule, "
             + "welcomeNote et city ; 0 pour maxParticipants (sans limite) ; liste vide pour "
             + "accessibilityTags ; endsAt ne se retire pas. Retirer recurrenceRule garde la prochaine "
-            + "séance comme séance unique, inscrits compris, et ne notifie personne. Passer placeType à ONLINE efface la "
+            + "séance comme séance unique, inscrits compris, et les inscrits reçoivent SERIES_ENDED "
+            + "si cette séance est encore à venir. Passer placeType à ONLINE efface la "
             + "position. addressPublic n'est enregistrée que pour un lieu PUBLIC ou quand "
             + "showExactAddress vaut true — la valeur envoyée, sinon celle déjà en place. "
             + "isPubliclyShareable est ignoré ici : PATCH /api/slots/{id}/shareable. "
             + "Une capacité sous le nombre d'inscrits ne désinscrit personne : le créneau passe FULL. "
             + "Aucun contrôle de chevauchement d'agenda : jamais de 409 SCHEDULE_CONFLICT sur cette route. "
-            + "Les inscrits reçoivent SCHEDULE_CHANGED seulement si l'heure (startsAt, endsAt) ou le "
-            + "lieu (placeName, placeType, position, adresse diffusable) a changé ; une requête "
+            + "Les inscrits reçoivent SCHEDULE_CHANGED seulement si l'heure (startsAt, endsAt), le "
+            + "lieu (placeName, placeType, position, adresse diffusable) a changé. Retirer la récurrence "
+            + "envoie SERIES_ENDED, un type distinct ; une requête "
             + "sans changement effectif ne notifie personne.")
     public ScheduleDto updateSchedule(
             @AuthenticationPrincipal UserPrincipal principal,

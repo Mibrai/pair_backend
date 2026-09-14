@@ -68,12 +68,25 @@ public record ScheduleChangedEvent(
         TIME,
 
         /** Coordonnées, type de lieu, nom du lieu ou adresse diffusable. */
-        PLACE
+        PLACE,
+
+        /**
+         * La règle de récurrence a été retirée : la prochaine séance devient la
+         * dernière (demandes mobiles du 14/09/2026, creneau-modifiable TER et
+         * QUATER). Annoncée par son propre type, {@code SERIES_ENDED}, et jamais
+         * écrite dans le {@code changedFields} d'un {@code SCHEDULE_CHANGED}.
+         */
+        SERIES_ENDED
     }
 
     /** Vrai si l'heure a bougé — ce qui décide aussi du décalage des veilles. */
     public boolean timeChanged() {
         return changes.contains(ScheduleChange.TIME);
+    }
+
+    /** Vrai si la série s'arrête après sa prochaine séance. */
+    public boolean seriesEnded() {
+        return changes.contains(ScheduleChange.SERIES_ENDED);
     }
 
     /** Vrai si le lieu a bougé. */

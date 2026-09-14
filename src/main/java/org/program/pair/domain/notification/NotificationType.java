@@ -29,6 +29,11 @@ public enum NotificationType {
     // meetDo — créneaux, présence et alertes
     SLOT_JOINED,             // quelqu'un a rejoint mon créneau
     SLOT_CANCELLED,          // un créneau que j'ai rejoint est annulé
+    // La série d'un créneau que j'ai rejoint s'arrête : sa prochaine séance a
+    // lieu, les suivantes non (l'organisateur a retiré la récurrence). Distinct
+    // de SCHEDULE_CHANGED, qui dit « ce qui a bougé » d'une séance : ici c'est
+    // l'agenda des semaines suivantes qui perd des séances.
+    SERIES_ENDED,
     WAITLIST_PROMOTED,       // une place s'est libérée, j'y entre
     ATTENDANCE_PROMPT,       // "tu y étais ?" après un créneau
     ACTIVITY_ALERT_MATCH,    // quelqu'un pratique enfin cette activité près de moi
@@ -155,6 +160,9 @@ public enum NotificationType {
      */
     private static final java.util.Set<NotificationType> CRITICAL = java.util.EnumSet.of(
         SLOT_CANCELLED, PROGRAM_CANCELLED, SCHEDULE_CHANGED, PROGRAM_REMINDER,
+        // Même coût que l'annulation, dont elle est une forme : quelqu'un garde sa
+        // soirée ou se déplace pour une séance qui n'aura pas lieu.
+        SERIES_ENDED,
         // Le rappel de retour traverse le silence pour la raison la plus forte de
         // cet ensemble : le coût de l'apprendre trop tard n'est pas une séance
         // manquée mais une alerte envoyée chez un proche. Étouffer les trois
@@ -195,7 +203,7 @@ public enum NotificationType {
      * qu'on veut retrouver écrits quelque part même en ayant raté la notification.
      */
     private static final java.util.Set<NotificationType> EMAILED = java.util.EnumSet.of(
-        SLOT_CANCELLED, PROGRAM_CANCELLED, SCHEDULE_CHANGED);
+        SLOT_CANCELLED, PROGRAM_CANCELLED, SCHEDULE_CHANGED, SERIES_ENDED);
 
     /**
      * Les notifications que le téléphone doit afficher même en mode Concentration.

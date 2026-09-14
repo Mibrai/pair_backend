@@ -98,12 +98,24 @@ public class ScheduleChangeNotificationListener {
                 return;
             }
 
-            // Composée une fois pour tous : les valeurs sont les mêmes pour
-            // chacun, et rien dedans ne dépend du destinataire.
-            Map<String, Object> payload = payloadFor(slot, event);
-            for (UUID recipientId : recipients) {
-                notificationService.notify(
-                    recipientId, event.actorId(), NotificationType.SCHEDULE_CHANGED, payload);
+            // Ce qui a bougé de la séance, et la fin de la série : deux nouvelles
+            // distinctes, deux types. Retirer la règle et avancer l'heure d'un
+            // même geste envoie les deux.
+            if (event.timeChanged() || event.placeChanged()) {
+                // Composée une fois pour tous : les valeurs sont les mêmes pour
+                // chacun, et rien dedans ne dépend du destinataire.
+                Map<String, Object> payload = payloadFor(slot, event);
+                for (UUID recipientId : recipients) {
+                    notificationService.notify(
+                        recipientId, event.actorId(), NotificationType.SCHEDULE_CHANGED, payload);
+                }
+            }
+            if (event.seriesEnded() && finDeSerieAAnnoncer(slot)) {
+                Map<String, Object> payload = NotificationPayload.ofSchedule(slot).build();
+                for (UUID recipientId : recipients) {
+                    notificationService.notify(
+                        recipientId, event.actorId(), NotificationType.SERIES_ENDED, payload);
+                }
             }
         } catch (Exception e) {
             // La modification est enregistrée et commitée : un envoi perdu ne
@@ -112,6 +124,20 @@ public class ScheduleChangeNotificationListener {
             log.error("Modification du créneau {} non notifiée : {}",
                 event.scheduleId(), e.getMessage(), e);
         }
+    }
+
+    /**
+     * La fin de série ne s'annonce que si la séance gardée est encore à venir et
+     * que le créneau n'est pas annulé.
+     *
+     * <p>Une séance déjà terminée (la règle retirée pendant les dix minutes où le
+     * roulement ne l'a pas encore avancée) n'a plus de « prochaine séance » à
+     * garder : annoncer « la séance du 22/09 a bien lieu » pour une séance finie
+     * serait faux. Une série annulée, elle, a déjà été annoncée comme telle.
+     */
+    private boolean finDeSerieAAnnoncer(Schedule slot) {
+        return slot.getStatus() != SlotStatus.CANCELLED
+            && !SlotTiming.hasEndedBy(slot, java.time.Instant.now());
     }
 
     /**
@@ -129,8 +155,11 @@ public class ScheduleChangeNotificationListener {
      * pas être le chemin par lequel l'adresse qu'on vient de masquer ressort.
      */
     private Map<String, Object> payloadFor(Schedule slot, ScheduleChangedEvent event) {
+        // SERIES_ENDED a son propre type : changedFields reste « ce qui a bougé ».
         NotificationPayload payload = NotificationPayload.ofSchedule(slot)
-            .with("changedFields", event.changes().stream().map(Enum::name).sorted().toList());
+            .with("changedFields", event.changes().stream()
+                .filter(c -> c != ScheduleChangedEvent.ScheduleChange.SERIES_ENDED)
+                .map(Enum::name).sorted().toList());
 
         if (event.timeChanged()) {
             payload.with("previousStartsAt", event.previousStartsAt())

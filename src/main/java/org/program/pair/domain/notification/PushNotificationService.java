@@ -358,11 +358,21 @@ public class PushNotificationService implements PushNotificationServiceInterface
      * regrouper une annulation avec une modification effacerait l'annulation.
      */
     static String regroupementCreneauModifie(NotificationType type, Map<String, Object> payload) {
-        if (type != NotificationType.SCHEDULE_CHANGED || payload == null) {
+        if (payload == null) {
             return null;
         }
         Object scheduleId = payload.get("scheduleId");
-        return scheduleId == null ? null : "slot-changed-" + scheduleId;
+        if (scheduleId == null) {
+            return null;
+        }
+        // La fin d'une série a son propre regroupement : une retouche d'horaire
+        // faite juste après ne doit pas remplacer la bannière qui disait « c'est
+        // la dernière ».
+        return switch (type) {
+            case SCHEDULE_CHANGED -> "slot-changed-" + scheduleId;
+            case SERIES_ENDED -> "slot-series-ended-" + scheduleId;
+            default -> null;
+        };
     }
 
     /**
@@ -750,6 +760,8 @@ public class PushNotificationService implements PushNotificationServiceInterface
             // voulu, une heure changée la nuit reste une heure changée.
             case SCHEDULE_CHANGED -> msg(locale, "push.SCHEDULE_CHANGED.title",
                 arg(payload, "programTitle"));
+            case SERIES_ENDED -> msg(locale, "push.SERIES_ENDED.title",
+                arg(payload, "programTitle"));
             case WAITLIST_PROMOTED -> msg(locale, "push.WAITLIST_PROMOTED.title", arg(payload, "programTitle"));
             case ATTENDANCE_PROMPT -> msg(locale, "push.ATTENDANCE_PROMPT.title");
             case ACTIVITY_ALERT_MATCH -> msg(locale, "push.ACTIVITY_ALERT_MATCH.title", arg(payload, "activityName"));
@@ -845,6 +857,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
             case SLOT_JOINED -> rawOr(payload, "programTitle", locale, "push.generic.body");
             case SLOT_CANCELLED -> msg(locale, "push.SLOT_CANCELLED.body", arg(payload, "placeName"));
             case SCHEDULE_CHANGED -> scheduleChangedBody(locale, zone, payload);
+            case SERIES_ENDED -> seriesEndedBody(locale, zone, payload);
             case WAITLIST_PROMOTED -> msg(locale, "push.WAITLIST_PROMOTED.body", arg(payload, "placeName"));
             case ATTENDANCE_PROMPT -> msg(locale, "push.ATTENDANCE_PROMPT.body", arg(payload, "programTitle"));
             case ACTIVITY_ALERT_MATCH -> msg(locale, "push.ACTIVITY_ALERT_MATCH.body",
@@ -942,6 +955,30 @@ public class PushNotificationService implements PushNotificationServiceInterface
             return msg(locale, "push.SCHEDULE_CHANGED.body.place", nouveauLieu, ancienLieu);
         }
         return msg(locale, "push.generic.body");
+    }
+
+    /**
+     * La fin d'une série : la prochaine séance a lieu, les suivantes non.
+     *
+     * <p><b>Une date, jamais un jour de semaine.</b> « La série s'arrête après la
+     * séance du 22/09 », et non « plus de séance le mardi » : un lieu et une
+     * récurrence ne sortent jamais ensemble de l'application.
+     */
+    private String seriesEndedBody(Locale locale, ZoneId zone, Map<String, Object> payload) {
+        String text = arg(payload, "sessionAt").strip();
+        try {
+            if (!text.isEmpty() && !"null".equals(text)) {
+                // push.SERIES_ENDED.datePattern et non push.tpl.datePattern, qui
+                // commence par le jour de la semaine : « jeu. 22 sept. » suivi de
+                // « la série s'arrête » dirait quel jour elle avait lieu.
+                String derniere = Instant.parse(text).atZone(zone).format(DateTimeFormatter.ofPattern(
+                    msg(locale, "push.SERIES_ENDED.datePattern"), locale));
+                return msg(locale, "push.SERIES_ENDED.body", derniere);
+            }
+        } catch (DateTimeParseException e) {
+            log.warn("Push payload carries an unreadable 'sessionAt': {}", text);
+        }
+        return msg(locale, "push.SERIES_ENDED.bodyNoDate");
     }
 
     /**
