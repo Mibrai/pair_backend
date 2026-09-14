@@ -312,7 +312,16 @@ public class SlotService {
         // refus, la fiche tombait en « Utilisateur introuvable » en composant
         // son profil — un 404 qui parle d'une personne là où l'on a demandé un
         // créneau (incident du 14/09/2026).
-        entryGuard.assertHostActive(host);
+        //
+        // Sauf un créneau annulé (P-BL-18) : fermer son compte annule ses
+        // créneaux et envoie SLOT_CANCELLED, et la fiche est ce que la
+        // notification ouvre. Un 404 à cet endroit dirait « introuvable » à qui
+        // vient d'apprendre que la séance est annulée. La fiche est rendue sans
+        // profil d'hôte (feedContext l'écarte), et rien n'y est plus faisable :
+        // l'inscription passe par assertHostActive, que ceci ne touche pas.
+        if (slot.getStatus() != SlotStatus.CANCELLED) {
+            entryGuard.assertHostActive(host);
+        }
         if (blockFilterService.blocked(requesterId, host.getId())) {
             throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
         }
@@ -655,7 +664,10 @@ public class SlotService {
             // rend 404. Un seul hôte dans ce cas faisait tomber toute la liste en
             // « 404 Utilisateur introuvable » — pour tout inscrit à l'un des
             // créneaux des vingt comptes démo fermés par V116 (incident du 14/09/2026).
-            .filter(s -> Boolean.TRUE.equals(s.getProgram().getUserActivity().getUser().getIsActive()))
+            // Un créneau annulé reste, comme sa fiche (voir getSlot) : c'est
+            // l'annulation que la fermeture du compte vient d'annoncer (P-BL-18).
+            .filter(s -> s.getStatus() == SlotStatus.CANCELLED
+                || Boolean.TRUE.equals(s.getProgram().getUserActivity().getUser().getIsActive()))
             .filter(s -> !upcomingOnly || SlotTiming.endOf(s).isAfter(now))
             .sorted(java.util.Comparator.comparing(Schedule::getStartsAt))
             .toList();

@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -71,10 +72,14 @@ public class WaitlistPromoter {
 
             resequence(slot.getId());
 
-            notificationService.notify(candidateId,
-                slot.getProgram().getUserActivity().getUser().getId(),
-                NotificationType.WAITLIST_PROMOTED,
-                NotificationPayload.ofSchedule(slot).build());
+            // Après le commit : une place annoncée par une transaction qui échoue
+            // n'existe pas, et la fermeture de compte, qui libère des places au
+            // milieu d'un geste plus long, peut échouer après coup. La charge
+            // utile est composée ici, sur le créneau chargé.
+            UUID hostId = slot.getProgram().getUserActivity().getUser().getId();
+            Map<String, Object> payload = NotificationPayload.ofSchedule(slot).build();
+            EnvoiApresCommit.executer(() -> notificationService.notify(
+                candidateId, hostId, NotificationType.WAITLIST_PROMOTED, payload));
             return;
         }
     }

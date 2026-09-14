@@ -66,6 +66,10 @@ class UserServiceTest {
     @Mock
     org.program.pair.domain.auth.session.SessionService sessionService;
 
+    /** P-BL-18 : la désactivation annule d'abord les séances du compte. */
+    @Mock
+    org.program.pair.domain.program.AccountClosureEffects accountClosureEffects;
+
     @InjectMocks
     UserService userService;
 

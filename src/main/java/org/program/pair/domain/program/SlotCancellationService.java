@@ -111,6 +111,12 @@ public class SlotCancellationService {
      * <p>Quelqu'un qui attendait une place a organisé sa journée autour de ce
      * créneau autant qu'un inscrit, et ne rien lui dire le laisserait attendre
      * une promotion qui n'arrivera jamais.
+     *
+     * <p><b>L'envoi part après le commit</b> ({@link EnvoiApresCommit}), les
+     * destinataires et la charge utile étant composés avant, dans la
+     * transaction. Une annulation qui échoue en base — seule ou au milieu d'une
+     * fermeture de compte — ne prévient donc personne, et son rejeu ne prévient
+     * personne deux fois.
      */
     private void notifyEveryone(Schedule slot, UUID cancellerId, String reason) {
         // Les quatre sources en un seul endroit depuis P-BL-06 : les mêmes que
@@ -125,9 +131,11 @@ public class SlotCancellationService {
         }
 
         Map<String, Object> payload = payloadFor(slot, reason);
-        for (UUID recipientId : recipients) {
-            notificationService.notify(recipientId, cancellerId, NotificationType.SLOT_CANCELLED, payload);
-        }
+        EnvoiApresCommit.executer(() -> {
+            for (UUID recipientId : recipients) {
+                notificationService.notify(recipientId, cancellerId, NotificationType.SLOT_CANCELLED, payload);
+            }
+        });
     }
 
     /**
