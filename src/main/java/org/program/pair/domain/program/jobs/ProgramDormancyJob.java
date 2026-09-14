@@ -1,5 +1,6 @@
 package org.program.pair.domain.program.jobs;
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.program.pair.shared.observabilite.ScheduledJobMetricsAspect;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -89,6 +90,7 @@ public class ProgramDormancyJob {
      * 3 h, le balayage de la boîte d'envoi à 3 h 20, la fermeture des fenêtres de
      * présence à 3 h 30.
      */
+    @SchedulerLock(name = "program-dormancy")
     @Scheduled(cron = "0 50 3 * * *")
     @Transactional
     public void putEmptyProgramsToSleep() {

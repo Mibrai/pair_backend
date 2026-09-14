@@ -36,6 +36,7 @@
              GHSA-9xv2-5v5q-p794 (CVSS 9,8) et deux failles à 9,1, corrigées en 11.0.25.
              À retirer dès qu'une version de Boot embarque 11.0.25 ou plus. -->
         <tomcat.version>11.0.25</tomcat.version>
+        <shedlock.version>7.10.1</shedlock.version>
 
         <!--
           Identité du build, gravée dans build-info.properties et rendue par
@@ -282,8 +283,25 @@
 
           La planification de ce dépôt est celle de Spring (@EnableScheduling +
           config/SchedulingConfig). Ne pas remettre ce starter pour ajouter un
-          verrou distribué : c'est ShedLock qui s'en chargera (P-BA-04 lot 2).
+          verrou distribué : c'est ShedLock qui s'en charge (P-BA-04 lot 2).
         -->
+
+        <!--
+          P-BA-04 lot 2 (décision D4 option B) : un verrou en base par job planifié,
+          pour qu'un second conteneur — le chevauchement d'un déploiement, ou une
+          seconde réplique — ne double ni rappel, ni SMS, ni bascule de créneau.
+          La série 7.x est celle qui prend en charge Spring 7 et Boot 4.
+        -->
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-spring</artifactId>
+            <version>${shedlock.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-provider-jdbc-template</artifactId>
+            <version>${shedlock.version}</version>
+        </dependency>
 
         <!-- Phase 4: Spring Actuator (Monitoring) -->
         <dependency>

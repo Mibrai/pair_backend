@@ -1,5 +1,6 @@
 package org.program.pair.domain.program.jobs;
 
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.program.pair.shared.observabilite.ScheduledJobMetricsAspect;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -158,6 +159,7 @@ public class CycleNudgeJob {
      *
      * <p>À :40, là où {@code AttendancePromptJob} occupe :00 et :15.
      */
+    @SchedulerLock(name = "program-cycle-nudges", lockAtMostFor = "PT30M")
     @Scheduled(cron = "0 40 * * * *")
     @Transactional
     public void sendCycleNudges() {
