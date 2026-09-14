@@ -186,6 +186,19 @@ public class RateLimiter {
     private static final Duration FENETRE_RESET = Duration.ofHours(1);
 
     /**
+     * Lectures de « déjà pratiquée près de toi » tolérées par compte.
+     *
+     * <p>La route est appelée au fil de la frappe, quelques fois par activité
+     * créée : trente lectures en dix minutes y suffisent largement. Au-delà, ce
+     * n'est plus quelqu'un qui écrit un nom, c'est quelqu'un qui balaie des
+     * positions — exactement ce que le seuil et l'arrondi de la route rendent
+     * déjà peu rentable, et ce que ce plafond borne en volume.
+     */
+    private static final int PRATIQUE_PROCHE_PAR_COMPTE = 30;
+
+    private static final Duration FENETRE_PRATIQUE_PROCHE = Duration.ofMinutes(10);
+
+    /**
      * Présentations d'un jeton de réinitialisation tolérées depuis une même
      * connexion.
      *
@@ -419,6 +432,12 @@ public class RateLimiter {
     public void checkResetPasswordAttempt(String ip) {
         consommerSeul("reset-token:ip:" + ip, RESETS_PAR_IP, FENETRE_RESET,
             "Trop de tentatives de réinitialisation. Réessayez dans une heure.");
+    }
+
+    /** Voir {@link #PRATIQUE_PROCHE_PAR_COMPTE}. Budget par compte : la route exige une session. */
+    public void checkPractisedNearby(java.util.UUID userId) {
+        consommerSeul("practised-nearby:" + userId, PRATIQUE_PROCHE_PAR_COMPTE, FENETRE_PRATIQUE_PROCHE,
+            "Trop de lectures. Réessayez dans quelques minutes.");
     }
 
     /**

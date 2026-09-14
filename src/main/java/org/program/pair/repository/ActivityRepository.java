@@ -319,4 +319,45 @@ public interface ActivityRepository extends JpaRepository<Activity, UUID> {
         @Param("radiusMeters") int radiusMeters,
         @Param("limit") int limit
     );
+
+    /**
+     * Parmi {@code activityIds}, celles qui se pratiquent autour de la position :
+     * au moins {@code seuil} personnes distinctes, <b>autres que l'appelant</b>.
+     *
+     * <p>Même maille que {@link #findMostPractisedInRadius} — activité montrée sur
+     * la carte, compte actif, position rendue publique — plus le blocage dans les
+     * deux sens, comme sur la carte. Le décompte ne sort pas de la base : la
+     * requête ne rend que les identifiants qui passent le seuil.
+     */
+    @Query(value = """
+        SELECT ua.activity_id
+        FROM user_activities ua
+        JOIN users u ON ua.user_id = u.id
+        WHERE ua.activity_id IN (:activityIds)
+          AND ua.user_id <> :requesterId
+          AND ua.visible_on_map = true
+          AND u.is_active = true
+          AND u.location_public = true
+          AND u.location IS NOT NULL
+          AND ST_DWithin(
+              u.location::geography,
+              ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
+              :radiusMeters
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM user_blocks b
+              WHERE (b.blocker_id = :requesterId AND b.blocked_id = ua.user_id)
+                 OR (b.blocker_id = ua.user_id AND b.blocked_id = :requesterId)
+          )
+        GROUP BY ua.activity_id
+        HAVING COUNT(DISTINCT ua.user_id) >= :seuil
+        """, nativeQuery = true)
+    List<UUID> findPractisedNearby(
+        @Param("lat") double lat,
+        @Param("lng") double lng,
+        @Param("radiusMeters") int radiusMeters,
+        @Param("requesterId") UUID requesterId,
+        @Param("activityIds") java.util.Collection<UUID> activityIds,
+        @Param("seuil") int seuil
+    );
 }

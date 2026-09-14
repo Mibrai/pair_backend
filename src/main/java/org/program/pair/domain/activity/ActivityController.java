@@ -37,6 +37,8 @@ public class ActivityController {
     private final ActivityService activityService;
     private final ActivityBrowseService activityBrowseService;
     private final SuggestedActivityService suggestedActivityService;
+    private final PractisedNearbyService practisedNearbyService;
+    private final org.program.pair.shared.security.RateLimiter rateLimiter;
     private final StorageService storageService;
     private final MediaFileService mediaFileService;
     private final MediaValidator mediaValidator;
@@ -100,6 +102,36 @@ public class ActivityController {
             @RequestParam double lng,
             @RequestParam(defaultValue = "12") @Min(1) @Max(50) int limit) {
         return suggestedActivityService.suggest(principal.getId(), lat, lng, limit);
+    }
+
+    /**
+     * « Déjà pratiquée près de toi » : un booléen par activité, jamais un compte.
+     *
+     * <p>Une route à part plutôt qu'un champ de {@code ActivityDto} : {@code GET
+     * /api/activities} est publique, et y accepter une position l'ouvrirait au
+     * sondage anonyme. Voir {@link PractisedNearbyService} pour le seuil et
+     * l'arrondi.
+     */
+    @GetMapping("/activities/practised-nearby")
+    @io.swagger.v3.oas.annotations.Operation(
+        summary = "Ces activités se pratiquent-elles déjà autour de cette position ?",
+        description = "Une entrée par identifiant connu, dans l'ordre reçu ; un identifiant "
+            + "inconnu est omis. Oui à partir de 3 personnes distinctes autres que l'appelant, "
+            + "visibles sur la carte (activité montrée, compte actif, position publique, hors "
+            + "blocage), à moins de 25 km de la position arrondie au centième de degré. Aucun "
+            + "décompte n'est servi. Plafond : 30 lectures par compte sur 10 minutes.")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "400",
+        description = "Position hors bornes, liste vide ou plus de 10 identifiants (VALIDATION_ERROR)")
+    @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "429",
+        description = "Plafond atteint (RATE_LIMITED), avec Retry-After")
+    public List<PractisedNearbyDto> practisedNearby(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestParam(required = false) Double lat,
+            @RequestParam(required = false) Double lng,
+            @Parameter(description = "De 1 à 10 identifiants, séparés par des virgules.")
+            @RequestParam(required = false) List<String> activityIds) {
+        rateLimiter.checkPractisedNearby(principal.getId());
+        return practisedNearbyService.practisedNearby(principal.getId(), lat, lng, activityIds);
     }
 
     /**
