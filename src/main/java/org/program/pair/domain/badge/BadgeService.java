@@ -9,7 +9,6 @@ import org.program.pair.domain.user.VerificationStatus;
 import org.program.pair.repository.BadgeAwardRepository;
 import org.program.pair.repository.BadgeRepository;
 import org.program.pair.repository.ProgramRepository;
-import org.program.pair.repository.ProgressionRepository;
 import org.program.pair.repository.ScheduleRepository;
 import org.program.pair.repository.UserActivityRepository;
 import org.program.pair.repository.UserRepository;
@@ -17,8 +16,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
@@ -32,14 +29,18 @@ public class BadgeService {
     private final BadgeRepository badgeRepository;
     private final BadgeAwardRepository badgeAwardRepository;
     private final ProgramRepository programRepository;
-    private final ProgressionRepository progressionRepository;
     private final UserActivityRepository userActivityRepository;
     private final org.program.pair.repository.PeerRecommendationRepository peerRecommendationRepository;
     private final UserRepository userRepository;
     private final ScheduleRepository scheduleRepository;
 
     /**
-     * Évalue tous les badges pour un utilisateur et attribue ceux qu'il mérite
+     * Évalue tous les badges pour un utilisateur et attribue ceux qu'il mérite.
+     *
+     * <p>Aucun badge de série ni de note n'est évaluable : leurs types ont quitté
+     * {@link org.program.pair.domain.trust.BadgeConditionType} et la base les refuse
+     * (V122). Un badge par condition, au seuil le plus bas : il marque un geste,
+     * il ne mesure pas une performance.
      */
     public List<BadgeAward> evaluateBadges(UUID userId) {
         log.info("Evaluating badges for user {}", userId);
@@ -71,12 +72,10 @@ public class BadgeService {
         return switch (badge.getConditionType()) {
             case VERIFICATION -> checkVerification(userId, badge.getCode());
             case PROGRAM_COUNT -> checkProgramCount(userId, badge.getConditionThreshold());
-            case PROGRESSION_STREAK -> checkProgressionStreak(userId, badge.getConditionThreshold());
             case ACTIVITY_DIVERSITY -> checkActivityDiversity(userId, badge.getConditionThreshold());
             case RECOMMENDATION_COUNT -> checkRecommendationCount(userId, badge.getConditionThreshold());
             case ATTENDANCE_COUNT -> checkAttendanceCount(userId, badge.getConditionThreshold());
             case DISTINCT_PARTNERS -> checkDistinctPartners(userId, badge.getConditionThreshold());
-            case WEEKLY_STREAK -> checkWeeklyStreak(userId, badge.getConditionThreshold());
             case SLOT_HOSTED_COUNT -> checkSlotHostedCount(userId, badge.getConditionThreshold());
             case INVITATION_CONVERTED -> checkInvitationsConverted(userId, badge.getConditionThreshold());
             case MANUAL -> false; // Manual badges cannot be auto-awarded
@@ -161,46 +160,6 @@ public class BadgeService {
         return count >= threshold;
     }
 
-    private boolean checkProgressionStreak(UUID userId, Integer threshold) {
-        int streak = computeStreak(userId);
-        return streak >= threshold;
-    }
-
-    private int computeStreak(UUID userId) {
-        List<Object[]> rows = progressionRepository.findProgressionDatesByUserId(userId);
-        if (rows.isEmpty()) return 0;
-
-        // Chaque row = [date, count] — extraire les LocalDate
-        List<LocalDate> dates = rows.stream()
-            .map(row -> toLocalDate(row[0]))
-            .distinct()
-            .sorted(java.util.Comparator.reverseOrder())
-            .toList();
-
-        if (dates.isEmpty()) return 0;
-
-        int streak = 1;
-        LocalDate cursor = dates.get(0);
-
-        for (int i = 1; i < dates.size(); i++) {
-            LocalDate prev = cursor.minusDays(1);
-            if (dates.get(i).equals(prev)) {
-                streak++;
-                cursor = dates.get(i);
-            } else {
-                break;
-            }
-        }
-        return streak;
-    }
-
-    private LocalDate toLocalDate(Object raw) {
-        if (raw instanceof LocalDate ld) return ld;
-        if (raw instanceof java.sql.Date d) return d.toLocalDate();
-        if (raw instanceof Instant inst) return inst.atZone(ZoneOffset.UTC).toLocalDate();
-        return LocalDate.parse(raw.toString());
-    }
-
     private boolean checkActivityDiversity(UUID userId, Integer threshold) {
         long count = userActivityRepository.countByUserId(userId);
         return count >= threshold;
@@ -220,12 +179,6 @@ public class BadgeService {
     private boolean checkDistinctPartners(UUID userId, Integer threshold) {
         return userRepository.findById(userId)
             .map(u -> u.getDistinctPartnersCount() >= threshold)
-            .orElse(false);
-    }
-
-    private boolean checkWeeklyStreak(UUID userId, Integer threshold) {
-        return userRepository.findById(userId)
-            .map(u -> u.getCurrentStreakWeeks() >= threshold)
             .orElse(false);
     }
 

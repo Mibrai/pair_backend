@@ -22,10 +22,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class UserPublicProfileIntegrationTest extends AbstractIntegrationTest {
 
-    // Seedée par V27, id fixe : Lena Müller, a le badge ACTIVE_COACH
-    // (catégorie 'CREATION' en base) — c'est ce qui déclenchait le 500.
+    // Seedée par V27, id fixe : a le badge FIRST_PROGRAM (catégorie 'CREATION'
+    // en base) — c'est ce qui déclenchait le 500. Lena Müller et son
+    // ACTIVE_COACH servaient ici jusqu'à V122, qui retire les paliers.
     private static final UUID SEEDED_USER_WITH_CREATION_BADGE =
-        UUID.fromString("00000000-0000-0000-0000-000000000002");
+        UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     private String registerAndGetToken(String email) {
         AuthResponse resp = webTestClient.post()
@@ -52,8 +53,7 @@ class UserPublicProfileIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(dto).isNotNull();
         assertThat(dto.id()).isEqualTo(SEEDED_USER_WITH_CREATION_BADGE);
-        assertThat(dto.displayName()).isEqualTo("Lena Müller");
-        assertThat(dto.badgeCodes()).contains("ACTIVE_COACH");
+        assertThat(dto.badgeCodes()).contains("FIRST_PROGRAM");
     }
 
     @Test

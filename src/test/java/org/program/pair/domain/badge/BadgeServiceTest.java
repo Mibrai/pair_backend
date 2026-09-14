@@ -31,8 +31,6 @@ class BadgeServiceTest {
     @Mock
     ProgramRepository programRepository;
     @Mock
-    ProgressionRepository progressionRepository;
-    @Mock
     UserActivityRepository userActivityRepository;
     @Mock
     PeerRecommendationRepository peerRecommendationRepository;

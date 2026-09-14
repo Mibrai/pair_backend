@@ -19,7 +19,8 @@ public class BadgeDto {
     private String description;
     private String iconUrl;
     private String conditionType;
-    private Integer conditionThreshold;
+    // Plus de conditionThreshold (14/09/2026) : c'était le seuil d'une
+    // progression, un compte servi que l'app refusait déjà de lire.
 
     public static BadgeDto fromEntity(Badge badge) {
         return BadgeDto.builder()
@@ -29,7 +30,6 @@ public class BadgeDto {
             .description(badge.getLabel())  // no description field, use label
             .iconUrl(badge.getIcon())  // icon in entity
             .conditionType(badge.getConditionType() != null ? badge.getConditionType().name() : null)
-            .conditionThreshold(badge.getConditionThreshold())
             .build();
     }
 }
