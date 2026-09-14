@@ -464,7 +464,7 @@ La dépendance peut être retirée du `pom.xml`, mais elle est conservée pour c
 
 ---
 
-**Migration effectuée par**: Claude Code  
+**Migration effectuée par**: équipe backend  
 **Date**: 2026-07-02  
 **Durée totale**: ~1h (investigation + implémentation + documentation)  
 **Downtime**: 0 (déploiement progressif)  

@@ -292,7 +292,6 @@ Voir `DEPLOYMENT_GUIDE.md` pour:
 ```
 <type>: <description>
 
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
 ```
 
 **Types**: `feat`, `fix`, `docs`, `refactor`, `test`
@@ -336,7 +335,7 @@ Propriétaire - Tous droits réservés
 
 ## 👥 Équipe
 
-Développé avec ❤️ et Claude Sonnet 4.5
+Développé avec ❤️
 
 ---
 

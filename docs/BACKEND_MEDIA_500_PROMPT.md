@@ -1,4 +1,4 @@
-# Prompt à coller dans le Claude Code du dépôt backend
+# Prompt pour le dépôt backend
 
 ---
 

@@ -1,5 +1,5 @@
 # Pair — Phase 4 : Engagement, Notifications & Montée en charge
-## Spécification d'implémentation pour Claude Code
+## Spécification d'implémentation
 
 > **Prérequis** : Phases 1, 2 et 3 complètes.
 >

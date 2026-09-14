@@ -1,4 +1,4 @@
-# Pair — Guide d'utilisation des specs pour Claude Code
+# Pair — Guide d'utilisation des spécifications
 
 ## Fichiers disponibles
 
@@ -12,36 +12,17 @@
 
 ---
 
-## Comment utiliser ces fichiers avec Claude Code
+## Comment utiliser ces fichiers
 
-### Option A — Un fichier par session (recommandé)
+### Option A — Un fichier par session de travail (recommandé)
 
-Commencer une session Claude Code avec le data model, puis une session
-par phase dans l'ordre :
+Commencer par le modèle de données, puis une phase à la fois, dans l'ordre
+ci-dessous, en validant chaque étape avant la suivante.
 
-```bash
-# Session 1 : modèle de données
-claude < pair-data-model-spec.md
+### Option B — Contexte complet
 
-# Session 2 : phase 1 (après avoir validé le modèle)
-claude < pair-phase1-spec.md
-
-# Session 3 : phase 2
-claude < pair-phase2-spec.md
-
-# ...
-```
-
-### Option B — Contexte complet en une session
-
-```bash
-cat pair-data-model-spec.md pair-phase1-spec.md | claude
-```
-
-### Option C — Coller dans Claude.ai
-
-Ouvrir le fichier, copier le contenu, coller en début de conversation
-avec Claude, puis demander l'implémentation section par section.
+Lire le modèle de données et la phase visée ensemble, pour implémenter une
+phase en ayant le modèle sous les yeux.
 
 ---
 
@@ -75,7 +56,7 @@ jwt.refresh-token-expiry-ms=2592000000
 
 # LLM (extraction d'intention)
 llm.api-key=...
-llm.model=claude-sonnet-4-6
+llm.model=<modèle>
 
 # Embeddings
 embedding.api-key=...

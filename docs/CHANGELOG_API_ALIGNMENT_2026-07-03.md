@@ -616,6 +616,6 @@ WEBSOCKET_ALLOWED_ORIGINS=https://your-frontend-domain.com
 
 ---
 
-**Changelog Maintained By**: Claude Sonnet 4.5  
+**Changelog Maintained By**: équipe backend  
 **Last Updated**: 2026-07-03  
 **Version**: 1.0

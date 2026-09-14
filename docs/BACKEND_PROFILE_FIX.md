@@ -1,6 +1,6 @@
 # Prompt backend — corriger le profil public utilisateur
 
-> À coller à Claude dans le dépôt **backend** (Spring Boot, déployé sur Railway,
+> À transmettre au dépôt **backend** (Spring Boot, déployé sur Railway,
 > base URL `.../api`). Deux endpoints de profil utilisateur sont cassés et
 > bloquent l'affichage du profil public d'un auteur depuis l'app mobile Flutter.
 

@@ -1,5 +1,5 @@
 # meetDo — Évolution stratégique : BACKEND
-## Spécification d'implémentation pour Claude Code
+## Spécification d'implémentation
 
 > **Contexte** : le backend Spring Boot existe déjà (phases 1 à 4 implémentées,
 > déployé sur Railway). Cette spec ajoute les briques qui différencient meetDo

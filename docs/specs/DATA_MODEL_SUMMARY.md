@@ -169,7 +169,7 @@ mvn clean compile
 **Result**: ✅ BUILD SUCCESS — 55 source files compiled
 
 ### Next Steps (Phase 1)
-According to `pair-readme-claude-code.md`, the next session should implement:
+According to `pair-readme-specs.md`, the next session should implement:
 - **Auth JWT** (register, login, refresh)
 - **User profile** CRUD endpoints
 - **Activities** management

@@ -52,5 +52,5 @@ WATCH_DEADLINE_REQUIRED`** : le serveur ne cadre plus une veille sur deux heures
 ## 5. Ce que nous vous suggérons (P-MA-01)
 
 - **Une seule règle `isPast`** : `now >= effectiveEndsAt`. Elle remplace « passé dès le début » de
-  `slot_models.dart` et « en cours, jamais passé » de `CLAUDE.md`.
+  `slot_models.dart` et « en cours, jamais passé » des consignes du dépôt mobile.
 - `endsAtDeclared` ne sert qu'à l'affichage (« fin non précisée »).

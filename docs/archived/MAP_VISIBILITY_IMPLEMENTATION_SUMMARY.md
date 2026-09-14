@@ -229,6 +229,6 @@ void monNouveauTest() {
 
 ---
 
-**Implémenté par**: Claude Code  
+**Implémenté par**: équipe backend  
 **Date**: 2026-06-30  
 **Statut**: ✅ PRÊT POUR EXÉCUTION

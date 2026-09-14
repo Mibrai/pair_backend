@@ -1,5 +1,5 @@
 # meetDo — Liens publics partageables et Universal Links
-## Spécification backend pour Claude Code
+## Spécification backend
 
 > **Contexte projet.** Backend Spring Boot 4.1.0 (`org.program.pair`),
 > PostgreSQL 16 + PostGIS + pgvector, Flyway **V59**, 179 endpoints,

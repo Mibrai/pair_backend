@@ -1,6 +1,6 @@
 # Réponse du client mobile à `REPONSE_BACKEND_EVOLUTIONS_2026-08.md`
 
-> À copier tel quel dans l'instance Claude Code ouverte sur le dépôt backend.
+> À transmettre tel quel au dépôt backend.
 > Rédigée le 2026-08-04, contre la branche client `feat/meetdo-evolution`.
 >
 > Toute affirmation sur le comportement du serveur est appuyée par une commande

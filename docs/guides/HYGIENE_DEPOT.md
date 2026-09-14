@@ -15,7 +15,7 @@ et la **liste ordonnée des commandes** à jouer au moment du commit. Seul
 
 `.gitignore` reçoit six sections : `*.log`, `/SQLHistory/`,
 `frontend-config.local.json` + `/local/`, `.env` (avec `!.env.example`), l'état
-local de Claude Code, et — surtout — `/audit/` et `/docs/runbooks/`.
+local de l'outillage de développement, et — surtout — `/audit/` et `/docs/runbooks/`.
 
 **Ces deux derniers dossiers n'étaient ignorés par rien.** `git check-ignore
 audit docs/runbooks` sortait en 1 : un `git add -A` distrait publiait les six
@@ -84,9 +84,9 @@ retrait : `mkdir -p scripts/smoke && git mv SQLHistory/test-*.sh scripts/smoke/`
 | `test-auth.html` | page de test manuel de l'authentification contre `http://localhost:8090/api`, datée du 26/06, référencée **nulle part**. | supprimé |
 | `frontend-config.local.json` | configuration d'un poste : `192.168.2.214`, `environment: local-network`. | retiré de l'index, laissé sur le disque |
 
-**`.claude/memories/`, 6 fichiers, ~200 Ko — hors fiche.** Les six fichiers sont
+**le dossier de mémoire local de l'outillage, 6 fichiers, ~200 Ko — hors fiche.** Les six fichiers sont
 **identiques au bit près** (même MD5) à `docs/specs/pair-data-model-spec.md`,
-`pair-phase1..4-spec.md` et `pair-readme-claude-code.md`. C'est de la
+`pair-phase1..4-spec.md` et `pair-readme-specs.md`. C'est de la
 duplication pure, dans un dossier d'outillage local. Retiré de l'index, laissé
 sur le disque.
 
@@ -160,7 +160,7 @@ de contrôle Flyway et tous les clones).
 git add .gitignore
 
 # 1. Sortent du suivi, restent sur le disque (couverts par .gitignore).
-git rm -r --cached --quiet -- '*.log' SQLHistory frontend-config.local.json .claude/memories
+git rm -r --cached --quiet -- '*.log' SQLHistory frontend-config.local.json <dossier-de-memoire-local>
 
 # 2. Résidus, retirés de l'index ET du disque (l'historique git les conserve).
 git rm --quiet -- DOCUMENTATION_INDEX.md stop-app.sh create-test-user.sh test-phase3.sh test-auth.html
@@ -199,7 +199,7 @@ Racine attendue après coup, **15 fichiers suivis** au lieu de 41 : `.env.exampl
 `find_badge_categories.sql`, `load_railway_data.sh`, `load_railway_data.py`,
 `load_data_railway_cli.sh`, `QUICK_START_RAILWAY.md`, `RAILWAY_SEED_README.md`),
 que P-BS-06 finira de trancher. Au total **57 fichiers quittent l'index** (26 à
-la racine, 36 dans `SQLHistory/`, 6 dans `.claude/memories/`, moins les 11
+la racine, 36 dans `SQLHistory/`, 6 dans le dossier de mémoire local de l'outillage, moins les 11
 déplacés qui y restent sous un autre nom).
 
 ### Références à corriger après les déplacements

@@ -1,5 +1,5 @@
 # Pair — Phase 2 : Recherche intelligente & Richesse des activités
-## Spécification d'implémentation pour Claude Code
+## Spécification d'implémentation
 
 > **Prérequis** : Phase 1 complète et fonctionnelle.
 >
@@ -124,7 +124,7 @@ public class LlmIntentExtractor {
     @Value("${llm.api-key}")
     private String apiKey;
 
-    @Value("${llm.model:claude-sonnet-4-6}")
+    @Value("${llm.model:<modèle>}")
     private String model;
 
     private final WebClient webClient;

@@ -28,7 +28,7 @@
 
 #### Services (3)
 - [x] `LlmIntentExtractor.java`
-  - Integration Anthropic Claude API
+  - Integration API Anthropic
   - Fallback intelligent si pas d'API key
   - Extraction: activity, level, format, rayon, timeHint
   - Détection besoin de clarification
@@ -99,7 +99,7 @@ SELECT * FROM search_logs ORDER BY searched_at DESC LIMIT 5;
 ## 🎯 Fonctionnalités Implémentées
 
 ### 1. Extraction d'Intent (LLM)
-- ✅ Anthropic Claude API integration
+- ✅ API Anthropic integration
 - ✅ Fallback intelligent (détection basique)
 - ✅ Extraction: activityKeyword, level, format, suggestedRadius, timeHint
 - ✅ Détection clarification nécessaire

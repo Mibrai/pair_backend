@@ -40,7 +40,7 @@ Pair est un **réseau social géolocalisé** pour trouver des partenaires d'acti
 - **Backend**: Spring Boot 3.4.1 (Java 17)
 - **Database**: PostgreSQL 14+ avec PostGIS
 - **Auth**: JWT avec refresh tokens
-- **AI**: Claude Sonnet 4.6 (recherche NL)
+- **AI**: LLM Anthropic (recherche NL)
 - **WebSocket**: STOMP
 - **API Docs**: SpringDoc OpenAPI 3.0
 - **Storage**: Local filesystem (MVP)
@@ -456,7 +456,7 @@ MIT License - Voir LICENSE.md
 Application développée avec:
 - Spring Boot
 - PostgreSQL + PostGIS
-- Anthropic Claude
+- Anthropic
 - Swagger/OpenAPI
 - Docker
 - GitHub

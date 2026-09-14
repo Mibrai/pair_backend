@@ -1,5 +1,5 @@
 # Pair — Étape 4 : Données initiales (Seeds)
-## Spécification d'implémentation pour Claude Code
+## Spécification d'implémentation
 
 > **Prérequis** : data-model + phases 1 à 4 implémentées et testées (étape 1 validée).
 >

@@ -1,5 +1,5 @@
 # Pair — Étape 1 : Tests & Validation du Backend
-## Spécification d'implémentation pour Claude Code
+## Spécification d'implémentation
 
 > **Prérequis** : data-model + phases 1 à 4 déjà implémentées.
 >
@@ -1191,7 +1191,7 @@ class RateLimiterServiceTest {
 
 ---
 
-## Ordre d'exécution recommandé pour Claude Code
+## Ordre d'exécution recommandé
 
 ```
 1. Configurer AbstractIntegrationTest + Testcontainers (PostGIS + pgvector)

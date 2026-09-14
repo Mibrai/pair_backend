@@ -1,6 +1,6 @@
 # meetDo — Évolution backend : ce qui a changé pour le frontend
 
-> Destiné à l'instance Claude Code travaillant sur le frontend. Décrit l'implémentation
+> Destiné à l'équipe frontend. Décrit l'implémentation
 > backend de l'évolution meetDo (créneaux ouverts, boucle de confirmation de présence,
 > statistiques de pratique, alertes par activité), la nouvelle structure de base de
 > données et les relations entre tables. Basé sur la spec `docs/specs/meetdo-evolution-backend-spec.md`,

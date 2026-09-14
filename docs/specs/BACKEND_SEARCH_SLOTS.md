@@ -1,6 +1,6 @@
 # Demande backend — indexer les créneaux dans `POST /api/search`
 
-> À copier dans l'instance Claude Code ouverte sur le dépôt backend
+> À transmettre au dépôt backend
 > (`org.program.pair`). Complète `ios/docs/PROMPT_BACKEND_MEETDO.md`, qui traite
 > les anomalies ; celle-ci est une **évolution fonctionnelle**.
 >

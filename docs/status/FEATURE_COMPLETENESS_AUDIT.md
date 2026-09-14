@@ -1,7 +1,7 @@
 # Audit de Complétude des Fonctionnalités - Backend Pair
 
 **Date**: 2026-07-02  
-**Base**: Specs `.claude/memories/`  
+**Base**: Specs le dossier de mémoire local de l'outillage  
 **Statut Global**: 85% Complet
 
 ---
@@ -388,7 +388,7 @@
 1. **Authentification JWT** - Complet avec refresh, verify, reset
 2. **Géolocalisation PostGIS** - Recherche dans rayon, blur privacy
 3. **Chat WebSocket STOMP** - Temps réel avec JWT auth
-4. **Recherche sémantique LLM** - Anthropic Claude + OpenAI embeddings + pgvector
+4. **Recherche sémantique LLM** - Anthropic + OpenAI embeddings + pgvector
 5. **Système de progression** - Tracking complet avec streaks
 6. **Badges** - Attribution automatique
 7. **Avis + Recommandations** - Avec validation interaction

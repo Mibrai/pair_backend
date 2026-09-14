@@ -28,7 +28,7 @@
 ## Module 1: Recherche Intelligente (90%) 🟢
 
 ### Fonctionnalités
-- ✅ Extraction d'intent avec Anthropic Claude API
+- ✅ Extraction d'intent avec API Anthropic
 - ✅ Fallback intelligent sans API key
 - ✅ PostgreSQL Full-Text Search (tsvector + GIN)
 - ✅ Filtres géographiques (PostGIS)

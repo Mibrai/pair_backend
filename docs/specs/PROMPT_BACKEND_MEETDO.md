@@ -1,6 +1,6 @@
-# Prompt pour Claude Code — backend meetDo
+# Prompt — backend meetDo
 
-> À copier tel quel dans l'instance Claude Code ouverte sur le dépôt backend
+> À transmettre tel quel au dépôt backend
 > (`org.program.pair`). Rédigé depuis le client Flutter après intégration
 > complète de l'évolution meetDo : chaque point ci-dessous a été **reproduit
 > côté serveur**, en `curl`, indépendamment de l'application.

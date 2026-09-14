@@ -320,7 +320,7 @@ Migration réussie de SMTP vers Resend API. Tous les objectifs atteints:
 
 ---
 
-**Rédigé par**: Claude Code  
+**Rédigé par**: équipe backend  
 **Date**: 2026-07-02  
 **Statut**: ✅ COMPLET  
 **Prochaine étape**: Déploiement production avec variables Resend

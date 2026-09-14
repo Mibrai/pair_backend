@@ -47,7 +47,7 @@
 #### ✅ Configuration
 - [x] Variables environnement LLM API dans `application.properties`
 - [x] WebClientConfig créé
-- [x] Properties pour Anthropic Claude API
+- [x] Properties pour API Anthropic
 
 ### Module 1: Recherche Intelligente - IMPLÉMENTÉ
 
@@ -63,7 +63,7 @@
 
 #### ✅ Services (3/3)
 - [x] `LlmIntentExtractor.java`
-  - Integration Anthropic Claude API
+  - Integration API Anthropic
   - Extraction d'intention en JSON structuré
   - Fallback intelligent si API non disponible
   - Détection niveau, format, rayon, clarification

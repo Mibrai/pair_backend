@@ -1,5 +1,5 @@
 # Pair — Phase 1 : Fondations & Boucle de rencontre
-## Spécification d'implémentation pour Claude Code
+## Spécification d'implémentation
 
 > **Objectif de la phase 1** : faire tourner la boucle centrale de Pair —
 > un utilisateur peut s'inscrire, décrire ses activités, apparaître sur la carte,

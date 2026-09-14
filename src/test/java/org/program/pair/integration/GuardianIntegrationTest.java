@@ -184,7 +184,7 @@ class GuardianIntegrationTest extends AbstractIntegrationTest {
     @Test
     void laPagePublique_montreLesDeuxBoutons_etAccepterBasculeEnAccepted() {
         Compte moi = compte();
-        creerContactEmail(moi, "Claude", "claude@example.org");
+        creerContactEmail(moi, "Camille", "camille@example.org");
         String token = guardianRepository.findByOwnerIdOrderByCreatedAtDesc(moi.id())
             .get(0).getConsentToken();
 

@@ -1,4 +1,4 @@
-# Prompt à coller dans le Claude Code du dépôt backend
+# Prompt pour le dépôt backend
 
 > **Une seule demande, courte** : que `GET /map/activities` applique aux
 > **clusters** le filtre qu'il applique déjà, de fait, aux marqueurs isolés.

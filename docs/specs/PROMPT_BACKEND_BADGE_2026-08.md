@@ -1,4 +1,4 @@
-# Prompt à coller dans le Claude Code du dépôt backend
+# Prompt pour le dépôt backend
 
 > **Relance de B3 du lot 7** (`PROMPT_BACKEND_LOT7_2026-08.md`), que
 > `REPONSE_BACKEND_LOT7_2026-08.md` déclare livré : « `aps.badge` (iOS) et

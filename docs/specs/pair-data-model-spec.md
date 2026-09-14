@@ -1,5 +1,5 @@
 # Pair — Spécification du modèle de données
-## Instructions pour Claude Code
+## Instructions d'implémentation
 
 Ce document décrit le modèle de données complet du réseau social **Pair**.
 Implémente chaque entité JPA, les repositories Spring Data, les migrations Liquibase/Flyway,

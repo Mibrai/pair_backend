@@ -13,4 +13,4 @@
 ## Résumés
 
 - **[DATA_MODEL_SUMMARY.md](./DATA_MODEL_SUMMARY.md)** - Résumé du modèle de données
-- **[pair-readme-claude-code.md](./pair-readme-claude-code.md)** - README pour Claude Code
+- **[pair-readme-specs.md](./pair-readme-specs.md)** - guide des spécifications

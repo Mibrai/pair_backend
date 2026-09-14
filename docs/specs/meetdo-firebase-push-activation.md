@@ -1,6 +1,6 @@
 # meetDo — Activer les push : credentials Firebase sur Railway
 
-## Prompt à donner à Claude Code (backend `pair_backend`)
+## Prompt pour le backend (`pair_backend`)
 
 ```
 Le backend est déployé sur Railway, où l'on ne peut pas déposer de fichier
@@ -87,7 +87,7 @@ et le nouveau fichier de test.
 
 ---
 
-## Ce que tu fais ensuite, toi (hors Claude Code)
+## Ce que tu fais ensuite, toi (hors dépôt)
 
 ### 1. Générer la clé de compte de service
 

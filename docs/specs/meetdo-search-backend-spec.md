@@ -1,5 +1,5 @@
 # meetDo — Recherche sémantique gratuite et trilingue : BACKEND
-## Spécification d'implémentation pour Claude Code
+## Spécification d'implémentation
 
 > **Alignement** : cette spec suppose l'état du projet décrit dans
 > `MEETDO_IMPLEMENTATION.md` (25 juillet 2026) — namespace `org.program.pair`,

@@ -31,7 +31,7 @@ L'application **Pair** est complète et prête pour le déploiement MVP avec:
 **51 endpoints REST + 1 WebSocket**
 
 ### Phase 2: Recherche Intelligente & Rich Content (96%)
-- ✅ Recherche en langage naturel (LLM Claude pour extraction intent)
+- ✅ Recherche en langage naturel (LLM Anthropic pour extraction intent)
 - ✅ Full-Text Search PostgreSQL (alternative à pgvector)
 - ✅ Système de progressions (tracking, métriques, streaks)
 - ✅ Upload médias (local storage, validation MIME, thumbnails)
@@ -158,9 +158,9 @@ JWT_SECRET=<base64-256bits>
 JWT_ACCESS_TOKEN_EXPIRY_MS=900000
 JWT_REFRESH_TOKEN_EXPIRY_MS=2592000000
 
-# LLM (Anthropic Claude pour recherche)
+# LLM (Anthropic pour recherche)
 ANTHROPIC_API_KEY=<api-key>
-LLM_MODEL=claude-sonnet-4-6
+LLM_MODEL=<modèle>
 
 # Email (Optionnel pour MVP)
 MAIL_HOST=smtp.gmail.com
@@ -223,7 +223,7 @@ jwt.refresh-token-expiry-ms=${JWT_REFRESH_TOKEN_EXPIRY_MS:2592000000}
 # LLM
 llm.api-url=https://api.anthropic.com/v1/messages
 llm.api-key=${ANTHROPIC_API_KEY}
-llm.model=${LLM_MODEL:claude-sonnet-4-6}
+llm.model=${LLM_MODEL:<modèle>}
 
 # Storage
 storage.location=${STORAGE_LOCATION:./uploads}

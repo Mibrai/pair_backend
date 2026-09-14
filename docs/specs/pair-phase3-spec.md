@@ -1,5 +1,5 @@
 # Pair — Phase 3 : Crédibilité & Confiance
-## Spécification d'implémentation pour Claude Code
+## Spécification d'implémentation
 
 > **Prérequis** : Phases 1 et 2 complètes.
 >

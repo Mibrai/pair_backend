@@ -77,7 +77,7 @@
 ### Module 1: Recherche Intelligente (90%) ✅
 
 **Fonctionnalités**:
-- ✅ LLM Intent Extraction (Anthropic Claude)
+- ✅ LLM Intent Extraction (Anthropic)
 - ✅ Fallback sans API key
 - ✅ PostgreSQL Full-Text Search
 - ✅ Filtres géographiques (PostGIS)
@@ -231,7 +231,7 @@ Update search_vector → Done (non-blocking)
 - Apache Tika (magic bytes detection)
 
 ### IA/ML
-- Anthropic Claude API (intent extraction)
+- API Anthropic (intent extraction)
 - Architecture prête pour OpenAI Embeddings (pgvector)
 
 ---

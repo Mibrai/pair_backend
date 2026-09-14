@@ -72,7 +72,7 @@ public class SecurityConfig {
                 // outil tool/audit_api_vs_spec.py compare la spécification
                 // servie par la production à ce que le client appelle, et c'est
                 // ce qui lui permet de « vérifier plutôt qu'affirmer » comme le
-                // demande son CLAUDE.md. Le fermer rendrait cette vérification
+                // demandent ses consignes de dépôt. Le fermer rendrait cette vérification
                 // impossible depuis l'extérieur, donc facultative, donc oubliée.
                 //
                 // Ce qu'on accepte en le laissant ouvert : la liste des routes

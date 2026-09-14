@@ -52,7 +52,7 @@
 - `SearchLogRepository.java` - Queries analytics
 
 **Services (3)**:
-- `LlmIntentExtractor.java` - Anthropic Claude API + fallback
+- `LlmIntentExtractor.java` - API Anthropic + fallback
 - `FullTextSearchService.java` - PostgreSQL full-text (tsvector + GIN)
 - `SemanticSearchService.java` - Orchestration pipeline complet
 
@@ -63,7 +63,7 @@
 #### Fonctionnalités Implémentées
 
 ✅ **Extraction d'Intent**:
-- Integration Anthropic Claude API
+- Integration API Anthropic
 - Fallback intelligent si pas d'API key
 - Détection: activity, level, format, rayon, timeHint
 - Clarification automatique pour requêtes vagues
@@ -175,7 +175,7 @@
 
 ### Recherche & AI
 - **PostgreSQL Full-Text Search** (tsvector + GIN)
-- **Anthropic Claude API** (intent extraction)
+- **API Anthropic** (intent extraction)
 - Architecture prête pour **pgvector** (future)
 
 ### Sécurité

@@ -1,4 +1,4 @@
-# Prompt à coller dans le Claude Code du dépôt backend
+# Prompt pour le dépôt backend
 
 > **Relance de `BACKEND_MEDIA_500_PROMPT.md` (2026-07-22), toujours ouvert.** Ce
 > document n'en répète pas le contenu : il apporte les mesures du 2026-08-11, qui

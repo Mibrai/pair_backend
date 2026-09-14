@@ -28,7 +28,7 @@ docs/
 │   ├── pair-phase4-spec.md
 │   ├── pair-seed-data-spec.md
 │   ├── pair-tests-validation-spec.md
-│   ├── pair-readme-claude-code.md
+│   ├── pair-readme-specs.md
 │   └── DATA_MODEL_SUMMARY.md
 │
 ├── guides/ (9 fichiers)                ← Guides pratiques

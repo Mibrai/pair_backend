@@ -21,7 +21,7 @@
 
 L'écran A1 de la maquette écrit sous chaque suggestion « 142 personnes · 9 programmes autour de
 toi ». Nous n'afficherons **aucun chiffre** : la doctrine produit refuse les classements et
-préfère un booléen à un compte partout où il suffit (`CLAUDE.md`, « jamais un compte là où un
+préfère un booléen à un compte partout où il suffit (consignes du dépôt mobile, « jamais un compte là où un
 booléen suffit »). La phrase retenue est « Déjà pratiquée près de toi » — ou rien.
 
 Ce qu'elle doit produire chez la personne : choisir l'entrée existante plutôt que créer

@@ -23,7 +23,7 @@
 ## Module 1: Recherche Intelligente (90%)
 
 ### Fonctionnalités
-- ✅ LLM Intent Extraction (Anthropic Claude API)
+- ✅ LLM Intent Extraction (API Anthropic)
 - ✅ Fallback intelligent sans API key
 - ✅ PostgreSQL Full-Text Search (tsvector + GIN)
 - ✅ Filtres géographiques (PostGIS)
@@ -207,7 +207,7 @@
 # Phase 2 Module 1: LLM API
 llm.api-url=https://api.anthropic.com/v1/messages
 llm.api-key=${ANTHROPIC_API_KEY:}
-llm.model=${LLM_MODEL:claude-sonnet-4-6}
+llm.model=${LLM_MODEL:<modèle>}
 
 # Phase 2 Module 1: Embeddings (future)
 embedding.api-url=https://api.openai.com/v1/embeddings

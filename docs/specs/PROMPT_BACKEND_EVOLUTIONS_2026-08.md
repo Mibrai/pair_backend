@@ -1,6 +1,6 @@
 # Prompt backend — évolutions demandées par le client mobile (août 2026)
 
-> À copier tel quel dans l'instance Claude Code ouverte sur le dépôt backend
+> À transmettre tel quel au dépôt backend
 > (`org.program.pair`, Spring Boot, base URL `.../api`).
 >
 > Fait suite à `PROMPT_BACKEND_MEETDO.md` (anomalies) et à

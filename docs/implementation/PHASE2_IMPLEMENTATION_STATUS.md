@@ -40,7 +40,7 @@
 - [ ] DTOs: SearchRequest, SearchResponse, SearchIntent, SearchResultDto
 - [ ] Interface `SearchEngine`
 - [ ] `FullTextSearchEngine` implementation
-- [ ] `LlmIntentExtractor` (Anthropic Claude)
+- [ ] `LlmIntentExtractor` (Anthropic)
 - [ ] `SemanticSearchService`
 - [ ] `SearchController`
 - [ ] Tests unitaires
@@ -134,10 +134,10 @@
 ## 🔑 Variables d'Environnement Requises
 
 ```properties
-# LLM API (Anthropic Claude)
+# LLM API (Anthropic)
 llm.api-url=https://api.anthropic.com/v1/messages
 llm.api-key=${ANTHROPIC_API_KEY}
-llm.model=claude-sonnet-4-6
+llm.model=<modèle>
 
 # Option: OpenAI pour embeddings (quand pgvector disponible)
 # embedding.api-url=https://api.openai.com/v1/embeddings
@@ -208,7 +208,7 @@ llm.model=claude-sonnet-4-6
 - ✅ Utiliser `.env` local (gitignored)
 
 ### Coûts API
-- Anthropic Claude Sonnet: ~$3/million tokens input
+- Anthropic: ~$3/million tokens input
 - OpenAI embeddings (futur): ~$0.1/million tokens
 - À monitorer si volume élevé
 

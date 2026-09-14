@@ -179,7 +179,7 @@ L'application **Pair** (réseau social pour activités) est maintenant complète
 - **Database**: PostgreSQL 18.4 + PostGIS
 - **Security**: JWT stateless, BCrypt, OWASP sanitization
 - **Real-time**: WebSocket STOMP over SockJS
-- **Search**: Full-Text Search (PostgreSQL) + LLM (Anthropic Claude)
+- **Search**: Full-Text Search (PostgreSQL) + LLM (Anthropic)
 - **Storage**: Local (MVP) - S3 ready
 - **Docs**: Swagger/OpenAPI 3.0
 

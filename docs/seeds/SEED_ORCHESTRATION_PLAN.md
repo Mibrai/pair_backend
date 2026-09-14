@@ -155,7 +155,7 @@ Phase 1 (Parallèle)
 
 ## 🛠️ Comment reproduire cette orchestration
 
-### Avec Claude Code Workflow
+### Avec un workflow multi-agents
 
 ```javascript
 export const meta = {
@@ -195,19 +195,19 @@ return { prep, seeders, utils }
 
 ```bash
 # Phase 1 - Lancer 3 agents simultanément
-claude agent --parallel \
+agent --parallel \
   "Créer categories.json, activities.json, badges.json" \
   "Ajouter méthodes aux repositories" \
   "Créer les configurations par profil"
 
 # Phase 2 - Lancer 3 agents simultanément
-claude agent --parallel \
+agent --parallel \
   "Implémenter ReferenceDataSeeder" \
   "Implémenter DemoDataSeeder" \
   "Implémenter SeedRunner"
 
 # Phase 3 - Lancer 1 agent
-claude agent "Créer ResetDemoDataCommand et AdminSeedController"
+agent "Créer ResetDemoDataCommand et AdminSeedController"
 ```
 
 ## 📈 Métriques de qualité

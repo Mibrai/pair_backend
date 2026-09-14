@@ -10,7 +10,7 @@ Ajouter recherche intelligente en langage naturel, système de progression, et u
 ### Module 1: Recherche Sémantique (Priorité 1)
 - [ ] Activer et configurer pgvector
 - [ ] Ajouter dépendances (WebFlux, OWASP Sanitizer)
-- [ ] Créer LlmIntentExtractor (Anthropic Claude)
+- [ ] Créer LlmIntentExtractor (Anthropic)
 - [ ] Créer EmbeddingService (OpenAI embeddings)
 - [ ] Créer SemanticSearchService
 - [ ] Créer SearchController
@@ -95,10 +95,10 @@ CREATE EXTENSION IF NOT EXISTS vector;
 
 ### 3. Variables d'Environnement
 ```properties
-# LLM API (Anthropic Claude)
+# LLM API (Anthropic)
 llm.api-url=https://api.anthropic.com/v1/messages
 llm.api-key=${ANTHROPIC_API_KEY}
-llm.model=claude-sonnet-4-6
+llm.model=<modèle>
 
 # Embeddings API (OpenAI)
 embedding.api-url=https://api.openai.com/v1/embeddings
@@ -237,7 +237,7 @@ ON programs USING ivfflat (embedding vector_cosine_ops);
 
 ### Coûts API
 - OpenAI embeddings: ~$0.0001 / 1K tokens
-- Anthropic Claude: ~$0.003 / 1K tokens (input)
+- Anthropic: ~$0.003 / 1K tokens (input)
 - À monitorer si volume élevé
 
 ---
