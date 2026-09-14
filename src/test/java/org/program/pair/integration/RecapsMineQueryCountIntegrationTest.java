@@ -155,11 +155,20 @@ class RecapsMineQueryCountIntegrationTest extends AbstractIntegrationTest {
             appender.stop();
         }
 
+        // Seules les requêtes du fil qui rend les cartes. Le journal
+        // org.hibernate.SQL reçoit celles de TOUS les fils : une tâche asynchrone
+        // (indexation, outbox, ou restée d'une classe précédente) qui écrit
+        // pendant la mesure gonflait le compte au hasard — le coût marginal
+        // passait de 0 à 1 une fois sur quelques passages de la CI.
+        String filMesure = Thread.currentThread().getName();
+        List<ILoggingEvent> requetes = appender.list.stream()
+            .filter(e -> filMesure.equals(e.getThreadName()))
+            .toList();
         Map<String, Integer> parTexte = new LinkedHashMap<>();
-        for (ILoggingEvent evenement : appender.list) {
+        for (ILoggingEvent evenement : requetes) {
             parTexte.merge(evenement.getFormattedMessage(), 1, Integer::sum);
         }
-        return new Mesure(rendues.size(), appender.list.size(), parTexte);
+        return new Mesure(rendues.size(), requetes.size(), parTexte);
     }
 
     /**
