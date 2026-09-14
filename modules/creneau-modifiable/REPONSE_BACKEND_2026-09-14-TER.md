@@ -15,7 +15,9 @@
 >   - en plus : `city: ""` retire la ville.
 > - **§2.2 — `endsAt` ne se retire pas.** Vous pouvez enlever « durée non précisée » de l'écran de
 >   modification.
-> - **§2.3 — retirer la récurrence ne notifie personne.**
+> - **§2.3 — retirer la récurrence prévient les inscrits**, par un type dédié `SERIES_ENDED` : voir
+>   [`REPONSE_BACKEND_2026-09-14-QUATER.md`](REPONSE_BACKEND_2026-09-14-QUATER.md). Retirer la limite
+>   ou le mot d'accueil ne notifie personne.
 > - **§2.4 — un test par retrait**, qui relit la séance par `GET /api/programs/{id}`.
 
 ---
@@ -61,7 +63,7 @@ rattachées à la ligne, et tiennent d'une séance à la suivante.
 Retirer la règle a donc un effet simple :
 
 - **la prochaine séance devient la seule**, à sa date et à son heure actuelles ;
-- **ses inscrits y restent**, liste d'attente comprise. Il n'y a pas de séance future « déjà inscrite »
+- **ses inscrits y restent**, liste d'attente comprise, et **ils sont prévenus** (§4). Il n'y a pas de séance future « déjà inscrite »
   à défaire, puisqu'aucune n'existe encore ;
 - **après cette séance, rien ne suit.** Le job ne l'avance plus, et elle passe `PAST` comme n'importe
   quelle séance unique. Présences et carte-souvenir s'y rattachent normalement.
@@ -93,13 +95,11 @@ façon envoyer une fin : `POST` la refuse absente depuis le 13/09.
 
 ## 4. Notifications
 
-Rien de nouveau. `SCHEDULE_CHANGED` ne part toujours que si l'heure ou le lieu change. **Retirer la
-récurrence, la limite ou le mot d'accueil ne notifie personne.**
+**Retirer la limite ou le mot d'accueil ne notifie personne**, comme avant.
 
-**Pour la récurrence, sachez-le** : un inscrit à une série hebdomadaire n'apprend pas qu'elle s'arrête
-après la prochaine séance. Il le découvre la semaine suivante, quand le créneau n'est plus là. Nous ne
-l'avons pas changé sans décision produit. Si vous jugez qu'il faut prévenir, dites-le : une
-notification dédiée tiendrait dans le même écouteur que `SCHEDULE_CHANGED`.
+**Retirer la récurrence prévient les inscrits.** Cette partie a été tranchée par l'utilisateur le 14/09
+et précisée par votre demande QUATER : elle est décrite, livrée et testée dans
+[`REPONSE_BACKEND_2026-09-14-QUATER.md`](REPONSE_BACKEND_2026-09-14-QUATER.md).
 
 ## 5. Ce que nous vous suggérons
 
@@ -127,6 +127,5 @@ notification dédiée tiendrait dans le même écouteur que `SCHEDULE_CHANGED`.
   - **contrat** : `/v3/api-docs` porte la convention sur l'opération et sur les champs.
 - `QuickSlotIntegrationTest`, `SlotWaitlistIntegrationTest`, `ScheduleChangeNotificationIntegrationTest`,
   `SlotDeclaredLevelIntegrationTest`, `ProgramServiceTest` : verts.
-- **Suite entière : 1799 tests, 250 classes, verts.**
 - **Votre relevé :** le contrat, puis sur un créneau de test, les trois retraits et la relecture de
   `GET /programs/{id}` après chacun.
