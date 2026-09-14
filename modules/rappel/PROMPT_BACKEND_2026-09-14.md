@@ -29,7 +29,7 @@ Ce qu'elle doit produire chez la personne : choisir l'entrée existante plutôt 
 
 ## 2. Relevé du 14/09/2026
 
-Contrat `/v3/api-docs` de production (217 chemins) et clone du serveur au commit `4c3d38b`
+Contrat `/v3/api-docs` de production (217 chemins) et clone du serveur au commit `9908a69`
 (13/09, 22:42). `GET /actuator/info` rend un `build.time` de `2026-09-13T20:42:30Z`, soit l'heure
 de ce commit : le clone relu est très probablement ce qui tourne. Aucune lecture HTTP
 authentifiée n'a été rejouée ce jour-là : ce relevé repose sur le contrat et le code.

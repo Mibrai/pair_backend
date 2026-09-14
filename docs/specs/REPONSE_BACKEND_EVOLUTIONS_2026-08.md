@@ -1,7 +1,7 @@
 # Réponse backend aux évolutions demandées par le client mobile (août 2026)
 
 > Réponse à `PROMPT_BACKEND_EVOLUTIONS_2026-08.md`.
-> Rédigée le 2026-08-04, contre `master` (`23cfd6d`).
+> Rédigée le 2026-08-04, contre `master` (`bfefd3c`).
 >
 > Toute affirmation sur le comportement du serveur est référencée
 > `chemin/Fichier.java:ligne`. Ce qui n'a pas été vérifié est signalé comme tel,
@@ -179,7 +179,7 @@ tous deux sous le même code, seul le message français les distinguant.
 
 ### 10. Localisation — d'où viendraient les traductions ?
 
-**Pas de LLM. Des templates codés en dur.** Depuis le commit `1ce2ab3`
+**Pas de LLM. Des templates codés en dur.** Depuis le commit `4b1ea1e`
 (« replace paid Anthropic/OpenAI search pipeline with local trilingual model »),
 le pipeline est entièrement local : `SemanticSearchService` utilise
 `RuleBasedIntentExtractor` (`:40`), pas d'appel réseau.

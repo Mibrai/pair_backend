@@ -19,7 +19,7 @@
 > `is_active = false`. Le défaut aurait donc surgi au premier utilisateur réel qui ferme son compte
 > en ayant des inscrits.
 >
-> **Mis à jour le même jour, après P-BL-18** (`9443b4c`, voir `modules/rgpd/REPONSE_BACKEND_2026-09-14.md`) :
+> **Mis à jour le même jour, après P-BL-18** (`426c5b8`, voir `modules/rgpd/REPONSE_BACKEND_2026-09-14.md`) :
 > fermer son compte **annule désormais ses créneaux à venir et prévient les inscrits**. Un créneau
 > **annulé** d'un hôte fermé reste donc visible, dans « mes créneaux » comme sur sa fiche : c'est ce
 > qu'ouvre la notification. La règle « retiré, 404 » ne vaut plus que pour un créneau **non annulé** —

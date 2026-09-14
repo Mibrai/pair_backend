@@ -148,7 +148,7 @@ public class SlotController {
      * Mes créneaux — ceux que j'héberge et ceux que j'ai rejoints.
      *
      * <p><b>« À venir » se mesure sur la fin, pas sur le début</b>, depuis le
-     * commit {@code 1b52d98} du 05/09/2026. Un créneau commencé reste donc dans
+     * commit {@code c0c6cf8} du 05/09/2026. Un créneau commencé reste donc dans
      * cette liste jusqu'à ce qu'il soit réellement terminé : c'est le moment où
      * l'on ouvre l'application pour retrouver l'adresse, et le filtre précédent,
      * porté sur {@code startsAt}, la retirait précisément là (mesuré le 03/09 :

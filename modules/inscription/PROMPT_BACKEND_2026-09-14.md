@@ -27,7 +27,7 @@ sans suite, plutôt que quatre relances dans quatre dossiers.
 ## 1. Relevé du 14/09/2026, 13 h 43 (heure de Paris)
 
 Contrat `/v3/api-docs` de production (220 chemins, `build.time` `2026-09-14T11:39:59Z`) et clone
-du serveur au commit `04aeffb`, qui est très probablement ce qui tourne. **Aucune lecture HTTP
+du serveur au commit `e09e9f2`, qui est très probablement ce qui tourne. **Aucune lecture HTTP
 authentifiée n'a été rejouée** : ce relevé repose sur le contrat et le code.
 
 ### (a) « Vu par l'hôte » s'adresse encore par `watchId`

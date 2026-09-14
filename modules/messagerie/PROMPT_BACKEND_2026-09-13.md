@@ -14,7 +14,7 @@
 
 ---
 
-## 1. Relevés du 13/09/2026 (backend `bdc6670`, production, compte de test)
+## 1. Relevés du 13/09/2026 (backend `1cfe54f`, production, compte de test)
 
 **Historique**
 - `ChatController.java:96-103` accepte `limit` (50 par défaut, borné à 100) ; `ChatService.java:735-754` le transmet.

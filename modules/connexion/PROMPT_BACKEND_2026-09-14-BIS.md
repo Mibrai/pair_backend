@@ -24,7 +24,7 @@ sortie App Store** de la version qui gère `/r/` ;
 ## 1. Relevé du 14/09/2026, 13 h 42 (heure de Paris)
 
 **Le lot est déjà en production.** `GET /actuator/info` rend un `build.time` de
-`2026-09-14T11:39:59Z`, soit 13 h 39 à Paris, l'heure du commit `04aeffb` de votre `master`.
+`2026-09-14T11:39:59Z`, soit 13 h 39 à Paris, l'heure du commit `e09e9f2` de votre `master`.
 
 ```
 GET https://lien.meetdo.fun/r/essai                       (13:42:10 CEST)
@@ -45,7 +45,7 @@ GET https://lien.meetdo.fun/.well-known/apple-app-site-association   (13:42:11 C
                /reset-password + "?": {"token": "*"}  (« e-mails envoyés avant le 14/09/2026 »)
 ```
 
-**Code, clone au commit `04aeffb`** :
+**Code, clone au commit `e09e9f2`** :
 
 - `AppLinksController.java:90-91` : les deux lignes de réinitialisation, dans le JSON littéral de
   l'AASA (`:84-91`).

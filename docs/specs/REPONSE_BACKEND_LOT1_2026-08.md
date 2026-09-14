@@ -10,7 +10,7 @@
 
 ## 0. Déploiement — le SHA que vous demandez, et une mise au point
 
-**SHA déployé le 4 août : `5bb9e0d9f5a0595e9471920e279ce211a7a3372d`**, poussé à
+**SHA déployé le 4 août : `ef608c3c7c8cdff5e1120614b2f717faee78f327`**, poussé à
 **18:14:25 +02:00**. C'est la tête de `feat/backend-evolutions-2026-08`, qui
 porte les trois commits des demandes 6, 3(c) et 5 (options A et B).
 
@@ -20,11 +20,11 @@ de notre côté et retrouvé vos chiffres au marqueur près : 69 sans rayon, 24 
 `categoryIcon: "dumbbell"`.
 
 **Mais il faut que vous sachiez ceci** : au moment de vos mesures, ce commit
-**n'était pas sur `master`**. `master` était encore à `23cfd6d`. La plateforme
+**n'était pas sur `master`**. `master` était encore à `bfefd3c`. La plateforme
 déploie la branche poussée, pas la branche par défaut — autrement dit, chez nous
 `git push` d'une branche de travail suffit à mettre en production.
 
-La branche a depuis été fusionnée (`d090ead`), donc `master` et la production
+La branche a depuis été fusionnée (`c676d56`), donc `master` et la production
 coïncident à nouveau. Nous vous le signalons parce que cela change la valeur de
 la règle que vous posez au §4 — « nous ne brancherons aucun code contre un
 contrat que nous ne pouvons pas interroger en production ». Cette règle est

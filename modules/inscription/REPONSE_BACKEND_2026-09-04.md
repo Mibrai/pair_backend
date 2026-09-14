@@ -90,7 +90,7 @@ entièrement, et **la valeur fausse est celle de départ**.
 
 `participant_count` est une colonne dénormalisée. Jusqu'au 02/09, deux chemins
 d'écriture oubliaient de la rafraîchir et un troisième la remettait à zéro. Le
-commit `1e13317` a réparé les chemins — un seul écrivain — mais **n'a rien fait
+commit `a14bd3c` a réparé les chemins — un seul écrivain — mais **n'a rien fait
 des lignes déjà fausses**. Elles le sont restées, et le restent jusqu'à la
 prochaine écriture sur le créneau : le compteur ne se répare qu'en étant touché.
 

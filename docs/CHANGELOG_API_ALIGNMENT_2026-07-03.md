@@ -236,9 +236,9 @@ interface GdprExportDto {
 ### 3.3 Repository Query Fixes (Non-Breaking)
 
 **Commits**:
-- `6220ff8` - Fix: correct Program navigation path in Progression query
-- `e352367` - Fix: use correct JPA entity names in GDPR anonymization queries
-- `ed51a90` - Fix: correct User entity field references in GDPR queries
+- `79b3a72` - Fix: correct Program navigation path in Progression query
+- `cacd1c9` - Fix: use correct JPA entity names in GDPR anonymization queries
+- `a7662ed` - Fix: correct User entity field references in GDPR queries
 
 **Impact**: Internal implementation fixes only, no API contract changes
 
@@ -249,18 +249,18 @@ interface GdprExportDto {
 ### 4.1 Email Service Migration
 
 **Commits**:
-- `c96c79a` - Refactor: replace SendGrid with Resend for email delivery
-- `c5b56ee` - Feat: integrate SendGrid for email delivery
-- `e417bf1` - Fix: Mail sender
-- `d1d78d7` - Feat: configure Hostinger email integration
-- `5f61143` - Fix: disable mail health check for Railway
+- `123c3ee` - Refactor: replace SendGrid with Resend for email delivery
+- `98aeac3` - Feat: integrate SendGrid for email delivery
+- `56d7cd0` - Fix: Mail sender
+- `ca788fd` - Feat: configure Hostinger email integration
+- `7dc388b` - Fix: disable mail health check for Railway
 
 **Impact**: Email notifications now use Resend provider  
 **Action Required**: Update environment variables for email configuration
 
 ### 4.2 CORS Configuration
 
-**Commit**: `df3b2bf` - CORS Config
+**Commit**: `788e1b0` - CORS Config
 
 **Documentation**: `F:/Projekt/Pair/pair_backend/docs/deployment/CORS_CONFIGURATION.md`
 
@@ -270,8 +270,8 @@ interface GdprExportDto {
 ### 4.3 WebSocket Configuration
 
 **Commits**:
-- `b3b8c02` - Config: websocket for Vercel
-- `907f5c4` - Fix: enable WebSocket configuration
+- `19b650a` - Config: websocket for Vercel
+- `a0631c8` - Fix: enable WebSocket configuration
 
 **Impact**: WebSocket support for real-time features  
 **Action Required**: Verify WebSocket endpoints in deployment
@@ -279,8 +279,8 @@ interface GdprExportDto {
 ### 4.4 Docker & Deployment Fixes
 
 **Commits**:
-- `8da8119` - Fix: create uploads directory with correct permissions in Dockerfile
-- `2541916` - Add: run chmod in Dockerfile
+- `67d1f0e` - Fix: create uploads directory with correct permissions in Dockerfile
+- `3f35692` - Add: run chmod in Dockerfile
 
 **Impact**: Improved file upload handling in containerized environments
 
@@ -350,7 +350,7 @@ LIMIT 50;
 
 **Test**: Progression query with correct Program navigation
 ```java
-// Verify fix in commit 6220ff8
+// Verify fix in commit 79b3a72
 List<Progression> progressions = progressionRepository
     .findByProgramOrganisateurId(userId);
 ```
@@ -568,22 +568,22 @@ WEBSOCKET_ALLOWED_ORIGINS=https://your-frontend-domain.com
 ## 9. Commit History Reference
 
 **GDPR Implementation** (Sprint 1):
-- `a925f7a` - feat: implement GDPR compliance (Sprint 1)
-- `ed51a90` - fix: correct User entity field references in GDPR queries
-- `e352367` - fix: use correct JPA entity names in GDPR anonymization queries
-- `6220ff8` - fix: correct Program navigation path in Progression query
+- `83872bb` - feat: implement GDPR compliance (Sprint 1)
+- `a7662ed` - fix: correct User entity field references in GDPR queries
+- `cacd1c9` - fix: use correct JPA entity names in GDPR anonymization queries
+- `79b3a72` - fix: correct Program navigation path in Progression query
 
 **Infrastructure**:
-- `df3b2bf` - CORS Config
-- `b3b8c02` - config websocket for vercel
-- `c96c79a` - refactor: replace SendGrid with Resend for email delivery
-- `907f5c4` - fix: enable WebSocket configuration
-- `8da8119` - fix: create uploads directory with correct permissions in Dockerfile
+- `788e1b0` - CORS Config
+- `19b650a` - config websocket for vercel
+- `123c3ee` - refactor: replace SendGrid with Resend for email delivery
+- `a0631c8` - fix: enable WebSocket configuration
+- `67d1f0e` - fix: create uploads directory with correct permissions in Dockerfile
 
 **Database Fixes**:
-- `bc50cec` - fix: use native query for findByEmbeddingIsNull in ActivityRepository
-- `8cc5a60` - fix: remove v_user_id column from temp tables to eliminate ambiguity
-- `f705e11` - fix: resolve ambiguous column references in V13 migration
+- `ef2da82` - fix: use native query for findByEmbeddingIsNull in ActivityRepository
+- `8b12f9a` - fix: remove v_user_id column from temp tables to eliminate ambiguity
+- `22bbf6a` - fix: resolve ambiguous column references in V13 migration
 
 ---
 

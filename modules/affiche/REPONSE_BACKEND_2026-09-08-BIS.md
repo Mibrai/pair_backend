@@ -73,7 +73,7 @@ ne l'envoie pas** — ce qui était l'état au dernier relevé, et qui a pu chan
 avec le déploiement d'`AFFICHE_READY`. »
 
 Ce n'est pas ce que dit l'historique. `setMutableContent(true)` est entré le
-**12 août 2026** (`da4d70e`), avec la livraison de l'identité de séance au
+**12 août 2026** (`27ad703`), avec la livraison de l'identité de séance au
 template client — soit **quatre semaines avant** que le module affiche existe.
 La javadoc du point d'envoi le dit d'ailleurs en toutes lettres, et elle
 explique pourquoi :

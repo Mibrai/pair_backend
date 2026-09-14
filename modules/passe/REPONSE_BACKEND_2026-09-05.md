@@ -239,7 +239,7 @@ remplir. Un champ de date qui ne dit pas son format en a besoin.
 
 > **Corrigé le 13/09/2026 — ce paragraphe avait tort, et il est laissé tel quel en
 > dessous pour que la correction se lise.** Le statut est exposé depuis le 12/09
-> (`c5adbcf`, fiche P-BL-08) : `SlotFeedItemDto` porte `status`
+> (`b0860d7`, fiche P-BL-08) : `SlotFeedItemDto` porte `status`
 > (`OPEN|FULL|CANCELLED|PAST`), `cancelledAt` et `cancellationReason`, sur
 > `/slots/mine`, `/slots/{id}` et le fil.
 >

@@ -16,7 +16,7 @@
 
 ---
 
-## 1. Relevé du 14/09/2026 (code serveur `fa7876f`, déployé ; contrat `/v3/api-docs` de 13 h 44)
+## 1. Relevé du 14/09/2026 (code serveur `ef09739`, déployé ; contrat `/v3/api-docs` de 13 h 44)
 
 `ProgramService.updateSchedule` (`ProgramService.java:656-662`) applique `if (request.x() != null)`
 à chaque champ. Un champ absent ou `null` garde l'ancienne valeur — c'est la règle écrite au contrat.

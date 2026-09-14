@@ -23,7 +23,7 @@ n'existait pas.
 
 ### Ce qui était en place
 
-Le 02/09 (`c5794f7`), nous avions branché l'identité du build :
+Le 02/09 (`d687f9c`), nous avions branché l'identité du build :
 
 - `build.commit` vaut `local` par défaut dans le `pom.xml` ;
 - un profil Maven, `build-identity-from-env`, s'active quand la variable `RAILWAY_GIT_COMMIT_SHA`
@@ -42,13 +42,13 @@ Nous l'avons vérifié des deux côtés avant de corriger :
 
 | Vérification | Résultat |
 |---|---|
-| Maven avec `RAILWAY_GIT_COMMIT_SHA=04aeffb…` | `build.commit=04aeffb…` |
+| Maven avec `RAILWAY_GIT_COMMIT_SHA=e09e9f2…` | `build.commit=e09e9f2…` |
 | Maven avec la variable vide, ou absente | `build.commit=local` |
 | Docker, variable fournie **sans** `ARG` | invisible dans `RUN` |
 | Docker, variable fournie **avec** `ARG` | visible dans `RUN` |
 
 Les déploiements viennent bien de GitHub : Railway enregistre pour chacun le `commitHash`
-(`04aeffb3…` pour le dernier), qui est la valeur transmise.
+(`e09e9f23…` pour le dernier), qui est la valeur transmise.
 
 ### Le correctif
 

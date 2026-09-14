@@ -4,7 +4,7 @@
 jamais reçu de réponse écrite.
 **Fait suite à :** `PROMPT_BACKEND_2026-09-02.md`
 
-> **§1 — `SCHEDULE_CHANGED` est émis depuis le 12/09** (`f0522ba`, fiche P-BL-06), dans la forme que
+> **§1 — `SCHEDULE_CHANGED` est émis depuis le 12/09** (`5438212`, fiche P-BL-06), dans la forme que
 > vous décriviez : inscrits seulement, une notification par modification, rien si l'heure ou le lieu
 > n'ont pas bougé. **Il manquait le `collapse-id`**, livré aujourd'hui (§1.3).
 >

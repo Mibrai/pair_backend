@@ -27,7 +27,7 @@ compte là où un booléen suffit.
 ## 1. Relevé du 14/09/2026, 13 h 43 (heure de Paris)
 
 **Contrat** `/v3/api-docs` de production, 220 chemins, `build.time` `2026-09-14T11:39:59Z` (commit
-`04aeffb`) :
+`e09e9f2`) :
 
 | Schéma | Propriété | Type | Route |
 |---|---|---|---|
@@ -38,7 +38,7 @@ compte là où un booléen suffit.
 Aucune lecture HTTP authentifiée n'a été rejouée ce jour-là : les valeurs servies ne sont pas
 relevées, seulement les types et le code.
 
-**Code, clone au commit `04aeffb`.**
+**Code, clone au commit `e09e9f2`.**
 
 *La série :*
 - `PracticeStatsDto.java:9` : `int currentStreakWeeks, // "5 semaines d'affilée"`.

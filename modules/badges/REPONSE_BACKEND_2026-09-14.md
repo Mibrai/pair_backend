@@ -21,7 +21,7 @@
 
 ## 1. Le relevé, vérifié
 
-Tout est exact au commit `4c3d38b`. Pour être précis :
+Tout est exact au commit `9908a69`. Pour être précis :
 
 - **Trois types de série existent.** `PROGRESSION_STREAK` et `WEEKLY_STREAK` étaient évalués par
   `BadgeService`. `STREAK_DAYS` n'était évalué par personne : un seul badge l'utilise, « Engagiert »

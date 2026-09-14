@@ -1,7 +1,7 @@
 # Hygiène du dépôt — journaux, historique SQL et scripts suivis par git
 
 > Fiche **P-BA-22** du plan architecture. Inventaire établi par `git ls-files` le
-> **12/09/2026** sur `master` à `57e0a04` (et non d'après la fiche du 11/09, qui
+> **12/09/2026** sur `master` à `019eb16` (et non d'après la fiche du 11/09, qui
 > a une journée de retard). Le dépôt est **public** : tout ce qui est suivi est
 > publié.
 
@@ -48,10 +48,10 @@ Deux limites à connaître :
 | `app-clean.log` | 103 Ko | 26/06 Init Commit | idem |
 | `app-test.log` | 53 Ko | 26/06 Init Commit | sortie d'une exécution de tests de juin ; la suite en compte 1371 aujourd'hui |
 | `app-activities.log` | 42 Ko | 26/06 Init Commit | trace d'un chargement d'activités |
-| `spring-boot.log` | 31 Ko | 04/07 `b50dd96` | trace d'un correctif `LazyInitializationException` déjà livré |
+| `spring-boot.log` | 31 Ko | 04/07 `7a47ecb` | trace d'un correctif `LazyInitializationException` déjà livré |
 | `app-flyway.log` | 27 Ko | 26/06 Init Commit | trace de migrations, aujourd'hui 105 versions plus loin |
 | `app.log` | 22 Ko | 26/06 Init Commit | journal courant d'alors |
-| `test-output.log` | 12 Ko | 30/06 `82d2436` | sortie d'un seed de test |
+| `test-output.log` | 12 Ko | 30/06 `518e642` | sortie d'un seed de test |
 
 Relus avant de conclure : **aucune donnée personnelle réelle**. Les seules
 adresses qui y figurent sont des adresses de test
@@ -94,13 +94,13 @@ sur le disque.
 
 | Aujourd'hui | Destination | Pourquoi c'est utile |
 |---|---|---|
-| `start-db.sh` | `scripts/start-db.sh` | le seul script de la racine encore entretenu (commit `b7e7597`, 01/09). Monte le conteneur PostGIS + pgvector et documente, en commentaire, le défaut `$DOCKERps` qui l'a fait échouer. Indispensable pour lancer la suite en local. |
+| `start-db.sh` | `scripts/start-db.sh` | le seul script de la racine encore entretenu (commit `cc50b07`, 01/09). Monte le conteneur PostGIS + pgvector et documente, en commentaire, le défaut `$DOCKERps` qui l'a fait échouer. Indispensable pour lancer la suite en local. |
 | `quick-test.sh` | `scripts/smoke/quick-test.sh` | sonde manuelle inscription + conversations, citée par `README.md` et `docs/guides/COMMANDES_UTILES.md`. |
 | `test-conversations.sh` | `scripts/smoke/test-conversations.sh` | sonde de la messagerie, citée par `README.md`, `docs/guides/AUTHENTICATION_GUIDE.md` et `COMMANDES_UTILES.md`. |
 | `run-map-visibility-tests.sh` | `scripts/run-map-visibility-tests.sh` | lance `mvn test -Dtest=MapVisibilityIntegrationTest` — une classe qui existe toujours — et explique quoi vérifier en cas d'échec (vie privée, floutage, comptes désactivés). Cité par `docs/tests/MAP_VISIBILITY_TESTS_README.md` et `QUICKSTART_MAP_TESTS.md`. |
 | `run-map-visibility-tests.bat` | `scripts/run-map-visibility-tests.bat` | équivalent Windows du précédent, cité par les mêmes documents. |
 | `frontend-config.json` | `docs/api/frontend-config.json` | contrat d'API servi à l'équipe mobile (52 routes, tailles de page, plafonds d'upload). Dix documents le citent. Sa place est à côté de `docs/api/api-endpoints.md`. |
-| `RAILWAY_ENV_VARS.md` | `docs/deployment/RAILWAY_ENV_VARS.md` | **à ne pas fondre dans un guide fusionné** : 153 lignes entretenues jusqu'au 12/08 (`3d17392`), qui portent le volume obligatoire `/app/uploads`, l'incident média du 11/08, et tout le protocole `FIREBASE_CREDENTIALS_BASE64`. C'est la référence d'exploitation vivante. |
+| `RAILWAY_ENV_VARS.md` | `docs/deployment/RAILWAY_ENV_VARS.md` | **à ne pas fondre dans un guide fusionné** : 153 lignes entretenues jusqu'au 12/08 (`6fc8f70`), qui portent le volume obligatoire `/app/uploads`, l'incident média du 11/08, et tout le protocole `FIREBASE_CREDENTIALS_BASE64`. C'est la référence d'exploitation vivante. |
 | `RAILWAY_SEEDING.md` | `docs/deployment/RAILWAY_SEEDING.md` | décrit le chargement de `scripts/seed-railway-data.sql` (fichier suivi, toujours là) et ne publie aucun identifiant. |
 | `RESEND_QUICKSTART.md` | `docs/guides/RESEND_QUICKSTART.md` | mise en route email en 3 étapes ; `docs/guides/` porte déjà `EMAIL_CONFIGURATION.md`. |
 | `RESEND_SETUP.md` | `docs/guides/RESEND_SETUP.md` | guide détaillé Resend/DNS, cité par `RAILWAY_ENV_VARS.md`. |
@@ -138,7 +138,7 @@ dix comptes de démonstration à UUID fixes :
   fiche.** Ces deux documents publient le tableau des dix comptes
   (`alice@pair.test` … `julien@pair.test`) **avec le mot de passe `Test1234!`**,
   contre le déploiement `pairbackend-production` nommément. C'est exactement ce
-  que le commit `c41322f` du lot 0 a cessé de faire pour les comptes de démo.
+  que le commit `10a66aa` du lot 0 a cessé de faire pour les comptes de démo.
   Les déplacer ou les fusionner ne ferait que déménager la publication : ils
   relèvent de P-BS-06 avec le SQL qu'ils documentent.
 

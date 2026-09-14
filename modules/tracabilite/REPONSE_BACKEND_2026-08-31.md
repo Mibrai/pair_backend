@@ -28,7 +28,7 @@
 ### 1.1 · `GET /api/reports/me` est servi depuis quatre jours
 
 Le `500` que vous aviez signalé le 27/08 a été corrigé le jour même : commit
-`97585ae`, migration `V82__report_vocabulaire_statut.sql`, couvert par
+`2a36160`, migration `V82__report_vocabulaire_statut.sql`, couvert par
 `ReportVocabulaireIntegrationTest`. La cause n'était pas une route manquante mais
 deux vocabulaires pour la colonne `status` — celui de `V9` (`OPEN`, `RESOLVED`) et
 celui de l'enum Java (`PENDING`, `REVIEWED`, `ACTIONED`, `DISMISSED`). Une seule

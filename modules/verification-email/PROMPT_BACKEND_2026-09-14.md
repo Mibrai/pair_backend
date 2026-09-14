@@ -16,7 +16,7 @@ non vérifié ; ensuite seulement, côté app, un brouillon avant vérification.
 
 ---
 
-## 1. Relevé du 14/09/2026 (code serveur `4c3d38b`)
+## 1. Relevé du 14/09/2026 (code serveur `9908a69`)
 
 - `VerificationStatus.UNVERIFIED` n'est lu que pour l'**affichage** : pages publiques
   (`PublicSlotService.java:272-274`, `PublicProgramService.java:210`) et badges

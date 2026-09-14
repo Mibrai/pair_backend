@@ -15,7 +15,7 @@ un badge déjà obtenu, et demander au serveur de ne plus les attribuer.
 
 ---
 
-## 1. Relevé du 14/09/2026 (code serveur `4c3d38b`, production le 13/09)
+## 1. Relevé du 14/09/2026 (code serveur `9908a69`, production le 13/09)
 
 - `BadgeConditionType` déclare `PROGRESSION_STREAK`, `STREAK_DAYS` et `WEEKLY_STREAK`
   (`trust/BadgeConditionType.java:7,20,25`).

@@ -12,7 +12,7 @@
 
 ---
 
-## 1. Relevés du 13/09/2026 (backend `bdc6670`, production)
+## 1. Relevés du 13/09/2026 (backend `1cfe54f`, production)
 
 - `GET /api/slots/{scheduleId}/participants` (`SlotController.java:189-194`,
   `SlotService.java:655-683`) répond `403 SLOT_PARTICIPANTS_HOST_ONLY` à tout appelant qui n'est

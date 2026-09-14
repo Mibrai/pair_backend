@@ -26,7 +26,7 @@ Relevé du 14/09/2026 à 18 h 01 :
 |---|---|
 | `/v3/api-docs` | aucune route publique d'activité ; `/public/slots/{token}` et `/public/programs/{token}` seulement |
 | AASA de `lien.meetdo.fun` | **200**, motifs `/s/*`, `/p/*`, `/v/*` |
-| `PublicProgramService.shareLink` (clone à `4ccbb57`) | `404` si l'appelant n'est pas l'organisateur |
+| `PublicProgramService.shareLink` (clone à `c6568d8`) | `404` si l'appelant n'est pas l'organisateur |
 | `PublicSlotService.shareLink` | ouvert à **tous les participants** du créneau |
 
 Le partage d'un **programme** par quelqu'un qui n'en est pas l'auteur tombe dans le même trou :

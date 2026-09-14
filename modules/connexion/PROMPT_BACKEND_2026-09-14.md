@@ -27,7 +27,7 @@ GET https://lien.meetdo.fun/reset-password?token=essai
 
 Même réponse sur l'hôte Railway de l'API.
 
-**Code serveur, commit `4c3d38b`** :
+**Code serveur, commit `9908a69`** :
 - `EmailService.java:286` compose `baseUrl + "/reset-password?token=" + token`.
 - **Aucun contrôleur ne sert `GET /reset-password`** — le commentaire de `EmailService.java:290-294`
   le dit lui-même : « ce chemin, lui, n'a toujours pas de page ».

@@ -26,7 +26,7 @@ partiellement en disant « c'est coupé » est le pire mensonge de l'app, parce 
 
 ## 2. Relevé du 14/09/2026, canal par canal
 
-Contrat `/v3/api-docs` de production (217 chemins) et clone du serveur au commit `4c3d38b`
+Contrat `/v3/api-docs` de production (217 chemins) et clone du serveur au commit `9908a69`
 (13/09, 22:42). `GET /actuator/info` rend un `build.time` de `2026-09-13T20:42:30Z`, l'heure de ce
 commit. Aucun chemin `cut-all`, ni rien d'approchant, n'est au contrat.
 
@@ -181,7 +181,7 @@ question §5.3.
 
 ## 4. Avec P-BL-05
 
-P-BL-05 est livré dans votre commit `20e10eb` (13/09) : un bloqué ne peut plus écrire ni partager
+P-BL-05 est livré dans votre commit `149501d` (13/09) : un bloqué ne peut plus écrire ni partager
 sa position dans un fil commun (`ChatService.java:197`, appelé par `shareLocation`).
 
 Ce qui reste, et qui partage la même primitive : **un partage de position envoyé avant le

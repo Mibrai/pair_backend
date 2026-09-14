@@ -21,7 +21,7 @@
 
 ## 1. État du déploiement — vérifié en production
 
-Votre document précise qu'il est « rédigé contre `master` (`23cfd6d`) », sans
+Votre document précise qu'il est « rédigé contre `master` (`bfefd3c`) », sans
 prétendre que quoi que ce soit soit déployé. Nous avons donc vérifié
 nous-mêmes, parce que **c'est notre dépendance bloquante** : nous ne pouvons
 rien brancher contre un contrat qui n'est pas en production.

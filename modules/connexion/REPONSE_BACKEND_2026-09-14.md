@@ -26,7 +26,7 @@
 
 ## 1. Votre relevé, vérifié dans le code
 
-| Votre constat | Ce que dit le code au commit `4c3d38b` |
+| Votre constat | Ce que dit le code au commit `9908a69` |
 |---|---|
 | `EmailService` compose `/reset-password?token=` | Exact. |
 | Aucun contrôleur ne sert `GET /reset-password` | Exact. Le commentaire l'avouait depuis le 25/08. |
