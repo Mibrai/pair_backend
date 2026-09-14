@@ -18,6 +18,12 @@
 > **Ce n'est pas propre aux comptes démo.** Fermer son compte (`deactivateAccount`) pose le même
 > `is_active = false`. Le défaut aurait donc surgi au premier utilisateur réel qui ferme son compte
 > en ayant des inscrits.
+>
+> **Mis à jour le même jour, après P-BL-18** (`9443b4c`, voir `modules/rgpd/REPONSE_BACKEND_2026-09-14.md`) :
+> fermer son compte **annule désormais ses créneaux à venir et prévient les inscrits**. Un créneau
+> **annulé** d'un hôte fermé reste donc visible, dans « mes créneaux » comme sur sa fiche : c'est ce
+> qu'ouvre la notification. La règle « retiré, 404 » ne vaut plus que pour un créneau **non annulé** —
+> aujourd'hui, les créneaux des comptes démo fermés par `V116`, qui ne sont pas repris (§2).
 
 ---
 
@@ -35,9 +41,10 @@
 `OPEN_SLOTS_VISIBLE_BASE` porte `u.is_active = TRUE`. Un hôte fermé n'y arrive jamais jusqu'au
 profil. « Mes créneaux » part des inscriptions, pas de cette clause.
 
-## 2. La décision du §3.2 : retiré de la liste
+## 2. La décision du §3.2 : retiré de la liste — sauf s'il est annulé
 
-Nous avons écarté l'hôte « compte fermé » sans profil, pour trois raisons :
+**Un créneau non annulé** dont l'hôte a fermé son compte sort de la liste. Nous avons écarté l'hôte
+« compte fermé » sans profil, pour trois raisons :
 
 - **cohérence** : le fil et la carte ne montrent déjà plus ce créneau. Le garder ici ferait exister
   une séance à un seul endroit de l'app ;
@@ -45,12 +52,17 @@ Nous avons écarté l'hôte « compte fermé » sans profil, pour trois raisons 
   blocage : « la liste annoncerait un créneau dont la fiche rend 404 » ;
 - **le cas réel d'aujourd'hui** : ce sont des séances de démonstration, sans organisateur réel.
 
-**Ce que cette décision ne règle pas, et nous le disons** : fermer un compte **n'annule pas** ses
-créneaux et **ne prévient pas** ses inscrits. Un inscrit voit la séance disparaître, sans message.
-Pour les comptes démo, c'est sans conséquence. Pour un vrai organisateur qui ferme son compte la
-veille d'une séance, c'est une question produit : annuler ses créneaux à venir à la fermeture, avec
-le `SLOT_CANCELLED` habituel. Elle est hors du périmètre d'un correctif d'incident, et nous ne la
-tranchons pas ici.
+**Un créneau annulé reste**, avec son statut `CANCELLED` et sans profil d'hôte (`host: null`).
+C'est le cas des créneaux à venir ou en cours d'un organisateur qui ferme son compte depuis P-BL-18 : la
+fermeture les annule et envoie `SLOT_CANCELLED` à leurs inscrits, et la fiche est ce que cette
+notification ouvre. Lui répondre « introuvable » contredirait le message qu'on vient de lui envoyer.
+
+**Ce qui reste sans message** : les créneaux des vingt comptes démo, fermés par `V116` **avant**
+P-BL-18 et non repris. Ils ne sont pas annulés, donc ils sortent de la liste sans notification. Ce
+sont des séances de démonstration : c'est sans conséquence.
+
+*Une première version de ce document, écrite quelques heures plus tôt, disait que fermer un compte
+n'annulait rien et ne prévenait personne. C'était vrai à cette heure-là, et ce ne l'est plus.*
 
 ## 3. La revue du §3.3
 
@@ -59,8 +71,8 @@ créneau :
 
 | Surface | Avant | Après |
 |---|---|---|
-| `GET /slots/mine` (± `upcoming`) | **404 pour toute la liste** | 200, créneau de l'hôte fermé omis |
-| `GET /slots/{id}` | 404 « **Utilisateur** introuvable » | 404 « **Créneau** introuvable » |
+| `GET /slots/mine` (± `upcoming`) | **404 pour toute la liste** | 200 ; créneau non annulé de l'hôte fermé omis, créneau annulé gardé (P-BL-18) |
+| `GET /slots/{id}` | 404 « **Utilisateur** introuvable » | 404 « **Créneau** introuvable » ; 200 sans profil d'hôte si le créneau est annulé (P-BL-18) |
 | `POST /slots/{id}/join`, `POST /slots/{id}/waitlist` | 404 « Utilisateur introuvable », **après** les contrôles d'entrée | 404 « Créneau introuvable », **en tête** de `SlotEntryGuard`, donc aussi pour `POST /programs/{id}/join` avec un `scheduleId` |
 | `GET /slots/{id}/participants` (l'hôte) | **404 pour toute la liste** si un inscrit a fermé son compte | 200, inscrit fermé omis |
 | `GET /slots/{id}/waitlist` (l'hôte) | **404 pour toute la file** | 200, compte fermé omis |
@@ -90,6 +102,9 @@ inscrits en `404`, la fiche et l'inscription en « Utilisateur introuvable. ». 
 deux cas, comme attendu. Les lignes « Avant » de la file d'attente, des co-présents et des
 cartes-souvenirs viennent de la lecture du code, pas d'un test.
 
+Les cas d'un créneau **annulé** à la fermeture sont couverts par `FermetureCompteSeancesIntegrationTest`
+(P-BL-18).
+
 **Votre protocole du §4 tient tel quel** après déploiement : `GET /api/slots/mine` et
 `?upcoming=true` en `200` avec les deux comptes de test. Les créneaux des hôtes démo n'y figurent
-plus.
+plus : ils n'ont pas été annulés.
