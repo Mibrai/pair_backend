@@ -96,6 +96,11 @@ public class ActivityController {
      * l'appelant déclare déjà pour ne pas le lui proposer.
      */
     @GetMapping("/activities/suggested")
+    @io.swagger.v3.oas.annotations.Operation(
+        summary = "Des activités à proposer à quelqu'un qui n'en déclare aucune",
+        description = "Les plus pratiquées autour de la position d'abord, puis un repli national "
+            + "signalé par fallback. Aucun décompte de personnes n'est servi. Pour savoir si une "
+            + "activité se pratique déjà près d'une position : GET /api/activities/practised-nearby.")
     public List<SuggestedActivityDto> suggestedActivities(
             @AuthenticationPrincipal UserPrincipal principal,
             @RequestParam double lat,

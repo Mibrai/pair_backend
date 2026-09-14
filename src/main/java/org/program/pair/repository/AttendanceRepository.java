@@ -164,9 +164,6 @@ public interface AttendanceRepository extends JpaRepository<Attendance, UUID> {
         """, nativeQuery = true)
     int countDistinctPartners(@Param("userId") UUID userId);
 
-    @Query("SELECT a.attendedAt FROM Attendance a WHERE a.user.id = :userId AND a.wasPresent = true ORDER BY a.attendedAt DESC")
-    List<Instant> findPresentDatesDesc(@Param("userId") UUID userId);
-
     @Query("SELECT a.attendedAt FROM Attendance a WHERE a.user.id = :userId AND a.wasPresent = true ORDER BY a.attendedAt DESC LIMIT 1")
     Optional<Instant> findLastAttendanceDate(@Param("userId") UUID userId);
 

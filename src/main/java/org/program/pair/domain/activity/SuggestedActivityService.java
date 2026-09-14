@@ -149,7 +149,7 @@ public class SuggestedActivityService {
                 row.getImageUrl(),
                 row.getCategoryId(),
                 row.getCategoryName(),
-                fallback ? 0L : row.getPractitioners(),
+                // row.getPractitioners() a trié la requête ; il ne sort pas d'ici.
                 fallback))
             .toList();
     }

@@ -107,10 +107,6 @@ public class User {
     @Builder.Default
     private Integer attendanceCount = 0;
 
-    @Column(name = "current_streak_weeks", nullable = false)
-    @Builder.Default
-    private Integer currentStreakWeeks = 0;
-
     @Column(name = "last_attendance_at")
     private Instant lastAttendanceAt;
 

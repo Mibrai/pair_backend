@@ -195,9 +195,6 @@ class OnboardingIntegrationTest extends AbstractIntegrationTest {
 
         assertThat(suggestions).isNotEmpty();
         assertThat(suggestions).allMatch(SuggestedActivityDto::fallback);
-        // Un décompte de voisinage n'aurait aucun sens sur une proposition qui ne
-        // vient pas du voisinage.
-        assertThat(suggestions).allMatch(s -> s.practitionersNearby() == 0);
     }
 
     @Test

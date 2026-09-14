@@ -19,7 +19,7 @@ import java.util.UUID;
  * une position (demande mobile du 14/09/2026, modules/rappel, P-MU-22 A1).
  *
  * <p><b>Jamais un compte.</b> {@code /activities/suggested} rend un
- * {@code practitionersNearby} ; cette route-ci n'en laisse sortir aucun, pas même
+ * {@code practitionersNearby} (retiré du contrat le 14/09) ; cette route-ci n'en laisse sortir aucun, pas même
  * de la base (la requête ne rend que les identifiants qui passent le seuil).
  *
  * <p><b>Le seuil est à trois personnes, et la position est arrondie.</b> Un oui
