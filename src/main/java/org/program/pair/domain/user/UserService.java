@@ -396,37 +396,16 @@ public class UserService {
     @Transactional(readOnly = true)
     public Page<UserPublicDto> searchUsers(
             String query,
-            Double latitude,
-            Double longitude,
             int page,
             int size,
             UUID requesterId) {
 
-        // Default search radius: 50km
-        int radiusMeters = 50000;
-
-        // Calculate offset
         int offset = page * size;
 
-        // Get search results
-        List<User> users = userRepository.searchUsers(
-            query,
-            latitude,
-            longitude,
-            radiusMeters,
-            size,
-            offset,
-            requesterId
-        );
-
-        // Get total count for pagination
-        long total = userRepository.countSearchResults(
-            query,
-            latitude,
-            longitude,
-            radiusMeters,
-            requesterId
-        );
+        // Ni position ni rayon (demande mobile inscription du 14/09, (d)) : voir
+        // UserRepository.SEARCH_USERS_BODY, point 6.
+        List<User> users = userRepository.searchUsers(query, size, offset, requesterId);
+        long total = userRepository.countSearchResults(query, requesterId);
 
         // L'état d'abonnement en une requête pour toute la page, et non une par
         // entrée.

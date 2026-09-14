@@ -218,6 +218,21 @@ public interface UserRepository extends JpaRepository<User, UUID> {
      * {@code WHERE} et non après coup, pour que le compte reste d'accord avec la
      * page — un post-filtrage annoncerait un total qu'il ne rend pas, et la
      * dernière page serait vide sans le dire.
+     *
+     * <p>5. <b>La bio n'est cherchable que là où elle serait rendue</b> (demande
+     * mobile inscription du 14/09, (c)). Elle l'était sans condition : un profil
+     * {@code PRIVATE}, ou {@code FRIENDS} pour qui ne le suit pas, remontait sur
+     * un mot de sa bio que l'appelant ne verrait jamais — et en essayant des mots,
+     * on lisait la bio par oui ou non. La condition est celle de
+     * {@code UserService.toPublicDto} : {@code PUBLIC}, ou {@code FRIENDS} et
+     * l'appelant abonné à la personne. Nulle vaut {@code PUBLIC}, comme là-bas.
+     * Le nom et les titres de programmes publics restent cherchables.
+     *
+     * <p>6. <b>Plus de position</b> (même demande, (d)). {@code latitude} et
+     * {@code longitude} filtraient à 50 km sur la vraie position : la route
+     * servait de sonde de position, et une personne sans position disparaissait
+     * dès qu'un point était envoyé, même cherchée par son nom exact. Un nom n'a pas
+     * de position ; l'app n'en envoyait plus depuis le 04/09.
      */
     String SEARCH_USERS_BODY = """
         FROM users u
@@ -228,7 +243,11 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                OR u.show_on_map IS TRUE)
           AND (
             unaccent(LOWER(u.display_name)) LIKE unaccent(LOWER(CONCAT('%', :query, '%')))
-            OR unaccent(LOWER(u.bio)) LIKE unaccent(LOWER(CONCAT('%', :query, '%')))
+            OR ((COALESCE(u.profile_visibility, 'PUBLIC') = 'PUBLIC'
+                 OR (u.profile_visibility = 'FRIENDS' AND EXISTS (
+                     SELECT 1 FROM subscriptions s
+                     WHERE s.subscriber_id = :viewerId AND s.target_author_id = u.id)))
+                AND unaccent(LOWER(u.bio)) LIKE unaccent(LOWER(CONCAT('%', :query, '%'))))
             OR EXISTS (
                 SELECT 1 FROM user_activities ua
                 JOIN programs p ON p.user_activity_id = ua.id
@@ -238,39 +257,22 @@ public interface UserRepository extends JpaRepository<User, UUID> {
                   AND unaccent(LOWER(p.title)) LIKE unaccent(LOWER(CONCAT('%', :query, '%')))
             )
           )
-          AND (:lat IS NULL OR :lng IS NULL OR ST_DWithin(
-              u.location::geography,
-              ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
-              :radiusMeters
-          ))
         """ + BlockSql.NOT_BLOCKED_U;
 
     /**
      * La page de résultats.
      *
-     * <p><b>{@code u.id} départage le classement</b>, et ce n'est pas une
-     * précaution de style. Sans position, la clé de tri vaut {@code 0} pour
-     * toutes les lignes : l'ordre était alors laissé au hasard du plan
-     * d'exécution, et deux pages successives pouvaient se recouvrir ou se
-     * manquer. C'est précisément le cas de l'onglet « Trouver », qui n'envoie
-     * jamais de position.
+     * <p><b>{@code u.id} ordonne la page</b>, et ce n'est pas une précaution de
+     * style : sans clé de tri stable, l'ordre serait laissé au hasard du plan
+     * d'exécution, et deux pages successives pourraient se recouvrir ou se
+     * manquer.
      */
     @Query(value = "SELECT u.* " + SEARCH_USERS_BODY + """
-        ORDER BY
-          CASE WHEN :lat IS NULL OR :lng IS NULL THEN 0
-          ELSE ST_Distance(
-            u.location::geography,
-            ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography
-          )
-          END,
-          u.id
+        ORDER BY u.id
         LIMIT :limit OFFSET :offset
         """, nativeQuery = true)
     List<User> searchUsers(
         @Param("query") String query,
-        @Param("lat") Double lat,
-        @Param("lng") Double lng,
-        @Param("radiusMeters") int radiusMeters,
         @Param("limit") int limit,
         @Param("offset") int offset,
         @Param("viewerId") UUID viewerId
@@ -280,9 +282,6 @@ public interface UserRepository extends JpaRepository<User, UUID> {
     @Query(value = "SELECT COUNT(*) " + SEARCH_USERS_BODY, nativeQuery = true)
     long countSearchResults(
         @Param("query") String query,
-        @Param("lat") Double lat,
-        @Param("lng") Double lng,
-        @Param("radiusMeters") int radiusMeters,
         @Param("viewerId") UUID viewerId
     );
 

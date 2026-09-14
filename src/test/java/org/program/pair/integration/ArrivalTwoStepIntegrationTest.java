@@ -178,6 +178,64 @@ class ArrivalTwoStepIntegrationTest extends AbstractIntegrationTest {
             .exchange().expectStatus().isAccepted();
     }
 
+    // ─── « je la vois », adressé à l'inscrit (demande mobile inscription du 14/09, (a)) ──
+
+    /** Sur un inscrit qui a armé : la relance aller recule de 15 minutes, comme par la veille. */
+    @Test
+    void jeLaVois_parLInscription_doitRepousserLaRelanceAller() {
+        Scene s = scene();
+        Watch avant = watch(s.watchId());
+        Instant base = avant.getOutboundBaseAt() != null ? avant.getOutboundBaseAt() : avant.getArmedAt();
+
+        webTestClient.post()
+            .uri("/api/schedules/{s}/arrivals/{p}/seen", s.scheduleId(), s.participationId())
+            .headers(h -> h.setBearerAuth(s.hote().token()))
+            .exchange().expectStatus().isAccepted();
+
+        assertThat(watch(s.watchId()).getOutboundBaseAt()).isEqualTo(base.plus(15, ChronoUnit.MINUTES));
+    }
+
+    /**
+     * Sur un inscrit qui n'a rien armé, et sur une veille sortie du trajet aller : le même 202.
+     * La forme par veille rendait 409 sur la seconde, et n'existait pas pour le
+     * premier — l'hôte apprenait qui se protège en regardant ses boutons.
+     */
+    @Test
+    void jeLaVois_nePeutPasServirDeDetecteur() {
+        Scene sansVeille = sceneSansVeille();
+        webTestClient.post()
+            .uri("/api/schedules/{s}/arrivals/{p}/seen", sansVeille.scheduleId(), sansVeille.participationId())
+            .headers(h -> h.setBearerAuth(sansVeille.hote().token()))
+            .exchange().expectStatus().isAccepted();
+
+        // Une veille qui a quitté le trajet aller : la forme par veille rendait 409.
+        Scene close = scene();
+        Watch surPlace = watch(close.watchId());
+        surPlace.setState(WatchState.ON_SITE);
+        watchRepository.saveAndFlush(surPlace);
+        webTestClient.post()
+            .uri("/api/schedules/{s}/arrivals/{p}/seen", close.scheduleId(), close.participationId())
+            .headers(h -> h.setBearerAuth(close.hote().token()))
+            .exchange().expectStatus().isAccepted();
+    }
+
+    @Test
+    void jeLaVois_horsDeSonCreneau_doitEtreIntrouvable() {
+        Scene s = scene();
+        Scene autre = sceneSansVeille();
+        Compte etranger = compte("etranger-vu");
+
+        webTestClient.post()
+            .uri("/api/schedules/{s}/arrivals/{p}/seen", s.scheduleId(), s.participationId())
+            .headers(h -> h.setBearerAuth(etranger.token()))
+            .exchange().expectStatus().isNotFound();
+        // L'inscription d'un autre créneau, présentée sur le sien.
+        webTestClient.post()
+            .uri("/api/schedules/{s}/arrivals/{p}/seen", s.scheduleId(), autre.participationId())
+            .headers(h -> h.setBearerAuth(s.hote().token()))
+            .exchange().expectStatus().isNotFound();
+    }
+
     // ─── le code de retour ────────────────────────────────────────────────────
 
     /**

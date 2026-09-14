@@ -307,26 +307,37 @@ public class SlotService {
         Schedule slot = scheduleRepository.findById(scheduleId)
             .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
+        introuvableSiFicheIllisible(slot, requesterId);
+        return toFeedItem(slot, null, null, requesterId);
+    }
+
+    /**
+     * Le créneau est-il introuvable pour cet appelant ? La règle de la fiche,
+     * écrite une fois pour les trois routes qui la partagent : la fiche, les
+     * inscrits vus par l'hôte, les autres inscrits vus par un inscrit.
+     *
+     * <p><b>Introuvable d'abord, avant tout contrôle de rôle</b> (demande mobile
+     * inscription du 14/09, (b)). {@code /participants} ne regardait ni le
+     * blocage ni le compte de l'hôte : une personne bloquée recevait
+     * {@code 403 SLOT_PARTICIPANTS_HOST_ONLY} sur un créneau dont la fiche lui
+     * rendait 404 — le 403 confirmait l'existence de ce que la fiche disait
+     * introuvable. Une fois la fiche lisible, les 403 nommés restent : ils
+     * n'apprennent rien que l'appelant ne sache déjà.
+     *
+     * <p>Organisateur au compte fermé : introuvable, comme dans le fil (incident
+     * du 14/09/2026). Sauf un créneau annulé (P-BL-18) : fermer son compte annule
+     * ses créneaux et envoie SLOT_CANCELLED, et la fiche est ce que la notification
+     * ouvre. Elle est alors rendue sans profil d'hôte, et rien n'y est plus
+     * faisable : l'inscription passe par assertHostActive, que ceci ne touche pas.
+     */
+    private void introuvableSiFicheIllisible(Schedule slot, UUID requesterId) {
         User host = slot.getProgram().getUserActivity().getUser();
-        // Organisateur au compte fermé : introuvable, comme dans le fil. Sans ce
-        // refus, la fiche tombait en « Utilisateur introuvable » en composant
-        // son profil — un 404 qui parle d'une personne là où l'on a demandé un
-        // créneau (incident du 14/09/2026).
-        //
-        // Sauf un créneau annulé (P-BL-18) : fermer son compte annule ses
-        // créneaux et envoie SLOT_CANCELLED, et la fiche est ce que la
-        // notification ouvre. Un 404 à cet endroit dirait « introuvable » à qui
-        // vient d'apprendre que la séance est annulée. La fiche est rendue sans
-        // profil d'hôte (feedContext l'écarte), et rien n'y est plus faisable :
-        // l'inscription passe par assertHostActive, que ceci ne touche pas.
         if (slot.getStatus() != SlotStatus.CANCELLED) {
             entryGuard.assertHostActive(host);
         }
         if (blockFilterService.blocked(requesterId, host.getId())) {
             throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
         }
-
-        return toFeedItem(slot, null, null, requesterId);
     }
 
     /**
@@ -684,6 +695,7 @@ public class SlotService {
         Schedule slot = scheduleRepository.findById(scheduleId)
             .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
 
+        introuvableSiFicheIllisible(slot, userId);
         UUID hostId = slot.getProgram().getUserActivity().getUser().getId();
         if (!hostId.equals(userId)) {
             throw new ForbiddenException(ErrorCode.SLOT_PARTICIPANTS_HOST_ONLY, "Seul l'hôte peut voir les participants.");
@@ -732,10 +744,7 @@ public class SlotService {
     public List<SlotCoParticipantDto> getCoParticipants(UUID userId, UUID scheduleId) {
         Schedule slot = scheduleRepository.findById(scheduleId)
             .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
-        UUID hostId = slot.getProgram().getUserActivity().getUser().getId();
-        if (blockFilterService.blocked(userId, hostId)) {
-            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
-        }
+        introuvableSiFicheIllisible(slot, userId);
         if (!participationRepository.existsByScheduleIdAndUserIdAndStatus(
                 scheduleId, userId, ParticipationStatus.CONFIRMED)) {
             throw new ForbiddenException(ErrorCode.SLOT_PARTICIPANTS_ENROLLED_ONLY,

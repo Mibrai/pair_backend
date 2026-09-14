@@ -87,8 +87,11 @@ public class WatchController {
 
     @PostMapping("/{id}/seen-by-host")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    @Operation(summary = "« Je la vois, elle est là » (organisateur)",
-        description = "L'organisateur repousse la relance d'arrivée de 15 min. Ne valide pas l'arrivée. "
+    @Operation(summary = "« Je la vois, elle est là » (organisateur) — déprécié", deprecated = true,
+        description = "Remplacé le 14/09 par POST /api/schedules/{scheduleId}/arrivals/{participationId}/seen, "
+            + "qui répond 202 pour tout inscrit : cette forme par veille révèle qui en a armé une. "
+            + "Servie tant que des versions installées de l'app l'appellent. "
+            + "L'organisateur repousse la relance d'arrivée de 15 min. Ne valide pas l'arrivée. "
             + "**États acceptés : ARMED, EN_ROUTE.** Sinon 409 WATCH_NOT_OUTBOUND.")
     public void seenByHost(
             @AuthenticationPrincipal UserPrincipal principal,

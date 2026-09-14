@@ -22,8 +22,8 @@ import java.util.UUID;
  *
  * <p>Sous {@code /api/schedules} et non {@code /api/watches} : la liste est
  * attachée à un créneau, vue par son organisateur, et non à une veille vue par sa
- * propriétaire. Le geste correspondant — « je la vois » — vit, lui, sur la veille
- * ({@code POST /api/watches/{id}/seen-by-host}).
+ * propriétaire. Le geste « je la vois » y vit aussi depuis le 14/09, adressé à
+ * l'inscrit ; l'ancienne forme par veille reste servie, dépréciée.
  */
 @RestController
 @RequiredArgsConstructor
@@ -55,6 +55,27 @@ public class HostArrivalsController {
      * en essayant. Ce qui doit être indistinguable n'est pas seulement la donnée,
      * c'est le geste disponible.
      */
+    /**
+     * « Je la vois, elle est là », visé par {@code participationId} — le
+     * remplaçant de {@code POST /api/watches/{id}/seen-by-host}. Voir
+     * {@link WatchService#seenByHostForParticipation}.
+     */
+    @PostMapping("/api/schedules/{scheduleId}/arrivals/{participationId}/seen")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @Operation(summary = "« Je la vois, elle est là » (organisateur)",
+        description = "Repousse de 15 min la relance d'arrivée de cet inscrit, s'il en a une en cours. "
+            + "Ne valide pas l'arrivée.\n\n"
+            + "202 pour tout inscrit du créneau, qu'il ait armé une veille ou non, et sans effet "
+            + "quand il n'y a rien à repousser : jamais 409. C'est ce qui empêche ce geste de dire "
+            + "qui se protège. 404 — jamais 403 — quand le créneau n'est pas le sien ou que "
+            + "l'inscription est d'un autre créneau.")
+    public void seenByHost(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable UUID scheduleId,
+            @PathVariable UUID participationId) {
+        watchService.seenByHostForParticipation(principal.getId(), scheduleId, participationId);
+    }
+
     @PostMapping("/api/schedules/{scheduleId}/arrivals/{participationId}/confirm")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @Operation(summary = "Valider la présence d'un inscrit (organisateur)",

@@ -414,10 +414,15 @@ public class WatchService {
                 "Cette veille n'est plus sur le trajet aller.");
         }
 
+        repousserLaRelanceAller(watch);
+    }
+
+    /** L'effet de « je la vois » : 15 minutes de plus avant la relance d'arrivée. */
+    private void repousserLaRelanceAller(Watch watch) {
         Instant base = watch.getOutboundBaseAt() != null
             ? watch.getOutboundBaseAt() : watch.getArmedAt();
         watch.setOutboundBaseAt(base.plus(Duration.ofMinutes(15)));
-        inscrire(watchId, WatchEventType.SEEN_BY_HOST, Instant.now());
+        inscrire(watch.getId(), WatchEventType.SEEN_BY_HOST, Instant.now());
     }
 
     /**
@@ -699,15 +704,7 @@ public class WatchService {
      * rien. Ce qui est protégé n'est pas la donnée, c'est le <b>geste disponible</b>.
      */
     public void confirmArrival(UUID hostId, UUID scheduleId, UUID participationId) {
-        Schedule slot = scheduleRepository.findById(scheduleId)
-            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
-        if (!hostId.equals(organisateurDe(slot))) {
-            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
-        }
-
-        SlotParticipation participation = participationRepository.findById(participationId)
-            .filter(p -> p.getSchedule() != null && scheduleId.equals(p.getSchedule().getId()))
-            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_INSCRIT_INTROUVABLE", "Inscrit introuvable."));
+        SlotParticipation participation = inscritDeSonCreneau(hostId, scheduleId, participationId);
 
         watchRepository.findByScheduleIdAndStateIn(scheduleId,
                 List.of(WatchState.ARMED, WatchState.EN_ROUTE)).stream()
@@ -715,6 +712,46 @@ public class WatchService {
             .filter(w -> w.getArrivalClaimedAt() != null && w.getArrivalConfirmedAt() == null)
             .findFirst()
             .ifPresent(w -> validerArrivee(w, WatchEventType.ARRIVAL_CONFIRMED_BY_HOST));
+    }
+
+    /**
+     * « Je la vois, elle est là », adressé à la ligne de la liste des inscrits et
+     * non à une veille (demande mobile inscription du 14/09, (a) ; offre du 03/09).
+     *
+     * <p><b>{@code 202} pour tout inscrit du créneau de l'hôte</b>, qu'il ait armé
+     * une veille ou non, et <b>jamais {@code 409}</b>. La forme par veille
+     * ({@link #seenByHost}) avait deux défauts que celle-ci ferme : le bouton
+     * n'existait que devant les personnes qui avaient armé, et son {@code 409}
+     * distinguait une veille close d'une veille en cours. L'hôte apprenait donc qui
+     * se protège en regardant ses boutons. Même contrainte que {@link #confirmArrival}.
+     *
+     * <p>Sans effet quand il n'y a pas de relance aller à repousser. Sinon,
+     * exactement l'effet de {@link #seenByHost} : la base de la boucle aller
+     * avance de 15 minutes, et l'événement {@code SEEN_BY_HOST} est inscrit.
+     */
+    public void seenByHostForParticipation(UUID hostId, UUID scheduleId, UUID participationId) {
+        SlotParticipation participation = inscritDeSonCreneau(hostId, scheduleId, participationId);
+
+        watchRepository.findByScheduleIdAndStateIn(scheduleId,
+                List.of(WatchState.ARMED, WatchState.EN_ROUTE)).stream()
+            .filter(w -> w.getUserId().equals(participation.getUser().getId()))
+            .findFirst()
+            .ifPresent(this::repousserLaRelanceAller);
+    }
+
+    /**
+     * L'inscription visée, sur un créneau que l'hôte organise. 404 — jamais 403 —
+     * pour un créneau qui n'est pas le sien ou une inscription d'un autre créneau.
+     */
+    private SlotParticipation inscritDeSonCreneau(UUID hostId, UUID scheduleId, UUID participationId) {
+        Schedule slot = scheduleRepository.findById(scheduleId)
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable."));
+        if (!hostId.equals(organisateurDe(slot))) {
+            throw new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_CRENEAU_INTROUVABLE", "Créneau introuvable.");
+        }
+        return participationRepository.findById(participationId)
+            .filter(p -> p.getSchedule() != null && scheduleId.equals(p.getSchedule().getId()))
+            .orElseThrow(() -> new ResourceNotFoundException(ErrorCode.NOT_FOUND, "REFUS_INSCRIT_INTROUVABLE", "Inscrit introuvable."));
     }
 
     /**

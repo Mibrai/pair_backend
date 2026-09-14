@@ -55,10 +55,13 @@ public class UserController {
     private final AuditLogService auditLogService;
 
     @GetMapping
+    @io.swagger.v3.oas.annotations.Operation(summary = "Chercher des personnes",
+        description = "Par nom affiché, par titre de programme public actif, et par bio seulement quand "
+            + "elle serait rendue à l'appelant (profil PUBLIC, ou FRIENDS et appelant abonné). Ne rend "
+            + "que les comptes qui acceptent d'être trouvés, hors blocage et hors appelant. Aucune "
+            + "position : latitude et longitude ont été retirés le 14/09 et sont ignorés s'ils sont envoyés.")
     public Page<UserPublicDto> searchUsers(
             @RequestParam(required = false) String query,
-            @RequestParam(required = false) Double latitude,
-            @RequestParam(required = false) Double longitude,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") @Parameter(schema = @Schema(maximum = "50", defaultValue = "20")) int size,
             @AuthenticationPrincipal UserPrincipal principal) {
@@ -73,8 +76,6 @@ public class UserController {
         org.springframework.data.domain.Pageable borne = Pages.borne(page, size);
         return userService.searchUsers(
             query.trim(),
-            latitude,
-            longitude,
             borne.getPageNumber(),
             borne.getPageSize(),
             principal.getId()
