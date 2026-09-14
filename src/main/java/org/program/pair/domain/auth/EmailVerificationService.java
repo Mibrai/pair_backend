@@ -171,6 +171,19 @@ public class EmailVerificationService {
             .map(jeton -> jeton.getUser().getId());
     }
 
+    /**
+     * L'état d'un lien de réinitialisation, lu sans rien consommer : c'est ce que
+     * la page publique affiche avant que le formulaire ne soit envoyé.
+     */
+    @Transactional(readOnly = true)
+    public EtatReinitialisation etatReinitialisation(String token) {
+        return retrouver(token, AuthTokenType.PASSWORD_RESET)
+            .map(jeton -> jeton.estConsomme() ? EtatReinitialisation.UTILISE
+                : jeton.estExpire() ? EtatReinitialisation.EXPIRE
+                : EtatReinitialisation.VALIDE)
+            .orElse(EtatReinitialisation.INCONNU);
+    }
+
     @Transactional
     public void consumePasswordResetToken(String token) {
         retrouver(token, AuthTokenType.PASSWORD_RESET)

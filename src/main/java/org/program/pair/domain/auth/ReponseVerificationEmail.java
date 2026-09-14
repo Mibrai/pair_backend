@@ -4,6 +4,7 @@ import lombok.RequiredArgsConstructor;
 import org.program.pair.shared.exception.BusinessException;
 import org.program.pair.shared.exception.ErrorCode;
 import org.program.pair.shared.exception.InvalidTokenException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
@@ -55,7 +56,14 @@ public class ReponseVerificationEmail {
             // et un code d'erreur exposerait le message à être remplacé par la
             // page d'erreur d'un intermédiaire — c'est-à-dire à ne jamais
             // atteindre la personne à qui il est destiné.
+            //
+            // Referrer-Policy : le pied de page renvoie vers meetdo.fun, et sans
+            // cet en-tête l'adresse de la page — jeton compris — partait dans le
+            // Referer de ce clic. Absent jusqu'au 14/09, alors que le chantier
+            // mobile le croyait posé ; ajouté avec la page de réinitialisation.
             return ResponseEntity.ok()
+                .header("Referrer-Policy", "no-referrer")
+                .header(HttpHeaders.CACHE_CONTROL, "no-store")
                 .contentType(MediaType.TEXT_HTML)
                 .body(templateEngine.process("verify-email", contexte));
         }

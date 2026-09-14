@@ -41,6 +41,7 @@ class MarquePagesPubliquesIntegrationTest extends AbstractIntegrationTest {
         put("/public/watch/jetonQuiNExistePas", "watch-status-expired");
         put("/public/guardian-consent/jetonQuiNExistePas", "guardian-consent-expired");
         put("/v/jetonQuiNExistePas", "verify-email");
+        put("/r/jetonQuiNExistePas", "reset-password");
     }};
 
     @Test

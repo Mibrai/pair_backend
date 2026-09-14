@@ -165,6 +165,16 @@ public class SecurityConfig {
                 // même raison que /api/auth/verify-email juste au-dessus : on y
                 // arrive depuis un e-mail, sans session ni jeton d'accès.
                 .requestMatchers(HttpMethod.GET, "/v/**").permitAll()
+                // Lien « mot de passe oublié » : la page, son formulaire, et la
+                // demande d'un nouveau lien. EmailService composait
+                // /reset-password?token= depuis l'origine sans que ce chemin figure
+                // ici — il rendait 401 à qui venait de le demander, signalé le
+                // 14/09/2026. /r/** est le chemin court des e-mails actuels ;
+                // /reset-password reste pour ceux déjà partis. Le POST est public
+                // pour la même raison que celui de /api/auth/reset-password : c'est
+                // le jeton qui prouve, et on arrive ici sans session.
+                .requestMatchers(HttpMethod.GET, "/r/**", "/reset-password").permitAll()
+                .requestMatchers(HttpMethod.POST, "/r", "/r/**").permitAll()
                 // Fichiers d'association des liens universels. Ouverts sans
                 // condition : Apple et Google les lisent sans identité, et une
                 // redirection suffirait à faire échouer la validation.
@@ -205,7 +215,8 @@ public class SecurityConfig {
                 // existant.
                 .requestMatchers(HttpMethod.HEAD,
                     "/", "/public/safety/**", "/public/slots/**", "/s/**", "/i/**",
-                    "/public/programs/**", "/p/**", "/v/**", "/.well-known/**",
+                    "/public/programs/**", "/p/**", "/v/**", "/r/**", "/reset-password",
+                    "/.well-known/**",
                     "/public/guardian-consent/**", "/public/watch/**", "/brand/**").permitAll()
                 // Tout le reste : authentifié
                 .anyRequest().authenticated()

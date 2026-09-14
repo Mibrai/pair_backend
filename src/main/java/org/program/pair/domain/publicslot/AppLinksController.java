@@ -86,7 +86,9 @@ public class AppLinksController {
                       { "/": "/p/*", "comment": "Pages publiques de programme" },
                       { "/": "/public/slots/*", "comment": "JSON et image d'aperçu, créneau" },
                       { "/": "/public/programs/*", "comment": "JSON et image d'aperçu, programme" },
-                      { "/": "/v/*", "comment": "Vérification d'adresse e-mail" }
+                      { "/": "/v/*", "comment": "Vérification d'adresse e-mail" },
+                      { "/": "/r/*", "comment": "Réinitialisation du mot de passe" },
+                      { "/": "/reset-password", "?": { "token": "*" }, "comment": "Réinitialisation, e-mails envoyés avant le 14/09/2026" }
                     ]
                   }
                 ]

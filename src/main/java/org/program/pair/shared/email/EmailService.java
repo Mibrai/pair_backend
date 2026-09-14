@@ -283,16 +283,16 @@ public class EmailService {
     public void sendPasswordResetEmail(String email, String token) {
         // Construite avant le repli, et non après : c'est le lien qui porte le
         // jeton, donc le seul détail que le repli de développement ait à écrire.
-        String resetUrl = baseUrl + "/reset-password?token=" + token;
+        //
+        // Le chemin court /r/{token}, pour la même raison que /v/{token} : c'est
+        // lui que déclare le fichier d'association Apple. Il a une page depuis le
+        // 14/09 (ReinitialisationLinkController) ; l'ancien /reset-password?token=
+        // n'en avait aucune et rendait 401. Il reste servi pour les liens déjà partis.
+        String resetUrl = baseUrl + "/r/" + token;
         if (!resendEmailService.isEnabled()) {
             nonEnvoye("réinitialisation de mot de passe", "lien " + resetUrl + " pour " + email);
             return;
         }
-        // NOTE : ce chemin, lui, n'a toujours pas de page. Le rendre utilisable
-        // demande un formulaire (le jeton et le nouveau mot de passe partent en
-        // POST), pas une simple bascule HTML comme la vérification. Hors du
-        // ticket du 25 août, qui ne portait que sur la vérification d'adresse —
-        // signalé plutôt que corrigé à moitié.
         String html = GabaritEmail.titre("Réinitialisation de votre mot de passe")
             + "<p>Cliquez sur le bouton ci-dessous pour définir un nouveau mot de passe.</p>"
             + GabaritEmail.bouton(resetUrl, "Réinitialiser mon mot de passe")

@@ -150,7 +150,7 @@ class EmailServiceDemarrageTest {
         assertThat(journal(sortie))
             .doesNotContain(JETON)
             .doesNotContain(ADRESSE)
-            .doesNotContain("reset-password?token=");
+            .doesNotContain("localhost:9999/r/");
         // Mais la panne de configuration, elle, reste dite : un repli muet
         // ferait chercher le défaut du côté du fournisseur.
         assertThat(journal(sortie))
@@ -187,7 +187,7 @@ class EmailServiceDemarrageTest {
         assertThat(journal(sortie))
             .contains(JETON)
             .contains(ADRESSE)
-            .contains("reset-password?token=" + JETON)
+            .contains("/r/" + JETON)
             .contains("/v/" + JETON);
     }
 

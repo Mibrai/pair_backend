@@ -379,6 +379,9 @@ class EmailVerificationIntegrationTest extends AbstractIntegrationTest {
             .exchange()
             .expectStatus().isOk()
             .expectHeader().contentTypeCompatibleWith(MediaType.TEXT_HTML)
+            // Le pied de page renvoie vers meetdo.fun : sans cet en-tête, le
+            // jeton partait dans le Referer de ce clic (ajouté le 14/09).
+            .expectHeader().valueEquals("Referrer-Policy", "no-referrer")
             .expectBody(String.class).returnResult().getResponseBody();
     }
 }
