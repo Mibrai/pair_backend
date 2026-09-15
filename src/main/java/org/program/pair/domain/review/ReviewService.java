@@ -87,6 +87,7 @@ public class ReviewService {
             // encore est ignorée.
             .score(null)
             .comment(request.getComment())
+            .recommend(Boolean.TRUE.equals(request.getRecommend()))
             .build();
 
         review = reviewRepository.save(review);

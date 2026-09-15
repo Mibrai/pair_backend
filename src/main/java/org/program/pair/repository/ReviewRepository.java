@@ -26,6 +26,44 @@ public interface ReviewRepository extends JpaRepository<Review, UUID> {
 
     long countByProgramIdAndReviewerId(UUID programId, UUID reviewerId);
 
+    /**
+     * « Recommandé par des participants » (demande mobile avis du 15/09) : au moins
+     * trois personnes distinctes qui ont une présence confirmée sur une séance du
+     * programme ET l'ont recommandé. L'organisateur ne compte pas, ni un compte
+     * fermé, ni une personne bloquée avec l'organisateur ou avec le lecteur.
+     *
+     * <p>Rend un booléen, et c'est tout le contrat : le décompte ne sort pas de la
+     * base. Sur la vie du programme, sans fenêtre glissante. Aucun commentaire SQL
+     * dans le corps : une apostrophe y casse l'analyse des paramètres.
+     */
+    @Query(value = """
+        SELECT COUNT(DISTINCT r.reviewer_id) >= 3
+        FROM reviews r
+        JOIN users u ON u.id = r.reviewer_id
+        JOIN programs p ON p.id = r.program_id
+        JOIN user_activities ua ON ua.id = p.user_activity_id
+        WHERE r.program_id = :programId
+          AND r.recommend = TRUE
+          AND r.reviewer_id <> ua.user_id
+          AND u.is_active = TRUE
+          AND EXISTS (
+              SELECT 1 FROM attendances a
+              JOIN schedules s ON s.id = a.schedule_id
+              WHERE s.program_id = r.program_id
+                AND a.user_id = r.reviewer_id
+                AND a.was_present = TRUE)
+          AND NOT EXISTS (
+              SELECT 1 FROM user_blocks ub
+              WHERE (ub.blocker_id = ua.user_id AND ub.blocked_id = u.id)
+                 OR (ub.blocker_id = u.id AND ub.blocked_id = ua.user_id))
+          AND (CAST(:viewerId AS uuid) IS NULL OR NOT EXISTS (
+              SELECT 1 FROM user_blocks ub
+              WHERE (ub.blocker_id = :viewerId AND ub.blocked_id = u.id)
+                 OR (ub.blocker_id = u.id AND ub.blocked_id = :viewerId)))
+        """, nativeQuery = true)
+    boolean recommandeParDesParticipants(@Param("programId") UUID programId,
+                                         @Param("viewerId") UUID viewerId);
+
     Optional<Review> findByReviewerIdAndProgramId(UUID reviewerId, UUID programId);
 
     long countByProgramId(UUID programId);

@@ -76,6 +76,15 @@ public class Review {
     private Instant createdAt;
 
     /**
+     * « Tu le recommanderais ? Oui » (V129, demande mobile avis du 15/09). Lu avec
+     * l'avis, par l'organisateur et l'auteur seulement ; publiquement, il ne sert
+     * qu'au booléen « Recommandé par des participants », jamais à un nombre.
+     */
+    @Column(name = "recommend", nullable = false)
+    @Builder.Default
+    private Boolean recommend = false;
+
+    /**
      * Identité seule, et stable avant comme après {@code persist} (P-BA-12).
      * L'{@code equals} de {@code @Data} comparait tous les champs, associations
      * paresseuses comprises : une comparaison pouvait charger la base, ou boucler.

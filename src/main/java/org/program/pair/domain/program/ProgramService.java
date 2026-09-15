@@ -38,6 +38,7 @@ import java.util.stream.Collectors;
 public class ProgramService {
 
     private final ProgramRepository programRepository;
+    private final org.program.pair.repository.ReviewRepository reviewRepository;
     private final ScheduleRepository scheduleRepository;
     private final UserActivityRepository userActivityRepository;
     private final ProgramMediaRepository programMediaRepository;
@@ -1007,7 +1008,10 @@ public class ProgramService {
     private record ProgramAggregates(
         List<Schedule> schedules,
         List<ProgramMedia> media,
-        long enrolledCount
+        long enrolledCount,
+        // Calculé pour un programme lu seul, null dans les listes : une requête
+        // par programme n'y a pas sa place (voir ProgramDto.recommendedByParticipants).
+        Boolean recommendedByParticipants
     ) {}
 
     /**
@@ -1054,7 +1058,8 @@ public class ProgramService {
             .map(p -> toDto(p, requesterId, now, new ProgramAggregates(
                 schedulesByProgram.getOrDefault(p.getId(), List.of()),
                 mediaByProgram.getOrDefault(p.getId(), List.of()),
-                enrolledByProgram.getOrDefault(p.getId(), 0L))))
+                enrolledByProgram.getOrDefault(p.getId(), 0L),
+                null)))
             .collect(Collectors.toList());
     }
 
@@ -1062,7 +1067,8 @@ public class ProgramService {
         return toDto(p, requesterId, Instant.now(), new ProgramAggregates(
             scheduleRepository.findByProgramId(p.getId()),
             programMediaRepository.findByProgramIdOrderBySortOrder(p.getId()),
-            userProgramRepository.countActiveParticipantsByProgramId(p.getId())));
+            userProgramRepository.countActiveParticipantsByProgramId(p.getId()),
+            Boolean.TRUE.equals(reviewRepository.recommandeParDesParticipants(p.getId(), requesterId))));
     }
 
     private ProgramDto toDto(Program p, UUID requesterId, Instant now, ProgramAggregates aggregates) {
@@ -1158,7 +1164,8 @@ public class ProgramService {
             p.getLocationType() != null ? p.getLocationType().name() : null,
             p.getCreatedVia() != null ? p.getCreatedVia().name() : ProgramCreatedVia.FULL.name(),
             Boolean.TRUE.equals(p.getCostToShare()),
-            Boolean.TRUE.equals(p.getCostToShare()) ? p.getCostNote() : null
+            Boolean.TRUE.equals(p.getCostToShare()) ? p.getCostNote() : null,
+            aggregates.recommendedByParticipants()
         );
     }
 

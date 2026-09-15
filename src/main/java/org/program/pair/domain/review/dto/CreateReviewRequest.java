@@ -31,4 +31,9 @@ public class CreateReviewRequest {
     @NotBlank(message = "Le commentaire est requis")
     @Size(min = 30, max = 1000, message = "Le commentaire doit contenir entre 30 et 1000 caractères")
     private String comment;
+
+    @io.swagger.v3.oas.annotations.media.Schema(nullable = true,
+        description = "« Tu le recommanderais ? » : true compte pour « Recommandé par des participants ». "
+            + "Absent ou false : ne compte pas. Lu avec l'avis, par l'organisateur et l'auteur seulement.")
+    private Boolean recommend;
 }

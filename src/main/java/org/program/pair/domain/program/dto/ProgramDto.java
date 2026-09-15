@@ -64,5 +64,12 @@ public record ProgramDto(
 
     @Schema(description = "Précision libre sur les frais (« Location du terrain »), ou null. "
         + "Toujours null quand costToShare est false.")
-    String costNote
+    String costNote,
+
+    @Schema(nullable = true, description = "« Recommandé par des participants » : vrai quand au moins "
+        + "trois personnes distinctes ayant une présence confirmée sur une séance du programme l'ont "
+        + "recommandé — hors organisateur, comptes fermés et personnes bloquées avec l'organisateur ou "
+        + "avec le lecteur. Jamais un nombre. Calculé sur la fiche d'un programme (GET /api/programs/{id}, "
+        + "et les réponses de création et de mise à jour) ; null dans les listes de programmes.")
+    Boolean recommendedByParticipants
 ) {}

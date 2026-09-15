@@ -45,7 +45,7 @@ class ReviewServiceTest {
         when(programRepository.findById(program.getId())).thenReturn(Optional.of(program));
 
         CreateReviewRequest request = new CreateReviewRequest(
-            program.getId(), 5.0f, "Super programme, très bien organisé");
+            program.getId(), 5.0f, "Super programme, très bien organisé", null);
 
         // L'auteur EST le propriétaire
         assertThatThrownBy(() -> reviewService.createReview(ownerId, request))
@@ -63,7 +63,7 @@ class ReviewServiceTest {
             .thenReturn(Optional.empty()); // AUCUNE conversation
 
         CreateReviewRequest request = new CreateReviewRequest(
-            program.getId(), 5.0f, "Super programme, très bien organisé");
+            program.getId(), 5.0f, "Super programme, très bien organisé", null);
 
         assertThatThrownBy(() -> reviewService.createReview(reviewerId, request))
             .isInstanceOf(BusinessException.class)
@@ -82,7 +82,7 @@ class ReviewServiceTest {
             .thenReturn(Optional.of(new Review()));
 
         CreateReviewRequest request = new CreateReviewRequest(
-            program.getId(), 5.0f, "Super programme, très bien organisé");
+            program.getId(), 5.0f, "Super programme, très bien organisé", null);
 
         assertThatThrownBy(() -> reviewService.createReview(reviewerId, request))
             .isInstanceOf(BusinessException.class)
@@ -106,7 +106,7 @@ class ReviewServiceTest {
         when(reviewRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         CreateReviewRequest request = new CreateReviewRequest(
-            program.getId(), 5.0f, "Super programme, très bien organisé");
+            program.getId(), 5.0f, "Super programme, très bien organisé", null);
 
         assertThatCode(() -> reviewService.createReview(reviewerId, request))
             .doesNotThrowAnyException();

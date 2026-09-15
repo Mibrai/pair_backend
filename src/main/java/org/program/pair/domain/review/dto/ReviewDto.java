@@ -24,6 +24,9 @@ public class ReviewDto {
     private Float score;
     private String comment;
     private Instant createdAt;
+    @io.swagger.v3.oas.annotations.media.Schema(description = "« Tu le recommanderais ? Oui ». Même "
+        + "visibilité que l'avis : l'organisateur et l'auteur.")
+    private boolean recommend;
 
     public static ReviewDto fromEntity(Review review) {
         return ReviewDto.builder()
@@ -36,6 +39,7 @@ public class ReviewDto {
             .score(null)
             .comment(review.getComment())
             .createdAt(review.getCreatedAt())
+            .recommend(Boolean.TRUE.equals(review.getRecommend()))
             .build();
     }
 }
