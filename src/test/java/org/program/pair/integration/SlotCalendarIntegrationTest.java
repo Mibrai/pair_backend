@@ -107,6 +107,36 @@ class SlotCalendarIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void laVersionPublique_dUnCreneauRecurrent_neDoitPasPorterDeLieu() {
+        // Demande mobile partage du 15/09 : un lieu et une régularité ensemble,
+        // servis sans session, décrivent où quelqu'un se trouve chaque semaine.
+        String host = registerAndLogin();
+        UUID slotId = publishSlot(host, PlaceType.PUBLIC);
+        jdbcTemplate.update("UPDATE schedules SET recurrence_rule = 'FREQ=WEEKLY' WHERE id = ?", slotId);
+        String token = shareToken(host, slotId);
+
+        String publique = publicCalendar(token);
+        assertThat(publique).contains("RRULE:FREQ=WEEKLY");
+        assertThat(publique).doesNotContain("LOCATION");
+        assertThat(publique).contains("https://lien.meetdo.fun/s/" + token);
+        String courte = unfolded(webTestClient.get().uri("/s/{token}/calendar.ics", token)
+            .exchange().expectStatus().isOk()
+            .expectBody().returnResult().getResponseBody());
+        assertThat(courte).doesNotContain("LOCATION");
+
+        // L'agenda de la personne elle-même garde son lieu.
+        assertThat(calendar(host, slotId)).contains("LOCATION").contains("RRULE:FREQ=WEEKLY");
+    }
+
+    @Test
+    void laVersionPublique_dUnCreneauPonctuel_doitGarderSonLieu() {
+        String host = registerAndLogin();
+        UUID slotId = publishSlot(host, PlaceType.PUBLIC);
+
+        assertThat(publicCalendar(shareToken(host, slotId))).contains("LOCATION").doesNotContain("RRULE");
+    }
+
+    @Test
     void unCreneauNonPartage_neDoitPasRecevoirDeLienDansSonIcs() {
         // En fabriquer un ici rendrait partageable, à l'insu de l'organisateur,
         // un créneau que personne n'avait partagé.

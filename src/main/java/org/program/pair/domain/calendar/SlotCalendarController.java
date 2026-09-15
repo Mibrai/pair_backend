@@ -140,7 +140,8 @@ public class SlotCalendarController {
         return ics("creneau.ics", List.of(new SlotCalendarService.Entry(
             slot,
             SlotAddressVisibility.broadcastableAddress(slot),
-            publicBaseUrl + "/s/" + token)));
+            publicBaseUrl + "/s/" + token,
+            true)));
     }
 
     /** Le créneau vu par quelqu'un de nommé : adresse résolue pour lui. */
@@ -156,7 +157,7 @@ public class SlotCalendarController {
             ? publicBaseUrl + "/s/" + slot.getPublicShareToken()
             : null;
 
-        return new SlotCalendarService.Entry(slot, address, publicUrl);
+        return new SlotCalendarService.Entry(slot, address, publicUrl, false);
     }
 
     private ResponseEntity<String> ics(String filename, List<SlotCalendarService.Entry> entries) {

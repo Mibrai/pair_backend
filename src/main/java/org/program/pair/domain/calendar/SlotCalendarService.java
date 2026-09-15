@@ -46,7 +46,12 @@ public class SlotCalendarService {
     private static final String PROD_ID = "-//meetDo//Créneaux//FR";
 
     /** Un créneau et son adresse déjà décidée par l'appelant. */
-    public record Entry(Schedule slot, String address, String publicUrl) {}
+    /**
+     * @param publique vrai quand le fichier est servi sans demandeur identifié
+     *                 ({@code /s/{token}/calendar.ics}) : il peut alors circuler
+     *                 n'importe où, et le lieu d'un créneau récurrent en est retiré.
+     */
+    public record Entry(Schedule slot, String address, String publicUrl, boolean publique) {}
 
     public String toIcs(List<Entry> entries) {
         Calendar calendar = (Calendar) new Calendar()
@@ -93,10 +98,20 @@ public class SlotCalendarService {
         // LOCATION ne reçoit que ce que l'appelant a décidé de publier. Le nom du
         // lieu est toujours diffusable ; l'adresse ne s'y ajoute que si elle
         // l'était déjà.
-        String location = entry.address() == null || entry.address().isBlank()
-            ? slot.getPlaceName()
-            : slot.getPlaceName() + ", " + entry.address();
-        event.add(new Location(location));
+        //
+        // Jamais de lieu dans un fichier PUBLIC d'un créneau récurrent (demande
+        // mobile partage du 15/09, doctrine §9) : un lieu et une régularité
+        // ensemble, diffusés sans demandeur, décrivent où quelqu'un se trouve
+        // chaque semaine — le schéma de vie que la veille existe pour protéger. Le
+        // lien vers la page publique reste dans DESCRIPTION. Les fichiers servis à
+        // une personne identifiée, pour son propre agenda, gardent leur lieu.
+        boolean recurrent = slot.getRecurrenceRule() != null && !slot.getRecurrenceRule().isBlank();
+        if (!(entry.publique() && recurrent)) {
+            String location = entry.address() == null || entry.address().isBlank()
+                ? slot.getPlaceName()
+                : slot.getPlaceName() + ", " + entry.address();
+            event.add(new Location(location));
+        }
 
         event.add(new Description(descriptionOf(slot, entry.publicUrl())));
 
