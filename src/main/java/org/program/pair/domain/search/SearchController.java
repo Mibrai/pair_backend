@@ -52,12 +52,16 @@ public class SearchController {
     /**
      * GET /api/search/popular?limit={limit}
      *
-     * Get popular searches across all users (last 30 days)
+     * Les termes du catalogue les plus cherchés sur 30 jours — voir
+     * {@code SearchLogRepository.findPopularCatalogueTerms}.
      *
      * @param limit Maximum number of results (default: 10, max: 50)
-     * @return List of popular searches with their counts
      */
     @GetMapping("/popular")
+    @io.swagger.v3.oas.annotations.Operation(summary = "Recherches populaires",
+        description = "Des noms d'activités et de catégories du catalogue, cherchés par au moins cinq "
+            + "personnes distinctes sur 30 jours, du plus au moins cherché. Jamais une saisie libre, "
+            + "et aucun décompte. Liste vide quand rien n'atteint le seuil.")
     public List<PopularSearchDto> getPopularSearches(
             @RequestParam(defaultValue = "10") int limit) {
         if (limit > 50) {

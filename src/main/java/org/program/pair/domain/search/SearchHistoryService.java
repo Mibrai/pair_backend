@@ -32,17 +32,18 @@ public class SearchHistoryService {
     @Transactional(readOnly = true)
     public List<PopularSearchDto> getPopularSearches(int limit) {
         Instant thirtyDaysAgo = Instant.now().minus(30, ChronoUnit.DAYS);
-
-        List<Object[]> results = searchLogRepository.findPopularSearches(thirtyDaysAgo);
-
-        return results.stream()
-            .limit(limit)
-            .map(row -> new PopularSearchDto(
-                (String) row[0],
-                (Long) row[1]
-            ))
+        return searchLogRepository
+            .findPopularCatalogueTerms(thirtyDaysAgo, PERSONNES_MINIMUM, limit).stream()
+            .map(PopularSearchDto::new)
             .toList();
     }
+
+    /**
+     * Combien de personnes distinctes doivent avoir cherché un terme pour qu'il
+     * soit montré à tous. Cinq : en dessous, un terme rare dirait qui s'y intéresse
+     * à qui connaît ses proches.
+     */
+    static final int PERSONNES_MINIMUM = 5;
 
     /**
      * Get user's recent searches (last 10)

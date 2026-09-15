@@ -82,7 +82,9 @@ public class SemanticSearchService {
 
     @Transactional
     public SearchResponse search(SearchRequest request, UUID userId) {
-        log.info("Search request from user {}: '{}'", userId, request.query());
+        // Ni la requête ni l'appelant au niveau info (demande mobile recherche du
+        // 15/09) : une saisie libre contient souvent un nom de personne.
+        log.debug("Recherche reçue ({} caractères)", request.query() == null ? 0 : request.query().length());
 
         // 1. Logger la recherche brute
         String method = "semantic";
@@ -105,7 +107,7 @@ public class SemanticSearchService {
         if (intent.needsClarification()) {
             searchLog.setResultsCount(0);
             searchLogRepository.save(searchLog);
-            log.info("Clarification needed for query: '{}'", request.query());
+            log.debug("Recherche : précision demandée");
             return SearchResponse.clarification(intent.clarificationQuestion(), intent);
         }
 
@@ -120,7 +122,7 @@ public class SemanticSearchService {
 
         // 6. Si aucun résultat → suggestions alternatives
         if (results.isEmpty()) {
-            log.info("No results found for query: '{}'", request.query());
+            log.debug("Recherche : aucun résultat");
             List<EmptyStateActionDto> actions = buildEmptyStateActions(request, intent, radius);
             return SearchResponse.empty(actions, intent);
         }
@@ -134,8 +136,8 @@ public class SemanticSearchService {
         int to = Math.min(from + pageSize, results.size());
 
         List<SearchResultDto> pageResults = results.subList(from, to);
-        log.info("Found {} results for query: '{}' (page {}, {} servis)",
-            results.size(), request.query(), page, pageResults.size());
+        log.debug("Recherche : {} résultats (page {}, {} servis)",
+            results.size(), page, pageResults.size());
 
         return SearchResponse.results(pageResults, intent, results.size(), page, pageSize,
             countsByType(results));
