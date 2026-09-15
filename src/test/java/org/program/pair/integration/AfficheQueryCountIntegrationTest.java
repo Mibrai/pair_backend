@@ -294,11 +294,20 @@ class AfficheQueryCountIntegrationTest extends AbstractIntegrationTest {
             appender.stop();
         }
 
+        // Seules les requêtes du fil qui fait l'appel. Le journal org.hibernate.SQL
+        // reçoit celles de TOUS les fils : une tâche asynchrone (indexation,
+        // outbox, ou restée d'une classe précédente) qui écrit pendant la mesure
+        // gonflait le compte au hasard. Même correctif que
+        // RecapsMineQueryCountIntegrationTest.
+        String filMesure = Thread.currentThread().getName();
+        java.util.List<ILoggingEvent> requetes = appender.list.stream()
+            .filter(e -> filMesure.equals(e.getThreadName()))
+            .toList();
         Map<String, Integer> parTexte = new LinkedHashMap<>();
-        for (ILoggingEvent evenement : appender.list) {
+        for (ILoggingEvent evenement : requetes) {
             parTexte.merge(evenement.getFormattedMessage(), 1, Integer::sum);
         }
-        return new Mesure(lignes, appender.list.size(), parTexte);
+        return new Mesure(lignes, requetes.size(), parTexte);
     }
 
     /** Le relevé, imprimé même quand le test passe : c'est lui qu'on relit. */

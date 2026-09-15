@@ -38,7 +38,11 @@ final class SqlCompteur {
         sql.setLevel(Level.DEBUG);
         try {
             T resultat = action.get();
+            // Seulement le fil qui mesure : le journal reçoit aussi les requêtes
+            // des tâches asynchrones, qui gonflaient le compte au hasard.
+            String filMesure = Thread.currentThread().getName();
             return new Releve<>(resultat, appender.list.stream()
+                .filter(e -> filMesure.equals(e.getThreadName()))
                 .map(ILoggingEvent::getFormattedMessage).toList());
         } finally {
             sql.setLevel(niveauInitial);
