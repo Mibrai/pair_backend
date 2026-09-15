@@ -40,7 +40,6 @@ public class OpenApiConfig {
                     - **Carte Interactive**: Recherche géographique avec filtres
                     - **Chat**: Messagerie temps réel (REST + WebSocket)
                     - **Recherche Intelligente**: NLP avec LLM pour extraction d'intent
-                    - **Progressions**: Suivi d'avancement avec métriques et streaks
                     - **Médias**: Upload et gestion d'images
 
                     ## Authentification

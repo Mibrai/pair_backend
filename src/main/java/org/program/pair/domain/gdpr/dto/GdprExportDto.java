@@ -25,7 +25,6 @@ public class GdprExportDto {
     private List<MessageDataDto> messages;
     private List<ReviewDataDto> reviews;
     private List<RecommendationDataDto> recommendations;
-    private List<ProgressionDataDto> progressions;
     private List<NotificationDataDto> notifications;
     private List<AuditLogDataDto> auditLogs;
 
@@ -118,16 +117,6 @@ public class GdprExportDto {
         private String recommendedUserName;
         private String comment;
         private Instant createdAt;
-    }
-
-    @Data
-    @Builder
-    public static class ProgressionDataDto {
-        private String id;
-        private String programTitle;
-        private String label;
-        private Object value;
-        private Instant recordedAt;
     }
 
     @Data

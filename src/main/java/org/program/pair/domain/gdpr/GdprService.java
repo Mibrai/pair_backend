@@ -36,12 +36,6 @@ public class GdprService {
     private final MessageRepository messageRepository;
     private final ReviewRepository reviewRepository;
     private final PeerRecommendationRepository recommendationRepository;
-    /**
-     * Pour les seules progressions : le module est retiré (14/09), ses tables ne
-     * le sont pas encore. Tant qu'elles portent des données, l'export doit les
-     * rendre à la personne concernée.
-     */
-    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
     private final NotificationRepository notificationRepository;
     private final AuditLogRepository auditLogRepository;
     private final ConversationMemberRepository conversationMemberRepository;
@@ -80,7 +74,6 @@ public class GdprService {
                 .messages(buildMessagesData(userId))
                 .reviews(buildReviewsData(userId))
                 .recommendations(buildRecommendationsData(userId))
-                .progressions(buildProgressionsData(userId))
                 .notifications(buildNotificationsData(userId))
                 .auditLogs(buildAuditLogsData(userId))
                 .statistics(buildStatistics(userId))
@@ -276,33 +269,6 @@ public class GdprService {
                 .collect(Collectors.toList());
     }
 
-    /**
-     * Les progressions que la personne a écrites, lues directement dans la table.
-     *
-     * <p>Le module {@code /api/progressions} est retiré depuis le 14/09 (demande
-     * mobile badges TER), mais la table {@code progressions} garde ses lignes tant
-     * qu'elle n'est pas supprimée. L'export porte donc ce qui est stocké. Il lisait
-     * auparavant les progressions des programmes que la personne <i>organise</i>,
-     * écrites par d'autres : ce sont les siennes qui la concernent.
-     */
-    private List<GdprExportDto.ProgressionDataDto> buildProgressionsData(UUID userId) {
-        return jdbcTemplate.query("""
-                SELECT p.id, pr.title AS program_title, p.title, p.content, p.created_at
-                FROM progressions p
-                LEFT JOIN programs pr ON pr.id = p.program_id
-                WHERE p.user_id = ?
-                ORDER BY p.created_at DESC
-                """,
-                (rs, i) -> GdprExportDto.ProgressionDataDto.builder()
-                        .id(rs.getString("id"))
-                        .programTitle(rs.getString("program_title"))
-                        .label(rs.getString("title"))
-                        .value(rs.getString("content"))
-                        .recordedAt(rs.getTimestamp("created_at").toInstant())
-                        .build(),
-                userId);
-    }
-
     private List<GdprExportDto.NotificationDataDto> buildNotificationsData(UUID userId) {
         return notificationRepository.findByUserId(userId).stream()
                 .map(n -> GdprExportDto.NotificationDataDto.builder()
@@ -337,9 +303,6 @@ public class GdprService {
         stats.put("messages", (long) messageRepository.findBySenderId(userId).size());
         stats.put("reviews", (long) reviewRepository.findByReviewerId(userId).size());
         stats.put("recommendations", (long) recommendationRepository.findByRecommenderId(userId).size());
-        Long progressions = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM progressions WHERE user_id = ?", Long.class, userId);
-        stats.put("progressions", progressions == null ? 0L : progressions);
         stats.put("notifications", notificationRepository.countByUserId(userId));
         stats.put("conversations", (long) conversationMemberRepository.findConversationsByUserId(userId).size());
         return stats;
@@ -351,7 +314,6 @@ public class GdprService {
                (export.getMessages() != null ? export.getMessages().size() : 0) +
                (export.getReviews() != null ? export.getReviews().size() : 0) +
                (export.getRecommendations() != null ? export.getRecommendations().size() : 0) +
-               (export.getProgressions() != null ? export.getProgressions().size() : 0) +
                (export.getNotifications() != null ? export.getNotifications().size() : 0) +
                (export.getAuditLogs() != null ? export.getAuditLogs().size() : 0);
     }
