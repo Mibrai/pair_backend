@@ -26,9 +26,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Ce qui récompense le geste, et ce qui l'annonce : la série de retours confirmés
  * (§5 du retour du 02/09) et l'annonce de retour au contact (§6).
  *
- * <p>Deux tests portent la sécurité de ce lot :
- * {@link #uneClotureSousContrainte_compteCommeUnRetourConfirme()} — la série ne
- * doit pas trahir sur l'écran que quelqu'un regarde par-dessus l'épaule — et
+ * <p>La série n'est plus servie depuis le 15/09 (P-MU-25 étape 3). Un test porte
+ * la sécurité de ce lot :
  * {@link #aucunTypeDeNotification_nAEteCreePourLAnnonceDeRetour()} — l'exception
  * accordée au §6 ne doit pas devenir une brèche dans la règle qu'elle contourne.
  */
@@ -41,75 +40,25 @@ class RetourEtSerieIntegrationTest extends AbstractIntegrationTest {
     @Autowired GuardianRepository guardianRepository;
     @Autowired JdbcTemplate jdbcTemplate;
 
-    // ------------------------------------------------------- §5 : la série
+    // ------------------------------------------------ §5 : plus de série
 
+    /**
+     * La série de retours confirmés n'est plus servie (demande mobile tracabilite
+     * du 15/09, P-MU-25 étape 3) : une série à entretenir, qui mesurait la
+     * régularité avec laquelle quelqu'un rentre seul.
+     */
     @Test
-    void troisRetoursConfirmes_fontUneSerieDeTrois() {
+    void laSerieDeRetours_nEstPlusServie() {
         Compte moi = compte();
+        String watchId = veilleRefermee(moi);
 
-        assertThat(serie(moi, veilleRefermee(moi))).isEqualTo(1);
-        assertThat(serie(moi, veilleRefermee(moi))).isEqualTo(2);
-        assertThat(serie(moi, veilleRefermee(moi))).isEqualTo(3);
-    }
-
-    @Test
-    void uneVeilleAbandonnee_rompLaSerie() {
-        Compte moi = compte();
-        veilleRefermee(moi);
-        veilleRefermee(moi);
-
-        String abandonnee = veilleArmee(moi);
-        webTestClient.post().uri("/api/watches/{id}/abandon", abandonnee)
+        @SuppressWarnings("unchecked")
+        Map<String, Object> detail = webTestClient.get().uri("/api/watches/{id}", watchId)
             .headers(h -> h.setBearerAuth(moi.token()))
-            .exchange().expectStatus().isOk();
+            .exchange().expectStatus().isOk()
+            .expectBody(Map.class).returnResult().getResponseBody();
 
-        // La suivante repart de un : la série compte d'affilée, pas en tout.
-        assertThat(serie(moi, veilleRefermee(moi))).isEqualTo(1);
-    }
-
-    @Test
-    void uneVeilleDesarmeeAvantLeDepart_neCompteNiNeRompt() {
-        // Il n'y avait pas de retour à confirmer : la compter contre la personne
-        // serait faux, et la compter pour elle serait un cadeau.
-        Compte moi = compte();
-        String premiere = veilleRefermee(moi);
-        assertThat(serie(moi, premiere)).isEqualTo(1);
-
-        String desarmee = veilleArmee(moi);
-        webTestClient.delete().uri("/api/watches/{id}", desarmee)
-            .headers(h -> h.setBearerAuth(moi.token()))
-            .exchange().expectStatus().isNoContent();
-
-        assertThat(serie(moi, veilleRefermee(moi))).isEqualTo(2);
-    }
-
-    @Test
-    void uneClotureSousContrainte_compteCommeUnRetourConfirme() {
-        // La clause d'indistinguabilité, appliquée à un compteur. Sous contrainte,
-        // la veille reste ESCALATED : une série calculée sur l'état afficherait un
-        // nombre différent au moment précis où l'écran est regardé par quelqu'un
-        // d'autre. Elle se calcule donc sur l'événement CLOSED_BY_CODE, que les
-        // deux clôtures écrivent.
-        Compte moi = compte();
-        veilleRefermee(moi);
-        veilleRefermee(moi);
-
-        String sousContrainte = veilleArmee(moi);
-        String code = arriver(moi, sousContrainte, "MAMAN");
-        assertThat(code).isNotBlank();
-        fermer(moi, sousContrainte, "MAMAN").expectStatus().isAccepted();
-
-        assertThat(serie(moi, sousContrainte)).isEqualTo(3);
-    }
-
-    @Test
-    void laSerieDunAutre_neDeborderPasSurLaMienne() {
-        Compte moi = compte();
-        veilleRefermee(moi);
-        veilleRefermee(moi);
-
-        Compte quelquUnDautre = compte();
-        assertThat(serie(quelquUnDautre, veilleRefermee(quelquUnDautre))).isEqualTo(1);
+        assertThat(detail).isNotNull().doesNotContainKey("consecutiveConfirmedReturns");
     }
 
     // ------------------------------------------- §6 : l'annonce de retour
@@ -212,14 +161,6 @@ class RetourEtSerieIntegrationTest extends AbstractIntegrationTest {
     }
 
     // ------------------------------------------------------------ helpers
-
-    private int serie(Compte owner, String watchId) {
-        return webTestClient.get().uri("/api/watches/{id}", watchId)
-            .headers(h -> h.setBearerAuth(owner.token()))
-            .exchange().expectStatus().isOk()
-            .expectBody(Map.class).returnResult().getResponseBody()
-            .get("consecutiveConfirmedReturns") instanceof Number n ? n.intValue() : -1;
-    }
 
     private List<String> evenements(String watchId) {
         return jdbcTemplate.queryForList(

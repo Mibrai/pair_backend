@@ -22,13 +22,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 class DoctrineContratSansDecompteTest extends AbstractIntegrationTest {
 
     private static final List<String> SCHEMAS =
-        List.of("PracticeStatsDto", "SuggestedActivityDto", "PractisedNearbyDto");
+        List.of("PracticeStatsDto", "SuggestedActivityDto", "PractisedNearbyDto", "WatchDetailDto");
 
     @Test
     void lesChampsRetires_nApparaissentPlusNullePart() {
         String contrat = contrat().toString();
 
-        assertThat(contrat).doesNotContain("currentStreakWeeks").doesNotContain("practitionersNearby");
+        assertThat(contrat).doesNotContain("currentStreakWeeks").doesNotContain("practitionersNearby")
+            // Retirée le 15/09 (P-MU-25 étape 3) : la série de retours de veille.
+            .doesNotContain("consecutiveConfirmedReturns");
     }
 
     /**
@@ -63,7 +65,7 @@ class DoctrineContratSansDecompteTest extends AbstractIntegrationTest {
             proprietes.fieldNames().forEachRemaining(n -> noms.add(n.toLowerCase(Locale.ROOT)));
             assertThat(noms)
                 .as("propriétés de %s", schema)
-                .noneMatch(n -> n.contains("streak") || n.contains("practitioner")
+                .noneMatch(n -> n.contains("streak") || n.contains("consecutive") || n.contains("practitioner")
                     || n.contains("people") || n.contains("persons") || n.contains("users"));
         }
     }

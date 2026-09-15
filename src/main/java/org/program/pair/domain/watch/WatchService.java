@@ -272,53 +272,7 @@ public class WatchService {
         // Un seul calcul de remise, partagé entre l'objet watch et le champ de tête
         // (que le contrat porte depuis le 01/09, et que le client lit là).
         String delivery = deliveryOf(watchId);
-        return new WatchDetailDto(WatchDto.from(watch, publicBaseUrl, delivery), timeline, delivery,
-            retoursConfirmesDAffilee(userId));
-    }
-
-    /**
-     * Combien de retours ont été confirmés d'affilée, le dernier compris.
-     *
-     * <p>C'est la seule chose que l'écran de fin de cycle ait à récompenser, et
-     * c'est ce qui décide qu'on réarme une veille la fois suivante. Une
-     * fonctionnalité de sécurité qu'on cesse d'armer ne protège plus personne :
-     * ce compteur est du produit, pas de la décoration.
-     *
-     * <p><b>Trois issues, et une seule rompt.</b> En remontant des veilles les plus
-     * récentes aux plus anciennes :
-     *
-     * <ul>
-     *   <li>refermée par un code ({@code CLOSED_BY_CODE}) — elle compte ;</li>
-     *   <li>mal finie sans code — escalade, abandon, perdue en chemin — la série
-     *       s'arrête là ;</li>
-     *   <li>tout le reste — désarmée avant le départ, encore en cours — n'est
-     *       ni comptée ni rompante. Il n'y avait pas de retour à confirmer, ou
-     *       il n'est pas encore dû ; le compter contre la personne serait faux.</li>
-     * </ul>
-     *
-     * <p><b>Une clôture sous contrainte compte comme un retour confirmé</b>, et ce
-     * n'est pas un oubli. Elle écrit le même {@code CLOSED_BY_CODE} qu'une clôture
-     * normale ; le premier critère la retient donc avant que son escalade n'entre
-     * en jeu. Toute autre règle ferait afficher un nombre différent au moment
-     * précis où l'écran est regardé par quelqu'un d'autre — c'est la clause
-     * d'indistinguabilité, appliquée à un compteur.
-     *
-     * <p>Ce n'est pas {@code PracticeStatsDto.currentStreakWeeks}, qui compte des
-     * semaines de pratique et n'a rien à voir avec des retours.
-     */
-    @Transactional(readOnly = true)
-    public int retoursConfirmesDAffilee(UUID userId) {
-        int serie = 0;
-        for (Object[] issue : watchRepository.issuesDesVeilles(userId)) {
-            boolean confirme = Boolean.TRUE.equals(issue[1]);
-            boolean rompu = Boolean.TRUE.equals(issue[2]);
-            if (confirme) {
-                serie++;
-            } else if (rompu) {
-                break;
-            }
-        }
-        return serie;
+        return new WatchDetailDto(WatchDto.from(watch, publicBaseUrl, delivery), timeline, delivery);
     }
 
     /** Les veilles terminées de l'appelant, sans coordonnées : le journal. */
