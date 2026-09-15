@@ -61,5 +61,13 @@ public record PublicProgramView(
     boolean organizerVerified,
 
     /** Vrai si le programme porte une image ; l'URL est composée par la page. */
-    boolean hasImage
+    boolean hasImage,
+
+    @io.swagger.v3.oas.annotations.media.Schema(description = "Des frais sont à prévoir. Faux ne veut "
+        + "pas dire gratuit : rien n'a été annoncé. Jamais un montant.")
+    boolean costToShare,
+
+    @io.swagger.v3.oas.annotations.media.Schema(description = "Précision libre sur les frais, ou null. "
+        + "Toujours null quand costToShare est faux.")
+    String costNote
 ) {}

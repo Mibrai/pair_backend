@@ -205,6 +205,7 @@ public class PublicProgramController {
         if (program.organizerGivenName() != null) {
             t.put("host", messages.getIn(locale, "public.slot.host", program.organizerGivenName()));
         }
+        t.put("costToShare", messages.getIn(locale, "public.program.costToShare"));
         return t;
     }
 

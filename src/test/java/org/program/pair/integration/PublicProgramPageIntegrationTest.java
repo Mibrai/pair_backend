@@ -66,6 +66,38 @@ class PublicProgramPageIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void lesFrais_doiventFigurerSurLaPage_etJamaisGratuit() {
+        // Demande mobile programmes du 15/09 (P-MU-16) : la même information que la
+        // fiche de l'app, un booléen et une précision, jamais « gratuit ».
+        String host = registerAndLogin("prog-frais");
+        UUID avecFrais = activeProgram(host, "Tennis avec location");
+        webTestClient.put().uri("/api/programs/{id}", avecFrais)
+            .headers(h -> h.setBearerAuth(host))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("costToShare", true, "costNote", "Location du court <b>partagée</b>"))
+            .exchange().expectStatus().isOk();
+        String tokenAvec = shareLink(host, avecFrais).token();
+
+        String page = body("/p/" + tokenAvec);
+        assertThat(page).contains("Frais à prévoir").contains("Location du court");
+        assertThat(page).as("précision échappée").doesNotContain("<b>partagée</b>");
+        assertThat(page.toLowerCase()).doesNotContain("gratuit");
+
+        String anglais = new String(webTestClient.get().uri("/p/" + tokenAvec)
+            .header("Accept-Language", "en")
+            .exchange().expectBody().returnResult().getResponseBody());
+        assertThat(anglais).contains("Costs to share");
+
+        // Un second organisateur : activeProgram déclare l'activité, et un même
+        // compte ne la déclare qu'une fois.
+        String autreHote = registerAndLogin("prog-frais-sans");
+        UUID sansFrais = activeProgram(autreHote, "Tennis sans frais annoncés");
+        String pageSans = body("/p/" + shareLink(autreHote, sansFrais).token());
+        assertThat(pageSans).doesNotContain("Frais à prévoir").doesNotContain("class=\"encart frais\"");
+        assertThat(pageSans.toLowerCase()).doesNotContain("gratuit");
+    }
+
+    @Test
     void uneDescriptionEffacee_doitDevenirNull_etDisparaitreDeLaPage() {
         // Demande mobile programmes du 15/09 : l'app efface en envoyant "", que le
         // serveur stockait tel quel, et la page affichait un paragraphe vide.

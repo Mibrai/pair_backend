@@ -226,7 +226,11 @@ public class PublicProgramService {
             GivenName.from(organizer.getDisplayName()),
             organizer.getVerificationStatus() != null
                 && organizer.getVerificationStatus() != VerificationStatus.UNVERIFIED,
-            program.getImageUrl() != null && !program.getImageUrl().isBlank()
+            program.getImageUrl() != null && !program.getImageUrl().isBlank(),
+            // Les frais, comme la fiche de l'app (demande mobile programmes du
+            // 15/09) : un booléen et une précision, jamais un montant ni « gratuit ».
+            Boolean.TRUE.equals(program.getCostToShare()),
+            Boolean.TRUE.equals(program.getCostToShare()) ? program.getCostNote() : null
         );
     }
 

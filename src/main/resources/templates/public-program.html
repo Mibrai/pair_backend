@@ -74,6 +74,15 @@
                         th:if="${program.organizerVerified}" title="Compte vérifié"> ✓</span></dd>
             </dl>
 
+            <!--/* Frais à prévoir (P-MU-16, demande du 15/09) : la même information que la
+                 fiche de l'app, un booléen et une précision. Rien quand costToShare est
+                 faux — et jamais « gratuit », que rien ne permet d'affirmer. Commentaire
+                 Thymeleaf : retiré au rendu, il ne sort pas dans la page. */-->
+            <div class="encart frais" th:if="${program.costToShare}">
+                <p><strong th:text="${t.costToShare}">Frais à prévoir</strong></p>
+                <p th:if="${!#strings.isEmpty(program.costNote)}" th:text="${program.costNote}">Location du terrain</p>
+            </div>
+
             <!-- #strings.isEmpty et non la seule présence : une chaîne vide est « vraie »
                  pour Thymeleaf, et affichait un paragraphe vide (demande du 15/09). -->
             <p class="bienvenue" th:if="${!#strings.isEmpty(program.description)}" th:text="${program.description}"></p>
