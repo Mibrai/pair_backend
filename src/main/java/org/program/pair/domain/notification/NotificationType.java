@@ -303,6 +303,22 @@ public enum NotificationType {
         WATCH_RETURN_REMINDER, WATCH_ARRIVAL_PROMPT, WATCH_ARRIVAL_CONFIRMED,
         GUARDIAN_CONSENT_REQUEST, WATCH_GUARDIAN_ALERT);
 
+    /**
+     * Les types dont le contenu ne s'affiche pas sur un écran Android verrouillé
+     * (demande mobile tracabilite du 15/09, P-MS-10 étape 6). Liste miroir de
+     * {@code NotificationType.masqueLeLieuSurEcranVerrouille} côté app : une veille
+     * et un consentement de contact disent où quelqu'un va, quand il pense rentrer
+     * ou qui veille sur lui, et qui tient le téléphone n'a pas à le lire.
+     */
+    private static final java.util.Set<NotificationType> MASQUE_ECRAN_VERROUILLE = java.util.EnumSet.of(
+        WATCH_RETURN_REMINDER, WATCH_ARRIVAL_PROMPT, WATCH_ARRIVAL_CONFIRMED,
+        WATCH_GUARDIAN_ALERT, WATCH_LOST_ORGANIZER, GUARDIAN_CONSENT_REQUEST);
+
+    /** Vrai si le contenu de cette notification doit rester privé sur un écran verrouillé. */
+    public boolean masqueSurEcranVerrouille() {
+        return MASQUE_ECRAN_VERROUILLE.contains(this);
+    }
+
     /** Vrai si un réglage de préférence peut couper ce type. */
     public boolean isSettable() {
         return !NOT_SETTABLE.contains(this);

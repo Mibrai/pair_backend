@@ -342,10 +342,24 @@ public class PushNotificationService implements PushNotificationServiceInterface
                 .setDefaultSound(true)
                 .setDefaultVibrateTimings(true);
         }
+        AndroidNotification.Visibility visibilite = visibiliteAndroid(type);
+        if (visibilite != null) {
+            notif.setVisibility(visibilite);
+        }
         return AndroidConfig.builder()
             .setPriority(AndroidConfig.Priority.HIGH)
             .setNotification(notif.build())
             .build();
+    }
+
+    /**
+     * {@code PRIVATE} pour les types de veille et de consentement : sur un écran
+     * Android verrouillé, seule la présence d'une notification se voit, pas son
+     * contenu (demande mobile tracabilite du 15/09). {@code null} sinon, qui laisse
+     * le réglage du canal décider, comme avant.
+     */
+    static AndroidNotification.Visibility visibiliteAndroid(NotificationType type) {
+        return type.masqueSurEcranVerrouille() ? AndroidNotification.Visibility.PRIVATE : null;
     }
 
     /**
@@ -872,7 +886,7 @@ public class PushNotificationService implements PushNotificationServiceInterface
             // Même raison que dans buildTitle, et la même contrainte : aucun lieu,
             // aucune adresse, rien que la personne veillée ne voudrait pas voir
             // s'afficher sur un écran verrouillé.
-            case WATCH_RETURN_REMINDER -> returnReminderBody(locale, zone, payload);
+            case WATCH_RETURN_REMINDER -> returnReminderBody(locale);
             case WATCH_ARRIVAL_PROMPT -> msg(locale, "push.WATCH_ARRIVAL_PROMPT.body");
             // Le strict nécessaire : quelqu'un qui l'a choisi n'a pas confirmé son
             // retour, et il faut ouvrir l'application. Le lien de statut que porte
@@ -1007,46 +1021,15 @@ public class PushNotificationService implements PushNotificationServiceInterface
     }
 
     /**
-     * Corps du rappel de retour, avec l'heure limite dans le fuseau de
-     * l'appareil.
-     *
-     * <p>Le motif d'heure est celui du texte Android
-     * ({@code push.tpl.timePattern}) : les deux écrivent la même heure de la même
-     * façon, et une personne qui voit les deux ne lit pas deux formats.
-     *
-     * <p><b>Une échéance absente ou illisible ne doit pas produire
-     * « Confirme ton retour avant , sinon… ».</b> Le repli est une phrase
-     * complète sans heure, et non un argument vide : le texte est ce que la
-     * personne lit sur un écran verrouillé à l'instant où elle décide de répondre
-     * ou non, et c'est le seul endroit du module où une faute de rendu se paie en
-     * alerte partie chez un proche.
+     * Corps du rappel de retour : ce qui est attendu et ce qui arrive faute de
+     * réponse, sans l'heure limite.
      */
-    private String returnReminderBody(Locale locale, ZoneId zone, Map<String, Object> payload) {
-        String deadline = atDeviceTime(locale, zone, payload, "deadlineAt");
-        return deadline.isEmpty()
-            ? msg(locale, "push.WATCH_RETURN_REMINDER.bodyWithoutDeadline")
-            : msg(locale, "push.WATCH_RETURN_REMINDER.body", deadline);
-    }
-
-    /**
-     * Un instant ISO 8601 de la charge, écrit à l'heure du fuseau donné, ou la
-     * chaîne vide s'il est absent ou illisible. Une date qu'on ne sait pas lire
-     * ne fait pas échouer la composition : la push part sans l'heure, pas du
-     * tout.
-     */
-    private String atDeviceTime(Locale locale, ZoneId zone, Map<String, Object> payload,
-                                String key) {
-        String text = arg(payload, key).strip();
-        if (text.isEmpty() || "null".equals(text)) {
-            return "";
-        }
-        try {
-            return Instant.parse(text).atZone(zone)
-                .format(DateTimeFormatter.ofPattern(msg(locale, "push.tpl.timePattern"), locale));
-        } catch (DateTimeParseException e) {
-            log.warn("Push payload carries an unreadable '{}': {}", key, text);
-            return "";
-        }
+    private String returnReminderBody(Locale locale) {
+        // Jamais l'heure limite (demande mobile tracabilite du 15/09) : la bannière
+        // s'affiche sur un écran verrouillé, et l'heure à laquelle quelqu'un pense
+        // être rentré chez lui n'a pas à y être lue par qui tient le téléphone.
+        // Elle reste dans l'app, derrière le déverrouillage.
+        return msg(locale, "push.WATCH_RETURN_REMINDER.bodyWithoutDeadline");
     }
 
     /**

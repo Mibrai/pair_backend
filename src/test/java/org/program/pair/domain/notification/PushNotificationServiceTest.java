@@ -1044,34 +1044,63 @@ class PushNotificationServiceTest {
                 NotificationType.WATCH_RETURN_REMINDER, payload))
             .isEqualTo("Sind Sie gut zu Hause angekommen?");
 
-        // Le corps dit les deux choses qui font agir : l'heure limite, et ce qui
-        // arrive faute de réponse. Aucun lieu, jamais : écran verrouillé.
+        // Le corps dit ce qui est attendu et ce qui arrive faute de réponse. Ni
+        // lieu ni heure limite, même quand la charge la porte : écran verrouillé
+        // (P-MS-10 étape 6, 15/09). L'heure reste dans l'app.
         assertThat(service.buildBody(LocaleConfig.FRENCH, ZONE,
                 NotificationType.WATCH_RETURN_REMINDER, payload))
-            .isEqualTo("Confirme ton retour avant 23:00, sinon ton contact sera prévenu.");
+            .isEqualTo("Confirme ton retour, sinon ton contact sera prévenu.");
         assertThat(service.buildBody(LocaleConfig.ENGLISH, ZONE,
                 NotificationType.WATCH_RETURN_REMINDER, payload))
-            .isEqualTo("Confirm your return before 23:00, or your contact will be alerted.");
+            .isEqualTo("Confirm your return, or your contact will be alerted.");
         assertThat(service.buildBody(LocaleConfig.GERMAN, ZONE,
                 NotificationType.WATCH_RETURN_REMINDER, payload))
-            .isEqualTo("Bestätigen Sie Ihre Rückkehr vor 23:00, "
-                + "sonst wird Ihr Kontakt benachrichtigt.");
+            .isEqualTo("Bestätigen Sie Ihre Rückkehr, sonst wird Ihr Kontakt benachrichtigt.");
     }
 
+    /**
+     * P-MS-10 étape 6 (demande mobile tracabilite du 15/09) : sur un écran
+     * verrouillé, les types de veille et de consentement ne montrent ni heure ni
+     * lieu, dans aucune langue, quelle que soit la charge — et Android n'en montre
+     * pas le contenu.
+     */
     @Test
-    void lHeureLimite_doitSuivreLeFuseauDeLAppareil() {
-        // Une échéance écrite dans le fuseau du serveur dirait « avant 23:00 » à
-        // quelqu'un dont le téléphone affiche 06:00. Le fuseau vient de
-        // l'appareil, comme pour le texte Android et pour les heures de silence.
+    void lesTypesMasques_neDoiventPorterNiHeureNiLieu_etRestentPrivesSurAndroid() {
         PushNotificationService service = service();
-        Map<String, Object> payload = Map.of("deadlineAt", "2026-08-17T21:00:00Z");
+        Map<String, Object> charge = Map.of(
+            "watchId", UUID.randomUUID().toString(),
+            "deadlineAt", "2026-08-17T21:00:00Z",
+            "sessionAt", "2026-08-17T19:00:00Z",
+            "placeName", "Parc de la Tête d'Or",
+            "addressPublic", "12 rue Secrète, Lyon",
+            "personne", "Camille",
+            "ownerName", "Camille");
+        java.util.regex.Pattern heure = java.util.regex.Pattern.compile("\\d{1,2}[:h.]\\d{2}");
+        java.util.Set<NotificationType> masques = java.util.EnumSet.of(
+            NotificationType.WATCH_RETURN_REMINDER, NotificationType.WATCH_ARRIVAL_PROMPT,
+            NotificationType.WATCH_ARRIVAL_CONFIRMED, NotificationType.WATCH_GUARDIAN_ALERT,
+            NotificationType.WATCH_LOST_ORGANIZER, NotificationType.GUARDIAN_CONSENT_REQUEST);
 
-        assertThat(service.buildBody(LocaleConfig.FRENCH, ZoneId.of("Asia/Tokyo"),
-                NotificationType.WATCH_RETURN_REMINDER, payload))
-            .contains("06:00");
-        assertThat(service.buildBody(LocaleConfig.FRENCH, ZoneId.of("America/Los_Angeles"),
-                NotificationType.WATCH_RETURN_REMINDER, payload))
-            .contains("14:00");
+        for (NotificationType type : masques) {
+            for (java.util.Locale locale : LANGUES) {
+                String texte = service.buildTitle(locale, type, charge) + " "
+                    + service.buildBody(locale, ZONE, type, charge);
+                assertThat(heure.matcher(texte).find())
+                    .as("aucune heure dans %s (%s) : %s", type, locale, texte).isFalse();
+                assertThat(texte).as("aucun lieu dans %s (%s)", type, locale)
+                    .doesNotContain("Tête d'Or").doesNotContain("rue Secrète");
+            }
+            assertThat(type.masqueSurEcranVerrouille()).as("%s masqué", type).isTrue();
+            assertThat(PushNotificationService.visibiliteAndroid(type))
+                .as("visibilité Android de %s", type)
+                .isEqualTo(com.google.firebase.messaging.AndroidNotification.Visibility.PRIVATE);
+        }
+        for (NotificationType type : NotificationType.values()) {
+            if (!masques.contains(type)) {
+                assertThat(PushNotificationService.visibiliteAndroid(type))
+                    .as("%s garde le réglage du canal", type).isNull();
+            }
+        }
     }
 
     @Test
