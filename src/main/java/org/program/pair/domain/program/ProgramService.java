@@ -97,7 +97,7 @@ public class ProgramService {
         Program program = new Program();
         program.setUserActivity(ua);
         program.setTitle(sanitizer.sanitize(request.title()).strip());
-        program.setDescription(sanitizer.sanitize(request.description()));
+        program.setDescription(descriptionNettoyee(request.description()));
         program.setStatus(ProgramStatus.DRAFT);
         program.setIsPublic(request.isPublic() != null ? request.isPublic() : true);
         program.setAllowParticipantMessages(
@@ -136,6 +136,20 @@ public class ProgramService {
      * {@code QUICK}, ce qui distinguera plus tard « on ne lui a jamais demandé de
      * description » de « il n'en a pas voulu ».
      */
+    /**
+     * Une description nettoyée, ou {@code null} si rien ne reste.
+     *
+     * <p>Effacer sa description depuis l'app envoie {@code ""} — la mise à jour
+     * ignore {@code null} — et le serveur stockait cette chaîne vide : la page
+     * publique, qui teste la présence du champ, affichait alors un paragraphe vide
+     * (demande mobile programmes du 15/09). Une description vide ou blanche, ou que
+     * le nettoyage HTML a vidée, n'est pas une description.
+     */
+    private String descriptionNettoyee(String brute) {
+        String nettoyee = sanitizer.sanitize(brute);
+        return nettoyee == null || nettoyee.isBlank() ? null : nettoyee;
+    }
+
     Program createQuickProgram(UserActivity userActivity, String title) {
         Program program = new Program();
         program.setUserActivity(userActivity);
@@ -155,8 +169,10 @@ public class ProgramService {
 
         if (request.title() != null)
             program.setTitle(sanitizer.sanitize(request.title()).strip());
+        // Clé absente ou null : inchangée. Chaîne vide ou blanche : retirée, et
+        // stockée null — voir descriptionNettoyee.
         if (request.description() != null)
-            program.setDescription(sanitizer.sanitize(request.description()));
+            program.setDescription(descriptionNettoyee(request.description()));
         if (request.status() != null) {
             // Passer à ACTIVE rend visibles les créneaux du programme (P-MU-17).
             if (request.status() == ProgramStatus.ACTIVE && program.getStatus() != ProgramStatus.ACTIVE) {

@@ -66,6 +66,25 @@ class PublicProgramPageIntegrationTest extends AbstractIntegrationTest {
     }
 
     @Test
+    void uneDescriptionEffacee_doitDevenirNull_etDisparaitreDeLaPage() {
+        // Demande mobile programmes du 15/09 : l'app efface en envoyant "", que le
+        // serveur stockait tel quel, et la page affichait un paragraphe vide.
+        String host = registerAndLogin("prog-desc");
+        UUID programId = activeProgram(host, "Marche sans description");
+
+        webTestClient.put().uri("/api/programs/{id}", programId)
+            .headers(h -> h.setBearerAuth(host))
+            .contentType(MediaType.APPLICATION_JSON)
+            .bodyValue(Map.of("description", "   "))
+            .exchange().expectStatus().isOk()
+            .expectBody().jsonPath("$.description").doesNotExist();
+
+        assertThat(jdbcTemplate.queryForObject(
+            "SELECT description FROM programs WHERE id = ?", String.class, programId)).isNull();
+        assertThat(body("/p/" + shareLink(host, programId).token())).doesNotContain("class=\"bienvenue\"");
+    }
+
+    @Test
     void leLien_doitEtreRenduATous_quandLeProgrammeEstVisible() {
         // Demande mobile partage du 14/09 : réservé à l'organisateur, le lien
         // manquait à tout autre compte, dont le partage partait en meetdo://.

@@ -74,7 +74,9 @@
                         th:if="${program.organizerVerified}" title="Compte vérifié"> ✓</span></dd>
             </dl>
 
-            <p class="bienvenue" th:if="${program.description}" th:text="${program.description}"></p>
+            <!-- #strings.isEmpty et non la seule présence : une chaîne vide est « vraie »
+                 pour Thymeleaf, et affichait un paragraphe vide (demande du 15/09). -->
+            <p class="bienvenue" th:if="${!#strings.isEmpty(program.description)}" th:text="${program.description}"></p>
 
             <div style="margin-top:1.5rem">
                 <!-- Même bouton que la page de créneau, et pour la même raison : il vise
